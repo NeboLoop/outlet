@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/middleware"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -49,6 +51,25 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 			Status:  "failed",
 			Message: "Recipient email (to) is required",
 		}, nil
+	}
+
+	// Decode optional attachments up front so a bad payload fails before we
+	// create a send record.
+	var attachments []email.Attachment
+	for _, a := range req.Attachments {
+		raw, decErr := base64.StdEncoding.DecodeString(a.Content)
+		if decErr != nil {
+			return &types.SendEmailResponse{
+				Success: false,
+				Status:  "failed",
+				Message: "Invalid base64 content for attachment " + a.Filename,
+			}, nil
+		}
+		attachments = append(attachments, email.Attachment{
+			Filename:    a.Filename,
+			ContentType: a.ContentType,
+			Content:     raw,
+		})
 	}
 
 	var subject, htmlBody, plainText string
@@ -199,7 +220,11 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 	}
 
 	// Actually send the email via the email service
-	sendErr := l.svcCtx.EmailService.SendEmailFrom(l.ctx, fromEmail, fromName, req.To, subject, htmlBody)
+	var sendOpts []email.SendOption
+	if len(attachments) > 0 {
+		sendOpts = append(sendOpts, email.WithAttachments(attachments))
+	}
+	sendErr := l.svcCtx.EmailService.SendEmailFrom(l.ctx, fromEmail, fromName, req.To, subject, htmlBody, sendOpts...)
 
 	if sendErr != nil {
 		// Update status to failed

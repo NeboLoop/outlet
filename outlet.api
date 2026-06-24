@@ -1016,6 +1016,11 @@ type (
 		MissingSettings    []string `json:"missing_settings"` // List of missing required settings
 	}
 	// ========== SDK Transactional Email Types ==========
+	EmailAttachment {
+		Filename    string `json:"filename"` // Attachment file name
+		ContentType string `json:"content_type,optional"` // MIME type; defaults to application/octet-stream
+		Content     string `json:"content"` // Base64-encoded file content
+	}
 	SendEmailRequest {
 		To           string            `json:"to"` // Email address
 		TemplateSlug string            `json:"template_slug,optional"` // Use design template
@@ -1028,6 +1033,7 @@ type (
 		Variables    map[string]string `json:"variables,optional"` // Template variables
 		Tags         []string          `json:"tags,optional"` // For tracking/filtering
 		Meta         map[string]string `json:"meta,optional"` // Custom metadata
+		Attachments  []EmailAttachment `json:"attachments,optional"` // Optional file attachments
 	}
 	SendEmailResponse {
 		Success   bool   `json:"success"`

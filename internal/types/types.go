@@ -516,6 +516,12 @@ type DownloadBackupRequest struct {
 	Id string `path:"id"`
 }
 
+type EmailAttachment struct {
+	Filename    string `json:"filename"`              // Attachment file name
+	ContentType string `json:"content_type,optional"` // MIME type; defaults to application/octet-stream
+	Content     string `json:"content"`               // Base64-encoded file content
+}
+
 type EmailClickRequest struct {
 	Token string `path:"token"`
 	Url   string `form:"url"`
@@ -1333,9 +1339,10 @@ type SendEmailRequest struct {
 	FromName     string            `json:"from_name,optional"`     // Override org default
 	FromEmail    string            `json:"from_email,optional"`    // Override org default
 	ReplyTo      string            `json:"reply_to,optional"`
-	Variables    map[string]string `json:"variables,optional"` // Template variables
-	Tags         []string          `json:"tags,optional"`      // For tracking/filtering
-	Meta         map[string]string `json:"meta,optional"`      // Custom metadata
+	Variables    map[string]string `json:"variables,optional"`   // Template variables
+	Tags         []string          `json:"tags,optional"`        // For tracking/filtering
+	Meta         map[string]string `json:"meta,optional"`        // Custom metadata
+	Attachments  []EmailAttachment `json:"attachments,optional"` // Optional file attachments
 }
 
 type SendEmailResponse struct {

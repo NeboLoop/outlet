@@ -406,7 +406,9 @@ func (s *Service) SendEmail(ctx context.Context, to, subject, htmlBody string) e
 
 // SendEmailFrom sends an HTML email with a custom from address
 // Uses AWS SES (preferred) or falls back to SMTP
-func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, subject, htmlBody string) error {
+func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, subject, htmlBody string, opts ...SendOption) error {
+	o := applyOpts(opts)
+
 	// Try AWS SES first (preferred for high-volume sending)
 	sesConfig, err := s.getSESConfig(ctx)
 	if err == nil && s.hasSESConfig(sesConfig) {
@@ -416,6 +418,17 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 		}
 		if fromName != "" {
 			sesConfig.FromName = fromName
+		}
+		if len(o.attachments) > 0 {
+			from := sesConfig.FromAddress
+			if sesConfig.FromName != "" {
+				from = fmt.Sprintf("%s <%s>", sesConfig.FromName, sesConfig.FromAddress)
+			}
+			raw, err := buildRawMessage(from, to, subject, htmlBody, o.attachments)
+			if err != nil {
+				return fmt.Errorf("build attachment message: %w", err)
+			}
+			return SendRawEmailViaSES(ctx, sesConfig, raw)
 		}
 		return SendEmailViaSES(ctx, sesConfig, to, subject, htmlBody)
 	}
@@ -440,6 +453,17 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 		name = smtpConfig.FromName
 	}
 
+	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
+	addr := fmt.Sprintf("%s:%d", smtpConfig.Host, smtpConfig.Port)
+
+	if len(o.attachments) > 0 {
+		raw, err := buildRawMessage(fmt.Sprintf("%s <%s>", name, from), to, subject, htmlBody, o.attachments)
+		if err != nil {
+			return fmt.Errorf("build attachment message: %w", err)
+		}
+		return smtp.SendMail(addr, auth, from, []string{to}, raw)
+	}
+
 	headers := fmt.Sprintf("From: %s <%s>\r\n", name, from)
 	headers += fmt.Sprintf("To: %s\r\n", to)
 	if smtpConfig.ReplyTo != "" {
@@ -451,9 +475,6 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 	headers += "\r\n"
 
 	message := []byte(headers + htmlBody)
-
-	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
-	addr := fmt.Sprintf("%s:%d", smtpConfig.Host, smtpConfig.Port)
 
 	return smtp.SendMail(addr, auth, from, []string{to}, message)
 }
