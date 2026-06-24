@@ -24,31 +24,10 @@ type SESConfig struct {
 // SendEmailViaSES sends an email using the AWS SES API directly
 // This is the preferred method when AWS credentials are configured
 func SendEmailViaSES(ctx context.Context, sesConfig *SESConfig, to, subject, htmlBody string) error {
-	if sesConfig.Region == "" {
-		sesConfig.Region = "us-east-1"
-	}
-
-	var cfg aws.Config
-	var err error
-
-	if sesConfig.AccessKey != "" && sesConfig.SecretKey != "" {
-		cfg, err = config.LoadDefaultConfig(ctx,
-			config.WithRegion(sesConfig.Region),
-			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-				sesConfig.AccessKey,
-				sesConfig.SecretKey,
-				"",
-			)),
-		)
-	} else {
-		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(sesConfig.Region))
-	}
-
+	client, err := newSESClient(ctx, sesConfig)
 	if err != nil {
-		return fmt.Errorf("failed to load AWS config: %w", err)
+		return err
 	}
-
-	client := ses.NewFromConfig(cfg)
 
 	// Build the from address
 	from := sesConfig.FromAddress
@@ -87,5 +66,48 @@ func SendEmailViaSES(ctx context.Context, sesConfig *SESConfig, to, subject, htm
 		return fmt.Errorf("SES SendEmail failed: %w", err)
 	}
 
+	return nil
+}
+
+// newSESClient builds an SES client from the config, using static credentials
+// when provided and otherwise the default AWS credential chain.
+func newSESClient(ctx context.Context, sesConfig *SESConfig) (*ses.Client, error) {
+	if sesConfig.Region == "" {
+		sesConfig.Region = "us-east-1"
+	}
+	var cfg aws.Config
+	var err error
+	if sesConfig.AccessKey != "" && sesConfig.SecretKey != "" {
+		cfg, err = config.LoadDefaultConfig(ctx,
+			config.WithRegion(sesConfig.Region),
+			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+				sesConfig.AccessKey, sesConfig.SecretKey, "",
+			)),
+		)
+	} else {
+		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(sesConfig.Region))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	return ses.NewFromConfig(cfg), nil
+}
+
+// SendRawEmailViaSES sends a pre-built raw MIME message (used for attachments
+// via multipart/mixed) through SES SendRawEmail.
+func SendRawEmailViaSES(ctx context.Context, sesConfig *SESConfig, raw []byte) error {
+	client, err := newSESClient(ctx, sesConfig)
+	if err != nil {
+		return err
+	}
+	input := &ses.SendRawEmailInput{
+		RawMessage: &types.RawMessage{Data: raw},
+	}
+	if sesConfig.FromAddress != "" {
+		input.Source = aws.String(sesConfig.FromAddress)
+	}
+	if _, err := client.SendRawEmail(ctx, input); err != nil {
+		return fmt.Errorf("SES SendRawEmail failed: %w", err)
+	}
 	return nil
 }

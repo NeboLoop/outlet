@@ -540,6 +540,12 @@ export interface DownloadBackupRequest {
 export interface DownloadBackupRequestParams {
 }
 
+export interface EmailAttachment {
+	filename: string // Attachment file name
+	content_type?: string // MIME type; defaults to application/octet-stream
+	content: string // Base64-encoded file content
+}
+
 export interface EmailClickRequest {
 }
 export interface EmailClickRequestParams {
@@ -1429,6 +1435,7 @@ export interface SendEmailRequest {
 	variables?: { [key: string]: string } // Template variables
 	tags?: Array<string> // For tracking/filtering
 	meta?: { [key: string]: string } // Custom metadata
+	attachments?: Array<EmailAttachment> // Optional file attachments
 }
 
 export interface SendEmailResponse {
