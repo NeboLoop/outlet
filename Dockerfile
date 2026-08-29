@@ -11,7 +11,7 @@ WORKDIR /app
 RUN apk add --no-cache git build-base nodejs npm
 
 # Install pnpm globally
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9
 
 # Install Air for hot reloading
 RUN go install github.com/air-verse/air@v1.61.5
@@ -38,7 +38,7 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9
 
 # Copy frontend package files
 COPY app/package.json app/pnpm-lock.yaml ./
