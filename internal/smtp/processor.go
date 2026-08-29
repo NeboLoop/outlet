@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/mail"
 	"strings"
 
@@ -87,58 +89,14 @@ func (p *EmailProcessor) Process(r io.Reader) (string, error) {
 	return trackingToken, nil
 }
 
-// extractBody extracts HTML and plain text body from the email
+// extractBody extracts HTML and plain text body from the email.
+//
+// Real-world senders (Drupal mimemail, Outlook, Apple Mail…) nest parts —
+// multipart/mixed → multipart/related → multipart/alternative — and encode
+// them as base64 or quoted-printable, so we walk the tree recursively and
+// decode each leaf according to its Content-Transfer-Encoding.
 func (p *EmailProcessor) extractBody(msg *mail.Message) (htmlBody, plainText string, err error) {
-	contentType := msg.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "text/plain"
-	}
-
-	mediaType, params, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		// Treat as plain text if we can't parse
-		body, _ := io.ReadAll(msg.Body)
-		return "", string(body), nil
-	}
-
-	if strings.HasPrefix(mediaType, "multipart/") {
-		// Parse multipart message
-		boundary := params["boundary"]
-		if boundary == "" {
-			body, _ := io.ReadAll(msg.Body)
-			return "", string(body), nil
-		}
-
-		mr := multipart.NewReader(msg.Body, boundary)
-		for {
-			part, err := mr.NextPart()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return htmlBody, plainText, nil
-			}
-
-			partContentType := part.Header.Get("Content-Type")
-			partMediaType, _, _ := mime.ParseMediaType(partContentType)
-
-			partBody, _ := io.ReadAll(part)
-
-			switch partMediaType {
-			case "text/html":
-				htmlBody = string(partBody)
-			case "text/plain":
-				plainText = string(partBody)
-			}
-		}
-	} else if mediaType == "text/html" {
-		body, _ := io.ReadAll(msg.Body)
-		htmlBody = string(body)
-	} else {
-		// Default to plain text
-		body, _ := io.ReadAll(msg.Body)
-		plainText = string(body)
-	}
+	htmlBody, plainText = walkPart(msg.Header.Get("Content-Type"), msg.Header.Get("Content-Transfer-Encoding"), msg.Body, 0)
 
 	// If we only have plain text, wrap it in basic HTML
 	if htmlBody == "" && plainText != "" {
@@ -146,6 +104,83 @@ func (p *EmailProcessor) extractBody(msg *mail.Message) (htmlBody, plainText str
 	}
 
 	return htmlBody, plainText, nil
+}
+
+// walkPart returns the first text/html and text/plain bodies found under a
+// MIME part, descending into nested multiparts (bounded to avoid abuse).
+func walkPart(contentType, transferEncoding string, body io.Reader, depth int) (htmlBody, plainText string) {
+	if depth > 8 {
+		return "", ""
+	}
+	if contentType == "" {
+		contentType = "text/plain"
+	}
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		raw, _ := io.ReadAll(body)
+		return "", string(raw)
+	}
+
+	if strings.HasPrefix(mediaType, "multipart/") {
+		boundary := params["boundary"]
+		if boundary == "" {
+			raw, _ := io.ReadAll(body)
+			return "", string(raw)
+		}
+		mr := multipart.NewReader(body, boundary)
+		for {
+			part, err := mr.NextPart()
+			if err != nil {
+				break // io.EOF or malformed remainder: keep what we have
+			}
+			h, t := walkPart(part.Header.Get("Content-Type"), part.Header.Get("Content-Transfer-Encoding"), part, depth+1)
+			if htmlBody == "" {
+				htmlBody = h
+			}
+			if plainText == "" {
+				plainText = t
+			}
+			if htmlBody != "" && plainText != "" {
+				break
+			}
+		}
+		return htmlBody, plainText
+	}
+
+	raw, _ := io.ReadAll(decodeTransfer(body, transferEncoding))
+	text := string(raw)
+	switch mediaType {
+	case "text/html":
+		return text, ""
+	case "text/plain":
+		return "", text
+	}
+	return "", "" // attachments/images: ignored
+}
+
+// decodeTransfer undoes base64 / quoted-printable transfer encoding.
+func decodeTransfer(r io.Reader, encoding string) io.Reader {
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "base64":
+		return base64.NewDecoder(base64.StdEncoding, &whitespaceStripper{r: r})
+	case "quoted-printable":
+		return quotedprintable.NewReader(r)
+	}
+	return r
+}
+
+// whitespaceStripper drops line breaks so wrapped base64 decodes cleanly.
+type whitespaceStripper struct{ r io.Reader }
+
+func (w *whitespaceStripper) Read(p []byte) (int, error) {
+	n, err := w.r.Read(p)
+	out := p[:0]
+	for _, b := range p[:n] {
+		if b != '\r' && b != '\n' && b != ' ' && b != '\t' {
+			out = append(out, b)
+		}
+	}
+	return len(out), err
 }
 
 // sendToRecipient sends the email to a single recipient
