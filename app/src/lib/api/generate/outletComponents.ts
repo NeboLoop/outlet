@@ -1432,6 +1432,7 @@ export interface SendEmailRequest {
 	from_name?: string // Override org default
 	from_email?: string // Override org default
 	reply_to?: string
+	headers?: { [key: string]: string } // Threading headers: In-Reply-To, References, Message-ID
 	variables?: { [key: string]: string } // Template variables
 	tags?: Array<string> // For tracking/filtering
 	meta?: { [key: string]: string } // Custom metadata

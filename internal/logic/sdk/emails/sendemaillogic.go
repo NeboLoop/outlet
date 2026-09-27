@@ -219,10 +219,29 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 		fromName = orgSettings.FromName.String
 	}
 
+	// Per-message sender overrides: a From address on the brand's own sending
+	// domain (never another domain — the brand is verified for one), a
+	// display name, a Reply-To, a text alternative and threading headers.
+	if req.FromEmail != "" && sameDomain(req.FromEmail, fromEmail) {
+		fromEmail = strings.TrimSpace(req.FromEmail)
+	}
+	if req.FromName != "" {
+		fromName = strings.TrimSpace(req.FromName)
+	}
+
 	// Actually send the email via the email service
 	var sendOpts []email.SendOption
 	if len(attachments) > 0 {
 		sendOpts = append(sendOpts, email.WithAttachments(attachments))
+	}
+	if req.ReplyTo != "" {
+		sendOpts = append(sendOpts, email.WithReplyTo(req.ReplyTo))
+	}
+	if plainText != "" {
+		sendOpts = append(sendOpts, email.WithTextBody(plainText))
+	}
+	if len(req.Headers) > 0 {
+		sendOpts = append(sendOpts, email.WithHeaders(req.Headers))
 	}
 	sendErr := l.svcCtx.EmailService.SendEmailFrom(l.ctx, fromEmail, fromName, req.To, subject, htmlBody, sendOpts...)
 
@@ -295,4 +314,20 @@ func (l *SendEmailLogic) getOrCreateAdhocTemplate(orgID string) (db.Transactiona
 	}
 
 	return template, nil
+}
+
+// sameDomain reports whether two addresses share a domain: a brand may send
+// from any address on the domain it is verified for, and only that domain.
+func sameDomain(a, b string) bool {
+	da, db := domainOf(a), domainOf(b)
+	return da != "" && da == db
+}
+
+func domainOf(addr string) string {
+	addr = strings.ToLower(strings.TrimSpace(addr))
+	at := strings.LastIndex(addr, "@")
+	if at < 0 || strings.ContainsAny(addr, " <>\r\n") {
+		return ""
+	}
+	return addr[at+1:]
 }
