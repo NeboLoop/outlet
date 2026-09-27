@@ -234,8 +234,13 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 	if len(attachments) > 0 {
 		sendOpts = append(sendOpts, email.WithAttachments(attachments))
 	}
-	if req.ReplyTo != "" {
-		sendOpts = append(sendOpts, email.WithReplyTo(req.ReplyTo))
+	// Reply-To: the message's own, else the brand's configured Reply-To.
+	replyTo := strings.TrimSpace(req.ReplyTo)
+	if replyTo == "" && orgSettings.ReplyTo.Valid {
+		replyTo = strings.TrimSpace(orgSettings.ReplyTo.String)
+	}
+	if replyTo != "" {
+		sendOpts = append(sendOpts, email.WithReplyTo(replyTo))
 	}
 	if plainText != "" {
 		sendOpts = append(sendOpts, email.WithTextBody(plainText))
