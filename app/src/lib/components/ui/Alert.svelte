@@ -13,8 +13,8 @@
 		Lightbulb,
 		TrendingUp,
 		Scale
-	} from 'lucide-svelte';
-	import type { ComponentType } from 'svelte';
+	} from '@lucide/svelte';
+	import type { Component } from 'svelte';
 
 	let {
 		type = 'info',
@@ -29,7 +29,7 @@
 	}: {
 		type?: 'info' | 'success' | 'warning' | 'error' | 'security';
 		variant?: 'info' | 'success' | 'warning' | 'error' | 'security';
-		icon?: ComponentType | string;
+		icon?: Component<{ class?: string }> | string;
 		title?: string;
 		dismissible?: boolean;
 		dismissable?: boolean;
@@ -57,7 +57,7 @@
 		security: ShieldAlert
 	};
 
-	const iconNameMap: Record<string, ComponentType> = {
+	const iconNameMap: Record<string, Component<{ class?: string }>> = {
 		'exclamation-triangle': AlertTriangle,
 		lightbulb: Lightbulb,
 		'chart-line': TrendingUp,

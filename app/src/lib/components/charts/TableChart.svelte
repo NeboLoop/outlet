@@ -15,7 +15,7 @@
 		Check,
 		Filter,
 		ArrowUpDown
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import type { TableColumn, TableRow } from './types';
 
 	interface Props {

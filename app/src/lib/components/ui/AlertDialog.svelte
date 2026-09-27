@@ -5,7 +5,7 @@
 
 <script lang="ts">
 	import { Button } from '$lib/components/ui';
-	import { X } from 'lucide-svelte';
+	import { X } from '@lucide/svelte';
 
 	interface Props {
 		open?: boolean;

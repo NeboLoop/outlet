@@ -2,7 +2,7 @@
 	import * as api from '$lib/api';
 	import type { VersionInfo, UpdateCheckResponse } from '$lib/api';
 	import { Button, Card, Alert, LoadingSpinner, Badge } from '$lib/components/ui';
-	import { RefreshCw, Download, CheckCircle, AlertCircle } from 'lucide-svelte';
+	import { RefreshCw, Download, CheckCircle, AlertCircle } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let checking = $state(false);

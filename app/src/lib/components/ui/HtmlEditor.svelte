@@ -11,7 +11,7 @@
 		AlignLeft,
 		AlignCenter,
 		AlignRight
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let {
 		value = $bindable(''),

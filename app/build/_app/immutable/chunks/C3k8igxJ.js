@@ -1,0 +1,1 @@
+import{gt as e,pt as t}from"./C_OAeTtO.js";var n=Symbol(`list-context`);function r(t){e(n,t)}function i(){let e=t(n);if(!e)throw Error(`List context not found. Make sure this component is rendered under the list layout.`);return e}export{r as n,i as t};

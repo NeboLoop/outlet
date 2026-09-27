@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { TrendingUp, TrendingDown, Minus } from 'lucide-svelte';
+	import { TrendingUp, TrendingDown, Minus } from '@lucide/svelte';
 	import type { MetricData } from './types';
 
 	interface Props {

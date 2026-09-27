@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Card, Button, Input, Alert, LoadingSpinner, Badge, Modal, Tabs, CodeBlock, AlertDialog } from '$lib/components/ui';
-	import { Copy, Plus, Trash2, Key, CheckCircle, ExternalLink, Code, Package } from 'lucide-svelte';
+	import { Copy, Plus, Trash2, Key, CheckCircle, ExternalLink, Code, Package } from '@lucide/svelte';
 	import { listMCPAPIKeys, createMCPAPIKey, revokeMCPAPIKey, type MCPAPIKeyInfo } from '$lib/api';
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';

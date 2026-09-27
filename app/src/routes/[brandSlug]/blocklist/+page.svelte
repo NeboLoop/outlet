@@ -29,7 +29,7 @@
 		Plus,
 		Trash2,
 		Search
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let basePath = $derived(`/${$page.params.brandSlug}`);
 

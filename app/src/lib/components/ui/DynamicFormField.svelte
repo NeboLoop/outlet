@@ -10,8 +10,8 @@
 	import TagInput from './TagInput.svelte';
 	import Checkbox from './Checkbox.svelte';
 	import Spinner from './Spinner.svelte';
-	import Check from 'lucide-svelte/icons/check';
-	import RefreshCw from 'lucide-svelte/icons/refresh-cw';
+	import Check from '@lucide/svelte/icons/check';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
 	// Types for resource_selector (feature requires external API)
 	interface ResourceInfo {

@@ -42,7 +42,7 @@
 		ArrowRight,
 		X,
 		Save
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	// Route params
 	let listId = $derived($page.params.id!);

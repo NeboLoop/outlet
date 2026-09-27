@@ -3,8 +3,8 @@
 -->
 
 <script lang="ts">
-	import { Inbox, FileText, Users, Mail, Settings, Search } from 'lucide-svelte';
-	import type { ComponentType, Snippet } from 'svelte';
+	import { Inbox, FileText, Users, Mail, Settings, Search } from '@lucide/svelte';
+	import type { Component, Snippet } from 'svelte';
 
 	let {
 		icon = 'inbox',
@@ -13,7 +13,7 @@
 		description,
 		children
 	}: {
-		icon?: string | ComponentType;
+		icon?: string | Component<{ class?: string }>;
 		title: string;
 		message?: string;
 		description?: string;
@@ -23,7 +23,7 @@
 	// Support 'description' as alias for 'message'
 	const displayMessage = $derived(message || description);
 
-	const iconMap: Record<string, ComponentType> = {
+	const iconMap: Record<string, Component<{ class?: string }>> = {
 		inbox: Inbox,
 		file: FileText,
 		users: Users,

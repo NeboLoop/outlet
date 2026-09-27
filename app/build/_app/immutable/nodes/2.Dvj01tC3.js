@@ -1,0 +1,1 @@
+import{B as e,M as t,R as n,rt as r,yt as i}from"../chunks/C_OAeTtO.js";import"../chunks/xihTtKlq.js";var a=e(`<div class="min-h-screen bg-base-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8"><div class="max-w-md w-full"><!></div></div>`);function o(e,o){var s=a(),c=r(s),l=r(c);t(l,()=>o.children),i(c),i(s),n(e,s)}export{o as component};

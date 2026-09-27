@@ -4,7 +4,7 @@
 -->
 
 <script lang="ts">
-	import { Check, Hash, Mail, Eye, MousePointerClick } from 'lucide-svelte';
+	import { Check, Hash, Mail, Eye, MousePointerClick } from '@lucide/svelte';
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
 	import SearchInput from './SearchInput.svelte';

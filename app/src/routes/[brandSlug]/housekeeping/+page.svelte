@@ -19,7 +19,7 @@
 		Clock,
 		AlertTriangle,
 		CheckCircle
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let basePath = $derived(`/${$page.params.brandSlug}`);
 

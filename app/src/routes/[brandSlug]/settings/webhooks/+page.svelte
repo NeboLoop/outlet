@@ -13,7 +13,7 @@
 		Table,
 		AlertDialog
 	} from '$lib/components/ui';
-	import { Plus, Trash2, TestTube, Copy, Eye, EyeOff, Check, X, RefreshCw } from 'lucide-svelte';
+	import { Plus, Trash2, TestTube, Copy, Eye, EyeOff, Check, X, RefreshCw } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let error = $state('');

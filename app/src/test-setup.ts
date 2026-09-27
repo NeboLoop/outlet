@@ -49,7 +49,11 @@ class LocalStorageMock {
 	}
 }
 
-global.localStorage = new LocalStorageMock() as any;
+// jsdom exposes localStorage as a getter-only property, so define it.
+Object.defineProperty(globalThis, 'localStorage', {
+	configurable: true,
+	value: new LocalStorageMock()
+});
 
 // Mock fetch
 global.fetch = vi.fn();

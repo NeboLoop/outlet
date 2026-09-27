@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import { getList, type ListInfo } from '$lib/api';
 	import { LoadingSpinner, Alert, Button, Badge, Drawer } from '$lib/components/ui';
-	import { ArrowLeft, Users, Workflow, ListPlus, Code, Settings, Menu } from 'lucide-svelte';
+	import { ArrowLeft, Users, Workflow, ListPlus, Code, Settings, Menu } from '@lucide/svelte';
 	import { setListContext, type ListContext } from './listContext';
 
 	let { children } = $props();

@@ -17,7 +17,7 @@
 		Tabs,
 		AlertDialog
 	} from '$lib/components/ui';
-	import { Plus, Send, MoreVertical, Trash2, Edit, Copy, Play, Pause, BarChart3 } from 'lucide-svelte';
+	import { Plus, Send, MoreVertical, Trash2, Edit, Copy, Play, Pause, BarChart3 } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let campaigns = $state<CampaignInfo[]>([]);

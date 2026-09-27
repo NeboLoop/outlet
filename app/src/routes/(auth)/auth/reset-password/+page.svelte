@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { Card, Input, Button, Alert } from '$lib/components/ui';
-	import { ArrowLeft, CheckCircle } from 'lucide-svelte';
+	import { ArrowLeft, CheckCircle } from '@lucide/svelte';
 
 	let password = $state('');
 	let confirmPassword = $state('');

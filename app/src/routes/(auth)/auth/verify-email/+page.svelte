@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { Card, Button, Spinner } from '$lib/components/ui';
-	import { CheckCircle, XCircle } from 'lucide-svelte';
+	import { CheckCircle, XCircle } from '@lucide/svelte';
 
 	let verifying = $state(true);
 	let verified = $state(false);

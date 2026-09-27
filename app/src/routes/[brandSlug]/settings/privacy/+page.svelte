@@ -2,7 +2,7 @@
 	import * as api from '$lib/api';
 	import type { GDPRConsentInfo, GDPRExportResponse, GDPRDeleteResponse } from '$lib/api';
 	import { Button, Card, Input, Alert, LoadingSpinner, Badge, Toggle, AlertDialog } from '$lib/components/ui';
-	import { Search, Download, Trash2, Shield, UserX, FileText } from 'lucide-svelte';
+	import { Search, Download, Trash2, Shield, UserX, FileText } from '@lucide/svelte';
 
 	let searchEmail = $state('');
 	let searching = $state(false);

@@ -4,7 +4,7 @@
 	import * as api from '$lib/api';
 	import type { OrgInfo } from '$lib/api';
 	import { Button, Card, Input, Modal, AlertDialog, Alert, LoadingSpinner, SaveButton } from '$lib/components/ui';
-	import { Copy, Check, RefreshCw, Trash2 } from 'lucide-svelte';
+	import { Copy, Check, RefreshCw, Trash2 } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let org = $state<OrgInfo | null>(null);

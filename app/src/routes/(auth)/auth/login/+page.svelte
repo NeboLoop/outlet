@@ -4,7 +4,7 @@
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { onDestroy } from 'svelte';
 	import { Card, Input, Button, Alert } from '$lib/components/ui';
-	import { AlertTriangle } from 'lucide-svelte';
+	import { AlertTriangle } from '@lucide/svelte';
 
 	let email = $state('');
 	let password = $state('');

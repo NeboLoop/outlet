@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { RefreshCw, Download, Maximize2, Minimize2, X, AlertCircle } from 'lucide-svelte';
+	import { RefreshCw, Download, Maximize2, Minimize2, X, AlertCircle } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {

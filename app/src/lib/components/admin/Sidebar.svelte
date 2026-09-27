@@ -12,7 +12,7 @@
 		Mail,
 		Ban,
 		Trash2
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	interface Props {
 		brandSlug: string;

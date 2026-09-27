@@ -21,7 +21,7 @@
 		EmailEditor,
 		PersonalizationTags
 	} from '$lib/components/ui';
-	import { ArrowLeft, Send, Save, FileText, X, TestTube } from 'lucide-svelte';
+	import { ArrowLeft, Send, Save, FileText, X, TestTube } from '@lucide/svelte';
 
 	// Form state
 	let name = $state('');

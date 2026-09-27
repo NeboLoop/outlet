@@ -20,7 +20,7 @@
 		Select,
 		AlertDialog
 	} from '$lib/components/ui';
-	import { Plus, FileText, MoreVertical, Trash2, Edit, Copy } from 'lucide-svelte';
+	import { Plus, FileText, MoreVertical, Trash2, Edit, Copy } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let templates = $state<EmailDesignInfo[]>([]);

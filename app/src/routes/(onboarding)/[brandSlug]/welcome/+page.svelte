@@ -4,7 +4,7 @@
 	import * as api from '$lib/api';
 	import type { OrgInfo } from '$lib/api';
 	import { Card, Input, Button, Alert, LoadingSpinner } from '$lib/components/ui';
-	import { ChevronRight, Check, Loader2, HelpCircle, Lightbulb, Shield } from 'lucide-svelte';
+	import { ChevronRight, Check, Loader2, HelpCircle, Lightbulb, Shield } from '@lucide/svelte';
 
 	let loading = $state(false);
 	let pageLoading = $state(true);

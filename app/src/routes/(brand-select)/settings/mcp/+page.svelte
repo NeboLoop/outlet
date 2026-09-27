@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Card, Button, Input, Alert, Badge } from '$lib/components/ui';
-	import { Copy, ChevronDown, ChevronRight, CheckCircle } from 'lucide-svelte';
+	import { Copy, ChevronDown, ChevronRight, CheckCircle } from '@lucide/svelte';
 	import { browser } from '$app/environment';
 
 	// Dynamic endpoint based on install domain

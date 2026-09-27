@@ -6,7 +6,7 @@
 	import { Card, Input, Alert, Select, Steps } from '$lib/components/ui';
 	import AwsIamPolicy from '$lib/components/admin/AwsIamPolicy.svelte';
 	import type { StepItem } from '$lib/components/ui/Steps.svelte';
-	import { ChevronRight, Check, Loader2, HelpCircle, Shield, Key, Cloud, ExternalLink, Globe } from 'lucide-svelte';
+	import { ChevronRight, Check, Loader2, HelpCircle, Shield, Key, Cloud, ExternalLink, Globe } from '@lucide/svelte';
 
 	type Step = 'loading' | 'admin' | 'aws' | 'complete';
 	let currentStep = $state<Step>('loading');

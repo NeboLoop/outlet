@@ -1,0 +1,1 @@
+import{o as e,s as t}from"./C_OAeTtO.js";import"./xihTtKlq.js";import{V as n}from"./xZIB709U.js";var r=new Set([`$$slots`,`$$events`,`$$legacy`]);function i(i,a){let o=e(a,r),s={name:`cloud`,size:24,node:[[`path`,{d:`M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z`}]]};n(i,t(()=>o,{get icon(){return s}}))}export{i as t};

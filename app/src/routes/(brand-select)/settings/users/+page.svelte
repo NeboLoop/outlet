@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { listUsers, createUser, updateUser, deleteUser, type UserInfo } from '$lib/api';
 	import { Button, Card, Input, Select, Badge, Modal, AlertDialog, Alert, LoadingSpinner, SaveButton } from '$lib/components/ui';
-	import { Plus, Users } from 'lucide-svelte';
+	import { Plus, Users } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let users = $state<UserInfo[]>([]);

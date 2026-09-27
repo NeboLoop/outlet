@@ -26,7 +26,7 @@
 		Trash2,
 		Eye,
 		X
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	// Get template ID from URL
 	let templateId = $derived($page.params.id);

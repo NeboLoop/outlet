@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Card, CodeBlock } from '$lib/components/ui';
-	import { Copy, Check, ExternalLink, HelpCircle } from 'lucide-svelte';
+	import { Copy, Check, ExternalLink, HelpCircle } from '@lucide/svelte';
 
 	let { compact = false }: { compact?: boolean } = $props();
 

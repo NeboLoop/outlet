@@ -11,7 +11,7 @@
 		Copy,
 		Check,
 		ExternalLink
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { getListContext } from '../listContext';
 
 	const ctx = getListContext();

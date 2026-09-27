@@ -6,7 +6,7 @@
 	import { ChartCard, AreaChart } from '$lib/components/charts';
 	import { getEmailDashboardStats, listLists, listCampaigns, type EmailDashboardStatsResponse, type ListInfo, type CampaignInfo } from '$lib/api';
 	import { getCurrentUser } from '$lib/auth';
-	import { TrendingUp, TrendingDown, Users, Mail, Send, MousePointerClick, AlertTriangle, UserMinus, ArrowRight, Plus, RefreshCw } from 'lucide-svelte';
+	import { TrendingUp, TrendingDown, Users, Mail, Send, MousePointerClick, AlertTriangle, UserMinus, ArrowRight, Plus, RefreshCw } from '@lucide/svelte';
 
 	interface Props {
 		data: {

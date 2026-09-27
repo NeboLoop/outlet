@@ -25,7 +25,7 @@
 		Plus,
 		Edit,
 		Trash2
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { getListContext } from '../listContext';
 
 	const ctx = getListContext();

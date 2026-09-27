@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { Button, Input, Select, MarkdownEditor, ContentChatPanel, Textarea, LoadingSpinner, Alert, Modal, SaveButton } from '$lib/components/ui';
-	import { Save, Trash2, ChevronDown, ChevronUp, ArrowLeft, Sparkles, Plus, FolderPlus, Layout } from 'lucide-svelte';
+	import { Save, Trash2, ChevronDown, ChevronUp, ArrowLeft, Sparkles, Plus, FolderPlus, Layout } from '@lucide/svelte';
 
 	type ContentType = 'post' | 'page';
 

@@ -4,7 +4,7 @@
 -->
 
 <script lang="ts">
-	import { X } from 'lucide-svelte';
+	import { X } from '@lucide/svelte';
 
 	interface Props {
 		open?: boolean;

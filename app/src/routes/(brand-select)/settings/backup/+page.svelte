@@ -3,7 +3,7 @@
 	import type { BackupInfo, BackupSettingsResponse } from '$lib/api';
 	import { getToken } from '$lib/auth';
 	import { Button, Card, Input, Alert, LoadingSpinner, Badge, SaveButton, Toggle, AlertDialog } from '$lib/components/ui';
-	import { Plus, Download, Trash2, RefreshCw, HardDrive, Cloud, Copy, ExternalLink, CheckCircle, Pencil } from 'lucide-svelte';
+	import { Plus, Download, Trash2, RefreshCw, HardDrive, Cloud, Copy, ExternalLink, CheckCircle, Pencil } from '@lucide/svelte';
 	import { getWebSocketClient } from '$lib/websocket/client';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { onDestroy, onMount } from 'svelte';

@@ -4,7 +4,7 @@
 -->
 
 <script lang="ts">
-	import { Info, CheckCircle, AlertTriangle, XCircle, X } from 'lucide-svelte';
+	import { Info, CheckCircle, AlertTriangle, XCircle, X } from '@lucide/svelte';
 
 	interface Props {
 		message: string;

@@ -6,7 +6,7 @@
 	import { getOrganizationBySlug, listOrganizations, createOrganization, type OrgInfo } from '$lib/api';
 	import { Modal, Input, Button, Alert } from '$lib/components/ui';
 	import { getCurrentUser, logout } from '$lib/auth';
-	import { Search, X, Menu, ChevronDown, Building2, Check, Plus } from 'lucide-svelte';
+	import { Search, X, Menu, ChevronDown, Building2, Check, Plus } from '@lucide/svelte';
 
 	interface Props {
 		data: {

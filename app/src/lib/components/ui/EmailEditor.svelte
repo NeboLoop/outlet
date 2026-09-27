@@ -12,7 +12,7 @@
 		AlignLeft,
 		AlignCenter,
 		AlignRight
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	interface Variable {
 		name: string;

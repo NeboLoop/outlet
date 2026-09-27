@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Card, Input, Button, Alert } from '$lib/components/ui';
-	import { ArrowLeft, CheckCircle } from 'lucide-svelte';
+	import { ArrowLeft, CheckCircle } from '@lucide/svelte';
 
 	let email = $state('');
 	let submitted = $state(false);

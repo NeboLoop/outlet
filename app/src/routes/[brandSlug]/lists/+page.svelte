@@ -21,7 +21,7 @@
 		DropdownMenu,
 		AlertDialog
 	} from '$lib/components/ui';
-	import { Plus, Mail, Users, MoreVertical, Trash2, Edit, ExternalLink } from 'lucide-svelte';
+	import { Plus, Mail, Users, MoreVertical, Trash2, Edit, ExternalLink } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let lists = $state<ListInfo[]>([]);

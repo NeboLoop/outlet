@@ -90,7 +90,7 @@ All charts are built with:
 <script>
 	import { MetricCard } from '$lib/components/charts';
 	import { MetricsRow } from '$lib/components/analytics';
-	import { DollarSign, Users, TrendingUp, Activity } from 'lucide-svelte';
+	import { DollarSign, Users, TrendingUp, Activity } from '@lucide/svelte';
 
 	const metrics = [
 		{

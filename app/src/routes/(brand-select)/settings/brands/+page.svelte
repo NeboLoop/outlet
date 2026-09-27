@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { listOrganizations, updateOrganization, getDashboardStats, type OrgInfo } from '$lib/api';
 	import { Button, Card, Input, Badge, Modal, Alert, LoadingSpinner, SaveButton, Toggle } from '$lib/components/ui';
-	import { Building2 } from 'lucide-svelte';
+	import { Building2 } from '@lucide/svelte';
 
 	interface OrgWithStats extends OrgInfo {
 		current_contacts?: number;

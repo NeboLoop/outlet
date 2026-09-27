@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Card, Badge, Button, Alert, Tabs, CodeBlock } from '$lib/components/ui';
-	import { Copy, CheckCircle, Mail, Server } from 'lucide-svelte';
+	import { Copy, CheckCircle, Mail, Server } from '@lucide/svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 

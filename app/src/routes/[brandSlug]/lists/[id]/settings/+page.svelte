@@ -15,7 +15,7 @@
 		Textarea,
 		PersonalizationTags
 	} from '$lib/components/ui';
-	import { Trash2, Pencil, X, Save } from 'lucide-svelte';
+	import { Trash2, Pencil, X, Save } from '@lucide/svelte';
 	import { getListContext } from '../listContext';
 
 	const ctx = getListContext();

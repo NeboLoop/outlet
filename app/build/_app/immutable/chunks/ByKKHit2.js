@@ -1,0 +1,1 @@
+import{o as e,s as t}from"./C_OAeTtO.js";import"./xihTtKlq.js";import{V as n}from"./xZIB709U.js";var r=new Set([`$$slots`,`$$events`,`$$legacy`]);function i(i,a){let o=e(a,r),s={name:`list-plus`,size:24,node:[[`path`,{d:`M16 5H3`}],[`path`,{d:`M11 12H3`}],[`path`,{d:`M16 19H3`}],[`path`,{d:`M18 9v6`}],[`path`,{d:`M21 12h-6`}]]};n(i,t(()=>o,{get icon(){return s}}))}export{i as t};

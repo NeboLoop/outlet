@@ -4,7 +4,7 @@
 	import * as api from '$lib/api';
 	import type { OrgInfo, SESQuotaResponse, OrgStats } from '$lib/api';
 	import { Button, Card, Input, Badge, Modal, Alert, LoadingSpinner, Drawer } from '$lib/components/ui';
-	import { Plus, Building2, ChevronRight, Cloud, Cpu, Copy, Check, Info, ArrowUpAZ, CalendarDays, Users, Mail, List } from 'lucide-svelte';
+	import { Plus, Building2, ChevronRight, Cloud, Cpu, Copy, Check, Info, ArrowUpAZ, CalendarDays, Users, Mail, List } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let organizations = $state<OrgInfo[]>([]);

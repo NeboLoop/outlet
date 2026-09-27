@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Filter, Calendar, X } from 'lucide-svelte';
+	import { Filter, Calendar, X } from '@lucide/svelte';
 
 	interface DateRange {
 		from: string;

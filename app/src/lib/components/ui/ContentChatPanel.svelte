@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowUp, Square, Sparkles, RotateCcw, Copy, Check } from 'lucide-svelte';
+	import { ArrowUp, Square, Sparkles, RotateCcw, Copy, Check } from '@lucide/svelte';
 	import { Markdown } from '$lib/components/ui';
 
 	interface Message {

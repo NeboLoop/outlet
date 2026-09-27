@@ -16,7 +16,7 @@
 	import { getWebSocketClient } from '$lib/websocket/client';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { Button, Card, Input, Alert, LoadingSpinner, SaveButton, Badge, AlertDialog, Modal } from '$lib/components/ui';
-	import { Mail, Check, AlertCircle, RefreshCw, Copy, Shield, ExternalLink, Trash2 } from 'lucide-svelte';
+	import { Mail, Check, AlertCircle, RefreshCw, Copy, Shield, ExternalLink, Trash2 } from '@lucide/svelte';
 
 	// Get brand slug from route params
 	let brandSlug = $derived($page.params.brandSlug);

@@ -5,7 +5,7 @@
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { onMount } from 'svelte';
 	import { Card, Input, Button, Alert, Checkbox, Spinner, Badge } from '$lib/components/ui';
-	import { ArrowLeft, AlertTriangle } from 'lucide-svelte';
+	import { ArrowLeft, AlertTriangle } from '@lucide/svelte';
 
 	let formData = $state({
 		firstName: '',

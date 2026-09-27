@@ -3,7 +3,7 @@
 	import AwsIamPolicy from '$lib/components/admin/AwsIamPolicy.svelte';
 	import { onMount } from 'svelte';
 	import { getPlatformSettingsByCategory, updateEmailSettings } from '$lib/api/generate/outlet';
-	import { Cloud, Server, CheckCircle, AlertCircle, Pencil } from 'lucide-svelte';
+	import { Cloud, Server, CheckCircle, AlertCircle, Pencil } from '@lucide/svelte';
 
 	let saving = $state(false);
 	let saved = $state(false);
