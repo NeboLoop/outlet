@@ -3,15 +3,15 @@
 # Usage: docker build -t outlet .
 
 # Development stage with Air for hot reloading
-FROM golang:1.25-alpine AS development
+FROM golang:1.27-alpine AS development
 
 WORKDIR /app
 
 # Install dependencies
 RUN apk add --no-cache git build-base nodejs npm
 
-# Install pnpm globally
-RUN npm install -g pnpm@9
+# Install pnpm globally (the version app/package.json pins)
+RUN npm install -g pnpm@10.33.2
 
 # Install Air for hot reloading
 RUN go install github.com/air-verse/air@v1.61.5
@@ -33,16 +33,18 @@ EXPOSE 8888
 CMD ["air"]
 
 # Frontend builder stage
-FROM node:20-alpine AS frontend-builder
+# Build-platform stages (frontend, Go) run natively; Go cross-compiles for the
+# target platform, so an amd64 image builds on an arm64 host without emulation.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Install pnpm
-RUN npm install -g pnpm@9
+# Install pnpm (the version app/package.json pins)
+RUN npm install -g pnpm@10.33.2
 
 # Copy frontend package files
 COPY app/package.json app/pnpm-lock.yaml ./
-RUN pnpm install
+RUN pnpm install --frozen-lockfile
 
 # Copy frontend source (but exclude node_modules which we just installed)
 COPY app/src ./src
@@ -53,7 +55,8 @@ COPY app/svelte.config.js app/vite.config.ts app/tsconfig.json ./
 RUN pnpm exec svelte-kit sync && pnpm run build
 
 # Production builder stage
-FROM golang:1.25-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
+ARG TARGETOS TARGETARCH
 
 WORKDIR /app
 
@@ -75,12 +78,12 @@ COPY etc/ ./etc/
 COPY --from=frontend-builder /app/build ./app/build
 
 # Build the all-in-one binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -installsuffix cgo \
     -ldflags="-w -s" \
     -o /app/bin/outlet .
 
 # Final production stage
-FROM alpine:latest AS production
+FROM alpine:3.24 AS production
 
 RUN apk --no-cache add ca-certificates curl wget tzdata
 
