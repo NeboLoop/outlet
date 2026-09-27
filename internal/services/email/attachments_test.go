@@ -87,3 +87,19 @@ func TestBuildRawMessageReplyHeaders(t *testing.T) {
 		}
 	}
 }
+
+// A line break in an address header would inject headers; SES SendRawEmail
+// then delivers to whatever Bcc was smuggled in. Such a message is refused.
+func TestBuildRawMessageRejectsHeaderInjection(t *testing.T) {
+	for _, tc := range []struct{ from, to, replyTo string }{
+		{"ops@chc.com", "mgr@chc.com\r\nBcc: x@example.com", ""},
+		{"ops@chc.com", "mgr@chc.com", "desk@chc.com\nBcc: x@example.com"},
+		{"ops@chc.com\r\nBcc: x@example.com", "mgr@chc.com", ""},
+	} {
+		o := applyOpts([]SendOption{WithTextBody("hi")})
+		o.replyTo = tc.replyTo
+		if _, err := buildRawMessage(tc.from, tc.to, "Hi", "<p>hi</p>", o); err == nil {
+			t.Errorf("expected an error for from=%q to=%q reply-to=%q", tc.from, tc.to, tc.replyTo)
+		}
+	}
+}

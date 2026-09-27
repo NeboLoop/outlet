@@ -29,11 +29,8 @@ func SendEmailViaSES(ctx context.Context, sesConfig *SESConfig, to, subject, htm
 		return err
 	}
 
-	// Build the from address
-	from := sesConfig.FromAddress
-	if sesConfig.FromName != "" {
-		from = fmt.Sprintf("%s <%s>", sesConfig.FromName, sesConfig.FromAddress)
-	}
+	// Build the from address (a non-ASCII display name is RFC 2047 encoded)
+	from := formatFrom(sesConfig.FromName, sesConfig.FromAddress)
 
 	// Build reply-to addresses
 	var replyToAddresses []string

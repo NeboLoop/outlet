@@ -89,6 +89,14 @@ func applyOpts(opts []SendOption) sendOpts {
 // SendRawEmail and SMTP: the HTML body (with a plain-text alternative when
 // one is given), base64 attachments, Reply-To and threading headers.
 func buildRawMessage(from, to, subject, htmlBody string, o sendOpts) ([]byte, error) {
+	// Address headers are written verbatim: a line break in any of them
+	// would inject headers (SES SendRawEmail delivers to a smuggled Bcc).
+	for _, v := range []string{from, to, o.replyTo} {
+		if strings.ContainsAny(v, "\r\n") {
+			return nil, fmt.Errorf("invalid address header %q", v)
+		}
+	}
+
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
 

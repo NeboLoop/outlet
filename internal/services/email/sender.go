@@ -424,6 +424,7 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 			sesConfig.ReplyTo = o.replyTo
 		}
 		if o.needsRaw() {
+			o.replyTo = sesConfig.ReplyTo // the brand default when none was given
 			raw, err := buildRawMessage(formatFrom(sesConfig.FromName, sesConfig.FromAddress), to, subject, htmlBody, o)
 			if err != nil {
 				return fmt.Errorf("build raw message: %w", err)
