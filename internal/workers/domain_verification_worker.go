@@ -84,7 +84,7 @@ func (w *DomainVerificationWorker) checkPendingDomains() {
 
 func (w *DomainVerificationWorker) checkDomainStatus(ctx context.Context, identity db.DomainIdentity) {
 	// Get AWS credentials
-	region, accessKey, secretKey, err := w.getAWSCredentials(ctx, identity.OrgID)
+	region, accessKey, secretKey, err := email.AWSCredentials(ctx, w.svcCtx.DB, w.svcCtx.CryptoService, identity.OrgID)
 	if err != nil {
 		log.Printf("Failed to get AWS credentials for org %s: %v", identity.OrgID, err)
 		return
@@ -133,57 +133,6 @@ func (w *DomainVerificationWorker) checkDomainStatus(ctx context.Context, identi
 			updated.LastCheckedAt.String,
 		)
 	}
-}
-
-func (w *DomainVerificationWorker) getAWSCredentials(ctx context.Context, orgID string) (region, accessKey, secretKey string, err error) {
-	// First try org-specific credentials
-	emailConfig, err := email.GetOrgEmailConfig(ctx, w.svcCtx.DB, orgID)
-	if err == nil && emailConfig.HasOwnAWSCredentials() {
-		return emailConfig.AWSRegion, emailConfig.AWSAccessKey, emailConfig.AWSSecretKey, nil
-	}
-
-	// Fall back to platform credentials
-	awsSettings, err := w.svcCtx.DB.GetPlatformSettingsByCategory(ctx, "aws")
-	if err != nil {
-		return "", "", "", err
-	}
-
-	region = "us-east-1" // default
-
-	for _, setting := range awsSettings {
-		switch setting.Key {
-		case "aws_access_key":
-			if setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "" {
-				if w.svcCtx.CryptoService != nil {
-					decrypted, decErr := w.svcCtx.CryptoService.DecryptString([]byte(setting.ValueEncrypted.String))
-					if decErr != nil {
-						return "", "", "", decErr
-					}
-					accessKey = decrypted
-				}
-			}
-		case "aws_secret_key":
-			if setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "" {
-				if w.svcCtx.CryptoService != nil {
-					decrypted, decErr := w.svcCtx.CryptoService.DecryptString([]byte(setting.ValueEncrypted.String))
-					if decErr != nil {
-						return "", "", "", decErr
-					}
-					secretKey = decrypted
-				}
-			}
-		case "aws_region":
-			if setting.ValueText.Valid && setting.ValueText.String != "" {
-				region = setting.ValueText.String
-			}
-		}
-	}
-
-	if accessKey == "" || secretKey == "" {
-		return "", "", "", sql.ErrNoRows
-	}
-
-	return region, accessKey, secretKey, nil
 }
 
 // StartDomainVerificationWorker starts the domain verification worker with a 1-minute interval

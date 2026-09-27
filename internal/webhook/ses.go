@@ -12,6 +12,8 @@ import (
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/events"
 	"github.com/outlet-sh/outlet/internal/svc"
+
+	"github.com/google/uuid"
 	"github.com/zeromicro/go-zero/rest/httpx"
 )
 
@@ -108,7 +110,7 @@ func SESHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 
 		// Read raw body for SNS notification
-		body, err := io.ReadAll(r.Body)
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // SNS messages are at most 256 KB
 		if err != nil {
 			fmt.Printf("[SES Webhook] Failed to read body: %v\n", err)
 			http.Error(w, "Failed to read body", http.StatusBadRequest)
@@ -128,10 +130,24 @@ func SESHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 
 		ctx := context.Background()
 
+		// Trust nothing unsigned: the signature must verify against an SNS
+		// signing certificate, and the topic must belong to the AWS account
+		// this org sends with (anyone can point their own SNS topic here).
+		if err := verifySNSMessage(&snsMsg); err != nil {
+			fmt.Printf("[SES Webhook] Rejected message for org %s: %v\n", req.OrgID, err)
+			http.Error(w, "Invalid signature", http.StatusForbidden)
+			return
+		}
+		if err := checkTopicAccount(ctx, svcCtx, req.OrgID, snsMsg.TopicArn); err != nil {
+			fmt.Printf("[SES Webhook] Rejected message for org %s: %v\n", req.OrgID, err)
+			http.Error(w, "Unknown topic", http.StatusForbidden)
+			return
+		}
+
 		// Handle SNS subscription confirmation
 		if snsMsg.Type == "SubscriptionConfirmation" {
 			fmt.Printf("[SES Webhook] SNS subscription confirmation received for org %s, confirming...\n", req.OrgID)
-			if err := confirmSNSSubscription(snsMsg.SubscribeURL); err != nil {
+			if err := snsConfirm(snsMsg.SubscribeURL); err != nil {
 				fmt.Printf("[SES Webhook] Failed to confirm subscription: %v\n", err)
 				http.Error(w, "Failed to confirm subscription", http.StatusInternalServerError)
 				return
@@ -174,8 +190,17 @@ func SESHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	}
 }
 
+// snsConfirm follows a subscription's SubscribeURL. A variable so tests can
+// stand in for SNS.
+var snsConfirm = confirmSNSSubscription
+
+// confirmSNSSubscription confirms a subscription by fetching its
+// SubscribeURL, which must be an https URL on an SNS host.
 func confirmSNSSubscription(subscribeURL string) error {
-	resp, err := http.Get(subscribeURL)
+	if !isSNSURL(subscribeURL) {
+		return fmt.Errorf("SubscribeURL is not an SNS host: %q", subscribeURL)
+	}
+	resp, err := snsClient.Get(subscribeURL)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -201,6 +226,7 @@ func processBounce(ctx context.Context, svcCtx *svc.ServiceContext, orgID string
 			notif.Bounce.BounceSubType)
 
 		_, err := svcCtx.DB.CreateEmailBounce(ctx, db.CreateEmailBounceParams{
+			ID:              uuid.New().String(),
 			Email:           recipient.EmailAddress,
 			EmailForLower:   recipient.EmailAddress,
 			BounceType:      notif.Bounce.BounceType,
@@ -250,6 +276,7 @@ func processComplaint(ctx context.Context, svcCtx *svc.ServiceContext, orgID str
 			notif.Complaint.ComplaintFeedbackType)
 
 		_, err := svcCtx.DB.CreateEmailComplaint(ctx, db.CreateEmailComplaintParams{
+			ID:              uuid.New().String(),
 			Email:           recipient.EmailAddress,
 			EmailForLower:   recipient.EmailAddress,
 			ComplaintType:   sql.NullString{String: notif.Complaint.ComplaintFeedbackType, Valid: notif.Complaint.ComplaintFeedbackType != ""},

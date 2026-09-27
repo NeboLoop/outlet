@@ -4,9 +4,9 @@
 
 -- name: CreateEmailBounce :one
 INSERT INTO email_bounce (
-    email, email_lower, bounce_type, bounce_subtype,
+    id, email, email_lower, bounce_type, bounce_subtype,
     diagnostic_code, source_email, message_id, raw_notification, created_at
-) VALUES (sqlc.arg(email), LOWER(sqlc.arg(email_for_lower)), sqlc.arg(bounce_type), sqlc.arg(bounce_subtype), sqlc.arg(diagnostic_code), sqlc.arg(source_email), sqlc.arg(message_id), sqlc.arg(raw_notification), datetime('now'))
+) VALUES (sqlc.arg(id), sqlc.arg(email), LOWER(sqlc.arg(email_for_lower)), sqlc.arg(bounce_type), sqlc.arg(bounce_subtype), sqlc.arg(diagnostic_code), sqlc.arg(source_email), sqlc.arg(message_id), sqlc.arg(raw_notification), datetime('now'))
 ON CONFLICT (email_lower) DO UPDATE
 SET bounce_type = EXCLUDED.bounce_type,
     bounce_subtype = EXCLUDED.bounce_subtype,
@@ -41,9 +41,9 @@ WHERE created_at >= sqlc.arg(start_date) AND created_at <= sqlc.arg(end_date);
 
 -- name: CreateEmailComplaint :one
 INSERT INTO email_complaint (
-    email, email_lower, complaint_type, feedback_id,
+    id, email, email_lower, complaint_type, feedback_id,
     source_email, message_id, raw_notification, created_at
-) VALUES (sqlc.arg(email), LOWER(sqlc.arg(email_for_lower)), sqlc.arg(complaint_type), sqlc.arg(feedback_id), sqlc.arg(source_email), sqlc.arg(message_id), sqlc.arg(raw_notification), datetime('now'))
+) VALUES (sqlc.arg(id), sqlc.arg(email), LOWER(sqlc.arg(email_for_lower)), sqlc.arg(complaint_type), sqlc.arg(feedback_id), sqlc.arg(source_email), sqlc.arg(message_id), sqlc.arg(raw_notification), datetime('now'))
 ON CONFLICT (email_lower) DO UPDATE
 SET complaint_type = EXCLUDED.complaint_type,
     feedback_id = EXCLUDED.feedback_id,

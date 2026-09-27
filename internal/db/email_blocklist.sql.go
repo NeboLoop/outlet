@@ -223,9 +223,9 @@ const createEmailBounce = `-- name: CreateEmailBounce :one
 
 
 INSERT INTO email_bounce (
-    email, email_lower, bounce_type, bounce_subtype,
+    id, email, email_lower, bounce_type, bounce_subtype,
     diagnostic_code, source_email, message_id, raw_notification, created_at
-) VALUES (?1, LOWER(?2), ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))
+) VALUES (?1, ?2, LOWER(?3), ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
 ON CONFLICT (email_lower) DO UPDATE
 SET bounce_type = EXCLUDED.bounce_type,
     bounce_subtype = EXCLUDED.bounce_subtype,
@@ -238,6 +238,7 @@ RETURNING id, email, email_lower, bounce_type, bounce_subtype, diagnostic_code, 
 `
 
 type CreateEmailBounceParams struct {
+	ID              string         `json:"id"`
 	Email           string         `json:"email"`
 	EmailForLower   string         `json:"email_for_lower"`
 	BounceType      string         `json:"bounce_type"`
@@ -252,6 +253,7 @@ type CreateEmailBounceParams struct {
 // ========== BOUNCES ==========
 func (q *Queries) CreateEmailBounce(ctx context.Context, arg CreateEmailBounceParams) (EmailBounce, error) {
 	row := q.db.QueryRowContext(ctx, createEmailBounce,
+		arg.ID,
 		arg.Email,
 		arg.EmailForLower,
 		arg.BounceType,
@@ -280,9 +282,9 @@ func (q *Queries) CreateEmailBounce(ctx context.Context, arg CreateEmailBouncePa
 const createEmailComplaint = `-- name: CreateEmailComplaint :one
 
 INSERT INTO email_complaint (
-    email, email_lower, complaint_type, feedback_id,
+    id, email, email_lower, complaint_type, feedback_id,
     source_email, message_id, raw_notification, created_at
-) VALUES (?1, LOWER(?2), ?3, ?4, ?5, ?6, ?7, datetime('now'))
+) VALUES (?1, ?2, LOWER(?3), ?4, ?5, ?6, ?7, ?8, datetime('now'))
 ON CONFLICT (email_lower) DO UPDATE
 SET complaint_type = EXCLUDED.complaint_type,
     feedback_id = EXCLUDED.feedback_id,
@@ -294,6 +296,7 @@ RETURNING id, email, email_lower, complaint_type, feedback_id, source_email, mes
 `
 
 type CreateEmailComplaintParams struct {
+	ID              string         `json:"id"`
 	Email           string         `json:"email"`
 	EmailForLower   string         `json:"email_for_lower"`
 	ComplaintType   sql.NullString `json:"complaint_type"`
@@ -306,6 +309,7 @@ type CreateEmailComplaintParams struct {
 // ========== COMPLAINTS ==========
 func (q *Queries) CreateEmailComplaint(ctx context.Context, arg CreateEmailComplaintParams) (EmailComplaint, error) {
 	row := q.db.QueryRowContext(ctx, createEmailComplaint,
+		arg.ID,
 		arg.Email,
 		arg.EmailForLower,
 		arg.ComplaintType,
