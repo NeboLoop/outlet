@@ -50,21 +50,13 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		log.Fatalf("Failed to create database directory: %v", err)
 	}
 
-	// Open SQLite database with WAL mode for better concurrency
-	conn, err := sql.Open("sqlite", dbPath)
+	// Open SQLite with WAL, foreign keys and a busy timeout. They go in the
+	// DSN so the driver applies them to every pooled connection; a PRAGMA run
+	// through conn.Exec reaches only whichever connection served it, and the
+	// others then fail with SQLITE_BUSY instead of waiting.
+	conn, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
-	}
-
-	// Enable WAL mode and other SQLite optimizations
-	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		log.Printf("Warning: Failed to enable WAL mode: %v", err)
-	}
-	if _, err := conn.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		log.Printf("Warning: Failed to enable foreign keys: %v", err)
-	}
-	if _, err := conn.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		log.Printf("Warning: Failed to set busy timeout: %v", err)
 	}
 
 	// Test database connection
