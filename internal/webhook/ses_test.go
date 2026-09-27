@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/outlet-sh/outlet/internal/config"
 	"github.com/outlet-sh/outlet/internal/svc"
+
+	"github.com/zeromicro/go-zero/rest/pathvar"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +22,13 @@ type errorReader struct{}
 
 func (e *errorReader) Read(p []byte) (n int, err error) {
 	return 0, errors.New("simulated read error")
+}
+
+// sesRequest builds a webhook POST as the router delivers it: the org ID is a
+// path variable of /webhooks/ses/:orgId.
+func sesRequest(body io.Reader) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses/org-test", body)
+	return pathvar.WithVars(req, map[string]string{"orgId": "org-test"})
 }
 
 // createSESServiceContext creates a minimal ServiceContext for SES webhook testing
@@ -52,7 +62,7 @@ func TestSESHandler_SubscriptionConfirmation(t *testing.T) {
 	payload, err := json.Marshal(snsMsg)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader(payload))
+	req := sesRequest(bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -90,7 +100,7 @@ func TestSESHandler_SubscriptionConfirmationFailure(t *testing.T) {
 	payload, err := json.Marshal(snsMsg)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader(payload))
+	req := sesRequest(bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -216,7 +226,7 @@ func TestSESHandler_DeliveryNotification(t *testing.T) {
 	payload, err := json.Marshal(snsMsg)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader(payload))
+	req := sesRequest(bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -237,7 +247,7 @@ func TestSESHandler_InvalidJSON(t *testing.T) {
 	svcCtx := createSESServiceContext()
 	handler := SESHandler(svcCtx)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader([]byte(`{invalid json`)))
+	req := sesRequest(bytes.NewReader([]byte(`{invalid json`)))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -261,7 +271,7 @@ func TestSESHandler_InvalidInnerJSON(t *testing.T) {
 	payload, err := json.Marshal(snsMsg)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader(payload))
+	req := sesRequest(bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -276,7 +286,7 @@ func TestSESHandler_EmptyBody(t *testing.T) {
 	svcCtx := createSESServiceContext()
 	handler := SESHandler(svcCtx)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader([]byte{}))
+	req := sesRequest(bytes.NewReader([]byte{}))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -298,7 +308,7 @@ func TestSESHandler_UnknownMessageType(t *testing.T) {
 	payload, err := json.Marshal(snsMsg)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader(payload))
+	req := sesRequest(bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -318,7 +328,7 @@ func TestSESHandler_ReadBodyError(t *testing.T) {
 	svcCtx := createSESServiceContext()
 	handler := SESHandler(svcCtx)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", &errorReader{})
+	req := sesRequest(&errorReader{})
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -477,7 +487,7 @@ func TestSESHandler_ConcurrentRequests(t *testing.T) {
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader(payload))
+			req := sesRequest(bytes.NewReader(payload))
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 			assert.Equal(t, http.StatusOK, rr.Code)

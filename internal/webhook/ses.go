@@ -92,9 +92,10 @@ type sesMailInfo struct {
 // The orgID is extracted from the URL path: /webhooks/ses/:orgId
 func SESHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Parse path parameters using httpx
+		// Parse only the path: httpx.Parse would consume a JSON body before
+		// the raw SNS payload below is read.
 		var req SESWebhookRequest
-		if err := httpx.Parse(r, &req); err != nil {
+		if err := httpx.ParsePath(r, &req); err != nil {
 			fmt.Printf("[SES Webhook] Failed to parse request: %v\n", err)
 			httpx.ErrorCtx(r.Context(), w, err)
 			return
