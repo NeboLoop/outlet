@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"net/mail"
 	"net/smtp"
 	"strconv"
 	"time"
@@ -419,14 +420,13 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 		if fromName != "" {
 			sesConfig.FromName = fromName
 		}
-		if len(o.attachments) > 0 {
-			from := sesConfig.FromAddress
-			if sesConfig.FromName != "" {
-				from = fmt.Sprintf("%s <%s>", sesConfig.FromName, sesConfig.FromAddress)
-			}
-			raw, err := buildRawMessage(from, to, subject, htmlBody, o.attachments)
+		if o.replyTo != "" {
+			sesConfig.ReplyTo = o.replyTo
+		}
+		if o.needsRaw() {
+			raw, err := buildRawMessage(formatFrom(sesConfig.FromName, sesConfig.FromAddress), to, subject, htmlBody, o)
 			if err != nil {
-				return fmt.Errorf("build attachment message: %w", err)
+				return fmt.Errorf("build raw message: %w", err)
 			}
 			return SendRawEmailViaSES(ctx, sesConfig, raw)
 		}
@@ -456,10 +456,13 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
 	addr := fmt.Sprintf("%s:%d", smtpConfig.Host, smtpConfig.Port)
 
-	if len(o.attachments) > 0 {
-		raw, err := buildRawMessage(fmt.Sprintf("%s <%s>", name, from), to, subject, htmlBody, o.attachments)
+	if o.needsRaw() || o.replyTo != "" {
+		if o.replyTo == "" {
+			o.replyTo = smtpConfig.ReplyTo
+		}
+		raw, err := buildRawMessage(formatFrom(name, from), to, subject, htmlBody, o)
 		if err != nil {
-			return fmt.Errorf("build attachment message: %w", err)
+			return fmt.Errorf("build raw message: %w", err)
 		}
 		return smtp.SendMail(addr, auth, from, []string{to}, raw)
 	}
@@ -477,6 +480,15 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 	message := []byte(headers + htmlBody)
 
 	return smtp.SendMail(addr, auth, from, []string{to}, message)
+}
+
+// formatFrom writes a From header value, encoding a display name that
+// isn't plain ASCII (RFC 2047) so a name like "Nanna · Alma's Nebo" survives.
+func formatFrom(name, addr string) string {
+	if name == "" {
+		return addr
+	}
+	return (&mail.Address{Name: name, Address: addr}).String()
 }
 
 // SendCampaignEmail sends a campaign email with custom from/reply-to

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/textproto"
+	"strings"
 )
 
 // Attachment is a single file attached to an outbound email.
@@ -18,6 +21,50 @@ type Attachment struct {
 // sendOpts holds optional, backward-compatible send behavior.
 type sendOpts struct {
 	attachments []Attachment
+	replyTo     string
+	textBody    string
+	headers     map[string]string
+}
+
+// threadingHeaders are the only extra headers a sender may set: the ones a
+// reply needs to thread in the recipient's mail client.
+var threadingHeaders = map[string]string{
+	"in-reply-to": "In-Reply-To",
+	"references":  "References",
+	"message-id":  "Message-ID",
+}
+
+// WithReplyTo sets the Reply-To header.
+func WithReplyTo(addr string) SendOption {
+	return func(o *sendOpts) { o.replyTo = strings.TrimSpace(addr) }
+}
+
+// WithTextBody adds a plain-text alternative to the HTML body.
+func WithTextBody(text string) SendOption {
+	return func(o *sendOpts) { o.textBody = text }
+}
+
+// WithHeaders sets threading headers (In-Reply-To, References, Message-ID);
+// any other name, and any value with a line break, is ignored.
+func WithHeaders(h map[string]string) SendOption {
+	return func(o *sendOpts) {
+		for k, v := range h {
+			name, ok := threadingHeaders[strings.ToLower(strings.TrimSpace(k))]
+			if !ok || v == "" || strings.ContainsAny(v, "\r\n") {
+				continue
+			}
+			if o.headers == nil {
+				o.headers = map[string]string{}
+			}
+			o.headers[name] = strings.TrimSpace(v)
+		}
+	}
+}
+
+// needsRaw: anything the SES SendEmail API can't carry (attachments, a text
+// alternative, threading headers) is sent as a raw MIME message.
+func (o sendOpts) needsRaw() bool {
+	return len(o.attachments) > 0 || o.textBody != "" || len(o.headers) > 0
 }
 
 // SendOption configures an email send (e.g. attachments) without changing the
@@ -38,24 +85,61 @@ func applyOpts(opts []SendOption) sendOpts {
 	return o
 }
 
-// buildRawMessage builds a complete RFC 822 multipart/mixed message (headers +
-// HTML part + base64 attachments) suitable for both SES SendRawEmail and SMTP.
-func buildRawMessage(from, to, subject, htmlBody string, atts []Attachment) ([]byte, error) {
+// buildRawMessage builds a complete RFC 822 message suitable for both SES
+// SendRawEmail and SMTP: the HTML body (with a plain-text alternative when
+// one is given), base64 attachments, Reply-To and threading headers.
+func buildRawMessage(from, to, subject, htmlBody string, o sendOpts) ([]byte, error) {
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
 
-	htmlPart, err := mw.CreatePart(textproto.MIMEHeader{
-		"Content-Type":              {"text/html; charset=UTF-8"},
-		"Content-Transfer-Encoding": {"7bit"},
-	})
-	if err != nil {
-		return nil, err
-	}
-	if _, err := htmlPart.Write([]byte(htmlBody)); err != nil {
-		return nil, err
+	if o.textBody != "" {
+		alt := &bytes.Buffer{}
+		aw := multipart.NewWriter(alt)
+		for _, p := range []struct{ ct, content string }{
+			{"text/plain; charset=UTF-8", o.textBody},
+			{"text/html; charset=UTF-8", htmlBody},
+		} {
+			w, err := aw.CreatePart(textproto.MIMEHeader{
+				"Content-Type":              {p.ct},
+				"Content-Transfer-Encoding": {"quoted-printable"},
+			})
+			if err != nil {
+				return nil, err
+			}
+			qw := quotedprintable.NewWriter(w)
+			if _, err := qw.Write([]byte(p.content)); err != nil {
+				return nil, err
+			}
+			if err := qw.Close(); err != nil {
+				return nil, err
+			}
+		}
+		if err := aw.Close(); err != nil {
+			return nil, err
+		}
+		part, err := mw.CreatePart(textproto.MIMEHeader{
+			"Content-Type": {"multipart/alternative; boundary=" + aw.Boundary()},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(alt.Bytes()); err != nil {
+			return nil, err
+		}
+	} else {
+		htmlPart, err := mw.CreatePart(textproto.MIMEHeader{
+			"Content-Type":              {"text/html; charset=UTF-8"},
+			"Content-Transfer-Encoding": {"7bit"},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := htmlPart.Write([]byte(htmlBody)); err != nil {
+			return nil, err
+		}
 	}
 
-	for _, a := range atts {
+	for _, a := range o.attachments {
 		ct := a.ContentType
 		if ct == "" {
 			ct = "application/octet-stream"
@@ -87,7 +171,15 @@ func buildRawMessage(from, to, subject, htmlBody string, atts []Attachment) ([]b
 	var msg bytes.Buffer
 	fmt.Fprintf(&msg, "From: %s\r\n", from)
 	fmt.Fprintf(&msg, "To: %s\r\n", to)
-	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
+	if o.replyTo != "" {
+		fmt.Fprintf(&msg, "Reply-To: %s\r\n", o.replyTo)
+	}
+	fmt.Fprintf(&msg, "Subject: %s\r\n", mime.QEncoding.Encode("UTF-8", subject))
+	for _, name := range []string{"Message-ID", "In-Reply-To", "References"} {
+		if v := o.headers[name]; v != "" {
+			fmt.Fprintf(&msg, "%s: %s\r\n", name, v)
+		}
+	}
 	msg.WriteString("MIME-Version: 1.0\r\n")
 	fmt.Fprintf(&msg, "Content-Type: multipart/mixed; boundary=%s\r\n", mw.Boundary())
 	msg.WriteString("\r\n")

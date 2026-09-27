@@ -1339,6 +1339,7 @@ type SendEmailRequest struct {
 	FromName     string            `json:"from_name,optional"`     // Override org default
 	FromEmail    string            `json:"from_email,optional"`    // Override org default
 	ReplyTo      string            `json:"reply_to,optional"`
+	Headers      map[string]string `json:"headers,optional"`     // Threading headers: In-Reply-To, References, Message-ID
 	Variables    map[string]string `json:"variables,optional"`   // Template variables
 	Tags         []string          `json:"tags,optional"`        // For tracking/filtering
 	Meta         map[string]string `json:"meta,optional"`        // Custom metadata
