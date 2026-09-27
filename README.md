@@ -300,6 +300,7 @@ Configuration uses environment variables. Create a `.env` file or set them direc
 | Variable | Description |
 |----------|-------------|
 | `PRODUCTION_MODE` | Set to `true` for HTTPS/Let's Encrypt |
+| `BEHIND_PROXY` | Set to `true` when a load balancer or ingress terminates TLS: plain HTTP on port 8888 with the embedded UI, no Let's Encrypt |
 | `APP_DOMAIN` | Your domain (e.g., `mail.yourdomain.com`) |
 | `APP_BASE_URL` | Full URL (e.g., `https://mail.yourdomain.com`) |
 

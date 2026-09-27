@@ -96,7 +96,15 @@ func runServe(cmd *cobra.Command, args []string) {
 		productionMode = true
 	}
 
-	if productionMode {
+	// Behind a TLS-terminating proxy (a load balancer or an ingress), the
+	// proxy owns HTTPS: serve plain HTTP on Port with the embedded SPA and
+	// no Let's Encrypt listeners of our own.
+	behindProxy := false
+	if env := os.Getenv("BEHIND_PROXY"); env == "true" || env == "1" {
+		behindProxy = true
+	}
+
+	if productionMode || behindProxy {
 		if c.App.Domain == "" {
 			fmt.Println("ERROR: App.Domain is required in production mode")
 			os.Exit(1)
@@ -241,9 +249,10 @@ func runServe(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// In development mode, run go-zero server with graceful shutdown
-	if app.DevMode {
-		fmt.Printf("Starting go-zero backend server on %s:%d (dev mode)...\n", c.Host, c.Port)
+	// In development mode, and behind a TLS-terminating proxy, run only the
+	// go-zero server, with graceful shutdown
+	if app.DevMode || behindProxy {
+		fmt.Printf("Starting go-zero backend server on %s:%d...\n", c.Host, c.Port)
 
 		// Handle graceful shutdown in dev mode
 		quit := make(chan os.Signal, 1)
