@@ -41,13 +41,12 @@ func createSESServiceContext() *svc.ServiceContext {
 
 // TestSESHandler_SubscriptionConfirmation tests handling of SNS subscription confirmation
 func TestSESHandler_SubscriptionConfirmation(t *testing.T) {
-	// Start a mock server to handle the confirmation request
+	// Stand in for SNS: record the SubscribeURL the handler follows.
 	confirmationReceived := false
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		confirmationReceived = true
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer mockServer.Close()
+	defer stubConfirm(func(u string) error {
+		confirmationReceived = u == testSubscribeURL
+		return nil
+	})()
 
 	svcCtx := createSESServiceContext()
 	handler := SESHandler(svcCtx)
@@ -56,10 +55,10 @@ func TestSESHandler_SubscriptionConfirmation(t *testing.T) {
 		Type:         "SubscriptionConfirmation",
 		MessageId:    "msg-123",
 		TopicArn:     "arn:aws:sns:us-east-1:123456789:test-topic",
-		SubscribeURL: mockServer.URL,
+		SubscribeURL: testSubscribeURL,
 		Token:        "test-token",
 	}
-	payload, err := json.Marshal(snsMsg)
+	payload, err := signedSNS(snsMsg)
 	require.NoError(t, err)
 
 	req := sesRequest(bytes.NewReader(payload))
@@ -80,12 +79,8 @@ func TestSESHandler_SubscriptionConfirmation(t *testing.T) {
 
 // TestSESHandler_SubscriptionConfirmationFailure tests handling when confirmation request fails
 func TestSESHandler_SubscriptionConfirmationFailure(t *testing.T) {
-	// Start a mock server that returns an error
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("Internal Server Error"))
-	}))
-	defer mockServer.Close()
+	// SNS answers the confirmation with an error.
+	defer stubConfirm(func(string) error { return errors.New("subscription confirmation failed: Internal Server Error") })()
 
 	svcCtx := createSESServiceContext()
 	handler := SESHandler(svcCtx)
@@ -94,10 +89,10 @@ func TestSESHandler_SubscriptionConfirmationFailure(t *testing.T) {
 		Type:         "SubscriptionConfirmation",
 		MessageId:    "msg-123",
 		TopicArn:     "arn:aws:sns:us-east-1:123456789:test-topic",
-		SubscribeURL: mockServer.URL,
+		SubscribeURL: testSubscribeURL,
 		Token:        "test-token",
 	}
-	payload, err := json.Marshal(snsMsg)
+	payload, err := signedSNS(snsMsg)
 	require.NoError(t, err)
 
 	req := sesRequest(bytes.NewReader(payload))
@@ -223,7 +218,7 @@ func TestSESHandler_DeliveryNotification(t *testing.T) {
 		TopicArn:  "arn:aws:sns:us-east-1:123456789:ses-delivery",
 		Message:   string(innerJSON),
 	}
-	payload, err := json.Marshal(snsMsg)
+	payload, err := signedSNS(snsMsg)
 	require.NoError(t, err)
 
 	req := sesRequest(bytes.NewReader(payload))
@@ -268,7 +263,7 @@ func TestSESHandler_InvalidInnerJSON(t *testing.T) {
 		TopicArn:  "arn:aws:sns:us-east-1:123456789:ses-bounces",
 		Message:   "{invalid inner json",
 	}
-	payload, err := json.Marshal(snsMsg)
+	payload, err := signedSNS(snsMsg)
 	require.NoError(t, err)
 
 	req := sesRequest(bytes.NewReader(payload))
@@ -305,7 +300,7 @@ func TestSESHandler_UnknownMessageType(t *testing.T) {
 		MessageId: "msg-unknown",
 		TopicArn:  "arn:aws:sns:us-east-1:123456789:test",
 	}
-	payload, err := json.Marshal(snsMsg)
+	payload, err := signedSNS(snsMsg)
 	require.NoError(t, err)
 
 	req := sesRequest(bytes.NewReader(payload))
@@ -314,13 +309,8 @@ func TestSESHandler_UnknownMessageType(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	// Should return 200 for unknown types
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	var response map[string]interface{}
-	err = json.NewDecoder(rr.Body).Decode(&response)
-	require.NoError(t, err)
-	assert.Equal(t, true, response["success"])
+	// SNS signs only the types it sends: anything else is refused
+	assert.Equal(t, http.StatusForbidden, rr.Code)
 }
 
 // TestSESHandler_ReadBodyError tests handling of body read errors
@@ -481,7 +471,7 @@ func TestSESHandler_ConcurrentRequests(t *testing.T) {
 	}
 	innerJSON, _ := json.Marshal(deliveryNotif)
 	snsMsg := snsMessage{Type: "Notification", Message: string(innerJSON)}
-	payload, _ := json.Marshal(snsMsg)
+	payload, _ := signedSNS(snsMsg)
 
 	// Run 10 concurrent requests
 	done := make(chan bool, 10)
@@ -571,32 +561,29 @@ func TestSESNotificationStruct(t *testing.T) {
 	assert.Equal(t, "test@example.com", parsed.Bounce.BouncedRecipients[0].EmailAddress)
 }
 
-// TestConfirmSNSSubscription tests the confirmSNSSubscription helper function
+// TestConfirmSNSSubscription: a SubscribeURL is followed only when it is an
+// https URL on an SNS host; anything else is refused before any request.
 func TestConfirmSNSSubscription(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
+	hit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
 
-		err := confirmSNSSubscription(server.URL)
-		assert.NoError(t, err)
-	})
-
-	t.Run("failure", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Bad Request"))
-		}))
-		defer server.Close()
-
-		err := confirmSNSSubscription(server.URL)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "subscription confirmation failed")
-	})
-
-	t.Run("invalid_url", func(t *testing.T) {
-		err := confirmSNSSubscription("not-a-valid-url")
-		assert.Error(t, err)
-	})
+	for _, u := range []string{
+		server.URL,
+		"not-a-valid-url",
+		"http://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription",
+		"https://evil.example.com/?Action=ConfirmSubscription",
+		"https://sns.us-east-1.amazonaws.com.evil.example/?Action=ConfirmSubscription",
+		"https://sns.us-east-1.amazonaws.com:8443/?Action=ConfirmSubscription",
+		"https://user@sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription",
+		"https://169.254.169.254/latest/meta-data/",
+	} {
+		err := confirmSNSSubscription(u)
+		assert.Error(t, err, u)
+		assert.Contains(t, err.Error(), "not an SNS host", u)
+	}
+	assert.False(t, hit, "no request may reach a non-SNS host")
 }
