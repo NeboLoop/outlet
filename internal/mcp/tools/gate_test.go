@@ -58,7 +58,7 @@ func TestPolicyCoversEveryToolAction(t *testing.T) {
 
 // The direct-call registry passes the same gate as MCP.
 func TestRegistryCallsPassTheGate(t *testing.T) {
-	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	require.NoError(t, migrations.Run(conn))
@@ -90,7 +90,7 @@ func TestRegistryCallsPassTheGate(t *testing.T) {
 // is an admin of alpha and only a member of bravo, and her session switches
 // to bravo while a webhook.create (admin only) checked for alpha is running.
 func TestGateHandsItsBrandToTheHandler(t *testing.T) {
-	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	require.NoError(t, migrations.Run(conn))

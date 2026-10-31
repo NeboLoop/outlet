@@ -35,7 +35,7 @@ type mcpFixture struct {
 
 func newMCPFixture(t *testing.T) *mcpFixture {
 	t.Helper()
-	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	require.NoError(t, migrations.Run(conn))
@@ -481,4 +481,14 @@ func TestMCP_AnotherBrandsDomainIsRefused(t *testing.T) {
 	})
 	assert.True(t, isErr)
 	assert.Contains(t, text, "can't send from security@bravo.example")
+
+	// Both refused writes are audited in the background; wait for them so
+	// nothing is still writing when the test's database is removed.
+	require.Eventually(t, func() bool {
+		seen := map[string]bool{}
+		for _, r := range f.audit() {
+			seen[r["tool"]+" "+r["action"]] = true
+		}
+		return seen["brand domain.create"] && seen["campaign create"]
+	}, 2*time.Second, 10*time.Millisecond)
 }
