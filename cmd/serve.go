@@ -684,6 +684,9 @@ func registerWebhookRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 // registerMCPOAuthRoutes adds MCP OAuth 2.1 endpoints for ChatGPT and other AI integrations
 func registerMCPOAuthRoutes(server *rest.Server, ctx *svc.ServiceContext, baseURL string) {
 	oauthHandler := mcpoauth.NewHandler(ctx, baseURL)
+	// The sign-in form checks passwords: it shares the admin sign-in's
+	// per-address limit.
+	signInLimit := ctx.AuthRateLimit
 
 	// Well-known metadata endpoints
 	server.AddRoute(rest.Route{
@@ -746,7 +749,7 @@ func registerMCPOAuthRoutes(server *rest.Server, ctx *svc.ServiceContext, baseUR
 	server.AddRoute(rest.Route{
 		Method:  http.MethodPost,
 		Path:    "/authorize",
-		Handler: http.HandlerFunc(oauthHandler.HandleAuthorizeSubmit),
+		Handler: signInLimit(oauthHandler.HandleAuthorizeSubmit),
 	})
 	server.AddRoute(rest.Route{
 		Method:  http.MethodPost,
@@ -792,7 +795,7 @@ func registerMCPOAuthRoutes(server *rest.Server, ctx *svc.ServiceContext, baseUR
 	server.AddRoute(rest.Route{
 		Method:  http.MethodPost,
 		Path:    "/mcp/oauth/authorize",
-		Handler: http.HandlerFunc(oauthHandler.HandleAuthorizeSubmit),
+		Handler: signInLimit(oauthHandler.HandleAuthorizeSubmit),
 	})
 	server.AddRoute(rest.Route{
 		Method:  http.MethodPost,

@@ -168,11 +168,14 @@ type Querier interface {
 	DeleteTemplate(ctx context.Context, id string) error
 	DeleteTransactionalEmail(ctx context.Context, arg DeleteTransactionalEmailParams) error
 	DeleteUnconfirmedContactsOlderThan(ctx context.Context, arg DeleteUnconfirmedContactsOlderThanParams) (int64, error)
-	DeleteUser(ctx context.Context, id string) error
+	// The last active super admin is never deleted: with none left, nobody runs
+	// the platform and the first-run setup would open to anyone.
+	DeleteUser(ctx context.Context, id string) (int64, error)
 	DeleteWebhook(ctx context.Context, arg DeleteWebhookParams) error
 	GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiveEntryRuleForTriggerParams) ([]GetActiveEntryRuleForTriggerRow, error)
 	GetActiveSequenceForContact(ctx context.Context, contactID sql.NullString) (GetActiveSequenceForContactRow, error)
-	GetActiveSubscribersForList(ctx context.Context, listID int64) ([]GetActiveSubscribersForListRow, error)
+	// Only a list of the campaign's own brand gives recipients.
+	GetActiveSubscribersForList(ctx context.Context, arg GetActiveSubscribersForListParams) ([]GetActiveSubscribersForListRow, error)
 	// Get all rules for an organization (including disabled), for admin listing
 	GetAllOrgRules(ctx context.Context, orgID string) ([]OrgRule, error)
 	GetAllOrgsContactStats(ctx context.Context) ([]GetAllOrgsContactStatsRow, error)

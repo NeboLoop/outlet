@@ -30,7 +30,7 @@ func NewCreateEntryRuleLogic(ctx context.Context, svcCtx *svc.ServiceContext) *C
 }
 
 func (l *CreateEntryRuleLogic) CreateEntryRule(req *types.CreateEntryRuleRequest) (resp *types.EntryRuleResponse, err error) {
-	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetSequenceOrgID, req.SequenceId, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Sequence, req.SequenceId, access.Member); err != nil {
 		return nil, err
 	}
 

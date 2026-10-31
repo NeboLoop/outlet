@@ -25,7 +25,7 @@ func NewCancelEmailLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Cance
 }
 
 func (l *CancelEmailLogic) CancelEmail(req *types.CancelEmailRequest) (resp *types.AnalyticsResponse, err error) {
-	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetQueuedEmailOrgID, req.Id, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.QueuedEmail, req.Id, access.Member); err != nil {
 		return nil, err
 	}
 

@@ -224,12 +224,14 @@ SET status = 'failed', error_message = sqlc.arg(error_message)
 WHERE id = sqlc.arg(id);
 
 -- name: GetActiveSubscribersForList :many
+-- Only a list of the campaign's own brand gives recipients.
 SELECT c.id as contact_id, c.email, c.name, ls.list_id
 FROM list_subscribers ls
+JOIN email_lists l ON l.id = ls.list_id AND l.org_id = sqlc.arg(org_id)
 JOIN contacts c ON c.id = ls.contact_id
 WHERE ls.list_id = sqlc.arg(list_id)
   AND ls.status = 'active'
-  AND c.bounced_at IS NULL
+  AND c.blocked_at IS NULL
   AND c.unsubscribed_at IS NULL;
 
 -- name: CheckCampaignSendExists :one

@@ -33,7 +33,7 @@ func (l *ListCustomFieldsLogic) ListCustomFields(req *types.ListCustomFieldsRequ
 		return nil, err
 	}
 
-	if _, err := requireList(l.ctx, l.svcCtx, listID, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.List, strconv.FormatInt(listID, 10), access.Member); err != nil {
 		return nil, err
 	}
 

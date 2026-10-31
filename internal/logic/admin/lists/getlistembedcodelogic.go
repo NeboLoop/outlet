@@ -34,7 +34,10 @@ func (l *GetListEmbedCodeLogic) GetListEmbedCode(req *types.GetEmbedCodeRequest)
 		return nil, fmt.Errorf("invalid list ID: %w", err)
 	}
 
-	list, err := requireList(l.ctx, l.svcCtx, listID, access.Member)
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.List, req.Id, access.Member); err != nil {
+		return nil, err
+	}
+	list, err := l.svcCtx.DB.GetEmailList(l.ctx, listID)
 	if err != nil {
 		return nil, err
 	}

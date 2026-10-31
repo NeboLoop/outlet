@@ -295,12 +295,18 @@ func (q *Queries) DeleteCampaign(ctx context.Context, arg DeleteCampaignParams) 
 const getActiveSubscribersForList = `-- name: GetActiveSubscribersForList :many
 SELECT c.id as contact_id, c.email, c.name, ls.list_id
 FROM list_subscribers ls
+JOIN email_lists l ON l.id = ls.list_id AND l.org_id = ?1
 JOIN contacts c ON c.id = ls.contact_id
-WHERE ls.list_id = ?1
+WHERE ls.list_id = ?2
   AND ls.status = 'active'
-  AND c.bounced_at IS NULL
+  AND c.blocked_at IS NULL
   AND c.unsubscribed_at IS NULL
 `
+
+type GetActiveSubscribersForListParams struct {
+	OrgID  string `json:"org_id"`
+	ListID int64  `json:"list_id"`
+}
 
 type GetActiveSubscribersForListRow struct {
 	ContactID string `json:"contact_id"`
@@ -309,8 +315,9 @@ type GetActiveSubscribersForListRow struct {
 	ListID    int64  `json:"list_id"`
 }
 
-func (q *Queries) GetActiveSubscribersForList(ctx context.Context, listID int64) ([]GetActiveSubscribersForListRow, error) {
-	rows, err := q.db.QueryContext(ctx, getActiveSubscribersForList, listID)
+// Only a list of the campaign's own brand gives recipients.
+func (q *Queries) GetActiveSubscribersForList(ctx context.Context, arg GetActiveSubscribersForListParams) ([]GetActiveSubscribersForListRow, error) {
+	rows, err := q.db.QueryContext(ctx, getActiveSubscribersForList, arg.OrgID, arg.ListID)
 	if err != nil {
 		return nil, err
 	}

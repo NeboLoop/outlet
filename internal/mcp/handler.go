@@ -164,7 +164,7 @@ func (h *Handler) getServerForRequest(r *http.Request) *mcp.Server {
 			fmt.Printf("[MCP] Session %s belongs to user %s but requested by %s - invalidating\n", sessionID, data.userID, requestingUserID)
 			h.sessionCache.Delete(sessionID)
 		} else {
-			fmt.Printf("[MCP] Using cached session: %s (hasBrand: %v)\n", sessionID, data.toolCtx != nil && data.toolCtx.HasBrand())
+			fmt.Printf("[MCP] Using cached session: %s (hasBrand: %v)\n", sessionID, data.toolCtx != nil && data.toolCtx.SessionBrand().ID != "")
 			return data.server
 		}
 	}

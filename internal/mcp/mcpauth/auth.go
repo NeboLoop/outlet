@@ -86,12 +86,20 @@ func NewAuthenticator(svc *svc.ServiceContext) *Authenticator {
 // It supports both API keys (lv_xxx format) and OAuth access tokens.
 func (a *Authenticator) TokenVerifier() func(ctx context.Context, token string, req *http.Request) (*auth.TokenInfo, error) {
 	return func(ctx context.Context, token string, req *http.Request) (*auth.TokenInfo, error) {
-		// Determine token type by prefix
+		verify := a.verifyOAuthToken
 		if strings.HasPrefix(token, "lv_") {
-			return a.verifyAPIKey(ctx, token)
+			verify = a.verifyAPIKey
 		}
-		// Assume OAuth token
-		return a.verifyOAuthToken(ctx, token)
+		info, err := verify(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		// The queries skip expired keys and tokens; this holds even if a
+		// stored time can't be compared.
+		if !info.Expiration.IsZero() && !time.Now().Before(info.Expiration) {
+			return nil, auth.ErrInvalidToken
+		}
+		return info, nil
 	}
 }
 

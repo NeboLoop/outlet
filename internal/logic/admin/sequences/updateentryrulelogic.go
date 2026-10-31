@@ -29,7 +29,7 @@ func NewUpdateEntryRuleLogic(ctx context.Context, svcCtx *svc.ServiceContext) *U
 }
 
 func (l *UpdateEntryRuleLogic) UpdateEntryRule(req *types.UpdateEntryRuleRequest) (resp *types.EntryRuleResponse, err error) {
-	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetEntryRuleOrgID, req.Id, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.EntryRule, req.Id, access.Member); err != nil {
 		return nil, err
 	}
 

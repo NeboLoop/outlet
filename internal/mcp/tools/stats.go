@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
 
@@ -125,11 +126,11 @@ type ContactStatsOutput struct {
 // ============================================================================
 
 func handleOverviewStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input StatsInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
-	brandID := toolCtx.BrandID()
+	brandID := toolCtx.BrandID(ctx)
 
 	// Get subscriber stats
 	var totalContacts, new30d, new7d int64
@@ -164,7 +165,7 @@ func handleOverviewStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 }
 
 func handleEmailStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input StatsInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -172,6 +173,9 @@ func handleEmailStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input St
 
 	// Get stats based on filters
 	if input.SequenceID != "" {
+		if err := sameBrand(ctx, toolCtx, access.Sequence, input.SequenceID, "sequence"); err != nil {
+			return nil, nil, err
+		}
 		// Get sequence-specific stats
 		stats, err := toolCtx.DB().GetEmailStatsForSequence(ctx, sql.NullString{String: input.SequenceID, Valid: true})
 		if err == nil {
@@ -187,7 +191,7 @@ func handleEmailStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input St
 		}
 	} else {
 		// Get overall email stats for date range
-		emailStats, err := toolCtx.DB().GetDashboardEmailStats30Days(ctx, toolCtx.BrandID())
+		emailStats, err := toolCtx.DB().GetDashboardEmailStats30Days(ctx, toolCtx.BrandID(ctx))
 		if err == nil {
 			sent = interfaceToInt64(emailStats.EmailsSent)
 			opened = interfaceToInt64(emailStats.EmailsOpened)
@@ -212,7 +216,7 @@ func handleEmailStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input St
 }
 
 func handleContactStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input StatsInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -223,7 +227,7 @@ func handleContactStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 	// Get contact to verify access and get email
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ContactID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ContactID))
@@ -236,7 +240,7 @@ func handleContactStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 	// Get sequence enrollments count
 	sequenceStates, _ := toolCtx.DB().ListContactSequenceStatesWithDetails(ctx, db.ListContactSequenceStatesWithDetailsParams{
 		ContactID: sql.NullString{String: contact.ID, Valid: true},
-		OrgID:     sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID:     sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	sequencesEnrolled := int64(len(sequenceStates))
 

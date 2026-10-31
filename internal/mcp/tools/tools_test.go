@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"testing"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -244,7 +245,7 @@ func TestToolContext_RequireBrand_WithBrand(t *testing.T) {
 	brand := createTestBrand(brandID, "Test Brand")
 	tc := mcpctx.NewToolContext(nil, brand, "req-123", "test-agent/1.0")
 
-	err := tc.RequireBrand()
+	err := tc.RequireBrand(mcpctx.WithCallBrand(context.Background(), tc.SessionBrand()))
 	assert.NoError(t, err, "RequireBrand should not error when brand is set")
 }
 
@@ -253,7 +254,7 @@ func TestToolContext_RequireBrand_WithoutBrand(t *testing.T) {
 	user := createTestUser(userID, "test@example.com", "admin")
 	tc := mcpctx.NewUserToolContext(nil, user, "req-123", "test-agent/1.0", "session-123")
 
-	err := tc.RequireBrand()
+	err := tc.RequireBrand(mcpctx.WithCallBrand(context.Background(), tc.SessionBrand()))
 	assert.Error(t, err, "RequireBrand should error when no brand selected")
 	assert.Equal(t, mcpctx.ErrNoBrandSelected, err)
 }

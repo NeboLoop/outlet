@@ -166,7 +166,7 @@ type GDPRConsentOutput struct {
 // ============================================================================
 
 func handleGDPRLookup(ctx context.Context, toolCtx *mcpctx.ToolContext, input GDPRInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -175,7 +175,7 @@ func handleGDPRLookup(ctx context.Context, toolCtx *mcpctx.ToolContext, input GD
 	}
 
 	contact, err := toolCtx.DB().GetContactByOrgAndEmail(ctx, db.GetContactByOrgAndEmailParams{
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 		Email: input.Email,
 	})
 	if err != nil {
@@ -195,7 +195,7 @@ func handleGDPRLookup(ctx context.Context, toolCtx *mcpctx.ToolContext, input GD
 }
 
 func handleGDPRExport(ctx context.Context, toolCtx *mcpctx.ToolContext, input GDPRInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -206,7 +206,7 @@ func handleGDPRExport(ctx context.Context, toolCtx *mcpctx.ToolContext, input GD
 	// Get contact
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ContactID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ContactID))
@@ -299,7 +299,7 @@ func handleGDPRExport(ctx context.Context, toolCtx *mcpctx.ToolContext, input GD
 }
 
 func handleGDPRDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input GDPRInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -314,7 +314,7 @@ func handleGDPRDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input GD
 	// Verify contact exists and belongs to brand
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ContactID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ContactID))
@@ -333,7 +333,7 @@ func handleGDPRDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input GD
 }
 
 func handleGDPRGetConsent(ctx context.Context, toolCtx *mcpctx.ToolContext, input GDPRInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -344,7 +344,7 @@ func handleGDPRGetConsent(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	// Get contact
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ContactID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ContactID))
@@ -359,7 +359,7 @@ func handleGDPRGetConsent(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 }
 
 func handleGDPRUpdateConsent(ctx context.Context, toolCtx *mcpctx.ToolContext, input GDPRInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -370,7 +370,7 @@ func handleGDPRUpdateConsent(ctx context.Context, toolCtx *mcpctx.ToolContext, i
 	// Get current contact
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ContactID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ContactID))

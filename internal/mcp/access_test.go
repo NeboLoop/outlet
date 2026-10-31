@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -329,13 +330,22 @@ func TestMCP_DestructiveActionsWarnWhenTheKeyIsLive(t *testing.T) {
 	assert.False(t, isErr, text)
 }
 
+// list makes an email list in a brand and returns its ID.
+func (f *mcpFixture) list(brand string) string {
+	f.t.Helper()
+	l, err := f.store.CreateEmailList(context.Background(), db.CreateEmailListParams{PublicID: "p-" + brand, OrgID: brand + "-id", Name: brand, Slug: brand})
+	require.NoError(f.t, err)
+	return strconv.FormatInt(l.ID, 10)
+}
+
 func TestMCP_SendQueuesThroughTheScheduler(t *testing.T) {
 	f := newMCPFixture(t)
+	alphaList := f.list("alpha")
 	f.initialize("mike", "s1")
 	_, isErr := f.call("mike", "s1", "brand", map[string]any{"resource": "brand", "action": "select", "slug": "alpha"})
 	require.False(t, isErr)
 	text, isErr := f.call("mike", "s1", "campaign", map[string]any{
-		"action": "create", "name": "News", "subject": "Hi", "html_body": "<p>Hi</p>", "list_ids": "1",
+		"action": "create", "name": "News", "subject": "Hi", "html_body": "<p>Hi</p>", "list_ids": alphaList,
 	})
 	require.False(t, isErr, text)
 	var created struct {
@@ -381,4 +391,70 @@ func TestMCP_WritesAreAudited(t *testing.T) {
 	assert.Equal(t, "brand.update", rows[1]["action"])
 	assert.Equal(t, "alpha-id", rows[1]["brand"])
 	assert.Contains(t, rows[1]["result"], "refused: ")
+}
+
+// Every record ID a call hands a tool must belong to the call's brand: a
+// member of alpha can't send to bravo's lists, add emails to bravo's
+// sequences, attach a sequence to bravo's list, cancel bravo's mail or read
+// bravo's sequence stats by naming their IDs.
+func TestMCP_RecordsOfAnotherBrandAreRefused(t *testing.T) {
+	f := newMCPFixture(t)
+	ctx := context.Background()
+	alphaList, bravoList := f.list("alpha"), f.list("bravo")
+	bravoListID, _ := strconv.ParseInt(bravoList, 10, 64)
+	_, err := f.store.CreateSequence(ctx, db.CreateSequenceParams{
+		ID: "bravo-seq", OrgID: sql.NullString{String: "bravo-id", Valid: true}, ListID: sql.NullInt64{Int64: bravoListID, Valid: true},
+		Slug: "welcome", Name: "Welcome", TriggerEvent: "on_subscribe", IsActive: sql.NullInt64{Int64: 1, Valid: true}, SequenceType: "lifecycle",
+	})
+	require.NoError(t, err)
+	_, err = f.store.CreateTemplate(ctx, db.CreateTemplateParams{ID: "bravo-tpl", SequenceID: sql.NullString{String: "bravo-seq", Valid: true}, Position: 1, Subject: "Hi", HtmlBody: "<p>Hi</p>"})
+	require.NoError(t, err)
+	_, err = f.store.CreateContact(ctx, db.CreateContactParams{ID: "bravo-contact", OrgID: sql.NullString{String: "bravo-id", Valid: true}, Name: "B", Email: "b@example.com", Status: "active"})
+	require.NoError(t, err)
+	_, err = f.store.QueueEmail(ctx, db.QueueEmailParams{
+		ID: "bravo-queued", ContactID: sql.NullString{String: "bravo-contact", Valid: true}, TemplateID: sql.NullString{String: "bravo-tpl", Valid: true}, ScheduledFor: "2030-01-01 00:00:00",
+	})
+	require.NoError(t, err)
+
+	f.initialize("mike", "s1")
+	_, isErr := f.call("mike", "s1", "brand", map[string]any{"resource": "brand", "action": "select", "slug": "alpha"})
+	require.False(t, isErr)
+
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"campaign", map[string]any{"action": "create", "name": "x", "subject": "x", "html_body": "x", "list_ids": bravoList}},
+		{"campaign", map[string]any{"action": "create", "name": "x", "subject": "x", "html_body": "x", "list_ids": alphaList + "," + bravoList}},
+		{"campaign", map[string]any{"action": "create", "name": "x", "subject": "x", "html_body": "x", "list_ids": alphaList, "exclude_list_ids": bravoList}},
+		{"email", map[string]any{"resource": "template", "action": "create", "sequence_id": "bravo-seq", "subject": "x", "html_body": "x"}},
+		{"email", map[string]any{"resource": "sequence", "action": "create", "name": "x", "list_id": bravoList}},
+		{"email", map[string]any{"resource": "queue", "action": "cancel", "id": "bravo-queued"}},
+		{"stats", map[string]any{"resource": "email", "action": "get", "sequence_id": "bravo-seq"}},
+	} {
+		text, isErr := f.call("mike", "s1", c.tool, c.args)
+		assert.True(t, isErr, "%s %v: %s", c.tool, c.args, text)
+		assert.Contains(t, text, "not found", "%s %v", c.tool, c.args)
+	}
+
+	// Changing a campaign to bravo's list is refused too.
+	text, isErr := f.call("mike", "s1", "campaign", map[string]any{"action": "create", "name": "x", "subject": "x", "html_body": "x", "list_ids": alphaList})
+	require.False(t, isErr, text)
+	var created struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(text), &created))
+	text, isErr = f.call("mike", "s1", "campaign", map[string]any{"action": "update", "id": created.ID, "list_ids": bravoList})
+	assert.True(t, isErr, text)
+
+	// Nothing of bravo's changed.
+	templates, err := f.store.ListTemplatesBySequence(ctx, sql.NullString{String: "bravo-seq", Valid: true})
+	require.NoError(t, err)
+	assert.Len(t, templates, 1)
+	var status string
+	require.NoError(t, f.store.GetDB().QueryRow(`SELECT status FROM email_queue WHERE id = 'bravo-queued'`).Scan(&status))
+	assert.Equal(t, "pending", status)
+	var seqs int
+	require.NoError(t, f.store.GetDB().QueryRow(`SELECT COUNT(*) FROM email_sequences WHERE list_id = ?`, bravoListID).Scan(&seqs))
+	assert.Equal(t, 1, seqs)
 }

@@ -28,7 +28,7 @@ func NewUpdateTemplateLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Up
 }
 
 func (l *UpdateTemplateLogic) UpdateTemplate(req *types.UpdateTemplateRequest) (resp *types.TemplateInfo, err error) {
-	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetTemplateOrgID, req.Id, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Template, req.Id, access.Member); err != nil {
 		return nil, err
 	}
 

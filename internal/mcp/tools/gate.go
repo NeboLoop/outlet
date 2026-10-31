@@ -23,7 +23,10 @@ import (
 // Every tool call passes this gate before its handler runs. The gate checks
 // the key's scopes, finds the brand the call acts on, runs access.Check (the
 // same check the admin REST API uses), warns before wiping data a live API
-// key depends on, and records every change in the MCP audit log.
+// key depends on, and records every change in the MCP audit log. It reads
+// the brand once and hands that brand to the handler in the call's context
+// (mcpctx.WithCallBrand), so a brand.select running at the same time can't
+// move the call to a brand it wasn't checked for.
 
 // brandFrom says where a tool action finds its brand.
 type brandFrom int
@@ -181,6 +184,7 @@ type gateResult struct {
 	caller  Caller
 	tool    string
 	action  string
+	brand   db.Organization // the brand the call acts in, if any
 	brandID string
 	target  string
 }
@@ -216,17 +220,18 @@ func authorize(ctx context.Context, toolCtx *mcpctx.ToolContext, caller Caller, 
 
 	switch r.brand {
 	case sessionBrand:
-		if err := toolCtx.RequireBrand(); err != nil {
-			return res, err
+		res.brand = toolCtx.SessionBrand()
+		if res.brand.ID == "" {
+			return res, mcpctx.ErrNoBrandSelected
 		}
-		res.brandID = toolCtx.BrandID()
 	case namedBrand:
 		brand, err := lookupNamedBrand(ctx, toolCtx.DB(), args.BrandID, args.id(), args.Slug)
 		if err != nil {
 			return res, err
 		}
-		res.brandID = brand.ID
+		res.brand = brand
 	}
+	res.brandID = res.brand.ID
 
 	if r.need == "" {
 		_, err := access.Active(ctx, toolCtx.DB(), caller.UserID)
@@ -336,10 +341,11 @@ func recordAudit(store db.Querier, g gateResult, outcome string) {
 	}()
 }
 
-// gated runs one tool call through the gate: authorize it, run it, and
-// audit it when it changes something. It returns the gate's refusal, if any;
-// run returns the outcome to record.
-func gated(ctx context.Context, toolCtx *mcpctx.ToolContext, caller Caller, tool string, args json.RawMessage, run func() string) error {
+// gated runs one tool call through the gate: authorize it, run it in a
+// context that carries the brand the gate checked, and audit it when it
+// changes something. It returns the gate's refusal, if any; run returns the
+// outcome to record.
+func gated(ctx context.Context, toolCtx *mcpctx.ToolContext, caller Caller, tool string, args json.RawMessage, run func(ctx context.Context) string) error {
 	g, err := authorize(ctx, toolCtx, caller, tool, args)
 	if err != nil {
 		if g.audit {
@@ -347,7 +353,10 @@ func gated(ctx context.Context, toolCtx *mcpctx.ToolContext, caller Caller, tool
 		}
 		return err
 	}
-	result := run()
+	if g.brand.ID != "" {
+		ctx = mcpctx.WithCallBrand(ctx, g.brand)
+	}
+	result := run(ctx)
 	if g.audit {
 		recordAudit(toolCtx.DB(), g, result)
 	}
@@ -369,7 +378,7 @@ func Gate(toolCtx *mcpctx.ToolContext) mcp.Middleware {
 			}
 			var result mcp.Result
 			var callErr error
-			if err := gated(ctx, toolCtx, caller, call.Params.Name, call.Params.Arguments, func() string {
+			if err := gated(ctx, toolCtx, caller, call.Params.Name, call.Params.Arguments, func(ctx context.Context) string {
 				result, callErr = next(ctx, method, req)
 				return outcome(result, callErr)
 			}); err != nil {

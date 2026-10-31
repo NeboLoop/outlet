@@ -29,7 +29,7 @@ func NewCreateTemplateLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Cr
 }
 
 func (l *CreateTemplateLogic) CreateTemplate(req *types.CreateTemplateRequest) (resp *types.TemplateInfo, err error) {
-	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetSequenceOrgID, req.SequenceId, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Sequence, req.SequenceId, access.Member); err != nil {
 		return nil, err
 	}
 

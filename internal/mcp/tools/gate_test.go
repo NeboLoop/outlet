@@ -84,3 +84,53 @@ func TestRegistryCallsPassTheGate(t *testing.T) {
 	_, err = store.GetOrganizationBySlug(ctx, "mine")
 	assert.ErrorIs(t, err, sql.ErrNoRows)
 }
+
+// A brand.select that lands between the gate's check and the handler can't
+// move the call: the handler acts in the brand the gate checked. Here anne
+// is an admin of alpha and only a member of bravo, and her session switches
+// to bravo while a webhook.create (admin only) checked for alpha is running.
+func TestGateHandsItsBrandToTheHandler(t *testing.T) {
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	require.NoError(t, migrations.Run(conn))
+	store := db.NewStore(conn)
+	ctx := context.Background()
+	_, err = store.CreateUser(ctx, db.CreateUserParams{ID: "anne", Email: "anne@example.com", PasswordHash: "x", Name: "A", Role: "agent", Status: "active", EmailVerified: int64(1)})
+	require.NoError(t, err)
+	brands := map[string]db.Organization{}
+	for b, role := range map[string]string{"alpha": "admin", "bravo": "member"} {
+		org, err := store.CreateOrganization(ctx, db.CreateOrganizationParams{ID: b + "-id", Name: b, Slug: b, ApiKey: "key-" + b})
+		require.NoError(t, err)
+		brands[b] = org
+		require.NoError(t, store.AddUserToOrganization(ctx, db.AddUserToOrganizationParams{OrgID: org.ID, UserID: "anne", Role: sql.NullString{String: role, Valid: true}}))
+	}
+	user, err := access.Active(ctx, store, "anne")
+	require.NoError(t, err)
+	toolCtx := mcpctx.NewUserToolContext(&svc.ServiceContext{DB: store}, user, "req", "test", "session")
+	toolCtx.SelectBrand(brands["alpha"])
+	caller := Caller{UserID: "anne", Email: "anne@example.com", Scopes: []string{"mcp:full"}}
+
+	err = gated(ctx, toolCtx, caller, "webhook", []byte(`{"action":"create","url":"https://hooks.example.com/x","events":"contact.created"}`), func(ctx context.Context) string {
+		toolCtx.SelectBrand(brands["bravo"]) // the racing brand.select
+		_, _, err := webhookHandler(toolCtx)(ctx, nil, WebhookInput{Action: "create", URL: "https://hooks.example.com/x", Events: "contact.created"})
+		require.NoError(t, err)
+		return "ok"
+	})
+	require.NoError(t, err)
+
+	alpha, err := store.ListWebhooks(ctx, "alpha-id")
+	require.NoError(t, err)
+	bravo, err := store.ListWebhooks(ctx, "bravo-id")
+	require.NoError(t, err)
+	assert.Len(t, alpha, 1, "the webhook is made in the brand the gate checked")
+	assert.Empty(t, bravo)
+
+	// The next call is checked for bravo, where anne is only a member.
+	err = gated(ctx, toolCtx, caller, "webhook", []byte(`{"action":"create","url":"https://hooks.example.com/y"}`), func(ctx context.Context) string {
+		t.Fatal("the handler must not run")
+		return ""
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "This needs the brand's admin role.")
+}

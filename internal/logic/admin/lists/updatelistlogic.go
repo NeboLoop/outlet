@@ -35,7 +35,7 @@ func (l *UpdateListLogic) UpdateList(req *types.UpdateListRequest) (resp *types.
 		return nil, fmt.Errorf("invalid list ID: %w", err)
 	}
 
-	if _, err := requireList(l.ctx, l.svcCtx, listID, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.List, strconv.FormatInt(listID, 10), access.Member); err != nil {
 		return nil, err
 	}
 

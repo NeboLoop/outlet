@@ -58,7 +58,7 @@ func (r *ToolRegistry) Call(ctx context.Context, name string, args map[string]in
 	caller := Caller{UserID: user.ID, Email: user.Email, Scopes: []string{mcpauth.ScopeFull}}
 	var out interface{}
 	var callErr error
-	if err := gated(ctx, r.toolCtx, caller, name, argsJSON, func() string {
+	if err := gated(ctx, r.toolCtx, caller, name, argsJSON, func(ctx context.Context) string {
 		out, callErr = fn(ctx, argsJSON)
 		return outcome(nil, callErr)
 	}); err != nil {

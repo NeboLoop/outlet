@@ -190,7 +190,7 @@ func webhookHandler(toolCtx *mcpctx.ToolContext) func(ctx context.Context, req *
 }
 
 func handleWebhookCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input WebhookInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -216,7 +216,7 @@ func handleWebhookCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 	webhookID := uuid.New().String()
 	webhook, err := toolCtx.DB().CreateWebhook(ctx, db.CreateWebhookParams{
 		ID:     webhookID,
-		OrgID:  toolCtx.BrandID(),
+		OrgID:  toolCtx.BrandID(ctx),
 		Url:    input.URL,
 		Secret: secret,
 		Events: input.Events,
@@ -237,11 +237,11 @@ func handleWebhookCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 }
 
 func handleWebhookList(ctx context.Context, toolCtx *mcpctx.ToolContext, input WebhookInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
-	webhooks, err := toolCtx.DB().ListWebhooks(ctx, toolCtx.BrandID())
+	webhooks, err := toolCtx.DB().ListWebhooks(ctx, toolCtx.BrandID(ctx))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list webhooks: %w", err)
 	}
@@ -269,7 +269,7 @@ func handleWebhookList(ctx context.Context, toolCtx *mcpctx.ToolContext, input W
 }
 
 func handleWebhookGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input WebhookInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -279,7 +279,7 @@ func handleWebhookGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input We
 
 	webhook, err := toolCtx.DB().GetWebhook(ctx, db.GetWebhookParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("webhook %s not found", input.ID))
@@ -302,7 +302,7 @@ func handleWebhookGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input We
 }
 
 func handleWebhookUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input WebhookInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -313,7 +313,7 @@ func handleWebhookUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 	// Get existing webhook to merge updates
 	existing, err := toolCtx.DB().GetWebhook(ctx, db.GetWebhookParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("webhook %s not found", input.ID))
@@ -327,7 +327,7 @@ func handleWebhookUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 
 	webhook, err := toolCtx.DB().UpdateWebhook(ctx, db.UpdateWebhookParams{
 		ID:     input.ID,
-		OrgID:  toolCtx.BrandID(),
+		OrgID:  toolCtx.BrandID(ctx),
 		Url:    input.URL,
 		Events: input.Events,
 		Active: sql.NullInt64{Int64: boolToInt64(active), Valid: true},
@@ -346,7 +346,7 @@ func handleWebhookUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 }
 
 func handleWebhookDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input WebhookInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -357,7 +357,7 @@ func handleWebhookDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 	// Verify webhook exists
 	_, err := toolCtx.DB().GetWebhook(ctx, db.GetWebhookParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("webhook %s not found", input.ID))
@@ -365,7 +365,7 @@ func handleWebhookDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 
 	err = toolCtx.DB().DeleteWebhook(ctx, db.DeleteWebhookParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to delete webhook: %w", err)
@@ -378,7 +378,7 @@ func handleWebhookDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 }
 
 func handleWebhookTest(ctx context.Context, toolCtx *mcpctx.ToolContext, input WebhookInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -388,7 +388,7 @@ func handleWebhookTest(ctx context.Context, toolCtx *mcpctx.ToolContext, input W
 
 	webhook, err := toolCtx.DB().GetWebhook(ctx, db.GetWebhookParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("webhook %s not found", input.ID))
@@ -480,7 +480,7 @@ func handleWebhookTest(ctx context.Context, toolCtx *mcpctx.ToolContext, input W
 }
 
 func handleWebhookLogs(ctx context.Context, toolCtx *mcpctx.ToolContext, input WebhookInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -491,7 +491,7 @@ func handleWebhookLogs(ctx context.Context, toolCtx *mcpctx.ToolContext, input W
 	// Verify webhook exists
 	_, err := toolCtx.DB().GetWebhook(ctx, db.GetWebhookParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("webhook %s not found", input.ID))

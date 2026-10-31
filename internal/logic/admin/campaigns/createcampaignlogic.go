@@ -3,7 +3,6 @@ package campaigns
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"strconv"
 
 	"github.com/outlet-sh/outlet/internal/access"
@@ -35,8 +34,14 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 		return nil, err
 	}
 
-	listIdsJSON, _ := json.Marshal(req.ListIds)
-	excludeListIdsJSON, _ := json.Marshal(req.ExcludeListIds)
+	listIDs, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ListIds)
+	if err != nil {
+		return nil, err
+	}
+	excludeListIDs, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ExcludeListIds)
+	if err != nil {
+		return nil, err
+	}
 
 	var designID sql.NullInt64
 	if req.DesignId != nil {
@@ -69,8 +74,8 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 		ReplyTo:        sql.NullString{String: req.ReplyTo, Valid: req.ReplyTo != ""},
 		HtmlBody:       req.HtmlBody,
 		PlainText:      sql.NullString{String: req.PlainText, Valid: req.PlainText != ""},
-		ListIds:        sql.NullString{String: string(listIdsJSON), Valid: true},
-		ExcludeListIds: sql.NullString{String: string(excludeListIdsJSON), Valid: len(req.ExcludeListIds) > 0},
+		ListIds:        sql.NullString{String: db.EncodeListIDs(listIDs), Valid: true},
+		ExcludeListIds: sql.NullString{String: db.EncodeListIDs(excludeListIDs), Valid: len(excludeListIDs) > 0},
 		Status:         sql.NullString{String: "draft", Valid: true},
 		TrackOpens:     trackOpens,
 		TrackClicks:    trackClicks,

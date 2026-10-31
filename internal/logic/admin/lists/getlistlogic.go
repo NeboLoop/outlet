@@ -34,7 +34,10 @@ func (l *GetListLogic) GetList(req *types.GetListRequest) (resp *types.ListInfo,
 		return nil, fmt.Errorf("invalid list ID: %w", err)
 	}
 
-	list, err := requireList(l.ctx, l.svcCtx, id, access.Member)
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.List, req.Id, access.Member); err != nil {
+		return nil, err
+	}
+	list, err := l.svcCtx.DB.GetEmailList(l.ctx, id)
 	if err != nil {
 		return nil, err
 	}

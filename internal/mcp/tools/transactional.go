@@ -170,7 +170,7 @@ type TransactionalStatsOutput struct {
 // ============================================================================
 
 func handleTransactionalCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input TransactionalInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -197,7 +197,7 @@ func handleTransactionalCreate(ctx context.Context, toolCtx *mcpctx.ToolContext,
 	templateID := uuid.New().String()
 	template, err := toolCtx.DB().CreateTransactionalEmail(ctx, db.CreateTransactionalEmailParams{
 		ID:          templateID,
-		OrgID:       toolCtx.BrandID(),
+		OrgID:       toolCtx.BrandID(ctx),
 		Name:        input.Name,
 		Slug:        slug,
 		Description: sql.NullString{String: input.Description, Valid: input.Description != ""},
@@ -224,11 +224,11 @@ func handleTransactionalCreate(ctx context.Context, toolCtx *mcpctx.ToolContext,
 }
 
 func handleTransactionalList(ctx context.Context, toolCtx *mcpctx.ToolContext, input TransactionalInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
-	templates, err := toolCtx.DB().ListTransactionalEmails(ctx, toolCtx.BrandID())
+	templates, err := toolCtx.DB().ListTransactionalEmails(ctx, toolCtx.BrandID(ctx))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list transactional emails: %w", err)
 	}
@@ -252,7 +252,7 @@ func handleTransactionalList(ctx context.Context, toolCtx *mcpctx.ToolContext, i
 }
 
 func handleTransactionalGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input TransactionalInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -262,7 +262,7 @@ func handleTransactionalGet(ctx context.Context, toolCtx *mcpctx.ToolContext, in
 
 	template, err := toolCtx.DB().GetTransactionalEmail(ctx, db.GetTransactionalEmailParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("transactional email %s not found", input.ID))
@@ -284,7 +284,7 @@ func handleTransactionalGet(ctx context.Context, toolCtx *mcpctx.ToolContext, in
 }
 
 func handleTransactionalUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input TransactionalInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -295,7 +295,7 @@ func handleTransactionalUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext,
 	// Verify template exists
 	existing, err := toolCtx.DB().GetTransactionalEmail(ctx, db.GetTransactionalEmailParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("transactional email %s not found", input.ID))
@@ -309,7 +309,7 @@ func handleTransactionalUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext,
 
 	template, err := toolCtx.DB().UpdateTransactionalEmail(ctx, db.UpdateTransactionalEmailParams{
 		ID:          input.ID,
-		OrgID:       toolCtx.BrandID(),
+		OrgID:       toolCtx.BrandID(ctx),
 		Name:        input.Name,
 		Slug:        input.Slug,
 		Description: input.Description,
@@ -344,7 +344,7 @@ func handleTransactionalUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext,
 }
 
 func handleTransactionalDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input TransactionalInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -355,7 +355,7 @@ func handleTransactionalDelete(ctx context.Context, toolCtx *mcpctx.ToolContext,
 	// Verify template exists
 	_, err := toolCtx.DB().GetTransactionalEmail(ctx, db.GetTransactionalEmailParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("transactional email %s not found", input.ID))
@@ -363,7 +363,7 @@ func handleTransactionalDelete(ctx context.Context, toolCtx *mcpctx.ToolContext,
 
 	err = toolCtx.DB().DeleteTransactionalEmail(ctx, db.DeleteTransactionalEmailParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to delete transactional email: %w", err)
@@ -376,7 +376,7 @@ func handleTransactionalDelete(ctx context.Context, toolCtx *mcpctx.ToolContext,
 }
 
 func handleTransactionalStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input TransactionalInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -387,7 +387,7 @@ func handleTransactionalStats(ctx context.Context, toolCtx *mcpctx.ToolContext, 
 	// Verify template exists and belongs to brand
 	template, err := toolCtx.DB().GetTransactionalEmail(ctx, db.GetTransactionalEmailParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("transactional email %s not found", input.ID))

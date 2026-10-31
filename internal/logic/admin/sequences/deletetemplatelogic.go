@@ -25,7 +25,7 @@ func NewDeleteTemplateLogic(ctx context.Context, svcCtx *svc.ServiceContext) *De
 }
 
 func (l *DeleteTemplateLogic) DeleteTemplate(req *types.DeleteTemplateRequest) (resp *types.AnalyticsResponse, err error) {
-	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetTemplateOrgID, req.Id, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Template, req.Id, access.Member); err != nil {
 		return nil, err
 	}
 

@@ -35,9 +35,13 @@ SET name = COALESCE(sqlc.arg(name), name),
     updated_at = datetime('now')
 WHERE id = sqlc.arg(id);
 
--- name: DeleteUser :exec
+-- name: DeleteUser :execrows
+-- The last active super admin is never deleted: with none left, nobody runs
+-- the platform and the first-run setup would open to anyone.
 DELETE FROM users
-WHERE id = sqlc.arg(id);
+WHERE users.id = sqlc.arg(id)
+  AND NOT (users.role = 'super_admin' AND users.status = 'active'
+           AND (SELECT COUNT(*) FROM users AS admins WHERE admins.role = 'super_admin' AND admins.status = 'active') <= 1);
 
 -- name: ListUsers :many
 SELECT id, email, password_hash, role, name, status, email_verified, phone, avatar_url,

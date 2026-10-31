@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"strconv"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
 
@@ -215,7 +217,7 @@ func campaignHandler(toolCtx *mcpctx.ToolContext) func(ctx context.Context, req 
 }
 
 func handleCampaignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input CampaignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -232,6 +234,15 @@ func handleCampaignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 		return nil, nil, mcpctx.NewValidationError("list_ids is required", "list_ids")
 	}
 
+	listIDs, err := access.BrandLists(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), splitIDs(input.ListIDs))
+	if err != nil {
+		return nil, nil, err
+	}
+	excludeListIDs, err := access.BrandLists(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), splitIDs(input.ExcludeListIDs))
+	if err != nil {
+		return nil, nil, err
+	}
+
 	trackOpens := true
 	if input.TrackOpens != nil {
 		trackOpens = *input.TrackOpens
@@ -244,7 +255,7 @@ func handleCampaignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	campaignID := uuid.New().String()
 	campaign, err := toolCtx.DB().CreateCampaign(ctx, db.CreateCampaignParams{
 		ID:             campaignID,
-		OrgID:          toolCtx.BrandID(),
+		OrgID:          toolCtx.BrandID(ctx),
 		Name:           input.Name,
 		Subject:        input.Subject,
 		PreviewText:    sql.NullString{String: input.PreviewText, Valid: input.PreviewText != ""},
@@ -253,8 +264,8 @@ func handleCampaignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 		ReplyTo:        sql.NullString{String: input.ReplyTo, Valid: input.ReplyTo != ""},
 		HtmlBody:       input.HTMLBody,
 		PlainText:      sql.NullString{String: input.PlainText, Valid: input.PlainText != ""},
-		ListIds:        sql.NullString{String: input.ListIDs, Valid: true},
-		ExcludeListIds: sql.NullString{String: input.ExcludeListIDs, Valid: input.ExcludeListIDs != ""},
+		ListIds:        sql.NullString{String: db.EncodeListIDs(listIDs), Valid: true},
+		ExcludeListIds: sql.NullString{String: db.EncodeListIDs(excludeListIDs), Valid: len(excludeListIDs) > 0},
 		Status:         sql.NullString{String: "draft", Valid: true},
 		TrackOpens:     sql.NullInt64{Int64: boolToInt64(trackOpens), Valid: true},
 		TrackClicks:    sql.NullInt64{Int64: boolToInt64(trackClicks), Valid: true},
@@ -273,7 +284,7 @@ func handleCampaignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 }
 
 func handleCampaignList(ctx context.Context, toolCtx *mcpctx.ToolContext, input CampaignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -282,14 +293,14 @@ func handleCampaignList(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 
 	if input.Status != "" {
 		campaigns, err = toolCtx.DB().ListCampaignsByStatus(ctx, db.ListCampaignsByStatusParams{
-			OrgID:      toolCtx.BrandID(),
+			OrgID:      toolCtx.BrandID(ctx),
 			Status:     sql.NullString{String: input.Status, Valid: true},
 			PageOffset: 0,
 			PageSize:   100,
 		})
 	} else {
 		campaigns, err = toolCtx.DB().ListCampaigns(ctx, db.ListCampaignsParams{
-			OrgID:      toolCtx.BrandID(),
+			OrgID:      toolCtx.BrandID(ctx),
 			PageOffset: 0,
 			PageSize:   100,
 		})
@@ -321,7 +332,7 @@ func handleCampaignList(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 }
 
 func handleCampaignGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input CampaignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -331,7 +342,7 @@ func handleCampaignGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input C
 
 	campaign, err := toolCtx.DB().GetCampaign(ctx, db.GetCampaignParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("campaign %s not found", input.ID))
@@ -347,8 +358,8 @@ func handleCampaignGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input C
 		ReplyTo:         campaign.ReplyTo.String,
 		HTMLBody:        campaign.HtmlBody,
 		PlainText:       campaign.PlainText.String,
-		ListIDs:         campaign.ListIds.String,
-		ExcludeListIDs:  campaign.ExcludeListIds.String,
+		ListIDs:         joinIDs(db.DecodeListIDs(campaign.ListIds.String)),
+		ExcludeListIDs:  joinIDs(db.DecodeListIDs(campaign.ExcludeListIds.String)),
 		Status:          campaign.Status.String,
 		ScheduledAt:     campaign.ScheduledAt.String,
 		StartedAt:       campaign.StartedAt.String,
@@ -366,7 +377,7 @@ func handleCampaignGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input C
 }
 
 func handleCampaignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input CampaignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -377,7 +388,7 @@ func handleCampaignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	// Check campaign exists and is in draft status
 	campaign, err := toolCtx.DB().GetCampaign(ctx, db.GetCampaignParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("campaign %s not found", input.ID))
@@ -385,6 +396,22 @@ func handleCampaignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 
 	if campaign.Status.String != "draft" {
 		return nil, nil, mcpctx.NewValidationError("can only update draft campaigns", "id")
+	}
+
+	var listIDs, excludeListIDs interface{}
+	if strings.TrimSpace(input.ListIDs) != "" {
+		ids, err := access.BrandLists(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), splitIDs(input.ListIDs))
+		if err != nil {
+			return nil, nil, err
+		}
+		listIDs = db.EncodeListIDs(ids)
+	}
+	if strings.TrimSpace(input.ExcludeListIDs) != "" {
+		ids, err := access.BrandLists(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), splitIDs(input.ExcludeListIDs))
+		if err != nil {
+			return nil, nil, err
+		}
+		excludeListIDs = db.EncodeListIDs(ids)
 	}
 
 	var trackOpens, trackClicks sql.NullInt64
@@ -397,7 +424,7 @@ func handleCampaignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 
 	updated, err := toolCtx.DB().UpdateCampaign(ctx, db.UpdateCampaignParams{
 		ID:             input.ID,
-		OrgID:          toolCtx.BrandID(),
+		OrgID:          toolCtx.BrandID(ctx),
 		Name:           input.Name,
 		Subject:        input.Subject,
 		PreviewText:    input.PreviewText,
@@ -406,8 +433,8 @@ func handleCampaignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 		ReplyTo:        input.ReplyTo,
 		HtmlBody:       input.HTMLBody,
 		PlainText:      input.PlainText,
-		ListIds:        input.ListIDs,
-		ExcludeListIds: input.ExcludeListIDs,
+		ListIds:        listIDs,
+		ExcludeListIds: excludeListIDs,
 		TrackOpens:     trackOpens,
 		TrackClicks:    trackClicks,
 	})
@@ -425,7 +452,7 @@ func handleCampaignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 }
 
 func handleCampaignDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input CampaignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -436,7 +463,7 @@ func handleCampaignDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	// Check campaign exists
 	_, err := toolCtx.DB().GetCampaign(ctx, db.GetCampaignParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("campaign %s not found", input.ID))
@@ -444,7 +471,7 @@ func handleCampaignDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 
 	err = toolCtx.DB().DeleteCampaign(ctx, db.DeleteCampaignParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to delete campaign (only draft campaigns can be deleted): %w", err)
@@ -457,7 +484,7 @@ func handleCampaignDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 }
 
 func handleCampaignSchedule(ctx context.Context, toolCtx *mcpctx.ToolContext, input CampaignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -475,7 +502,7 @@ func handleCampaignSchedule(ctx context.Context, toolCtx *mcpctx.ToolContext, in
 
 	campaign, err := toolCtx.DB().ScheduleCampaign(ctx, db.ScheduleCampaignParams{
 		ID:          input.ID,
-		OrgID:       toolCtx.BrandID(),
+		OrgID:       toolCtx.BrandID(ctx),
 		ScheduledAt: sql.NullString{String: scheduledAt.UTC().Format(time.RFC3339), Valid: true},
 	})
 	if err != nil {
@@ -491,7 +518,7 @@ func handleCampaignSchedule(ctx context.Context, toolCtx *mcpctx.ToolContext, in
 }
 
 func handleCampaignSend(ctx context.Context, toolCtx *mcpctx.ToolContext, input CampaignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -502,7 +529,7 @@ func handleCampaignSend(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 	// Get campaign and verify it's in draft status
 	campaign, err := toolCtx.DB().GetCampaign(ctx, db.GetCampaignParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("campaign %s not found", input.ID))
@@ -517,7 +544,7 @@ func handleCampaignSend(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 	// Schedule it for now: the scheduler is the one sending path.
 	scheduled, err := toolCtx.DB().ScheduleCampaign(ctx, db.ScheduleCampaignParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to queue campaign: %w", err)
@@ -532,7 +559,7 @@ func handleCampaignSend(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 }
 
 func handleCampaignStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input CampaignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -542,7 +569,7 @@ func handleCampaignStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 
 	campaign, err := toolCtx.DB().GetCampaign(ctx, db.GetCampaignParams{
 		ID:    input.ID,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("campaign %s not found", input.ID))
@@ -583,4 +610,24 @@ func registerCampaignToolToRegistry(registry *ToolRegistry, toolCtx *mcpctx.Tool
 		_, output, err := handler(ctx, nil, input)
 		return output, err
 	})
+}
+
+// splitIDs reads a comma-separated list of IDs, as the MCP tools take them.
+func splitIDs(s string) []string {
+	var ids []string
+	for _, id := range strings.Split(s, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// joinIDs writes IDs comma-separated, as the MCP tools return them.
+func joinIDs(ids []int64) string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, strconv.FormatInt(id, 10))
+	}
+	return strings.Join(out, ",")
 }

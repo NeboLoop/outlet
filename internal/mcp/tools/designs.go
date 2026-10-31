@@ -142,7 +142,7 @@ func designHandler(toolCtx *mcpctx.ToolContext) func(ctx context.Context, req *m
 }
 
 func handleDesignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input DesignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -165,7 +165,7 @@ func handleDesignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 	}
 
 	design, err := toolCtx.DB().CreateEmailDesign(ctx, db.CreateEmailDesignParams{
-		OrgID:       toolCtx.BrandID(),
+		OrgID:       toolCtx.BrandID(ctx),
 		Name:        input.Name,
 		Slug:        slug,
 		Description: sql.NullString{String: input.Description, Valid: input.Description != ""},
@@ -188,7 +188,7 @@ func handleDesignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 }
 
 func handleDesignList(ctx context.Context, toolCtx *mcpctx.ToolContext, input DesignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -197,11 +197,11 @@ func handleDesignList(ctx context.Context, toolCtx *mcpctx.ToolContext, input De
 
 	if input.Category != "" {
 		designs, err = toolCtx.DB().ListEmailDesignsByCategory(ctx, db.ListEmailDesignsByCategoryParams{
-			OrgID:    toolCtx.BrandID(),
+			OrgID:    toolCtx.BrandID(ctx),
 			Category: sql.NullString{String: input.Category, Valid: true},
 		})
 	} else {
-		designs, err = toolCtx.DB().ListEmailDesigns(ctx, toolCtx.BrandID())
+		designs, err = toolCtx.DB().ListEmailDesigns(ctx, toolCtx.BrandID(ctx))
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list designs: %w", err)
@@ -227,7 +227,7 @@ func handleDesignList(ctx context.Context, toolCtx *mcpctx.ToolContext, input De
 }
 
 func handleDesignGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input DesignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -242,7 +242,7 @@ func handleDesignGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input Des
 
 	design, err := toolCtx.DB().GetEmailDesign(ctx, db.GetEmailDesignParams{
 		ID:    id,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("design %s not found", input.ID))
@@ -264,7 +264,7 @@ func handleDesignGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input Des
 }
 
 func handleDesignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input DesignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -280,7 +280,7 @@ func handleDesignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 	// Verify design exists
 	existing, err := toolCtx.DB().GetEmailDesign(ctx, db.GetEmailDesignParams{
 		ID:    id,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("design %s not found", input.ID))
@@ -294,7 +294,7 @@ func handleDesignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 
 	design, err := toolCtx.DB().UpdateEmailDesign(ctx, db.UpdateEmailDesignParams{
 		ID:          id,
-		OrgID:       toolCtx.BrandID(),
+		OrgID:       toolCtx.BrandID(ctx),
 		Name:        input.Name,
 		Slug:        input.Slug,
 		Description: input.Description,
@@ -317,7 +317,7 @@ func handleDesignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 }
 
 func handleDesignDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input DesignInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -333,7 +333,7 @@ func handleDesignDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 	// Verify design exists
 	_, err = toolCtx.DB().GetEmailDesign(ctx, db.GetEmailDesignParams{
 		ID:    id,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("design %s not found", input.ID))
@@ -341,7 +341,7 @@ func handleDesignDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 
 	err = toolCtx.DB().DeleteEmailDesign(ctx, db.DeleteEmailDesignParams{
 		ID:    id,
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to delete design: %w", err)

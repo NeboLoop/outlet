@@ -25,7 +25,7 @@ func NewDeleteSequenceLogic(ctx context.Context, svcCtx *svc.ServiceContext) *De
 }
 
 func (l *DeleteSequenceLogic) DeleteSequence(req *types.GetSequenceRequest) (resp *types.AnalyticsResponse, err error) {
-	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetSequenceOrgID, req.Id, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Sequence, req.Id, access.Member); err != nil {
 		return nil, err
 	}
 

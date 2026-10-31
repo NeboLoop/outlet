@@ -12,7 +12,7 @@ import (
 
 const cleanupExpiredMCPOAuthCodes = `-- name: CleanupExpiredMCPOAuthCodes :exec
 DELETE FROM mcp_oauth_codes
-WHERE expires_at < datetime('now') OR used_at IS NOT NULL
+WHERE datetime(expires_at) < datetime('now') OR used_at IS NOT NULL
 `
 
 func (q *Queries) CleanupExpiredMCPOAuthCodes(ctx context.Context) error {
@@ -22,8 +22,8 @@ func (q *Queries) CleanupExpiredMCPOAuthCodes(ctx context.Context) error {
 
 const cleanupExpiredMCPOAuthTokens = `-- name: CleanupExpiredMCPOAuthTokens :exec
 DELETE FROM mcp_oauth_tokens
-WHERE (expires_at < datetime('now') AND (refresh_expires_at IS NULL OR refresh_expires_at < datetime('now')))
-   OR revoked_at < datetime('now', '-30 days')
+WHERE (datetime(expires_at) < datetime('now') AND (refresh_expires_at IS NULL OR datetime(refresh_expires_at) < datetime('now')))
+   OR datetime(revoked_at) < datetime('now', '-30 days')
 `
 
 func (q *Queries) CleanupExpiredMCPOAuthTokens(ctx context.Context) error {
@@ -297,7 +297,7 @@ FROM mcp_api_keys k
 JOIN users u ON k.user_id = u.id
 WHERE k.key_hash = ?1
   AND k.revoked_at IS NULL
-  AND (k.expires_at IS NULL OR k.expires_at > datetime('now'))
+  AND (k.expires_at IS NULL OR datetime(k.expires_at) > datetime('now'))
 `
 
 type GetMCPAPIKeyByHashRow struct {
@@ -412,7 +412,7 @@ FROM mcp_oauth_codes c
 JOIN mcp_oauth_clients cl ON c.client_id = cl.id
 WHERE c.code_hash = ?1
   AND c.used_at IS NULL
-  AND c.expires_at > datetime('now')
+  AND datetime(c.expires_at) > datetime('now')
 `
 
 type GetMCPOAuthCodeByHashRow struct {
@@ -460,7 +460,7 @@ JOIN users u ON t.user_id = u.id
 JOIN mcp_oauth_clients cl ON t.client_id = cl.id
 WHERE t.access_token_hash = ?1
   AND t.revoked_at IS NULL
-  AND t.expires_at > datetime('now')
+  AND datetime(t.expires_at) > datetime('now')
 `
 
 type GetMCPOAuthTokenByAccessHashRow struct {
@@ -516,7 +516,7 @@ JOIN users u ON t.user_id = u.id
 JOIN mcp_oauth_clients cl ON t.client_id = cl.id
 WHERE t.refresh_token_hash = ?1
   AND t.revoked_at IS NULL
-  AND (t.refresh_expires_at IS NULL OR t.refresh_expires_at > datetime('now'))
+  AND (t.refresh_expires_at IS NULL OR datetime(t.refresh_expires_at) > datetime('now'))
 `
 
 type GetMCPOAuthTokenByRefreshHashRow struct {

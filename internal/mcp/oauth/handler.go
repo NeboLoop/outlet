@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -15,10 +16,9 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpauth"
 	"github.com/outlet-sh/outlet/internal/svc"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 // Handler provides MCP OAuth endpoints
@@ -211,20 +211,32 @@ func (h *Handler) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		CodeChallengeMethod: query.Get("code_challenge_method"),
 	}
 
-	// Validate response_type
-	if req.ResponseType != "code" {
-		h.sendError(w, http.StatusBadRequest, ErrUnsupportedResponseType, "Only 'code' response type is supported")
+	client, ok := h.checkAuthorizeRequest(w, r, req)
+	if !ok {
 		return
 	}
 
-	// Validate client
+	// Render login page
+	h.renderLoginPage(w, req, client.Name, "")
+}
+
+// checkAuthorizeRequest checks an authorization request: a code request
+// from a known client, to one of the client's own redirect URIs, with an
+// S256 PKCE challenge. The sign-in page and the sign-in form both run it, so
+// the form can't be posted with values the page would refuse. On a refusal
+// it writes the error and returns false.
+func (h *Handler) checkAuthorizeRequest(w http.ResponseWriter, r *http.Request, req AuthorizationRequest) (db.McpOauthClient, bool) {
+	if req.ResponseType != "code" {
+		h.sendError(w, http.StatusBadRequest, ErrUnsupportedResponseType, "Only 'code' response type is supported")
+		return db.McpOauthClient{}, false
+	}
+
 	client, err := h.svc.DB.GetMCPOAuthClientByClientID(r.Context(), req.ClientID)
 	if err != nil {
 		h.sendError(w, http.StatusBadRequest, ErrInvalidClient, "Unknown client_id")
-		return
+		return db.McpOauthClient{}, false
 	}
 
-	// Validate redirect_uri
 	validRedirect := false
 	for _, uri := range strings.Split(client.RedirectUris, ",") {
 		if uri == req.RedirectURI {
@@ -234,21 +246,19 @@ func (h *Handler) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validRedirect {
 		h.sendError(w, http.StatusBadRequest, ErrInvalidRequest, "Invalid redirect_uri")
-		return
+		return db.McpOauthClient{}, false
 	}
 
-	// Validate PKCE (required for MCP)
+	// PKCE is required for MCP.
 	if req.CodeChallenge == "" {
-		h.redirectError(w, req.RedirectURI, req.State, ErrInvalidRequest, "code_challenge is required")
-		return
+		h.redirectError(w, r, req.RedirectURI, req.State, ErrInvalidRequest, "code_challenge is required")
+		return db.McpOauthClient{}, false
 	}
 	if req.CodeChallengeMethod != "S256" {
-		h.redirectError(w, req.RedirectURI, req.State, ErrInvalidRequest, "Only S256 code_challenge_method is supported")
-		return
+		h.redirectError(w, r, req.RedirectURI, req.State, ErrInvalidRequest, "Only S256 code_challenge_method is supported")
+		return db.McpOauthClient{}, false
 	}
-
-	// Render login page
-	h.renderLoginPage(w, req, client.Name, "")
+	return client, true
 }
 
 // handleAuthorizeSubmit processes the login form submission
@@ -269,32 +279,22 @@ func (h *Handler) HandleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) 
 		CodeChallengeMethod: r.FormValue("code_challenge_method"),
 	}
 
-	email := r.FormValue("email")
-	password := r.FormValue("password")
+	// The form carries the request back; check it again as the page did.
+	client, ok := h.checkAuthorizeRequest(w, r, req)
+	if !ok {
+		return
+	}
 
-	// Validate client again
-	client, err := h.svc.DB.GetMCPOAuthClientByClientID(r.Context(), req.ClientID)
+	// The same sign-in check as the admin sign-in: wrong passwords lock the
+	// account, and only an active person signs in.
+	user, err := access.SignIn(r.Context(), h.svc.DB, r.FormValue("email"), r.FormValue("password"))
 	if err != nil {
-		h.sendError(w, http.StatusBadRequest, ErrInvalidClient, "Unknown client_id")
-		return
-	}
-
-	// Authenticate user
-	user, err := h.svc.DB.GetUserByEmail(r.Context(), email)
-	if err != nil {
-		h.renderLoginPage(w, req, client.Name, "Invalid email or password")
-		return
-	}
-
-	// Verify password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		h.renderLoginPage(w, req, client.Name, "Invalid email or password")
-		return
-	}
-
-	// Check user status
-	if _, err := access.Active(r.Context(), h.svc.DB, user.ID); err != nil {
-		h.renderLoginPage(w, req, client.Name, "Account is not active")
+		var ce *errorx.CodeError
+		if !errors.As(err, &ce) {
+			h.renderLoginPage(w, req, client.Name, "Sign-in failed. Try again.")
+			return
+		}
+		h.renderLoginPage(w, req, client.Name, ce.Message)
 		return
 	}
 
@@ -321,7 +321,7 @@ func (h *Handler) HandleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) 
 		ExpiresAt:           time.Now().Add(AuthCodeTTL).Format(time.RFC3339),
 	})
 	if err != nil {
-		h.redirectError(w, req.RedirectURI, req.State, ErrServerError, "Failed to create authorization code")
+		h.redirectError(w, r, req.RedirectURI, req.State, ErrServerError, "Failed to create authorization code")
 		return
 	}
 
@@ -673,7 +673,7 @@ func (h *Handler) sendError(w http.ResponseWriter, status int, errCode, errDesc 
 	})
 }
 
-func (h *Handler) redirectError(w http.ResponseWriter, redirectURI, state, errCode, errDesc string) {
+func (h *Handler) redirectError(w http.ResponseWriter, r *http.Request, redirectURI, state, errCode, errDesc string) {
 	u, _ := url.Parse(redirectURI)
 	q := u.Query()
 	q.Set("error", errCode)
@@ -682,7 +682,7 @@ func (h *Handler) redirectError(w http.ResponseWriter, redirectURI, state, errCo
 		q.Set("state", state)
 	}
 	u.RawQuery = q.Encode()
-	http.Redirect(nil, nil, u.String(), http.StatusFound)
+	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
 func generateSecureToken(length int) string {

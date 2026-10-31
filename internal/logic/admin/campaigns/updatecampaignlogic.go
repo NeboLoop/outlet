@@ -3,7 +3,6 @@ package campaigns
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
@@ -35,12 +34,18 @@ func (l *UpdateCampaignLogic) UpdateCampaign(req *types.UpdateCampaignRequest) (
 
 	var listIds, excludeListIds interface{}
 	if len(req.ListIds) > 0 {
-		data, _ := json.Marshal(req.ListIds)
-		listIds = string(data)
+		ids, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ListIds)
+		if err != nil {
+			return nil, err
+		}
+		listIds = db.EncodeListIDs(ids)
 	}
 	if len(req.ExcludeListIds) > 0 {
-		data, _ := json.Marshal(req.ExcludeListIds)
-		excludeListIds = string(data)
+		ids, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ExcludeListIds)
+		if err != nil {
+			return nil, err
+		}
+		excludeListIds = db.EncodeListIDs(ids)
 	}
 
 	var trackOpens, trackClicks sql.NullInt64

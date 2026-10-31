@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/db/migrations"
@@ -80,4 +81,26 @@ func TestParseScopes(t *testing.T) {
 	assert.Equal(t, []string{"mcp:full", "offline_access"}, ParseScopes("mcp:full,offline_access"))
 	assert.Equal(t, []string{"mcp:full"}, ParseScopes(`["mcp:full"]`))
 	assert.Empty(t, ParseScopes(""))
+}
+
+// Times are stored in RFC 3339 ("2026-10-31T13:00:00Z") and used to be
+// compared as text with datetime('now') ("2026-10-31 14:00:00"); a token
+// that expired earlier today kept working until midnight UTC.
+func TestVerifyOAuthToken_RefusesATokenThatExpiredToday(t *testing.T) {
+	a, store := newVerifyFixture(t)
+	ctx := context.Background()
+	_, err := store.CreateMCPOAuthClient(ctx, db.CreateMCPOAuthClientParams{ID: "c1", ClientID: "client", ClientSecretHash: "x", Name: "Client", RedirectUris: "https://client.test/cb"})
+	require.NoError(t, err)
+	for id, expires := range map[string]time.Time{"live": time.Now().Add(time.Hour), "expired": time.Now().Add(-time.Minute)} {
+		_, err := store.CreateMCPOAuthToken(ctx, db.CreateMCPOAuthTokenParams{
+			ID: id, ClientID: "c1", UserID: "u1", AccessTokenHash: HashToken("access-" + id), Scopes: ScopeFull,
+			ExpiresAt: expires.UTC().Format(time.RFC3339),
+		})
+		require.NoError(t, err)
+	}
+	verify := a.TokenVerifier()
+	_, err = verify(ctx, "access-live", nil)
+	assert.NoError(t, err)
+	_, err = verify(ctx, "access-expired", nil)
+	assert.ErrorIs(t, err, auth.ErrInvalidToken)
 }

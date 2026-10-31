@@ -3,7 +3,6 @@ package campaigns
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"strconv"
 
 	"github.com/outlet-sh/outlet/internal/access"
@@ -90,13 +89,12 @@ func (l *ListCampaignsLogic) ListCampaigns(req *types.ListCampaignsRequest) (res
 }
 
 func campaignToInfo(c db.EmailCampaign) types.CampaignInfo {
-	var listIds []string
-	if c.ListIds.Valid && c.ListIds.String != "" {
-		json.Unmarshal([]byte(c.ListIds.String), &listIds)
+	var listIds, excludeListIds []string
+	for _, id := range db.DecodeListIDs(c.ListIds.String) {
+		listIds = append(listIds, strconv.FormatInt(id, 10))
 	}
-	var excludeListIds []string
-	if c.ExcludeListIds.Valid && c.ExcludeListIds.String != "" {
-		json.Unmarshal([]byte(c.ExcludeListIds.String), &excludeListIds)
+	for _, id := range db.DecodeListIDs(c.ExcludeListIds.String) {
+		excludeListIds = append(excludeListIds, strconv.FormatInt(id, 10))
 	}
 
 	var designId *string

@@ -43,10 +43,10 @@ func TestNewToolContext_APIKeyMode(t *testing.T) {
 
 	assert.NotNil(t, tc, "ToolContext should not be nil")
 	assert.Equal(t, AuthModeAPIKey, tc.AuthMode(), "AuthMode should be APIKey")
-	assert.Equal(t, brandID, tc.BrandID(), "BrandID should match")
+	assert.Equal(t, brandID, tc.SessionBrand().ID, "BrandID should match")
 	assert.Equal(t, "req-123", tc.RequestID(), "RequestID should match")
 	assert.Equal(t, "test-agent/1.0", tc.UserAgent(), "UserAgent should match")
-	assert.True(t, tc.HasBrand(), "HasBrand should be true for API key mode")
+	assert.True(t, (tc.SessionBrand().ID != ""), "HasBrand should be true for API key mode")
 }
 
 func TestNewUserToolContext_OAuthMode(t *testing.T) {
@@ -58,8 +58,8 @@ func TestNewUserToolContext_OAuthMode(t *testing.T) {
 	assert.NotNil(t, tc, "ToolContext should not be nil")
 	assert.Equal(t, AuthModeOAuth, tc.AuthMode(), "AuthMode should be OAuth")
 	assert.Equal(t, userID, tc.UserID(), "UserID should match")
-	assert.Equal(t, "", tc.BrandID(), "BrandID should be empty before selection")
-	assert.False(t, tc.HasBrand(), "HasBrand should be false before brand selection")
+	assert.Equal(t, "", tc.SessionBrand().ID, "BrandID should be empty before selection")
+	assert.False(t, (tc.SessionBrand().ID != ""), "HasBrand should be false before brand selection")
 	assert.Equal(t, "session-123", tc.SessionID(), "SessionID should match")
 }
 
@@ -74,16 +74,16 @@ func TestToolContext_SelectBrand(t *testing.T) {
 	brand := createTestBrand(brandID, "Selected Brand")
 
 	// Before selection
-	assert.False(t, tc.HasBrand(), "HasBrand should be false before selection")
-	assert.Equal(t, "", tc.BrandID(), "BrandID should be empty before selection")
+	assert.False(t, (tc.SessionBrand().ID != ""), "HasBrand should be false before selection")
+	assert.Equal(t, "", tc.SessionBrand().ID, "BrandID should be empty before selection")
 
 	// Select brand
 	tc.SelectBrand(brand)
 
 	// After selection
-	assert.True(t, tc.HasBrand(), "HasBrand should be true after selection")
-	assert.Equal(t, brandID, tc.BrandID(), "BrandID should match selected brand")
-	assert.Equal(t, brand.Name, tc.Brand().Name, "Brand name should match")
+	assert.True(t, (tc.SessionBrand().ID != ""), "HasBrand should be true after selection")
+	assert.Equal(t, brandID, tc.SessionBrand().ID, "BrandID should match selected brand")
+	assert.Equal(t, brand.Name, tc.SessionBrand().Name, "Brand name should match")
 }
 
 func TestToolContext_SelectBrand_CallsCallback(t *testing.T) {
@@ -127,8 +127,8 @@ func TestToolContext_RestoreBrand_DoesNotCallCallback(t *testing.T) {
 	tc.RestoreBrand(brand)
 
 	assert.False(t, callbackCalled, "Callback should not be called for RestoreBrand")
-	assert.True(t, tc.HasBrand(), "HasBrand should be true after restore")
-	assert.Equal(t, brandID, tc.BrandID(), "BrandID should match restored brand")
+	assert.True(t, (tc.SessionBrand().ID != ""), "HasBrand should be true after restore")
+	assert.Equal(t, brandID, tc.SessionBrand().ID, "BrandID should match restored brand")
 }
 
 func TestToolContext_ClearBrand(t *testing.T) {
@@ -140,12 +140,12 @@ func TestToolContext_ClearBrand(t *testing.T) {
 	brand := createTestBrand(brandID, "Brand to Clear")
 	tc.SelectBrand(brand)
 
-	assert.True(t, tc.HasBrand(), "HasBrand should be true after selection")
+	assert.True(t, (tc.SessionBrand().ID != ""), "HasBrand should be true after selection")
 
 	tc.ClearBrand()
 
-	assert.False(t, tc.HasBrand(), "HasBrand should be false after clear")
-	assert.Equal(t, "", tc.BrandID(), "BrandID should be empty after clear")
+	assert.False(t, (tc.SessionBrand().ID != ""), "HasBrand should be false after clear")
+	assert.Equal(t, "", tc.SessionBrand().ID, "BrandID should be empty after clear")
 }
 
 // ========== APIKey Mode Tests ==========
@@ -157,9 +157,9 @@ func TestToolContext_APIKeyMode_AlwaysHasBrand(t *testing.T) {
 	tc := NewToolContext(nil, brand, "req-123", "test-agent/1.0")
 
 	// In API key mode, brand is always set
-	assert.True(t, tc.HasBrand(), "HasBrand should always be true in API key mode")
-	assert.Equal(t, brandID, tc.BrandID(), "BrandID should be set")
-	assert.Equal(t, brand.Name, tc.Brand().Name, "Brand should match")
+	assert.True(t, (tc.SessionBrand().ID != ""), "HasBrand should always be true in API key mode")
+	assert.Equal(t, brandID, tc.SessionBrand().ID, "BrandID should be set")
+	assert.Equal(t, brand.Name, tc.SessionBrand().Name, "Brand should match")
 }
 
 func TestToolContext_APIKeyMode_NoUserID(t *testing.T) {
@@ -217,7 +217,7 @@ func TestToolContext_RequireBrand_Success(t *testing.T) {
 
 	tc := NewToolContext(nil, brand, "req-123", "test-agent/1.0")
 
-	err := tc.RequireBrand()
+	err := tc.RequireBrand(WithCallBrand(context.Background(), tc.SessionBrand()))
 	assert.NoError(t, err, "RequireBrand should not return error when brand is set")
 }
 
@@ -227,7 +227,7 @@ func TestToolContext_RequireBrand_Failure(t *testing.T) {
 
 	tc := NewUserToolContext(nil, user, "req-123", "test-agent/1.0", "session-123")
 
-	err := tc.RequireBrand()
+	err := tc.RequireBrand(WithCallBrand(context.Background(), tc.SessionBrand()))
 	require.Error(t, err, "RequireBrand should return error when no brand selected")
 	assert.Equal(t, ErrNoBrandSelected, err, "Error should be ErrNoBrandSelected")
 }
@@ -296,7 +296,7 @@ func TestWithToolContext_And_FromContext(t *testing.T) {
 	retrieved := ToolContextFromContext(ctx)
 	require.NotNil(t, retrieved, "ToolContext should be retrievable from context")
 	assert.Equal(t, tc, retrieved, "Retrieved context should match original")
-	assert.Equal(t, brandID, retrieved.BrandID(), "BrandID should match")
+	assert.Equal(t, brandID, retrieved.SessionBrand().ID, "BrandID should match")
 }
 
 func TestToolContextFromContext_NilWhenNotSet(t *testing.T) {
@@ -336,15 +336,15 @@ func TestToolContext_ConcurrentBrandSelection(t *testing.T) {
 			defer wg.Done()
 			tc.SelectBrand(brands[idx])
 			// Read immediately after write
-			_ = tc.HasBrand()
-			_ = tc.BrandID()
+			_ = (tc.SessionBrand().ID != "")
+			_ = tc.SessionBrand().ID
 		}(i)
 	}
 
 	wg.Wait()
 
 	// After all concurrent selections, should have a brand
-	assert.True(t, tc.HasBrand(), "Should have a brand after concurrent selections")
+	assert.True(t, (tc.SessionBrand().ID != ""), "Should have a brand after concurrent selections")
 }
 
 func TestToolContext_ConcurrentReads(t *testing.T) {
@@ -359,9 +359,9 @@ func TestToolContext_ConcurrentReads(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = tc.HasBrand()
-			_ = tc.BrandID()
-			_ = tc.Brand()
+			_ = (tc.SessionBrand().ID != "")
+			_ = tc.SessionBrand().ID
+			_ = tc.SessionBrand()
 			_ = tc.AuthMode()
 			_ = tc.RequestID()
 			_ = tc.UserAgent()
@@ -379,7 +379,7 @@ func TestToolContext_Brand_ReturnsEmptyWhenNil(t *testing.T) {
 	user := createTestUser(userID, "test@example.com", "admin")
 	tc := NewUserToolContext(nil, user, "req-123", "test-agent/1.0", "session-123")
 
-	brand := tc.Brand()
+	brand := tc.SessionBrand()
 	assert.Equal(t, db.Organization{}, brand, "Brand should return empty struct when not set")
 }
 

@@ -42,7 +42,7 @@ func (l *CreateSequenceLogic) CreateSequence(req *types.CreateSequenceRequest) (
 
 	var listIDInt64 int64
 	if req.ListId != "" {
-		if err := requireSameBrand(l.ctx, listOrgID(l.svcCtx), req.ListId, orgID); err != nil {
+		if err := access.SameBrand(l.ctx, l.svcCtx.DB, access.List, req.ListId, orgID); err != nil {
 			return nil, err
 		}
 		listIDInt64, _ = strconv.ParseInt(req.ListId, 10, 64)

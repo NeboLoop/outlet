@@ -25,7 +25,7 @@ func NewDeleteEntryRuleLogic(ctx context.Context, svcCtx *svc.ServiceContext) *D
 }
 
 func (l *DeleteEntryRuleLogic) DeleteEntryRule(req *types.DeleteEntryRuleRequest) (resp *types.AnalyticsResponse, err error) {
-	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetEntryRuleOrgID, req.Id, access.Member); err != nil {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.EntryRule, req.Id, access.Member); err != nil {
 		return nil, err
 	}
 
