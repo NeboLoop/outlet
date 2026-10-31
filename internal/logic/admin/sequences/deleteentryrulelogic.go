@@ -3,6 +3,7 @@ package sequences
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -24,6 +25,10 @@ func NewDeleteEntryRuleLogic(ctx context.Context, svcCtx *svc.ServiceContext) *D
 }
 
 func (l *DeleteEntryRuleLogic) DeleteEntryRule(req *types.DeleteEntryRuleRequest) (resp *types.AnalyticsResponse, err error) {
+	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetEntryRuleOrgID, req.Id, access.Member); err != nil {
+		return nil, err
+	}
+
 	err = l.svcCtx.DB.DeleteEntryRule(l.ctx, req.Id)
 	if err != nil {
 		l.Errorf("Failed to delete entry rule: %v", err)

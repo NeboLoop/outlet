@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -27,6 +28,10 @@ func NewUpdateTemplateLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Up
 }
 
 func (l *UpdateTemplateLogic) UpdateTemplate(req *types.UpdateTemplateRequest) (resp *types.TemplateInfo, err error) {
+	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetTemplateOrgID, req.Id, access.Member); err != nil {
+		return nil, err
+	}
+
 	existing, err := l.svcCtx.DB.GetTemplateByID(l.ctx, req.Id)
 	if err != nil {
 		return nil, err

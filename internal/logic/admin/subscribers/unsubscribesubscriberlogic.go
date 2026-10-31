@@ -25,6 +25,9 @@ func NewUnsubscribeSubscriberLogic(ctx context.Context, svcCtx *svc.ServiceConte
 
 func (l *UnsubscribeSubscriberLogic) UnsubscribeSubscriber(req *types.SubscriberActionRequest) (resp *types.SubscriberInfo, err error) {
 	contactID := req.Id
+	if err := requireContact(l.ctx, l.svcCtx, contactID); err != nil {
+		return nil, err
+	}
 
 	// Unsubscribe the contact
 	err = l.svcCtx.DB.UnsubscribeContact(l.ctx, contactID)

@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -25,6 +26,10 @@ func NewListBackupsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *ListB
 }
 
 func (l *ListBackupsLogic) ListBackups(req *types.ListBackupsRequest) (resp *types.ListBackupsResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Calculate offset
 	offset := int64((req.Page - 1) * req.PageSize)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/services/email"
@@ -28,6 +29,10 @@ func NewRefreshDomainIdentityLogic(ctx context.Context, svcCtx *svc.ServiceConte
 }
 
 func (l *RefreshDomainIdentityLogic) RefreshDomainIdentity(req *types.RefreshDomainIdentityRequest) (resp *types.DomainIdentityInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.OrgId, access.Admin); err != nil {
+		return nil, err
+	}
+
 	// Get the domain identity
 	identity, err := l.svcCtx.DB.GetDomainIdentity(l.ctx, req.Id)
 	if err != nil {

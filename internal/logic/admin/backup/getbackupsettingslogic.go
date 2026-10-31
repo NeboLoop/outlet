@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -28,6 +29,10 @@ func NewGetBackupSettingsLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 }
 
 func (l *GetBackupSettingsLogic) GetBackupSettings() (resp *types.BackupSettingsResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Get settings from platform_settings table
 	settings, err := l.svcCtx.DB.GetPlatformSettingsByCategory(l.ctx, "backup")
 	if err != nil && err != sql.ErrNoRows {

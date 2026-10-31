@@ -321,6 +321,21 @@ type CreateInitialAdminResponse struct {
 	Message string `json:"message"`
 }
 
+type CreateInvitationRequest struct {
+	Id    string `path:"id"` // brand ID
+	Email string `json:"email"`
+	Role  string `json:"role,optional"` // admin or member (default member)
+}
+
+type CreateInvitationResponse struct {
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	Added     bool   `json:"added"`               // true when the person already had an account and joined the brand now
+	InviteUrl string `json:"invite_url,optional"` // the sign-up link, when an invitation was made
+	ExpiresAt string `json:"expires_at,optional"` // when the invitation stops working
+	EmailSent bool   `json:"email_sent"`          // whether the invitation email went out
+}
+
 type CreateListRequest struct {
 	Name        string `json:"name"`
 	Slug        string `json:"slug"`
@@ -1224,12 +1239,11 @@ type RegenerateApiKeyRequest struct {
 }
 
 type RegisterRequest struct {
-	Email     string `json:"email"`
+	Token     string `json:"token,optional"` // Invitation token (required): it decides the email, brand and role
 	Password  string `json:"password"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Phone     string `json:"phone,optional"`
-	Token     string `json:"token,optional"` // Optional invitation token
 }
 
 type RegisterResponse struct {
@@ -1798,10 +1812,8 @@ type ValidateInvitationRequest struct {
 
 type ValidateInvitationResponse struct {
 	Email     string `json:"email"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Phone     string `json:"phone"`
-	Role      string `json:"role"`
+	Role      string `json:"role"`       // The role in the brand: admin or member
+	BrandName string `json:"brand_name"` // The brand the invitation joins
 	Valid     bool   `json:"valid"`
 	Message   string `json:"message,omitempty"`
 }

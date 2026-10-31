@@ -83,5 +83,8 @@ func NewServerWithContext(svc *svc.ServiceContext, r *http.Request, onBrandSelec
 	tools.RegisterBlocklistTool(server, toolCtx)
 	tools.RegisterGDPRTool(server, toolCtx)
 
+	// Every tool call passes the gate: scopes, brand access, audit.
+	server.AddReceivingMiddleware(tools.Gate(toolCtx))
+
 	return server, toolCtx
 }

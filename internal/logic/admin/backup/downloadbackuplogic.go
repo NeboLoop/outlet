@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -30,6 +31,10 @@ func NewDownloadBackupLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Do
 
 // DownloadBackup validates the backup exists and is ready for download (legacy method)
 func (l *DownloadBackupLogic) DownloadBackup(req *types.DownloadBackupRequest) error {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return err
+	}
+
 	// Get backup record
 	backup, err := l.svcCtx.DB.GetBackup(l.ctx, req.Id)
 	if err != nil {
@@ -60,6 +65,10 @@ func (l *DownloadBackupLogic) DownloadBackup(req *types.DownloadBackupRequest) e
 
 // Download streams the backup file to the client
 func (l *DownloadBackupLogic) Download(w http.ResponseWriter, r *http.Request, req *types.DownloadBackupRequest) error {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return err
+	}
+
 	// Get backup record
 	backup, err := l.svcCtx.DB.GetBackup(l.ctx, req.Id)
 	if err != nil {

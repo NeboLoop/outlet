@@ -25,6 +25,9 @@ func NewBlockSubscriberLogic(ctx context.Context, svcCtx *svc.ServiceContext) *B
 
 func (l *BlockSubscriberLogic) BlockSubscriber(req *types.SubscriberActionRequest) (resp *types.SubscriberInfo, err error) {
 	contactID := req.Id
+	if err := requireContact(l.ctx, l.svcCtx, contactID); err != nil {
+		return nil, err
+	}
 
 	// Block the contact
 	err = l.svcCtx.DB.BlockContact(l.ctx, contactID)

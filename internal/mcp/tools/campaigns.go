@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
@@ -121,11 +122,13 @@ type CampaignScheduleOutput struct {
 }
 
 // CampaignSendOutput defines output for campaign send (immediate).
+// Sending starts when the scheduler picks the campaign up; Status says
+// where it is now.
 type CampaignSendOutput struct {
-	ID      string `json:"id"`
-	Status  string `json:"status"`
-	Message string `json:"message"`
-	Sent    bool   `json:"sent"`
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	ScheduledAt string `json:"scheduled_at"`
+	Message     string `json:"message"`
 }
 
 // CampaignStatsOutput defines output for campaign stats.
@@ -160,7 +163,7 @@ Actions and Required Fields:
 - update: Update a draft campaign (requires: id)
 - delete: Delete a draft campaign (requires: id)
 - schedule: Schedule a campaign for future sending (requires: id, scheduled_at)
-- send: Send a campaign immediately (requires: id)
+- send: Send a campaign now: queues it for the scheduler, which starts within seconds (requires: id)
 - stats: Get campaign statistics (requires: id)
 
 Status Values:
@@ -465,10 +468,15 @@ func handleCampaignSchedule(ctx context.Context, toolCtx *mcpctx.ToolContext, in
 		return nil, nil, mcpctx.NewValidationError("scheduled_at is required (ISO 8601 format)", "scheduled_at")
 	}
 
+	scheduledAt, err := time.Parse(time.RFC3339, input.ScheduledAt)
+	if err != nil {
+		return nil, nil, mcpctx.NewValidationError("scheduled_at must be ISO 8601, like 2026-01-15T10:00:00Z", "scheduled_at")
+	}
+
 	campaign, err := toolCtx.DB().ScheduleCampaign(ctx, db.ScheduleCampaignParams{
 		ID:          input.ID,
 		OrgID:       toolCtx.BrandID(),
-		ScheduledAt: sql.NullString{String: input.ScheduledAt, Valid: true},
+		ScheduledAt: sql.NullString{String: scheduledAt.UTC().Format(time.RFC3339), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to schedule campaign (only draft campaigns can be scheduled): %w", err)
@@ -506,21 +514,20 @@ func handleCampaignSend(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 			"id")
 	}
 
-	// Update status to 'sending' - the campaign scheduler worker will pick it up
-	_, err = toolCtx.DB().UpdateCampaignStatus(ctx, db.UpdateCampaignStatusParams{
-		ID:     input.ID,
-		OrgID:  toolCtx.BrandID(),
-		Status: sql.NullString{String: "sending", Valid: true},
+	// Schedule it for now: the scheduler is the one sending path.
+	scheduled, err := toolCtx.DB().ScheduleCampaign(ctx, db.ScheduleCampaignParams{
+		ID:    input.ID,
+		OrgID: toolCtx.BrandID(),
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to start campaign: %w", err)
+		return nil, nil, fmt.Errorf("failed to queue campaign: %w", err)
 	}
 
 	return nil, CampaignSendOutput{
-		ID:      input.ID,
-		Status:  "sending",
-		Message: "Campaign is now being sent. Check stats for progress.",
-		Sent:    true,
+		ID:          scheduled.ID,
+		Status:      scheduled.Status.String,
+		ScheduledAt: scheduled.ScheduledAt.String,
+		Message:     "Queued to send now. The scheduler starts sending within seconds; check stats for progress.",
 	}, nil
 }
 

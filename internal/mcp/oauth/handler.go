@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpauth"
 	"github.com/outlet-sh/outlet/internal/svc"
@@ -292,9 +293,15 @@ func (h *Handler) HandleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Check user status
-	if user.Status != "active" {
+	if _, err := access.Active(r.Context(), h.svc.DB, user.ID); err != nil {
 		h.renderLoginPage(w, req, client.Name, "Account is not active")
 		return
+	}
+
+	// No scope requested means the server's default: full access, as this
+	// person.
+	if strings.TrimSpace(req.Scope) == "" {
+		req.Scope = mcpauth.ScopeFull
 	}
 
 	// Generate authorization code
@@ -428,6 +435,12 @@ func (h *Handler) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// A disabled account gets no tokens.
+	if _, err := access.Active(r.Context(), h.svc.DB, authCode.UserID); err != nil {
+		h.sendError(w, http.StatusBadRequest, ErrInvalidGrant, "Account is not active")
+		return
+	}
+
 	// Generate tokens
 	accessToken := generateSecureToken(32)
 	refreshToken := generateSecureToken(32)
@@ -483,6 +496,12 @@ func (h *Handler) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request
 	// Revoke old token
 	if err := h.svc.DB.RevokeMCPOAuthToken(r.Context(), oldToken.ID); err != nil {
 		h.sendError(w, http.StatusInternalServerError, ErrServerError, "Failed to refresh token")
+		return
+	}
+
+	// A disabled account gets no new tokens.
+	if _, err := access.Active(r.Context(), h.svc.DB, oldToken.UserID); err != nil {
+		h.sendError(w, http.StatusBadRequest, ErrInvalidGrant, "Account is not active")
 		return
 	}
 

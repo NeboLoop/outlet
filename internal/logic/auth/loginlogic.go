@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -59,6 +60,11 @@ func (l *LoginLogic) Login(req *types.LoginRequest) (resp *types.LoginResponse, 
 		if parseErr == nil && time.Now().Before(lockedUntil) {
 			return nil, fmt.Errorf("account is locked until %s", user.LockedUntil.String)
 		}
+	}
+
+	// A disabled or pending account gets no tokens.
+	if _, err := access.Active(l.ctx, l.svcCtx.DB, user.ID); err != nil {
+		return nil, err
 	}
 
 	// Generate access token

@@ -2,9 +2,8 @@ package blocklist
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/outlet-sh/outlet/internal/middleware"
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -26,9 +25,9 @@ func NewClearSuppressionListLogic(ctx context.Context, svcCtx *svc.ServiceContex
 }
 
 func (l *ClearSuppressionListLogic) ClearSuppressionList() (resp *types.Response, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, fmt.Errorf("organization ID not found")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Admin)
+	if err != nil {
+		return nil, err
 	}
 
 	err = l.svcCtx.DB.ClearSuppressionList(l.ctx, orgID)

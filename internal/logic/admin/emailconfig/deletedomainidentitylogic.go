@@ -3,6 +3,7 @@ package emailconfig
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
@@ -26,6 +27,10 @@ func NewDeleteDomainIdentityLogic(ctx context.Context, svcCtx *svc.ServiceContex
 }
 
 func (l *DeleteDomainIdentityLogic) DeleteDomainIdentity(req *types.DeleteDomainIdentityRequest) (resp *types.Response, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.OrgId, access.Admin); err != nil {
+		return nil, err
+	}
+
 	// Get the domain identity to verify it exists and belongs to the org
 	identity, err := l.svcCtx.DB.GetDomainIdentity(l.ctx, req.Id)
 	if err != nil {

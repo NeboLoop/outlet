@@ -24,12 +24,11 @@ type (
 		User         UserInfo `json:"user"`
 	}
 	RegisterRequest {
-		Email     string `json:"email"`
+		Token     string `json:"token,optional"` // Invitation token (required): it decides the email, brand and role
 		Password  string `json:"password"`
 		FirstName string `json:"first_name"`
 		LastName  string `json:"last_name"`
 		Phone     string `json:"phone,optional"`
-		Token     string `json:"token,optional"` // Optional invitation token
 	}
 	RegisterResponse {
 		Token string   `json:"token"`
@@ -60,12 +59,23 @@ type (
 	}
 	ValidateInvitationResponse {
 		Email     string `json:"email"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		Phone     string `json:"phone"`
-		Role      string `json:"role"`
+		Role      string `json:"role"` // The role in the brand: admin or member
+		BrandName string `json:"brand_name"` // The brand the invitation joins
 		Valid     bool   `json:"valid"`
 		Message   string `json:"message,omitempty"`
+	}
+	CreateInvitationRequest {
+		Id    string `path:"id"` // brand ID
+		Email string `json:"email"`
+		Role  string `json:"role,optional"` // admin or member (default member)
+	}
+	CreateInvitationResponse {
+		Email     string `json:"email"`
+		Role      string `json:"role"`
+		Added     bool   `json:"added"` // true when the person already had an account and joined the brand now
+		InviteUrl string `json:"invite_url,optional"` // the sign-up link, when an invitation was made
+		ExpiresAt string `json:"expires_at,optional"` // when the invitation stops working
+		EmailSent bool   `json:"email_sent"` // whether the invitation email went out
 	}
 	RefreshTokenRequest {
 		RefreshToken string `json:"refresh_token"`
@@ -1721,7 +1731,7 @@ service outlet {
 	@handler login
 	post /auth/login (LoginRequest) returns (LoginResponse)
 
-	@doc "User registration"
+	@doc "Create an account from an invitation (Outlet is invite-only)"
 	@handler register
 	post /auth/register (RegisterRequest) returns (RegisterResponse)
 
@@ -2151,6 +2161,10 @@ service outlet {
 
 	@handler GetAllOrganizationsStats
 	get /organizations-stats returns (OrgBulkStatsResponse)
+
+	@doc "Invite a person to a brand. Outlet is invite-only: the invitation decides the brand and role."
+	@handler CreateInvitation
+	post /organizations/:id/invitations (CreateInvitationRequest) returns (CreateInvitationResponse)
 }
 
 // Platform Settings (Super Admin only)

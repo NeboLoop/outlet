@@ -1,506 +1,210 @@
 package middleware
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/db/migrations"
+	"github.com/outlet-sh/outlet/internal/utils"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
-// createTestToken creates a JWT token for testing purposes
-func createTestToken(claims jwt.MapClaims, secret string) string {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, _ := token.SignedString([]byte(secret))
-	return tokenString
+const testAccessSecret = "test-access-secret"
+
+// authFixture is a database with one active and one disabled person.
+type authFixture struct {
+	store    *db.Store
+	mw       *AuthMiddleware
+	active   string
+	disabled string
 }
 
-// createUnsignedToken creates a JWT token string without signing (for testing ParseUnverified)
-func createUnsignedToken(claims jwt.MapClaims) string {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	// Sign with a dummy secret since the middleware uses ParseUnverified
-	tokenString, _ := token.SignedString([]byte("any-secret"))
-	return tokenString
-}
-
-func TestNewAuthMiddleware(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	assert.NotNil(t, middleware, "NewAuthMiddleware should return a non-nil middleware")
-}
-
-func TestAuthMiddleware_Handle_NoAuthorizationHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	handlerCalled := false
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		handlerCalled = true
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.False(t, handlerCalled, "Handler should not be called when no auth token is provided")
-	assert.Equal(t, http.StatusUnauthorized, rr.Code, "Should return 401 Unauthorized")
-
-	var response map[string]string
-	err := json.NewDecoder(rr.Body).Decode(&response)
+func newAuthFixture(t *testing.T) authFixture {
+	t.Helper()
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db"))
 	require.NoError(t, err)
-	assert.Equal(t, "No authentication token provided", response["error"])
-	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-}
+	t.Cleanup(func() { conn.Close() })
+	require.NoError(t, migrations.Run(conn))
+	store := db.NewStore(conn)
 
-func TestAuthMiddleware_Handle_ValidTokenFromCookie(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	handlerCalled := false
-	var capturedUserID interface{}
-	var capturedEmail interface{}
-	var capturedRole interface{}
-	var capturedToken interface{}
-
-	userID := uuid.New().String()
-	email := "test@example.com"
-	role := "admin"
-
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   email,
-		"role":    role,
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	tokenString := createUnsignedToken(claims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		handlerCalled = true
-		capturedUserID = r.Context().Value("userId")
-		capturedEmail = r.Context().Value("email")
-		capturedRole = r.Context().Value("role")
-		capturedToken = r.Context().Value("token")
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.AddCookie(&http.Cookie{
-		Name:  "auth_token",
-		Value: tokenString,
-	})
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.True(t, handlerCalled, "Handler should be called with valid cookie token")
-	assert.Equal(t, userID, capturedUserID)
-	assert.Equal(t, email, capturedEmail)
-	assert.Equal(t, role, capturedRole)
-	assert.Equal(t, tokenString, capturedToken)
-}
-
-func TestAuthMiddleware_Handle_ValidTokenFromHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	handlerCalled := false
-	var capturedUserID interface{}
-	var capturedEmail interface{}
-	var capturedRole interface{}
-
-	userID := uuid.New().String()
-	email := "user@example.com"
-	role := "user"
-
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   email,
-		"role":    role,
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	tokenString := createUnsignedToken(claims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		handlerCalled = true
-		capturedUserID = r.Context().Value("userId")
-		capturedEmail = r.Context().Value("email")
-		capturedRole = r.Context().Value("role")
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+tokenString)
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.True(t, handlerCalled, "Handler should be called with valid Bearer token")
-	assert.Equal(t, userID, capturedUserID)
-	assert.Equal(t, email, capturedEmail)
-	assert.Equal(t, role, capturedRole)
-}
-
-func TestAuthMiddleware_Handle_InvalidAuthorizationHeaderFormat(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	handlerCalled := false
-
-	tests := []struct {
-		name          string
-		authHeader    string
-		expectedError string
-	}{
-		{"Only token no prefix", "some-token-value", "Invalid authorization header format"},
-		{"Wrong prefix", "Basic some-token-value", "Invalid authorization header format"},
-		{"Bearer with no token", "Bearer", "Invalid authorization header format"},
-		{"Empty bearer", "Bearer ", "Invalid token format"}, // Empty token after Bearer passes split but fails parse
-		{"Too many parts", "Bearer token extra", "Invalid authorization header format"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-				handlerCalled = true
-			})
-
-			req := httptest.NewRequest(http.MethodGet, "/test", nil)
-			req.Header.Set("Authorization", tt.authHeader)
-			rr := httptest.NewRecorder()
-
-			handler(rr, req)
-
-			assert.False(t, handlerCalled, "Handler should not be called with invalid header format")
-			assert.Equal(t, http.StatusUnauthorized, rr.Code)
-
-			var response map[string]string
-			err := json.NewDecoder(rr.Body).Decode(&response)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expectedError, response["error"])
+	f := authFixture{store: store, mw: NewAuthMiddleware(testAccessSecret, store), active: uuid.NewString(), disabled: uuid.NewString()}
+	for id, status := range map[string]string{f.active: "active", f.disabled: "inactive"} {
+		_, err := store.CreateUser(context.Background(), db.CreateUserParams{
+			ID: id, Email: id + "@example.com", PasswordHash: "x", Name: "Test", Role: "agent", Status: status, EmailVerified: int64(1),
 		})
+		require.NoError(t, err)
 	}
+	return f
 }
 
-func TestAuthMiddleware_Handle_MalformedToken(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	handlerCalled := false
-
-	tests := []struct {
-		name  string
-		token string
-	}{
-		{"Completely invalid", "not-a-jwt-token"},
-		{"Invalid base64", "eyJ.eyJ.sig"},
-		{"Missing parts", "eyJhbGciOiJIUzI1NiJ9"},
-		{"Empty token", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-				handlerCalled = true
-			})
-
-			req := httptest.NewRequest(http.MethodGet, "/test", nil)
-			req.Header.Set("Authorization", "Bearer "+tt.token)
-			rr := httptest.NewRecorder()
-
-			handler(rr, req)
-
-			assert.False(t, handlerCalled, "Handler should not be called with malformed token")
-			assert.Equal(t, http.StatusUnauthorized, rr.Code)
-
-			var response map[string]string
-			err := json.NewDecoder(rr.Body).Decode(&response)
-			require.NoError(t, err)
-			assert.Contains(t, response["error"], "Invalid")
-		})
-	}
-}
-
-func TestAuthMiddleware_Handle_MissingUserIDClaim(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	handlerCalled := false
-
-	// Token without user_id claim
-	claims := jwt.MapClaims{
-		"email": "test@example.com",
-		"role":  "admin",
-		"exp":   time.Now().Add(time.Hour).Unix(),
-	}
-	tokenString := createUnsignedToken(claims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		handlerCalled = true
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+tokenString)
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.False(t, handlerCalled, "Handler should not be called without user_id claim")
-	assert.Equal(t, http.StatusUnauthorized, rr.Code)
-
-	var response map[string]string
-	err := json.NewDecoder(rr.Body).Decode(&response)
+func signedToken(t *testing.T, userID, secret string, ttl time.Duration) string {
+	t.Helper()
+	token, err := utils.GenerateToken(userID, userID+"@example.com", "agent", secret, ttl)
 	require.NoError(t, err)
-	assert.Equal(t, "Invalid token claims", response["error"])
+	return token
 }
 
-func TestAuthMiddleware_Handle_PartialClaims(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	handlerCalled := false
-	var capturedUserID interface{}
-	var capturedEmail interface{}
-	var capturedRole interface{}
-
-	// Token with only user_id (no email or role)
-	userID := uuid.New().String()
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	tokenString := createUnsignedToken(claims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		handlerCalled = true
-		capturedUserID = r.Context().Value("userId")
-		capturedEmail = r.Context().Value("email")
-		capturedRole = r.Context().Value("role")
+// serve runs the middleware once and reports the status, the error message,
+// and the person the handler saw.
+func (f authFixture) serve(t *testing.T, req *http.Request) (int, string, *db.User, context.Context) {
+	t.Helper()
+	var seen *db.User
+	var seenCtx context.Context
+	handler := f.mw.Handle(func(w http.ResponseWriter, r *http.Request) {
+		if u, ok := access.User(r.Context()); ok {
+			seen = &u
+		}
+		seenCtx = r.Context()
+		w.WriteHeader(http.StatusOK)
 	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+tokenString)
 	rr := httptest.NewRecorder()
-
 	handler(rr, req)
-
-	// Should succeed because user_id is present
-	assert.True(t, handlerCalled, "Handler should be called when user_id is present")
-	assert.Equal(t, userID, capturedUserID)
-	assert.Nil(t, capturedEmail, "Email should be nil when not in claims")
-	assert.Nil(t, capturedRole, "Role should be nil when not in claims")
+	var body map[string]string
+	_ = json.NewDecoder(rr.Body).Decode(&body)
+	return rr.Code, body["error"], seen, seenCtx
 }
 
-func TestAuthMiddleware_Handle_HeaderTakesPrecedenceOverCookie(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	var capturedUserID interface{}
-
-	headerUserID := uuid.New().String()
-	cookieUserID := uuid.New().String()
-
-	headerClaims := jwt.MapClaims{
-		"user_id": headerUserID,
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	headerToken := createUnsignedToken(headerClaims)
-
-	cookieClaims := jwt.MapClaims{
-		"user_id": cookieUserID,
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	cookieToken := createUnsignedToken(cookieClaims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		capturedUserID = r.Context().Value("userId")
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+headerToken)
-	req.AddCookie(&http.Cookie{
-		Name:  "auth_token",
-		Value: cookieToken,
-	})
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	// Header should take precedence
-	assert.Equal(t, headerUserID, capturedUserID, "Authorization header should take precedence over cookie")
+func bearer(token string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/organizations", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	return req
 }
 
-func TestAuthMiddleware_Handle_WithOrgIDHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	var capturedOrgID interface{}
-
-	userID := uuid.New().String()
-	orgID := uuid.New()
-
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	tokenString := createUnsignedToken(claims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		capturedOrgID = r.Context().Value(OrgIDKey)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+tokenString)
-	req.Header.Set("X-Org-Id", orgID.String())
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.Equal(t, orgID.String(), capturedOrgID, "OrgIDKey should be set in context from X-Org-Id header")
+func TestAuthMiddleware_ValidTokenSignsTheUserIn(t *testing.T) {
+	f := newAuthFixture(t)
+	code, _, user, _ := f.serve(t, bearer(signedToken(t, f.active, testAccessSecret, time.Hour)))
+	assert.Equal(t, http.StatusOK, code)
+	require.NotNil(t, user)
+	assert.Equal(t, f.active, user.ID)
+	assert.Equal(t, "active", user.Status)
 }
 
-func TestAuthMiddleware_Handle_InvalidOrgIDHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	var capturedOrgID interface{}
-
-	userID := uuid.New().String()
-
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	tokenString := createUnsignedToken(claims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		capturedOrgID = r.Context().Value(OrgIDKey)
-	})
-
+func TestAuthMiddleware_ValidTokenFromCookie(t *testing.T) {
+	f := newAuthFixture(t)
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+tokenString)
-	req.Header.Set("X-Org-Id", "not-a-valid-uuid")
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	// Handler should still be called, just without OrgIDKey set
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Nil(t, capturedOrgID, "OrgIDKey should not be set with invalid UUID")
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: signedToken(t, f.active, testAccessSecret, time.Hour)})
+	code, _, user, _ := f.serve(t, req)
+	assert.Equal(t, http.StatusOK, code)
+	require.NotNil(t, user)
+	assert.Equal(t, f.active, user.ID)
 }
 
-func TestAuthMiddleware_Handle_EmptyOrgIDHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	var capturedOrgID interface{}
+// The middleware used to read tokens without checking their signature, so
+// anyone could sign one with any secret and act as any user.
+func TestAuthMiddleware_RefusesForgedToken(t *testing.T) {
+	f := newAuthFixture(t)
+	code, msg, user, _ := f.serve(t, bearer(signedToken(t, f.active, "some-other-secret", time.Hour)))
+	assert.Equal(t, http.StatusUnauthorized, code)
+	assert.Nil(t, user)
+	assert.NotEmpty(t, msg)
 
-	userID := uuid.New().String()
-
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	tokenString := createUnsignedToken(claims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		capturedOrgID = r.Context().Value(OrgIDKey)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+tokenString)
-	// Empty X-Org-Id header
-	req.Header.Set("X-Org-Id", "")
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Nil(t, capturedOrgID, "OrgIDKey should not be set with empty header")
-}
-
-func TestAuthMiddleware_Handle_EmptyCookie(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	handlerCalled := false
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		handlerCalled = true
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.AddCookie(&http.Cookie{
-		Name:  "auth_token",
-		Value: "",
-	})
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.False(t, handlerCalled, "Handler should not be called with empty cookie value")
-	assert.Equal(t, http.StatusUnauthorized, rr.Code)
-
-	var response map[string]string
-	err := json.NewDecoder(rr.Body).Decode(&response)
+	// An unsigned token ("alg: none") is refused too.
+	unsigned, err := jwt.NewWithClaims(jwt.SigningMethodNone, jwt.MapClaims{
+		"user_id": f.active, "exp": time.Now().Add(time.Hour).Unix(),
+	}).SignedString(jwt.UnsafeAllowNoneSignatureType)
 	require.NoError(t, err)
-	assert.Equal(t, "No authentication token provided", response["error"])
+	code, _, _, _ = f.serve(t, bearer(unsigned))
+	assert.Equal(t, http.StatusUnauthorized, code)
 }
 
-func TestAuthMiddleware_Handle_ContentTypeHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
+func TestAuthMiddleware_RefusesExpiredToken(t *testing.T) {
+	f := newAuthFixture(t)
+	code, _, _, _ := f.serve(t, bearer(signedToken(t, f.active, testAccessSecret, -time.Minute)))
+	assert.Equal(t, http.StatusUnauthorized, code)
+}
 
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		// Should not be called
-	})
+func TestAuthMiddleware_RefusesDisabledOrDeletedAccount(t *testing.T) {
+	f := newAuthFixture(t)
+	code, msg, _, _ := f.serve(t, bearer(signedToken(t, f.disabled, testAccessSecret, time.Hour)))
+	assert.Equal(t, http.StatusUnauthorized, code)
+	assert.Equal(t, "This account is not active.", msg)
+
+	code, msg, _, _ = f.serve(t, bearer(signedToken(t, uuid.NewString(), testAccessSecret, time.Hour)))
+	assert.Equal(t, http.StatusUnauthorized, code)
+	assert.Equal(t, "This account no longer exists.", msg)
+
+	// Disabling a signed-in person takes effect on their next request.
+	token := signedToken(t, f.active, testAccessSecret, time.Hour)
+	code, _, _, _ = f.serve(t, bearer(token))
+	require.Equal(t, http.StatusOK, code)
+	_, err := f.store.GetDB().Exec(`UPDATE users SET status = 'inactive' WHERE id = ?`, f.active)
+	require.NoError(t, err)
+	code, _, _, _ = f.serve(t, bearer(token))
+	assert.Equal(t, http.StatusUnauthorized, code)
+}
+
+func TestAuthMiddleware_RefusesWithoutSecret(t *testing.T) {
+	f := newAuthFixture(t)
+	f.mw = NewAuthMiddleware("", f.store)
+	code, _, _, _ := f.serve(t, bearer(signedToken(t, f.active, testAccessSecret, time.Hour)))
+	assert.Equal(t, http.StatusUnauthorized, code)
+}
+
+func TestAuthMiddleware_MissingOrMalformedHeader(t *testing.T) {
+	f := newAuthFixture(t)
+
+	code, msg, _, _ := f.serve(t, httptest.NewRequest(http.MethodGet, "/test", nil))
+	assert.Equal(t, http.StatusUnauthorized, code)
+	assert.Equal(t, "No authentication token provided", msg)
+
+	for _, header := range []string{"Basic abc", "Bearer", "Bearer a b", "bearer token"} {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Authorization", header)
+		code, msg, _, _ := f.serve(t, req)
+		assert.Equal(t, http.StatusUnauthorized, code, header)
+		assert.Equal(t, "Invalid authorization header format", msg, header)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"),
-		"Error responses should have Content-Type: application/json")
+	req.Header.Set("Authorization", "Bearer not-a-jwt")
+	code, _, _, _ = f.serve(t, req)
+	assert.Equal(t, http.StatusUnauthorized, code)
 }
 
-func TestAuthMiddleware_Handle_DifferentHTTPMethods(t *testing.T) {
-	middleware := NewAuthMiddleware()
+// X-Org-Id names the brand; access.RequireBrand decides whether the person
+// may act in it.
+func TestAuthMiddleware_OrgHeaderNamesTheBrand(t *testing.T) {
+	f := newAuthFixture(t)
+	brandID := uuid.NewString()
+	_, err := f.store.CreateOrganization(context.Background(), db.CreateOrganizationParams{ID: brandID, Name: "B", Slug: "b", ApiKey: "k"})
+	require.NoError(t, err)
+	require.NoError(t, f.store.AddUserToOrganization(context.Background(), db.AddUserToOrganizationParams{
+		OrgID: brandID, UserID: f.active, Role: sql.NullString{String: "member", Valid: true},
+	}))
+	token := signedToken(t, f.active, testAccessSecret, time.Hour)
 
-	methods := []string{
-		http.MethodGet,
-		http.MethodPost,
-		http.MethodPut,
-		http.MethodPatch,
-		http.MethodDelete,
-		http.MethodOptions,
-		http.MethodHead,
-	}
+	req := bearer(token)
+	req.Header.Set("X-Org-Id", brandID)
+	code, _, _, ctx := f.serve(t, req)
+	require.Equal(t, http.StatusOK, code)
+	got, err := access.RequireBrand(ctx, f.store, access.Member)
+	require.NoError(t, err)
+	assert.Equal(t, brandID, got)
 
-	userID := uuid.New().String()
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	tokenString := createUnsignedToken(claims)
+	// A brand the person doesn't belong to is refused by the check.
+	req = bearer(token)
+	req.Header.Set("X-Org-Id", uuid.NewString())
+	_, _, _, ctx = f.serve(t, req)
+	_, err = access.RequireBrand(ctx, f.store, access.Member)
+	assert.Error(t, err)
 
-	for _, method := range methods {
-		t.Run(method, func(t *testing.T) {
-			handlerCalled := false
-
-			handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-				handlerCalled = true
-			})
-
-			req := httptest.NewRequest(method, "/test", nil)
-			req.Header.Set("Authorization", "Bearer "+tokenString)
-			rr := httptest.NewRecorder()
-
-			handler(rr, req)
-
-			assert.True(t, handlerCalled, "Handler should be called for %s method", method)
-		})
-	}
-}
-
-func TestAuthMiddleware_Handle_NumericClaims(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	var capturedUserID interface{}
-
-	// Test with numeric user_id (some systems use integers)
-	claims := jwt.MapClaims{
-		"user_id": float64(12345), // JSON numbers are float64
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-	tokenString := createUnsignedToken(claims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		capturedUserID = r.Context().Value("userId")
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+tokenString)
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.Equal(t, float64(12345), capturedUserID, "Should handle numeric user_id claims")
+	// A header that isn't an ID names no brand.
+	req = bearer(token)
+	req.Header.Set("X-Org-Id", "not-a-uuid")
+	_, _, _, ctx = f.serve(t, req)
+	_, err = access.RequireBrand(ctx, f.store, access.Member)
+	assert.Error(t, err)
 }

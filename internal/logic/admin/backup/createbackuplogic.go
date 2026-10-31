@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	backupService "github.com/outlet-sh/outlet/internal/services/backup"
 	"github.com/outlet-sh/outlet/internal/svc"
@@ -37,6 +38,10 @@ func NewCreateBackupLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Crea
 }
 
 func (l *CreateBackupLogic) CreateBackup(req *types.CreateBackupRequest) (resp *types.CreateBackupResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Generate backup ID and filename
 	backupID := uuid.New().String()
 	timestamp := time.Now().Format("20060102-150405")
@@ -424,8 +429,8 @@ func dbBackupToType(b db.BackupHistory) types.BackupInfo {
 
 // getUserID retrieves the user ID from auth context
 func (l *CreateBackupLogic) getUserID() string {
-	if userID, ok := l.ctx.Value("userId").(string); ok {
-		return userID
+	if user, ok := access.User(l.ctx); ok {
+		return user.ID
 	}
 	return ""
 }

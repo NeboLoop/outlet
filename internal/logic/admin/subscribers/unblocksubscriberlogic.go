@@ -25,6 +25,9 @@ func NewUnblockSubscriberLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 
 func (l *UnblockSubscriberLogic) UnblockSubscriber(req *types.SubscriberActionRequest) (resp *types.SubscriberInfo, err error) {
 	contactID := req.Id
+	if err := requireContact(l.ctx, l.svcCtx, contactID); err != nil {
+		return nil, err
+	}
 
 	// Unblock the contact
 	err = l.svcCtx.DB.UnblockContact(l.ctx, contactID)

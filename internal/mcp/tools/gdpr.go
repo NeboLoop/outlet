@@ -31,7 +31,8 @@ type GDPRInput struct {
 	GDPRConsent *bool `json:"gdpr_consent,omitempty" jsonschema:"GDPR consent status (update_consent)"`
 
 	// Confirmation
-	Confirm bool `json:"confirm,omitempty" jsonschema:"Confirmation for delete action (delete)"`
+	Confirm     bool `json:"confirm,omitempty" jsonschema:"Confirmation for delete action (delete)"`
+	ConfirmLive bool `json:"confirm_live,omitempty" jsonschema:"Set to true to delete while the brand's API key is in live use (delete)"`
 }
 
 // RegisterGDPRTool registers the GDPR tool.

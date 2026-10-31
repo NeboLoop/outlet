@@ -87,6 +87,38 @@ func (q *Queries) CreateMCPAPIKey(ctx context.Context, arg CreateMCPAPIKeyParams
 	return i, err
 }
 
+const createMCPAuditLog = `-- name: CreateMCPAuditLog :exec
+
+INSERT INTO mcp_audit_log (id, user_id, user_email, tool, action, org_id, target, result, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))
+`
+
+type CreateMCPAuditLogParams struct {
+	ID        string         `json:"id"`
+	UserID    string         `json:"user_id"`
+	UserEmail string         `json:"user_email"`
+	Tool      string         `json:"tool"`
+	Action    string         `json:"action"`
+	OrgID     sql.NullString `json:"org_id"`
+	Target    sql.NullString `json:"target"`
+	Result    string         `json:"result"`
+}
+
+// MCP audit log (every change made through MCP)
+func (q *Queries) CreateMCPAuditLog(ctx context.Context, arg CreateMCPAuditLogParams) error {
+	_, err := q.db.ExecContext(ctx, createMCPAuditLog,
+		arg.ID,
+		arg.UserID,
+		arg.UserEmail,
+		arg.Tool,
+		arg.Action,
+		arg.OrgID,
+		arg.Target,
+		arg.Result,
+	)
+	return err
+}
+
 const createMCPOAuthClient = `-- name: CreateMCPOAuthClient :one
 
 INSERT INTO mcp_oauth_clients (id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_confidential, is_active, created_at, updated_at)
@@ -550,27 +582,6 @@ func (q *Queries) GetMCPSession(ctx context.Context, sessionID string) (McpSessi
 	return i, err
 }
 
-const getMCPSessionByUser = `-- name: GetMCPSessionByUser :one
-SELECT session_id, user_id, org_id, created_at, updated_at FROM mcp_sessions
-WHERE user_id = ?1 AND org_id IS NOT NULL
-ORDER BY updated_at DESC
-LIMIT 1
-`
-
-// Fallback: get most recent org selection for a user (when session ID changes)
-func (q *Queries) GetMCPSessionByUser(ctx context.Context, userID string) (McpSession, error) {
-	row := q.db.QueryRowContext(ctx, getMCPSessionByUser, userID)
-	var i McpSession
-	err := row.Scan(
-		&i.SessionID,
-		&i.UserID,
-		&i.OrgID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const listMCPAPIKeysByUser = `-- name: ListMCPAPIKeysByUser :many
 SELECT id, user_id, name, key_hash, key_prefix, scopes, last_used_at, expires_at, revoked_at, created_at, updated_at FROM mcp_api_keys
 WHERE user_id = ?1
@@ -664,15 +675,24 @@ func (q *Queries) MarkMCPOAuthCodeUsed(ctx context.Context, id string) error {
 	return err
 }
 
-const revokeMCPAPIKey = `-- name: RevokeMCPAPIKey :exec
+const revokeMCPAPIKey = `-- name: RevokeMCPAPIKey :execrows
 UPDATE mcp_api_keys
 SET revoked_at = datetime('now'), updated_at = datetime('now')
-WHERE id = ?1
+WHERE id = ?1 AND user_id = ?2 AND revoked_at IS NULL
 `
 
-func (q *Queries) RevokeMCPAPIKey(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, revokeMCPAPIKey, id)
-	return err
+type RevokeMCPAPIKeyParams struct {
+	ID     string `json:"id"`
+	UserID string `json:"user_id"`
+}
+
+// People revoke their own keys.
+func (q *Queries) RevokeMCPAPIKey(ctx context.Context, arg RevokeMCPAPIKeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeMCPAPIKey, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const revokeMCPOAuthToken = `-- name: RevokeMCPOAuthToken :exec

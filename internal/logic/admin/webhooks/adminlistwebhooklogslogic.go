@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -30,9 +30,9 @@ func NewAdminListWebhookLogsLogic(ctx context.Context, svcCtx *svc.ServiceContex
 }
 
 func (l *AdminListWebhookLogsLogic) AdminListWebhookLogs(req *types.ListWebhookLogsRequest) (resp *types.ListWebhookLogsResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, fmt.Errorf("organization not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Admin)
+	if err != nil {
+		return nil, err
 	}
 
 	webhookID := req.Id

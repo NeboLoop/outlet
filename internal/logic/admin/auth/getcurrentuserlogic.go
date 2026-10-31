@@ -2,9 +2,9 @@ package auth
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -27,23 +27,10 @@ func NewGetCurrentUserLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Ge
 }
 
 func (l *GetCurrentUserLogic) GetCurrentUser() (resp *types.UserInfo, err error) {
-	userIDValue := l.ctx.Value("userId")
-	if userIDValue == nil {
-		return nil, fmt.Errorf("user ID not found in context")
-	}
-
-	userID, ok := userIDValue.(string)
+	// The auth middleware loaded this person and checked the account is active.
+	user, ok := access.User(l.ctx)
 	if !ok {
-		return nil, fmt.Errorf("invalid user ID in context")
-	}
-
-	user, err := l.svcCtx.DB.GetUserByID(l.ctx, userID)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found")
-	}
-	if err != nil {
-		l.Errorf("Database error getting user: %v", err)
-		return nil, fmt.Errorf("database error")
+		return nil, errorx.NewUnauthorizedError("Sign in first.")
 	}
 
 	return &types.UserInfo{

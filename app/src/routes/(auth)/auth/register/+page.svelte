@@ -7,59 +7,49 @@
 	import { Card, Input, Button, Alert, Checkbox, Spinner, Badge } from '$lib/components/ui';
 	import { ArrowLeft, AlertTriangle } from '@lucide/svelte';
 
+	// Outlet is invite-only: an account starts from an invitation link, and the
+	// invitation decides the email, the brand and the role.
 	let formData = $state({
 		firstName: '',
 		lastName: '',
-		email: '',
 		phone: '',
 		password: '',
 		confirmPassword: '',
-		userType: 'homeowner',
 		agreeToTerms: false
 	});
 
 	let loading = $state(false);
 	let error = $state('');
-	let invitationToken = $state<string | null>(null);
-	let invitationType = $state<'homeowner' | 'agent' | 'partner' | null>(null);
-	let invitationLoading = $state(false);
+	let invitationToken = $state('');
+	let invitationValid = $state(false);
+	let invitationLoading = $state(true);
+	let email = $state('');
+	let brandName = $state('');
+	let role = $state('');
 
 	onMount(async () => {
 		const token = $page.url.searchParams.get('token');
 		if (!token) {
-			error = 'Registration requires an invitation. Please contact an administrator.';
+			error = 'Outlet is invite-only. Ask a brand admin for an invitation.';
 			invitationLoading = false;
 			return;
 		}
 
 		invitationToken = token;
-		invitationLoading = true;
 
 		try {
-			const invitationData = await validateInvitation({ token });
-
-			if (invitationData.valid) {
-				formData.email = invitationData.email;
-				formData.firstName = invitationData.first_name || '';
-				formData.lastName = invitationData.last_name || '';
-				formData.phone = invitationData.phone || '';
-
-				if (invitationData.role === 'partner_manager') {
-					invitationType = 'partner';
-					formData.userType = 'partner';
-				} else if (invitationData.role === 'sales_agent') {
-					invitationType = 'agent';
-					formData.userType = 'agent';
-				} else if (invitationData.role === 'homeowner') {
-					invitationType = 'homeowner';
-					formData.userType = 'homeowner';
-				}
+			const invitation = await validateInvitation({ token });
+			if (invitation.valid) {
+				invitationValid = true;
+				email = invitation.email;
+				brandName = invitation.brand_name;
+				role = invitation.role;
 			} else {
-				error = invitationData.message || 'Invalid invitation token';
+				error = invitation.message || "This invitation isn't valid.";
 			}
 		} catch (err: any) {
 			console.error('Failed to validate invitation:', err);
-			error = 'Failed to validate invitation. Please try again or contact support.';
+			error = 'Could not check this invitation. Try again.';
 		} finally {
 			invitationLoading = false;
 		}
@@ -71,41 +61,29 @@
 		error = '';
 
 		if (formData.password !== formData.confirmPassword) {
-			error = 'Passwords do not match';
+			error = 'The passwords do not match.';
 			loading = false;
 			return;
 		}
 
 		try {
 			const response = await register({
-				email: formData.email,
+				token: invitationToken,
 				password: formData.password,
 				first_name: formData.firstName,
 				last_name: formData.lastName,
-				phone: formData.phone || undefined,
-				token: invitationToken || undefined
+				phone: formData.phone || undefined
 			});
 
 			if (response.token && response.user) {
 				authStore.setSession(response.token, response.user);
-
-				if (response.user.role === 'sales_agent') {
-					goto('/agent');
-				} else if (response.user.role === 'partner_manager') {
-					goto('/partner');
-				} else if (response.user.role === 'homeowner') {
-					goto('/homeowner');
-				} else if (response.user.role === 'admin') {
-					goto('/');
-				} else {
-					goto('/');
-				}
+				goto('/');
 			} else {
-				error = 'Invalid response from server';
+				error = 'Something went wrong. Try again.';
 			}
 		} catch (err: any) {
 			console.error('Registration error:', err);
-			error = err.message || 'Registration failed. Please try again.';
+			error = err.message || 'Could not create your account. Try again.';
 		} finally {
 			loading = false;
 		}
@@ -126,7 +104,7 @@
 
 	<div class="text-center">
 		<h1 class="text-4xl font-bold text-text">Outlet</h1>
-		<h2 class="mt-6 text-2xl font-semibold text-text">Complete your registration</h2>
+		<h2 class="mt-6 text-2xl font-semibold text-text">Create your account</h2>
 	</div>
 
 	<Card>
@@ -135,47 +113,43 @@
 				<div class="mx-auto flex items-center justify-center h-12 w-12">
 					<Spinner size={32} class="text-primary" />
 				</div>
-				<p class="mt-4 text-sm text-text-muted">Loading invitation details...</p>
+				<p class="mt-4 text-sm text-text-muted">Checking your invitation...</p>
 			</div>
-		{:else if error && !invitationToken}
+		{:else if !invitationValid}
 			<div class="text-center py-8 space-y-4">
-				<Alert type="warning" title="Invitation Required" icon={AlertTriangle}>
+				<Alert type="warning" title="Invitation needed" icon={AlertTriangle}>
 					<p>{error}</p>
 				</Alert>
 				<div class="pt-4">
 					<a href="/auth/login" class="text-sm font-medium text-primary hover:underline">
-						Return to login
+						Return to sign in
 					</a>
 				</div>
 			</div>
 		{:else}
 			{#if error}
-				<Alert type="error" title="Registration failed">
+				<Alert type="error" title="Could not create your account">
 					<p>{error}</p>
 				</Alert>
 				<div class="mt-6"></div>
 			{/if}
 
 			<form class="space-y-5" onsubmit={handleRegister}>
-				{#if invitationType}
-					<div>
-						<label class="form-label">Account Type</label>
-						<div class="px-4 py-3 bg-bg-secondary border border-border rounded-xl">
-							<div class="flex items-center gap-2">
-								<Badge variant="info">
-									{#if invitationType === 'partner'}
-										Partner Manager
-									{:else if invitationType === 'agent'}
-										Sales Agent
-									{:else}
-										Homeowner
-									{/if}
-								</Badge>
-							</div>
-							<p class="text-xs text-text-muted mt-1">You've been invited to join Outlet</p>
+				<div>
+					<span class="form-label">Invitation</span>
+					<div class="px-4 py-3 bg-bg-secondary border border-border rounded-xl">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-text">{brandName}</span>
+							<Badge variant="info">{role}</Badge>
 						</div>
+						<p class="text-xs text-text-muted mt-1">You've been invited to join this brand on Outlet.</p>
 					</div>
-				{/if}
+				</div>
+
+				<div>
+					<label for="email" class="form-label">Email address</label>
+					<Input id="email" type="email" value={email} readonly />
+				</div>
 
 				<div class="grid grid-cols-2 gap-4">
 					<div>
@@ -186,11 +160,6 @@
 						<label for="last-name" class="form-label">Last name</label>
 						<Input id="last-name" type="text" bind:value={formData.lastName} />
 					</div>
-				</div>
-
-				<div>
-					<label for="email" class="form-label">Email address</label>
-					<Input id="email" type="email" bind:value={formData.email} />
 				</div>
 
 				<div>

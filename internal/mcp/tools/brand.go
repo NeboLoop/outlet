@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
 	"github.com/outlet-sh/outlet/internal/services/email"
@@ -51,7 +52,8 @@ type BrandInput struct {
 	MaxContacts *int64 `json:"max_contacts,omitempty" jsonschema:"Set max contacts limit (0 or null for unlimited). For brand.update."`
 
 	// Delete confirmation
-	Confirm bool `json:"confirm,omitempty" jsonschema:"Set to true to confirm deletion. For brand.delete, domain.delete."`
+	Confirm     bool `json:"confirm,omitempty" jsonschema:"Set to true to confirm deletion. For brand.delete, domain.delete."`
+	ConfirmLive bool `json:"confirm_live,omitempty" jsonschema:"Set to true to delete a brand whose API key is in live use. For brand.delete."`
 }
 
 // RegisterBrandTool registers the unified brand tool.
@@ -70,11 +72,11 @@ Resources:
 
 BRAND RESOURCE:
 - brand.list: List all brands you have access to
-- brand.select: Select a brand to work with (OAuth only, requires: brand_id or slug)
+- brand.select: Select a brand to work with (requires: brand_id or slug). Each new session chooses its brand.
 - brand.get: Get current brand details
 - brand.update: Update brand settings (optional: name, from_name, from_email, reply_to, app_url, max_contacts)
 - brand.create: Create a new brand (requires: name)
-- brand.delete: Delete brand (requires: confirm=true)
+- brand.delete: Delete a brand (requires: id or slug, confirm=true; confirm_live=true if its API key is in live use)
 - brand.dashboard_stats: Get dashboard statistics
 
 DOMAIN RESOURCE:
@@ -99,6 +101,7 @@ Examples:
   brand(resource: brand, action: update, app_url: "")  # clear, use platform default
   brand(resource: brand, action: update, max_contacts: 0)  # unlimited
   brand(resource: brand, action: create, name: "New Company")
+  brand(resource: brand, action: delete, slug: "old-company", confirm: true)
   brand(resource: brand, action: dashboard_stats)
   brand(resource: domain, action: list)
   brand(resource: domain, action: create, domain: "example.com")
@@ -231,18 +234,18 @@ func handleBrandList(ctx context.Context, toolCtx *mcpctx.ToolContext, input Bra
 			Selected: true,
 		})
 	} else {
-		allBrands, err := toolCtx.DB().ListOrganizations(ctx)
+		brands, err := access.Brands(ctx, toolCtx.DB(), toolCtx.UserID())
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list brands: %w", err)
 		}
 
 		currentBrandID := toolCtx.BrandID()
-		for _, brand := range allBrands {
+		for _, brand := range brands {
 			items = append(items, BrandListItem{
 				ID:       brand.ID,
 				Name:     brand.Name,
 				Slug:     brand.Slug,
-				Role:     "admin",
+				Role:     string(brand.Role),
 				Selected: brand.ID == currentBrandID,
 			})
 		}
@@ -496,7 +499,9 @@ func handleBrandCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 }
 
 func handleBrandDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	// brand.delete acts on the brand it names, never on the session's choice.
+	brand, err := lookupNamedBrand(ctx, toolCtx.DB(), input.BrandID, input.ID, input.Slug)
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -504,11 +509,12 @@ func handleBrandDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 		return nil, nil, mcpctx.NewValidationError("confirm=true is required to delete a brand", "confirm")
 	}
 
-	brand := toolCtx.Brand()
-
-	err := toolCtx.DB().DeleteOrganization(ctx, brand.ID)
+	err = toolCtx.DB().DeleteOrganization(ctx, brand.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to delete brand: %w", err)
+	}
+	if toolCtx.BrandID() == brand.ID {
+		toolCtx.ClearBrand()
 	}
 
 	return nil, BrandDeleteOutput{

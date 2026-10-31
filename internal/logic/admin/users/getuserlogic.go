@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -25,6 +26,10 @@ func NewGetUserLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetUserLo
 }
 
 func (l *GetUserLogic) GetUser(req *types.GetUserRequest) (resp *types.UserInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	user, err := l.svcCtx.DB.GetUserByID(l.ctx, req.Id)
 	if err != nil {
 		l.Errorf("Failed to get user: %v", err)

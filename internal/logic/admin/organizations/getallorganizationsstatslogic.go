@@ -3,6 +3,8 @@ package organizations
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -24,6 +26,20 @@ func NewGetAllOrganizationsStatsLogic(ctx context.Context, svcCtx *svc.ServiceCo
 }
 
 func (l *GetAllOrganizationsStatsLogic) GetAllOrganizationsStats() (resp *types.OrgBulkStatsResponse, err error) {
+	user, ok := access.User(l.ctx)
+	if !ok {
+		return nil, errorx.NewUnauthorizedError("Sign in first.")
+	}
+	// Stats only for the brands this person can reach.
+	brands, err := access.Brands(l.ctx, l.svcCtx.DB, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	reach := make(map[string]bool, len(brands))
+	for _, b := range brands {
+		reach[b.ID] = true
+	}
+
 	resp = &types.OrgBulkStatsResponse{
 		Stats: make(map[string]types.OrgStats),
 	}
@@ -68,5 +84,10 @@ func (l *GetAllOrganizationsStatsLogic) GetAllOrganizationsStats() (resp *types.
 		}
 	}
 
+	for id := range resp.Stats {
+		if !reach[id] {
+			delete(resp.Stats, id)
+		}
+	}
 	return resp, nil
 }

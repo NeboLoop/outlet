@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	backupService "github.com/outlet-sh/outlet/internal/services/backup"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -29,6 +30,10 @@ func NewDeleteBackupLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Dele
 }
 
 func (l *DeleteBackupLogic) DeleteBackup(req *types.DeleteBackupRequest) (resp *types.Response, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Get backup to find file path
 	backup, err := l.svcCtx.DB.GetBackup(l.ctx, req.Id)
 	if err != nil {

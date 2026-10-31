@@ -161,12 +161,12 @@ func TestHandler_StoreBrandSelection(t *testing.T) {
 	brandID := uuid.New().String()
 
 	// Directly test the in-memory cache (avoid triggering the DB goroutine)
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	// Check memory cache
 	cached, ok := handler.brandSelectionCache.Load(sessionID)
 	require.True(t, ok, "Brand selection should be in memory cache")
-	assert.Equal(t, brandID, cached.(string), "BrandID should match")
+	assert.Equal(t, brandID, cached.(brandSelection).brandID, "BrandID should match")
 }
 
 func TestHandler_ClearBrandSelection(t *testing.T) {
@@ -180,7 +180,7 @@ func TestHandler_ClearBrandSelection(t *testing.T) {
 	brandID := uuid.New().String()
 
 	// Store directly to cache
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	// Verify stored
 	_, ok := handler.brandSelectionCache.Load(sessionID)
@@ -285,12 +285,12 @@ func TestHandler_SessionRestore_FromMemoryCache(t *testing.T) {
 	brandID := uuid.New().String()
 
 	// Store brand selection in memory cache
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	// Verify it can be retrieved
 	cached, ok := handler.brandSelectionCache.Load(sessionID)
 	require.True(t, ok, "Should find brand in memory cache")
-	assert.Equal(t, brandID, cached.(string))
+	assert.Equal(t, brandID, cached.(brandSelection).brandID)
 }
 
 // ========== Concurrent Access Tests ==========
@@ -310,11 +310,11 @@ func TestHandler_ConcurrentSessionAccess(t *testing.T) {
 			brandID := uuid.New().String()
 
 			// Store
-			handler.brandSelectionCache.Store(sessionID, brandID)
+			handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 			// Load
 			if cached, ok := handler.brandSelectionCache.Load(sessionID); ok {
-				_ = cached.(string)
+				_ = cached.(brandSelection)
 			}
 
 			// Store session
@@ -357,7 +357,7 @@ func TestHandler_ConcurrentBrandSelection(t *testing.T) {
 			tc.SelectBrand(brand)
 
 			// Store directly in cache (avoid DB goroutine)
-			handler.brandSelectionCache.Store(sessionID, brandID)
+			handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 			// Read brand
 			_ = tc.BrandID()
@@ -484,11 +484,11 @@ func TestHandler_UUIDSessionID(t *testing.T) {
 	sessionID := uuid.New().String()
 	brandID := uuid.New().String()
 
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	cached, ok := handler.brandSelectionCache.Load(sessionID)
 	assert.True(t, ok, "UUID session ID should work")
-	assert.Equal(t, brandID, cached.(string))
+	assert.Equal(t, brandID, cached.(brandSelection).brandID)
 }
 
 func TestHandler_SpecialCharacterSessionID(t *testing.T) {
@@ -498,11 +498,11 @@ func TestHandler_SpecialCharacterSessionID(t *testing.T) {
 	sessionID := "session-with-special!@#$%"
 	brandID := uuid.New().String()
 
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	cached, ok := handler.brandSelectionCache.Load(sessionID)
 	assert.True(t, ok, "Special character session ID should work")
-	assert.Equal(t, brandID, cached.(string))
+	assert.Equal(t, brandID, cached.(brandSelection).brandID)
 }
 
 // ========== HTTP Method Tests ==========

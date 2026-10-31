@@ -121,3 +121,9 @@ SELECT
     SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
 FROM transactional_sends
 WHERE template_id = sqlc.arg(template_id);
+
+-- name: GetRecentAPIKeySends :one
+-- Mail sent with the brand's API key (the SDK and SMTP) in the last 7 days.
+SELECT COUNT(*) AS sends, CAST(COALESCE(MAX(created_at), '') AS TEXT) AS last_sent_at
+FROM transactional_sends
+WHERE org_id = sqlc.arg(org_id) AND created_at >= datetime('now', '-7 days');

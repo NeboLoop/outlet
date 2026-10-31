@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -33,6 +34,10 @@ func (l *CreateCustomFieldLogic) CreateCustomField(req *types.CreateCustomFieldR
 	listID, err := strconv.ParseInt(req.ListId, 10, 64)
 	if err != nil {
 		l.Errorf("Invalid list ID: %s", req.ListId)
+		return nil, err
+	}
+
+	if _, err := requireList(l.ctx, l.svcCtx, listID, access.Member); err != nil {
 		return nil, err
 	}
 

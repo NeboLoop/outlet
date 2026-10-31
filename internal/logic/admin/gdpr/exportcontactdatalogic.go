@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -47,6 +48,9 @@ func (l *ExportContactDataLogic) ExportContactData(req *types.GDPRExportRequest)
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("contact not found")
 		}
+		return nil, err
+	}
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, contact.OrgID.String, access.Member); err != nil {
 		return nil, err
 	}
 

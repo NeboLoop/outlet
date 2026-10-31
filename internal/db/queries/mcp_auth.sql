@@ -28,10 +28,11 @@ UPDATE mcp_api_keys
 SET last_used_at = datetime('now'), updated_at = datetime('now')
 WHERE id = sqlc.arg(id);
 
--- name: RevokeMCPAPIKey :exec
+-- name: RevokeMCPAPIKey :execrows
+-- People revoke their own keys.
 UPDATE mcp_api_keys
 SET revoked_at = datetime('now'), updated_at = datetime('now')
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id) AND revoked_at IS NULL;
 
 -- name: DeleteMCPAPIKey :exec
 DELETE FROM mcp_api_keys WHERE id = sqlc.arg(id);
@@ -147,13 +148,6 @@ ON CONFLICT (session_id) DO UPDATE SET
 SELECT * FROM mcp_sessions
 WHERE session_id = sqlc.arg(session_id);
 
--- name: GetMCPSessionByUser :one
--- Fallback: get most recent org selection for a user (when session ID changes)
-SELECT * FROM mcp_sessions
-WHERE user_id = sqlc.arg(user_id) AND org_id IS NOT NULL
-ORDER BY updated_at DESC
-LIMIT 1;
-
 -- name: DeleteMCPSession :exec
 DELETE FROM mcp_sessions WHERE session_id = sqlc.arg(session_id);
 
@@ -161,3 +155,9 @@ DELETE FROM mcp_sessions WHERE session_id = sqlc.arg(session_id);
 -- Delete sessions older than 30 days
 DELETE FROM mcp_sessions
 WHERE updated_at < datetime('now', '-30 days');
+
+-- MCP audit log (every change made through MCP)
+
+-- name: CreateMCPAuditLog :exec
+INSERT INTO mcp_audit_log (id, user_id, user_email, tool, action, org_id, target, result, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(user_id), sqlc.arg(user_email), sqlc.arg(tool), sqlc.arg(action), sqlc.arg(org_id), sqlc.arg(target), sqlc.arg(result), datetime('now'));

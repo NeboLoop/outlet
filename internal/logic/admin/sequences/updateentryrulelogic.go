@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -28,6 +29,10 @@ func NewUpdateEntryRuleLogic(ctx context.Context, svcCtx *svc.ServiceContext) *U
 }
 
 func (l *UpdateEntryRuleLogic) UpdateEntryRule(req *types.UpdateEntryRuleRequest) (resp *types.EntryRuleResponse, err error) {
+	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetEntryRuleOrgID, req.Id, access.Member); err != nil {
+		return nil, err
+	}
+
 	var isActive sql.NullInt64
 	if req.IsActive {
 		isActive = sql.NullInt64{Int64: 1, Valid: true}

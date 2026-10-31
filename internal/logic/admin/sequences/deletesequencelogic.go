@@ -3,6 +3,7 @@ package sequences
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -24,6 +25,10 @@ func NewDeleteSequenceLogic(ctx context.Context, svcCtx *svc.ServiceContext) *De
 }
 
 func (l *DeleteSequenceLogic) DeleteSequence(req *types.GetSequenceRequest) (resp *types.AnalyticsResponse, err error) {
+	if _, err := requireBrandOf(l.ctx, l.svcCtx, l.svcCtx.DB.GetSequenceOrgID, req.Id, access.Member); err != nil {
+		return nil, err
+	}
+
 	err = l.svcCtx.DB.DeleteSequence(l.ctx, req.Id)
 	if err != nil {
 		l.Errorf("Failed to delete sequence %s: %v", req.Id, err)

@@ -54,7 +54,7 @@ WHERE id = sqlc.arg(id);
 -- name: AddUserToOrganization :exec
 INSERT INTO org_users (org_id, user_id, role, created_at)
 VALUES (sqlc.arg(org_id), sqlc.arg(user_id), sqlc.arg(role), datetime('now'))
-ON CONFLICT (org_id, user_id) DO UPDATE SET role = sqlc.arg(role);
+ON CONFLICT (org_id, user_id) DO UPDATE SET role = excluded.role;
 
 -- name: RemoveUserFromOrganization :exec
 DELETE FROM org_users
@@ -102,3 +102,31 @@ SET
     updated_at = datetime('now')
 WHERE id = sqlc.arg(id)
 RETURNING *;
+
+-- name: GetOrgUserRole :one
+-- The person's role in one brand. No row means they don't belong to it.
+SELECT COALESCE(role, 'member') AS role FROM org_users
+WHERE org_id = sqlc.arg(org_id) AND user_id = sqlc.arg(user_id);
+
+-- name: CreateOrgInvitation :one
+INSERT INTO org_invitations (id, org_id, email, role, token, expires_at, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(org_id), sqlc.arg(email), sqlc.arg(role), sqlc.arg(token), datetime('now', '+7 days'), datetime('now'))
+RETURNING *;
+
+-- name: DeletePendingOrgInvitations :exec
+-- A new invitation replaces any earlier one for the same person and brand.
+DELETE FROM org_invitations
+WHERE org_id = sqlc.arg(org_id) AND email = sqlc.arg(email) COLLATE NOCASE AND accepted_at IS NULL;
+
+-- name: GetOrgInvitationByToken :one
+SELECT i.id, i.org_id, i.email, COALESCE(i.role, 'member') AS role, i.accepted_at,
+       CAST(datetime(i.expires_at) <= datetime('now') AS INTEGER) AS expired,
+       o.name AS org_name
+FROM org_invitations i
+JOIN organizations o ON o.id = i.org_id
+WHERE i.token = sqlc.arg(token);
+
+-- name: AcceptOrgInvitation :execrows
+UPDATE org_invitations
+SET accepted_at = datetime('now')
+WHERE id = sqlc.arg(id) AND accepted_at IS NULL AND datetime(expires_at) > datetime('now');

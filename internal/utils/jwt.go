@@ -24,8 +24,14 @@ type SDKCustomerClaims struct {
 	jwt.RegisteredClaims
 }
 
+// errNoSecret refuses tokens without a signing secret: anyone could sign one.
+var errNoSecret = errors.New("JWT secret is not set (JWT_SECRET, JWT_REFRESH_SECRET)")
+
 // GenerateToken creates a new JWT token for a user
 func GenerateToken(userID, email, role, secret string, expireDuration time.Duration) (string, error) {
+	if secret == "" {
+		return "", errNoSecret
+	}
 	// Create claims with user data and expiration
 	claims := CustomClaims{
 		UserID: userID,
@@ -54,6 +60,9 @@ func GenerateToken(userID, email, role, secret string, expireDuration time.Durat
 
 // ValidateToken validates and parses a JWT token
 func ValidateToken(tokenString, secret string) (*CustomClaims, error) {
+	if secret == "" {
+		return nil, errNoSecret
+	}
 	// Parse token
 	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
 		// Verify signing method

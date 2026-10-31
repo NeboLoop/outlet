@@ -3,6 +3,7 @@ package emailconfig
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -25,6 +26,10 @@ func NewListDomainIdentitiesLogic(ctx context.Context, svcCtx *svc.ServiceContex
 }
 
 func (l *ListDomainIdentitiesLogic) ListDomainIdentities(req *types.ListDomainIdentitiesRequest) (resp *types.ListDomainIdentitiesResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.OrgId, access.Member); err != nil {
+		return nil, err
+	}
+
 	identities, err := l.svcCtx.DB.ListDomainIdentitiesByOrg(l.ctx, req.OrgId)
 	if err != nil {
 		l.Errorf("Failed to list domain identities: %v", err)

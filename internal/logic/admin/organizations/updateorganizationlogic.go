@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -26,6 +27,10 @@ func NewUpdateOrganizationLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *UpdateOrganizationLogic) UpdateOrganization(req *types.UpdateOrgRequest) (resp *types.OrgInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.Id, access.Admin); err != nil {
+		return nil, err
+	}
+
 	var org db.Organization
 
 	// Update max_contacts separately since it needs to allow NULL (unlimited)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -32,6 +33,9 @@ func (l *GetContactConsentLogic) GetContactConsent(req *types.GDPRConsentRequest
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("contact not found")
 		}
+		return nil, err
+	}
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, contact.OrgID.String, access.Member); err != nil {
 		return nil, err
 	}
 

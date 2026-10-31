@@ -372,6 +372,18 @@ type McpApiKey struct {
 	UpdatedAt  sql.NullString `json:"updated_at"`
 }
 
+type McpAuditLog struct {
+	ID        string         `json:"id"`
+	UserID    string         `json:"user_id"`
+	UserEmail string         `json:"user_email"`
+	Tool      string         `json:"tool"`
+	Action    string         `json:"action"`
+	OrgID     sql.NullString `json:"org_id"`
+	Target    sql.NullString `json:"target"`
+	Result    string         `json:"result"`
+	CreatedAt string         `json:"created_at"`
+}
+
 type McpOauthClient struct {
 	ID               string         `json:"id"`
 	ClientID         string         `json:"client_id"`

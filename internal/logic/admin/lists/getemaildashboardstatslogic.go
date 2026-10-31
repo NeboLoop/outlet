@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -27,6 +28,10 @@ func NewGetEmailDashboardStatsLogic(ctx context.Context, svcCtx *svc.ServiceCont
 }
 
 func (l *GetEmailDashboardStatsLogic) GetEmailDashboardStats(req *types.EmailDashboardStatsRequest) (resp *types.EmailDashboardStatsResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	var fromTime, toTime time.Time
 
 	if req.From != "" {

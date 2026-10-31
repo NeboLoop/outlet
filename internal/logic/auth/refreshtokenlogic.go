@@ -2,10 +2,10 @@ package auth
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -40,19 +40,11 @@ func (l *RefreshTokenLogic) RefreshToken(req *types.RefreshTokenRequest) (resp *
 		return nil, fmt.Errorf("invalid or expired refresh token")
 	}
 
-	// Get user from database to ensure they still exist and are active
-	user, err := l.svcCtx.DB.GetUserByID(l.ctx, claims.UserID)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found")
-	}
+	// The person must still exist and be active: a disabled account gets no
+	// new tokens.
+	user, err := access.Active(l.ctx, l.svcCtx.DB, claims.UserID)
 	if err != nil {
-		l.Errorf("Database error getting user: %v", err)
-		return nil, fmt.Errorf("failed to verify user")
-	}
-
-	// Check if user is active
-	if user.Status != "active" {
-		return nil, fmt.Errorf("account is not active")
+		return nil, err
 	}
 
 	// Check if account is locked

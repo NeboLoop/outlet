@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -26,6 +27,10 @@ func NewGetBackupLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetBack
 }
 
 func (l *GetBackupLogic) GetBackup(req *types.GetBackupRequest) (resp *types.BackupInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	backup, err := l.svcCtx.DB.GetBackup(l.ctx, req.Id)
 	if err != nil {
 		if err == sql.ErrNoRows {

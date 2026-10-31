@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -26,6 +27,10 @@ func NewListUsersLogic(ctx context.Context, svcCtx *svc.ServiceContext) *ListUse
 }
 
 func (l *ListUsersLogic) ListUsers() (resp *types.UserListResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	users, err := l.svcCtx.DB.ListUsers(l.ctx, db.ListUsersParams{
 		FilterRole:   nil,
 		FilterStatus: nil,

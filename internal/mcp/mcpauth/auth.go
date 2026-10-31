@@ -8,9 +8,9 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 
@@ -69,18 +69,10 @@ func TokenInfoFromContext(ctx context.Context) *auth.TokenInfo {
 }
 
 // Authenticator handles MCP authentication for both API keys and OAuth tokens.
+// Every request reads the key or token from the database, so a revoked key
+// stops working at once, and the person behind it must still be active.
 type Authenticator struct {
 	svc *svc.ServiceContext
-
-	// API key cache: hash -> cached result
-	keyCache sync.Map // map[string]*cachedKey
-}
-
-type cachedKey struct {
-	userInfo  *UserInfo
-	user      *db.User
-	expiresAt time.Time
-	revokedAt *time.Time
 }
 
 // NewAuthenticator creates a new MCP authenticator.
@@ -105,33 +97,8 @@ func (a *Authenticator) TokenVerifier() func(ctx context.Context, token string, 
 
 // verifyAPIKey validates an API key and returns token info.
 func (a *Authenticator) verifyAPIKey(ctx context.Context, apiKey string) (*auth.TokenInfo, error) {
-	// Hash the key
-	hash := hashToken(apiKey)
-
-	// Check cache first
-	if cached, ok := a.keyCache.Load(hash); ok {
-		ck := cached.(*cachedKey)
-		// Check if revoked
-		if ck.revokedAt != nil {
-			return nil, auth.ErrInvalidToken
-		}
-		// Check if expired
-		if !ck.expiresAt.IsZero() && time.Now().After(ck.expiresAt) {
-			return nil, auth.ErrInvalidToken
-		}
-		return &auth.TokenInfo{
-			Scopes:     ck.userInfo.Scopes,
-			Expiration: ck.expiresAt,
-			Extra: map[string]any{
-				"user_id":   ck.userInfo.UserID,
-				"user_info": ck.userInfo,
-				"user":      ck.user,
-			},
-		}, nil
-	}
-
-	// DB lookup
-	keyRow, err := a.svc.DB.GetMCPAPIKeyByHash(ctx, hash)
+	// The query skips revoked and expired keys.
+	keyRow, err := a.svc.DB.GetMCPAPIKeyByHash(ctx, hashToken(apiKey))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, auth.ErrInvalidToken
@@ -139,56 +106,27 @@ func (a *Authenticator) verifyAPIKey(ctx context.Context, apiKey string) (*auth.
 		return nil, err
 	}
 
-	// Build user info
-	userInfo := &UserInfo{
-		UserID:   keyRow.UserID,
-		Email:    keyRow.UserEmail,
-		Name:     keyRow.UserName,
-		Role:     keyRow.UserRole,
-		AuthMode: AuthModeAPIKey,
-		Scopes:   parseScopes(keyRow.Scopes.String),
+	user, err := access.Active(ctx, a.svc.DB, keyRow.UserID)
+	if err != nil {
+		return nil, auth.ErrInvalidToken
 	}
+
+	var expiresAt time.Time
 	if keyRow.ExpiresAt.Valid {
-		userInfo.ExpiresAt, _ = time.Parse(time.RFC3339, keyRow.ExpiresAt.String)
+		expiresAt, _ = time.Parse(time.DateTime, keyRow.ExpiresAt.String)
 	}
-
-	user := &db.User{
-		ID:     keyRow.UserID,
-		Email:  keyRow.UserEmail,
-		Name:   keyRow.UserName,
-		Role:   keyRow.UserRole,
-		Status: keyRow.UserStatus,
-	}
-
-	// Cache the result
-	ck := &cachedKey{
-		userInfo:  userInfo,
-		user:      user,
-		expiresAt: userInfo.ExpiresAt,
-	}
-	a.keyCache.Store(hash, ck)
 
 	// Update last used (async)
 	go func() {
 		_ = a.svc.DB.UpdateMCPAPIKeyLastUsed(context.Background(), keyRow.ID)
 	}()
 
-	return &auth.TokenInfo{
-		Scopes:     userInfo.Scopes,
-		Expiration: userInfo.ExpiresAt,
-		Extra: map[string]any{
-			"user_id":   userInfo.UserID,
-			"user_info": userInfo,
-			"user":      user,
-		},
-	}, nil
+	return tokenInfo(user, AuthModeAPIKey, ParseScopes(keyRow.Scopes.String), expiresAt), nil
 }
 
 // verifyOAuthToken validates an OAuth access token and returns token info.
 func (a *Authenticator) verifyOAuthToken(ctx context.Context, accessToken string) (*auth.TokenInfo, error) {
-	hash := hashToken(accessToken)
-
-	tokenRow, err := a.svc.DB.GetMCPOAuthTokenByAccessHash(ctx, hash)
+	tokenRow, err := a.svc.DB.GetMCPOAuthTokenByAccessHash(ctx, hashToken(accessToken))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, auth.ErrInvalidToken
@@ -196,52 +134,45 @@ func (a *Authenticator) verifyOAuthToken(ctx context.Context, accessToken string
 		return nil, err
 	}
 
+	user, err := access.Active(ctx, a.svc.DB, tokenRow.UserID)
+	if err != nil {
+		return nil, auth.ErrInvalidToken
+	}
+
 	expiresAt, _ := time.Parse(time.RFC3339, tokenRow.ExpiresAt)
+	return tokenInfo(user, AuthModeOAuth, ParseScopes(tokenRow.Scopes), expiresAt), nil
+}
+
+func tokenInfo(user db.User, mode AuthMode, scopes []string, expiresAt time.Time) *auth.TokenInfo {
 	userInfo := &UserInfo{
-		UserID:    tokenRow.UserID,
-		Email:     tokenRow.UserEmail,
-		Name:      tokenRow.UserName,
-		Role:      tokenRow.UserRole,
-		AuthMode:  AuthModeOAuth,
-		Scopes:    parseScopes(tokenRow.Scopes),
+		UserID:    user.ID,
+		Email:     user.Email,
+		Name:      user.Name,
+		Role:      user.Role,
+		AuthMode:  mode,
+		Scopes:    scopes,
 		ExpiresAt: expiresAt,
 	}
-
-	user := &db.User{
-		ID:     tokenRow.UserID,
-		Email:  tokenRow.UserEmail,
-		Name:   tokenRow.UserName,
-		Role:   tokenRow.UserRole,
-		Status: tokenRow.UserStatus,
-	}
-
 	return &auth.TokenInfo{
-		Scopes:     userInfo.Scopes,
+		Scopes:     scopes,
 		Expiration: expiresAt,
 		Extra: map[string]any{
-			"user_id":   userInfo.UserID,
+			"user_id":   user.ID,
 			"user_info": userInfo,
-			"user":      user,
+			"user":      &user,
 		},
-	}, nil
-}
-
-func parseScopes(s string) []string {
-	if s == "" {
-		return nil
 	}
-	return strings.Split(s, ",")
 }
 
-// InvalidateAPIKey removes an API key from the cache (call when revoked).
-func (a *Authenticator) InvalidateAPIKey(apiKey string) {
-	hash := hashToken(apiKey)
-	a.keyCache.Delete(hash)
-}
+// ScopeFull lets a key or token call every tool, with the person's own access.
+const ScopeFull = "mcp:full"
 
-// InvalidateAPIKeyByHash removes an API key from cache by its hash.
-func (a *Authenticator) InvalidateAPIKeyByHash(hash string) {
-	a.keyCache.Delete(hash)
+// ParseScopes reads a stored scope list: OAuth space-separated, comma-separated,
+// or a JSON array (the column default).
+func ParseScopes(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
+		return r == ' ' || r == ',' || r == '[' || r == ']' || r == '"'
+	})
 }
 
 // hashToken creates a SHA-256 hash of a token.

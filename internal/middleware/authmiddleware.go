@@ -1,23 +1,30 @@
 package middleware
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
+	"github.com/outlet-sh/outlet/internal/utils"
+
 	"github.com/google/uuid"
-	"github.com/zeromicro/go-zero/core/logx"
 )
 
+// AuthMiddleware signs people in to the admin REST API. It checks the
+// token's signature and expiry, then that the account is still active, on
+// every request. What the person may do in a brand is decided by
+// access.Check in each handler's logic.
 type AuthMiddleware struct {
-	// Config will be injected by go-zero when middleware is used
-	// For now, we'll use a simple approach
+	secret string
+	store  db.Querier
 }
 
-func NewAuthMiddleware() *AuthMiddleware {
-	return &AuthMiddleware{}
+func NewAuthMiddleware(secret string, store db.Querier) *AuthMiddleware {
+	return &AuthMiddleware{secret: secret, store: store}
 }
 
 func (m *AuthMiddleware) Handle(next http.HandlerFunc) http.HandlerFunc {
@@ -33,73 +40,50 @@ func (m *AuthMiddleware) Handle(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if authHeader == "" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "No authentication token provided",
-			})
+			writeAuthError(w, http.StatusUnauthorized, "No authentication token provided")
 			return
 		}
 
 		// Extract token from "Bearer <token>" format
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "Invalid authorization header format",
-			})
+			writeAuthError(w, http.StatusUnauthorized, "Invalid authorization header format")
 			return
 		}
 
-		tokenString := parts[1]
+		claims, err := utils.ValidateToken(parts[1], m.secret)
+		if err != nil || claims.UserID == "" {
+			writeAuthError(w, http.StatusUnauthorized, "Your session is not valid. Sign in again.")
+			return
+		}
 
-		// Parse token to extract claims without full validation
-		// The actual validation will happen in the logic layer with the proper secret
-		token, _, err := jwt.NewParser().ParseUnverified(tokenString, jwt.MapClaims{})
+		user, err := access.Active(r.Context(), m.store, claims.UserID)
 		if err != nil {
-			logx.Errorf("Token parsing error: %v", err)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "Invalid token format",
-			})
+			status := http.StatusInternalServerError
+			msg := "Could not check your account. Try again."
+			var ce *errorx.CodeError
+			if errors.As(err, &ce) {
+				status, msg = ce.Code, ce.Message
+			}
+			writeAuthError(w, status, msg)
 			return
 		}
 
-		// Extract claims
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			// Add user info to context for use in handlers
-			if userID, exists := claims["user_id"]; exists {
-				ctx := context.WithValue(r.Context(), "userId", userID)
-				if email, exists := claims["email"]; exists {
-					ctx = context.WithValue(ctx, "email", email)
-				}
-				if role, exists := claims["role"]; exists {
-					ctx = context.WithValue(ctx, "role", role)
-				}
-				// Store the raw token for validation in logic layer
-				ctx = context.WithValue(ctx, "token", tokenString)
-
-				// Read X-Org-Id header for org-scoped admin operations
-				orgIDStr := r.Header.Get("X-Org-Id")
-				if orgIDStr != "" {
-					// Validate it's a proper UUID, but store as string (logic files expect string)
-					if _, err := uuid.Parse(orgIDStr); err == nil {
-						ctx = context.WithValue(ctx, OrgIDKey, orgIDStr)
-					}
-				}
-
-				next(w, r.WithContext(ctx))
-				return
+		ctx := access.WithUser(r.Context(), user)
+		// X-Org-Id names the brand for brand-scoped admin calls. Naming it
+		// grants nothing: access.RequireBrand checks it in the logic.
+		if orgID := r.Header.Get("X-Org-Id"); orgID != "" {
+			if _, err := uuid.Parse(orgID); err == nil {
+				ctx = access.WithBrand(ctx, orgID)
 			}
 		}
 
-		// If we get here, token was invalid
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Invalid token claims",
-		})
+		next(w, r.WithContext(ctx))
 	}
+}
+
+func writeAuthError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

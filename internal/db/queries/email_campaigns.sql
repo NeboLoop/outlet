@@ -58,9 +58,11 @@ WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id)
 RETURNING *;
 
 -- name: ScheduleCampaign :one
+-- The one way a campaign starts sending: the scheduler picks it up once
+-- scheduled_at has passed. No scheduled_at means now.
 UPDATE email_campaigns
 SET status = 'scheduled',
-    scheduled_at = sqlc.arg(scheduled_at),
+    scheduled_at = COALESCE(sqlc.narg(scheduled_at), datetime('now')),
     updated_at = datetime('now')
 WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id) AND status = 'draft'
 RETURNING *;
@@ -106,7 +108,7 @@ WHERE org_id = sqlc.arg(org_id) AND status = sqlc.arg(status);
 
 -- name: GetScheduledCampaigns :many
 SELECT * FROM email_campaigns
-WHERE status = 'scheduled' AND scheduled_at <= datetime('now')
+WHERE status = 'scheduled' AND datetime(scheduled_at) <= datetime('now')
 ORDER BY scheduled_at ASC;
 
 -- Campaign Sends

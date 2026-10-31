@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -28,18 +29,22 @@ func NewSendCampaignNowLogic(ctx context.Context, svcCtx *svc.ServiceContext) *S
 }
 
 func (l *SendCampaignNowLogic) SendCampaignNow(req *types.SendCampaignNowRequest) (resp *types.CampaignInfo, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, errors.New("org_id not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
-	campaign, err := l.svcCtx.DB.UpdateCampaignStatus(l.ctx, db.UpdateCampaignStatusParams{
-		ID:     req.Id,
-		OrgID:  orgID,
-		Status: sql.NullString{String: "sending", Valid: true},
+	// Schedule it for now: the scheduler is the one sending path. The
+	// campaign comes back "scheduled" until the scheduler starts it.
+	campaign, err := l.svcCtx.DB.ScheduleCampaign(l.ctx, db.ScheduleCampaignParams{
+		ID:    req.Id,
+		OrgID: orgID,
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errorx.NewBadRequestError("Only a draft campaign can be sent.")
+	}
 	if err != nil {
-		l.Errorf("Failed to start campaign: %v", err)
+		l.Errorf("Failed to queue campaign: %v", err)
 		return nil, err
 	}
 

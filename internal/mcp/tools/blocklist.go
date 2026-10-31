@@ -43,7 +43,8 @@ type BlocklistInput struct {
 	PageSize int `json:"page_size,omitempty" jsonschema:"Items per page (default: 20, max: 100)"`
 
 	// Confirmation
-	Confirm bool `json:"confirm,omitempty" jsonschema:"Confirmation for destructive actions (suppression.clear)"`
+	Confirm     bool `json:"confirm,omitempty" jsonschema:"Confirmation for destructive actions (suppression.clear)"`
+	ConfirmLive bool `json:"confirm_live,omitempty" jsonschema:"Set to true to clear the list while the brand's API key is in live use (suppression.clear)"`
 }
 
 // RegisterBlocklistTool registers the blocklist tool.

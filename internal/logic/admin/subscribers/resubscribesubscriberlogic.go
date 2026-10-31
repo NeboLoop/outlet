@@ -25,6 +25,9 @@ func NewResubscribeSubscriberLogic(ctx context.Context, svcCtx *svc.ServiceConte
 
 func (l *ResubscribeSubscriberLogic) ResubscribeSubscriber(req *types.SubscriberActionRequest) (resp *types.SubscriberInfo, err error) {
 	contactID := req.Id
+	if err := requireContact(l.ctx, l.svcCtx, contactID); err != nil {
+		return nil, err
+	}
 
 	// Resubscribe the contact
 	err = l.svcCtx.DB.ResubscribeContact(l.ctx, contactID)

@@ -3,6 +3,7 @@ package organizations
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -24,6 +25,11 @@ func NewGetOrganizationLogic(ctx context.Context, svcCtx *svc.ServiceContext) *G
 }
 
 func (l *GetOrganizationLogic) GetOrganization(req *types.GetOrgRequest) (resp *types.OrgInfo, err error) {
+	caller, err := access.Require(l.ctx, l.svcCtx.DB, req.Id, access.Member)
+	if err != nil {
+		return nil, err
+	}
+
 	org, err := l.svcCtx.DB.GetOrganizationByID(l.ctx, req.Id)
 	if err != nil {
 		return nil, err
@@ -33,7 +39,7 @@ func (l *GetOrganizationLogic) GetOrganization(req *types.GetOrgRequest) (resp *
 		Id:               org.ID,
 		Name:             org.Name,
 		Slug:             org.Slug,
-		ApiKey:           org.ApiKey,
+		ApiKey:           brandAPIKey(org, caller.Role),
 		BillingStatus:    "trial",
 		Plan:             "starter",
 		MaxContacts:      int(org.MaxContacts.Int64),

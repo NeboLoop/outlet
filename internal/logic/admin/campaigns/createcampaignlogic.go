@@ -4,11 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -31,9 +30,9 @@ func NewCreateCampaignLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Cr
 }
 
 func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (resp *types.CampaignInfo, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, errors.New("org_id not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	listIdsJSON, _ := json.Marshal(req.ListIds)

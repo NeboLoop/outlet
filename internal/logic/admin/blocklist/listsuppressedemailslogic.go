@@ -2,11 +2,10 @@ package blocklist
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -28,9 +27,9 @@ func NewListSuppressedEmailsLogic(ctx context.Context, svcCtx *svc.ServiceContex
 }
 
 func (l *ListSuppressedEmailsLogic) ListSuppressedEmails(req *types.ListSuppressedEmailsRequest) (resp *types.ListSuppressedEmailsResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, fmt.Errorf("organization ID not found")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	page := req.Page

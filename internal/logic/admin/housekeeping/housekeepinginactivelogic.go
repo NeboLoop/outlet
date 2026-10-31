@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/outlet-sh/outlet/internal/middleware"
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -27,9 +27,9 @@ func NewHousekeepingInactiveLogic(ctx context.Context, svcCtx *svc.ServiceContex
 }
 
 func (l *HousekeepingInactiveLogic) HousekeepingInactive(req *types.HousekeepingInactiveRequest) (resp *types.HousekeepingResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, fmt.Errorf("organization ID not found")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Admin)
+	if err != nil {
+		return nil, err
 	}
 
 	// Currently uses fixed 90 day window for inactive contact cleanup

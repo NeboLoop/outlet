@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -29,6 +30,10 @@ func (l *DeleteListLogic) DeleteList(req *types.DeleteListRequest) (resp *types.
 	listID, err := strconv.ParseInt(req.Id, 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid list ID: %w", err)
+	}
+
+	if _, err := requireList(l.ctx, l.svcCtx, listID, access.Member); err != nil {
+		return nil, err
 	}
 
 	err = l.svcCtx.DB.DeleteEmailList(l.ctx, listID)

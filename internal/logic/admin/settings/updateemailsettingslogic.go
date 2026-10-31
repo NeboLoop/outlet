@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -27,6 +28,10 @@ func NewUpdateEmailSettingsLogic(ctx context.Context, svcCtx *svc.ServiceContext
 }
 
 func (l *UpdateEmailSettingsLogic) UpdateEmailSettings(req *types.UpdateEmailSettingsRequest) (resp *types.UpdateSettingsResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	const awsCategory = "aws"
 	const smtpCategory = "email"
 

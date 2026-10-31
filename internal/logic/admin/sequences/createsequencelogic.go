@@ -3,11 +3,10 @@ package sequences
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -31,9 +30,9 @@ func NewCreateSequenceLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Cr
 }
 
 func (l *CreateSequenceLogic) CreateSequence(req *types.CreateSequenceRequest) (resp *types.SequenceInfo, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, errors.New("org_id not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	sequenceType := req.SequenceType
@@ -43,6 +42,9 @@ func (l *CreateSequenceLogic) CreateSequence(req *types.CreateSequenceRequest) (
 
 	var listIDInt64 int64
 	if req.ListId != "" {
+		if err := requireSameBrand(l.ctx, listOrgID(l.svcCtx), req.ListId, orgID); err != nil {
+			return nil, err
+		}
 		listIDInt64, _ = strconv.ParseInt(req.ListId, 10, 64)
 	}
 

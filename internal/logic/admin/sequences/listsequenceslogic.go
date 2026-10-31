@@ -3,10 +3,9 @@ package sequences
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"strconv"
 
-	"github.com/outlet-sh/outlet/internal/middleware"
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -29,9 +28,9 @@ func NewListSequencesLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Lis
 }
 
 func (l *ListSequencesLogic) ListSequences() (resp *types.SequenceListResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, fmt.Errorf("organization not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	rows, err := l.svcCtx.DB.ListSequencesByOrg(l.ctx, sql.NullString{String: orgID, Valid: true})

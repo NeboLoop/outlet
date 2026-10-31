@@ -328,6 +328,22 @@ export interface CreateInitialAdminResponse {
 	message: string
 }
 
+export interface CreateInvitationRequest {
+	email: string
+	role?: string // admin or member (default member)
+}
+export interface CreateInvitationRequestParams {
+}
+
+export interface CreateInvitationResponse {
+	email: string
+	role: string
+	added: boolean // true when the person already had an account and joined the brand now
+	invite_url?: string // the sign-up link, when an invitation was made
+	expires_at?: string // when the invitation stops working
+	email_sent: boolean // whether the invitation email went out
+}
+
 export interface CreateListRequest {
 	name: string
 	slug: string
@@ -1311,12 +1327,11 @@ export interface RegenerateApiKeyRequestParams {
 }
 
 export interface RegisterRequest {
-	email: string
+	token?: string // Invitation token (required): it decides the email, brand and role
 	password: string
 	first_name: string
 	last_name: string
 	phone?: string
-	token?: string // Optional invitation token
 }
 
 export interface RegisterResponse {
@@ -1920,10 +1935,8 @@ export interface ValidateInvitationRequestParams {
 
 export interface ValidateInvitationResponse {
 	email: string
-	first_name: string
-	last_name: string
-	phone: string
-	role: string
+	role: string // The role in the brand: admin or member
+	brand_name: string // The brand the invitation joins
 	valid: boolean
 	message?: string
 }

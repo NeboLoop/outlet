@@ -524,6 +524,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: adminorganizations.UpdateOrgEmailSettingsHandler(serverCtx),
 				},
 				{
+					// Invite a person to a brand. Outlet is invite-only: the invitation decides the brand and role.
+					Method:  http.MethodPost,
+					Path:    "/organizations/:id/invitations",
+					Handler: adminorganizations.CreateInvitationHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodPost,
 					Path:    "/organizations/:id/regenerate-key",
 					Handler: adminorganizations.RegenerateOrgApiKeyHandler(serverCtx),
@@ -844,7 +850,7 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: auth.RefreshTokenHandler(serverCtx),
 				},
 				{
-					// User registration
+					// Create an account from an invitation (Outlet is invite-only)
 					Method:  http.MethodPost,
 					Path:    "/auth/register",
 					Handler: auth.RegisterHandler(serverCtx),

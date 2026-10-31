@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
@@ -27,6 +28,10 @@ func NewGetPlatformSESQuotaLogic(ctx context.Context, svcCtx *svc.ServiceContext
 }
 
 func (l *GetPlatformSESQuotaLogic) GetPlatformSESQuota() (resp *types.SESQuotaResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Get AWS credentials from platform settings
 	awsSettings, err := l.svcCtx.DB.GetPlatformSettingsByCategory(l.ctx, "aws")
 	if err != nil {

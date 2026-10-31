@@ -25,6 +25,9 @@ func NewVerifySubscriberLogic(ctx context.Context, svcCtx *svc.ServiceContext) *
 
 func (l *VerifySubscriberLogic) VerifySubscriber(req *types.SubscriberActionRequest) (resp *types.SubscriberInfo, err error) {
 	contactID := req.Id
+	if err := requireContact(l.ctx, l.svcCtx, contactID); err != nil {
+		return nil, err
+	}
 
 	// Manually verify the contact
 	err = l.svcCtx.DB.ManuallyVerifyContact(l.ctx, contactID)
