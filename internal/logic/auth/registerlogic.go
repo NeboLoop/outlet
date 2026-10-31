@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -40,7 +41,7 @@ const invitedPlatformRole = "agent"
 // Register creates an account from an invitation. Outlet is invite-only: the
 // invitation decides the email, the brand and the role, and works once.
 func (l *RegisterLogic) Register(req *types.RegisterRequest) (resp *types.RegisterResponse, err error) {
-	inv, err := usableInvitation(l.ctx, l.svcCtx.DB, req.Token)
+	inv, err := access.Invitation(l.ctx, l.svcCtx.DB, req.Token)
 	if err != nil {
 		return nil, err
 	}
@@ -72,17 +73,10 @@ func (l *RegisterLogic) Register(req *types.RegisterRequest) (resp *types.Regist
 		}
 	}
 
-	// The invitation was emailed to this address, so using it proves the
-	// address: the account is active and verified at once.
+	// The invitation reaches the person only by email, so using it proves
+	// the address: the account is active and verified at once.
 	var user db.CreateUserRow
 	err = l.svcCtx.DB.ExecTx(l.ctx, func(q *db.Queries) error {
-		accepted, err := q.AcceptOrgInvitation(l.ctx, inv.ID)
-		if err != nil {
-			return err
-		}
-		if accepted == 0 {
-			return errInviteUsed
-		}
 		user, err = q.CreateUser(l.ctx, db.CreateUserParams{
 			ID:            uuid.New().String(),
 			Email:         email,
@@ -96,13 +90,9 @@ func (l *RegisterLogic) Register(req *types.RegisterRequest) (resp *types.Regist
 		if err != nil {
 			return err
 		}
-		return q.AddUserToOrganization(l.ctx, db.AddUserToOrganizationParams{
-			OrgID:  inv.OrgID,
-			UserID: user.ID,
-			Role:   sql.NullString{String: inv.Role, Valid: true},
-		})
+		return access.Join(l.ctx, q, inv, db.User{ID: user.ID, Email: user.Email})
 	})
-	if errors.Is(err, errInviteUsed) {
+	if errors.Is(err, access.ErrInvitationUsed) {
 		return nil, err
 	}
 	if err != nil {

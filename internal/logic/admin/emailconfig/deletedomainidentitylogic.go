@@ -42,9 +42,18 @@ func (l *DeleteDomainIdentityLogic) DeleteDomainIdentity(req *types.DeleteDomain
 		return nil, errorx.NewNotFoundError("Domain identity not found")
 	}
 
+	// A domain another brand still holds stays in SES: only this brand's
+	// record goes.
+	shared, err := email.DomainShared(l.ctx, l.svcCtx.DB, req.OrgId, identity.Domain)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get AWS credentials from platform settings
 	region, accessKey, secretKey, err := getAWSCredentials(l.ctx, l.svcCtx)
-	if err != nil {
+	if shared {
+		l.Infof("Domain %s is still held by another brand; leaving it in SES", identity.Domain)
+	} else if err != nil {
 		// Log but continue - we still want to delete from our database
 		l.Errorf("Failed to get AWS credentials: %v", err)
 	} else {

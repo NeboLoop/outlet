@@ -3,6 +3,10 @@
 
 package types
 
+type AcceptInvitationRequest struct {
+	Token string `json:"token"` // the invitation token from the email
+}
+
 type AddContactTagsRequest struct {
 	Id   string   `path:"id"` // Contact ID or email
 	Tags []string `json:"tags"`
@@ -330,10 +334,8 @@ type CreateInvitationRequest struct {
 type CreateInvitationResponse struct {
 	Email     string `json:"email"`
 	Role      string `json:"role"`
-	Added     bool   `json:"added"`               // true when the person already had an account and joined the brand now
-	InviteUrl string `json:"invite_url,optional"` // the sign-up link, when an invitation was made
-	ExpiresAt string `json:"expires_at,optional"` // when the invitation stops working
-	EmailSent bool   `json:"email_sent"`          // whether the invitation email went out
+	ExpiresAt string `json:"expires_at"` // when the invitation stops working
+	EmailSent bool   `json:"email_sent"` // whether the invitation email went out; if not, invite again
 }
 
 type CreateListRequest struct {
@@ -1811,11 +1813,12 @@ type ValidateInvitationRequest struct {
 }
 
 type ValidateInvitationResponse struct {
-	Email     string `json:"email"`
-	Role      string `json:"role"`       // The role in the brand: admin or member
-	BrandName string `json:"brand_name"` // The brand the invitation joins
-	Valid     bool   `json:"valid"`
-	Message   string `json:"message,omitempty"`
+	Email      string `json:"email"`
+	Role       string `json:"role"`        // The role in the brand: admin or member
+	BrandName  string `json:"brand_name"`  // The brand the invitation joins
+	HasAccount bool   `json:"has_account"` // the invited address already has an account: sign in as it and accept
+	Valid      bool   `json:"valid"`
+	Message    string `json:"message,omitempty"`
 }
 
 type VerifyEmailRequest struct {

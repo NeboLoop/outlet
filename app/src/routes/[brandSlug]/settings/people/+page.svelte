@@ -6,7 +6,7 @@
 	import { UserPlus } from '@lucide/svelte';
 
 	// Outlet is invite-only. A brand admin invites people here; the invitation
-	// decides the brand and the role.
+	// decides the brand and the role, and its link goes out only by email.
 	let loading = $state(true);
 	let org = $state<OrgInfo | null>(null);
 	let error = $state('');
@@ -67,19 +67,13 @@
 		{/if}
 
 		{#if result}
-			{#if result.added}
-				<Alert type="success" title="Added">
-					<p>{result.email} already had an account and now belongs to this brand as {result.role}.</p>
+			{#if result.email_sent}
+				<Alert type="success" title="Invitation sent">
+					<p>We emailed an invitation to {result.email}. It works once and expires {result.expires_at} UTC.</p>
 				</Alert>
 			{:else}
-				<Alert type="success" title="Invitation made">
-					<p>
-						{result.email_sent
-							? `We emailed an invitation to ${result.email}.`
-							: `The invitation email to ${result.email} did not go out. Share this link with them instead.`}
-						It works once and expires {result.expires_at} UTC.
-					</p>
-					<p class="mt-2 text-sm font-mono break-all">{result.invite_url}</p>
+				<Alert type="warning" title="Invitation email did not go out">
+					<p>The invitation email to {result.email} could not be sent. Check this brand's sending setup, then invite them again.</p>
 				</Alert>
 			{/if}
 		{/if}

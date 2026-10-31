@@ -255,6 +255,17 @@ func (s *CampaignScheduler) checkScheduledCampaigns() {
 func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	logx.Infof("Processing campaign %s: %s", campaign.ID, campaign.Name)
 
+	// A campaign sends only from one of its brand's domains. One that can't
+	// send is paused (the admin shows it as an error); "failed" is not a
+	// campaign status.
+	if err := email.CheckSender(s.ctx, s.store, campaign.OrgID, campaign.FromEmail.String); err != nil {
+		logx.Errorf("Campaign %s can't send: %v", campaign.ID, err)
+		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
+			ID:     campaign.ID,
+			Status: sql.NullString{String: "paused", Valid: true},
+		})
+	}
+
 	// Create pipe for this campaign
 	s.getOrCreatePipe(campaign.ID)
 
@@ -272,7 +283,7 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 		logx.Errorf("Campaign %s has no target lists", campaign.ID)
 		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
 			ID:     campaign.ID,
-			Status: sql.NullString{String: "failed", Valid: true},
+			Status: sql.NullString{String: "paused", Valid: true},
 		})
 	}
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -34,6 +35,9 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 		return nil, err
 	}
 
+	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, req.FromEmail); err != nil {
+		return nil, err
+	}
 	listIDs, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ListIds)
 	if err != nil {
 		return nil, err

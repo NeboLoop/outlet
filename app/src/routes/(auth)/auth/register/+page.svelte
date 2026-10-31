@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { register, validateInvitation } from '$lib/api';
+	import { acceptInvitation, register, validateInvitation } from '$lib/api';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { onMount } from 'svelte';
 	import { Card, Input, Button, Alert, Checkbox, Spinner, Badge } from '$lib/components/ui';
 	import { ArrowLeft, AlertTriangle } from '@lucide/svelte';
 
 	// Outlet is invite-only: an account starts from an invitation link, and the
-	// invitation decides the email, the brand and the role.
+	// invitation decides the email, the brand and the role. Someone who already
+	// has an account opens the same link signed in and accepts it.
 	let formData = $state({
 		firstName: '',
 		lastName: '',
@@ -26,6 +27,10 @@
 	let email = $state('');
 	let brandName = $state('');
 	let role = $state('');
+	let hasAccount = $state(false);
+	let signedInAsInvitee = $derived(
+		authStore.isAuthenticated && authStore.user?.email?.toLowerCase() === email.toLowerCase()
+	);
 
 	onMount(async () => {
 		const token = $page.url.searchParams.get('token');
@@ -44,6 +49,7 @@
 				email = invitation.email;
 				brandName = invitation.brand_name;
 				role = invitation.role;
+				hasAccount = invitation.has_account;
 			} else {
 				error = invitation.message || "This invitation isn't valid.";
 			}
@@ -54,6 +60,20 @@
 			invitationLoading = false;
 		}
 	});
+
+	async function handleAccept() {
+		loading = true;
+		error = '';
+		try {
+			await acceptInvitation({ token: invitationToken });
+			goto('/');
+		} catch (err: any) {
+			console.error('Accept invitation error:', err);
+			error = err.message || 'Could not accept the invitation. Try again.';
+		} finally {
+			loading = false;
+		}
+	}
 
 	async function handleRegister(e: Event) {
 		e.preventDefault();
@@ -125,6 +145,36 @@
 						Return to sign in
 					</a>
 				</div>
+			</div>
+		{:else if hasAccount}
+			<div class="space-y-5">
+				{#if error}
+					<Alert type="error" title="Could not accept the invitation">
+						<p>{error}</p>
+					</Alert>
+				{/if}
+				<div>
+					<span class="form-label">Invitation</span>
+					<div class="px-4 py-3 bg-bg-secondary border border-border rounded-xl">
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-text">{brandName}</span>
+							<Badge variant="info">{role}</Badge>
+						</div>
+						<p class="text-xs text-text-muted mt-1">You've been invited to join this brand on Outlet as {email}.</p>
+					</div>
+				</div>
+				{#if signedInAsInvitee}
+					<Button type="primary" size="lg" onclick={handleAccept} disabled={loading} class="w-full justify-center">
+						{loading ? 'Joining...' : `Join ${brandName}`}
+					</Button>
+				{:else}
+					<Alert type="info" title="Sign in to accept">
+						<p>{email} already has an Outlet account. Sign in as {email}, then open the link in your invitation email again.</p>
+					</Alert>
+					<div class="text-center">
+						<a href="/auth/login" class="text-sm font-medium text-primary hover:underline">Sign in</a>
+					</div>
+				{/if}
 			</div>
 		{:else}
 			{#if error}

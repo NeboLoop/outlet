@@ -26,6 +26,14 @@ export function revokeMCPAPIKey(params: components.RevokeMCPAPIKeyRequestParams,
 }
 
 /**
+ * @description "Accept an invitation to a brand as the signed-in person (the invitation's email must be theirs)"
+ * @param req
+ */
+export function acceptInvitation(req: components.AcceptInvitationRequest) {
+	return webapi.post<components.Response>(`/api/admin/auth/accept-invitation`, req)
+}
+
+/**
  * @description 
  */
 export function logout() {

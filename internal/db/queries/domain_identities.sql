@@ -67,3 +67,15 @@ SELECT * FROM domain_identities
 WHERE verification_status IN ('pending', 'Pending', 'not_started')
    OR dkim_status IN ('pending', 'Pending', 'not_started')
 ORDER BY created_at ASC;
+
+-- A domain belongs to one brand: brands verify their domains on a shared
+-- SES account, so a second brand holding the same domain could send as it
+-- or delete it from SES.
+
+-- name: CountOtherBrandsWithDomain :one
+SELECT COUNT(*) FROM domain_identities
+WHERE LOWER(domain) = LOWER(sqlc.arg(domain)) AND org_id <> sqlc.arg(org_id);
+
+-- name: CountBrandDomain :one
+SELECT COUNT(*) FROM domain_identities
+WHERE org_id = sqlc.arg(org_id) AND LOWER(domain) = LOWER(sqlc.arg(domain));

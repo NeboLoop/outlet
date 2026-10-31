@@ -13,6 +13,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
+	"github.com/outlet-sh/outlet/internal/services/email"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -234,6 +235,9 @@ func handleCampaignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 		return nil, nil, mcpctx.NewValidationError("list_ids is required", "list_ids")
 	}
 
+	if err := email.CheckSender(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), input.FromEmail); err != nil {
+		return nil, nil, err
+	}
 	listIDs, err := access.BrandLists(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), splitIDs(input.ListIDs))
 	if err != nil {
 		return nil, nil, err
@@ -398,6 +402,9 @@ func handleCampaignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 		return nil, nil, mcpctx.NewValidationError("can only update draft campaigns", "id")
 	}
 
+	if err := email.CheckSender(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), input.FromEmail); err != nil {
+		return nil, nil, err
+	}
 	var listIDs, excludeListIDs interface{}
 	if strings.TrimSpace(input.ListIDs) != "" {
 		ids, err := access.BrandLists(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), splitIDs(input.ListIDs))

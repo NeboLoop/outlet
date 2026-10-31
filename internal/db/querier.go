@@ -47,6 +47,7 @@ type Querier interface {
 	CountBackups(ctx context.Context) (int64, error)
 	CountBlockedDomains(ctx context.Context, orgID string) (int64, error)
 	CountBouncesInDateRange(ctx context.Context, arg CountBouncesInDateRangeParams) (int64, error)
+	CountBrandDomain(ctx context.Context, arg CountBrandDomainParams) (int64, error)
 	CountCampaignSendsByStatus(ctx context.Context, arg CountCampaignSendsByStatusParams) (int64, error)
 	CountCampaigns(ctx context.Context, orgID string) (int64, error)
 	CountCampaignsByStatus(ctx context.Context, arg CountCampaignsByStatusParams) (int64, error)
@@ -62,6 +63,10 @@ type Querier interface {
 	CountListSubscribers(ctx context.Context, arg CountListSubscribersParams) (int64, error)
 	// Count rules with optional filters
 	CountOrgRules(ctx context.Context, arg CountOrgRulesParams) (int64, error)
+	// A domain belongs to one brand: brands verify their domains on a shared
+	// SES account, so a second brand holding the same domain could send as it
+	// or delete it from SES.
+	CountOtherBrandsWithDomain(ctx context.Context, arg CountOtherBrandsWithDomainParams) (int64, error)
 	CountPendingCampaignSends(ctx context.Context, campaignID string) (int64, error)
 	CountSentCampaignSends(ctx context.Context, campaignID string) (int64, error)
 	CountSuppressedEmails(ctx context.Context, orgID string) (int64, error)

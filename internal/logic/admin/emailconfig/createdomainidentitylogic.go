@@ -62,6 +62,9 @@ func (l *CreateDomainIdentityLogic) CreateDomainIdentity(req *types.CreateDomain
 	if err == nil && existing.ID != "" {
 		return nil, errorx.NewBadRequestError("Domain identity already exists for this domain")
 	}
+	if err := email.ClaimDomain(l.ctx, l.svcCtx.DB, req.OrgId, domain); err != nil {
+		return nil, err
+	}
 
 	// Get AWS credentials from platform settings
 	region, accessKey, secretKey, err := getAWSCredentials(l.ctx, l.svcCtx)

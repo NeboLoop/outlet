@@ -74,7 +74,7 @@ var policy = map[string]toolPolicy{
 		"domain.get":            read(member),
 		"domain.create":         write(admin),
 		"domain.refresh":        write(admin),
-		"domain.delete":         write(admin),
+		"domain.delete":         {need: admin, write: true, live: true},
 	}},
 	"campaign": {rules: map[string]rule{
 		"create": write(member), "list": read(member), "get": read(member), "update": write(member),

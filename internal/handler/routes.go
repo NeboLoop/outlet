@@ -69,6 +69,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			[]rest.Middleware{serverCtx.Auth},
 			[]rest.Route{
 				{
+					// Accept an invitation to a brand as the signed-in person (the invitation's email must be theirs)
+					Method:  http.MethodPost,
+					Path:    "/auth/accept-invitation",
+					Handler: adminauth.AcceptInvitationHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodPost,
 					Path:    "/auth/logout",
 					Handler: adminauth.LogoutHandler(serverCtx),

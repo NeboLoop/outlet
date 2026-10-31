@@ -61,19 +61,10 @@ func (l *CreateInvitationLogic) CreateInvitation(req *types.CreateInvitationRequ
 		return nil, err
 	}
 
-	// Someone who already has an account joins the brand now.
-	user, err := l.svcCtx.DB.GetUserByEmail(l.ctx, email)
-	if err == nil {
-		if err := l.svcCtx.DB.AddUserToOrganization(l.ctx, db.AddUserToOrganizationParams{
-			OrgID:  brand.ID,
-			UserID: user.ID,
-			Role:   sql.NullString{String: role, Valid: true},
-		}); err != nil {
-			return nil, err
-		}
-		return &types.CreateInvitationResponse{Email: email, Role: role, Added: true}, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	// Someone who already has an account gets an invitation too, and
+	// accepts it signed in: nobody joins a brand without reading the email.
+	exists, err := l.svcCtx.DB.CheckEmailExists(l.ctx, email)
+	if err != nil {
 		return nil, err
 	}
 
@@ -98,15 +89,21 @@ func (l *CreateInvitationLogic) CreateInvitation(req *types.CreateInvitationRequ
 		return nil, err
 	}
 
+	// The link goes out only by email, never back to the inviter: using it
+	// proves the person reads that mailbox.
 	inviteURL := fmt.Sprintf("%s/auth/register?token=%s", strings.TrimSuffix(l.svcCtx.Config.App.BaseURL, "/"), token)
 	subject := fmt.Sprintf("You're invited to %s on Outlet", brand.Name)
+	action := "Create your account"
+	if exists != 0 {
+		action = "Sign in and join"
+	}
 	body := fmt.Sprintf(`<html>
 <body>
 <p>You're invited to join %s on Outlet as %s.</p>
-<p><a href="%s">Create your account</a></p>
+<p><a href="%s">%s</a></p>
 <p>This link works once and expires in 7 days. If you weren't expecting it, you can ignore this email.</p>
 </body>
-</html>`, html.EscapeString(brand.Name), role, inviteURL)
+</html>`, html.EscapeString(brand.Name), role, inviteURL, action)
 
 	emailSent := true
 	if err := l.svcCtx.EmailService.SendEmail(l.ctx, email, subject, body); err != nil {
@@ -117,7 +114,6 @@ func (l *CreateInvitationLogic) CreateInvitation(req *types.CreateInvitationRequ
 	return &types.CreateInvitationResponse{
 		Email:     email,
 		Role:      role,
-		InviteUrl: inviteURL,
 		ExpiresAt: invitation.ExpiresAt,
 		EmailSent: emailSent,
 	}, nil

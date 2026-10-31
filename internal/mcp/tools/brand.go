@@ -84,7 +84,7 @@ DOMAIN RESOURCE:
 - domain.create: Add a domain for verification (requires: domain)
 - domain.get: Get domain details with DNS records (requires: id)
 - domain.refresh: Check verification status with SES (requires: id)
-- domain.delete: Remove a domain (requires: id)
+- domain.delete: Remove a domain; the brand can no longer send from it (requires: id, confirm=true)
 
 Max Contacts:
 - max_contacts: Set the maximum number of contacts allowed (brand.update)
@@ -656,6 +656,9 @@ func handleDomainIdentityCreate(ctx context.Context, toolCtx *mcpctx.ToolContext
 	if strings.TrimSpace(input.Domain) == "" {
 		return nil, nil, mcpctx.NewValidationError("domain is required", "domain")
 	}
+	if err := email.ClaimDomain(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), input.Domain); err != nil {
+		return nil, nil, err
+	}
 
 	domainID := uuid.New().String()
 	verificationToken := uuid.New().String()
@@ -866,6 +869,11 @@ func handleDomainIdentityDelete(ctx context.Context, toolCtx *mcpctx.ToolContext
 
 	if strings.TrimSpace(input.ID) == "" {
 		return nil, nil, mcpctx.NewValidationError("id is required", "id")
+	}
+	// The brand sends only from its own domains: removing one stops the
+	// mail sent from it.
+	if !input.Confirm {
+		return nil, nil, mcpctx.NewValidationError("confirm=true is required to delete a domain: the brand can no longer send from it", "confirm")
 	}
 
 	domain, err := toolCtx.DB().GetDomainIdentity(ctx, input.ID)

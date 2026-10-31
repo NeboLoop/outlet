@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -27,7 +28,7 @@ func NewValidateInvitationLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *ValidateInvitationLogic) ValidateInvitation(req *types.ValidateInvitationRequest) (resp *types.ValidateInvitationResponse, err error) {
-	inv, err := usableInvitation(l.ctx, l.svcCtx.DB, req.Token)
+	inv, err := access.Invitation(l.ctx, l.svcCtx.DB, req.Token)
 	if err != nil {
 		var ce *errorx.CodeError
 		if !errors.As(err, &ce) {
@@ -36,10 +37,18 @@ func (l *ValidateInvitationLogic) ValidateInvitation(req *types.ValidateInvitati
 		}
 		return &types.ValidateInvitationResponse{Valid: false, Message: ce.Message}, nil
 	}
+	// Only the invitee holds the token (it goes out only by email), so
+	// saying whether the address has an account tells no one else.
+	exists, err := l.svcCtx.DB.CheckEmailExists(l.ctx, inv.Email)
+	if err != nil {
+		l.Errorf("Checking invitation: %v", err)
+		return nil, errorx.NewInternalError("Could not check this invitation. Try again.")
+	}
 	return &types.ValidateInvitationResponse{
-		Email:     inv.Email,
-		Role:      inv.Role,
-		BrandName: inv.OrgName,
-		Valid:     true,
+		Email:      inv.Email,
+		Role:       inv.Role,
+		BrandName:  inv.OrgName,
+		HasAccount: exists != 0,
+		Valid:      true,
 	}, nil
 }

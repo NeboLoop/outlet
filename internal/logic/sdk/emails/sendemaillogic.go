@@ -248,7 +248,11 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 	if len(req.Headers) > 0 {
 		sendOpts = append(sendOpts, email.WithHeaders(req.Headers))
 	}
-	sendErr := l.svcCtx.EmailService.SendEmailFrom(l.ctx, fromEmail, fromName, req.To, subject, htmlBody, sendOpts...)
+	// The brand sends only from its own domains.
+	sendErr := email.CheckSender(l.ctx, l.svcCtx.DB, org.ID, fromEmail)
+	if sendErr == nil {
+		sendErr = l.svcCtx.EmailService.SendEmailFrom(l.ctx, fromEmail, fromName, req.To, subject, htmlBody, sendOpts...)
+	}
 
 	if sendErr != nil {
 		// Update status to failed

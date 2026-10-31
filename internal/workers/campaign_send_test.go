@@ -70,9 +70,19 @@ func TestProcessCampaign_SendsAUICampaignOnceToItsOwnBrand(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// A campaign from a domain alpha doesn't hold, written straight to the
+	// database.
+	_, err = store.CreateCampaign(ctx, db.CreateCampaignParams{
+		ID: "spoof", OrgID: "alpha-id", Name: "spoof", Subject: "Hi", HtmlBody: "<p>Hi</p>",
+		FromEmail: sql.NullString{String: "security@neboai.com", Valid: true},
+		ListIds:   sql.NullString{String: db.EncodeListIDs([]int64{lists["alpha"]}), Valid: true},
+		Status:    sql.NullString{String: "scheduled", Valid: true}, ScheduledAt: sql.NullString{String: "2020-01-01 00:00:00", Valid: true},
+	})
+	require.NoError(t, err)
+
 	due, err := store.GetScheduledCampaigns(ctx)
 	require.NoError(t, err)
-	require.Len(t, due, 2)
+	require.Len(t, due, 3)
 
 	sched := NewCampaignScheduler(store, nil, DefaultCampaignSchedulerConfig())
 	for _, c := range due {
@@ -97,6 +107,10 @@ func TestProcessCampaign_SendsAUICampaignOnceToItsOwnBrand(t *testing.T) {
 	}
 	assert.Equal(t, []string{"a1", "a2"}, sends(made.Id))
 	assert.Empty(t, sends("stray"), "another brand's list gives no recipients")
+	assert.Empty(t, sends("spoof"), "a campaign sends only from its brand's domains")
+	spoof, err := store.GetCampaign(ctx, db.GetCampaignParams{ID: "spoof", OrgID: "alpha-id"})
+	require.NoError(t, err)
+	assert.Equal(t, "paused", spoof.Status.String)
 
 	// The workers pick the queued sends up.
 	pending, err := store.GetPendingCampaignSends(ctx, 100)

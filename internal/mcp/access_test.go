@@ -318,6 +318,7 @@ func TestMCP_DestructiveActionsWarnWhenTheKeyIsLive(t *testing.T) {
 		{"blocklist", map[string]any{"resource": "suppression", "action": "clear", "confirm": true}},
 		{"gdpr", map[string]any{"action": "delete", "contact_id": "c1", "confirm": true}},
 		{"brand", map[string]any{"resource": "brand", "action": "delete", "slug": "alpha", "confirm": true}},
+		{"brand", map[string]any{"resource": "domain", "action": "delete", "id": "d1", "confirm": true}},
 	} {
 		text, isErr := f.call("anne", "s1", c.tool, c.args)
 		assert.True(t, isErr, c.tool)
@@ -457,4 +458,27 @@ func TestMCP_RecordsOfAnotherBrandAreRefused(t *testing.T) {
 	var seqs int
 	require.NoError(t, f.store.GetDB().QueryRow(`SELECT COUNT(*) FROM email_sequences WHERE list_id = ?`, bravoListID).Scan(&seqs))
 	assert.Equal(t, 1, seqs)
+}
+
+// A domain belongs to one brand: alpha can't claim bravo's domain or send
+// from it.
+func TestMCP_AnotherBrandsDomainIsRefused(t *testing.T) {
+	f := newMCPFixture(t)
+	alphaList := f.list("alpha")
+	_, err := f.store.CreateDomainIdentity(context.Background(), db.CreateDomainIdentityParams{ID: "d1", OrgID: "bravo-id", Domain: "bravo.example"})
+	require.NoError(t, err)
+
+	f.initialize("anne", "s1")
+	_, isErr := f.call("anne", "s1", "brand", map[string]any{"resource": "brand", "action": "select", "slug": "alpha"})
+	require.False(t, isErr)
+
+	text, isErr := f.call("anne", "s1", "brand", map[string]any{"resource": "domain", "action": "create", "domain": "Bravo.example"})
+	assert.True(t, isErr)
+	assert.Contains(t, text, "Another brand already uses")
+
+	text, isErr = f.call("anne", "s1", "campaign", map[string]any{
+		"action": "create", "name": "x", "subject": "x", "html_body": "x", "list_ids": alphaList, "from_email": "security@bravo.example",
+	})
+	assert.True(t, isErr)
+	assert.Contains(t, text, "can't send from security@bravo.example")
 }

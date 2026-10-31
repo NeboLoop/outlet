@@ -9,6 +9,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	adminauth "github.com/outlet-sh/outlet/internal/logic/admin/auth"
 	"github.com/outlet-sh/outlet/internal/db/migrations"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/services/email"
@@ -143,30 +144,51 @@ func TestCreateInvitation(t *testing.T) {
 	_, err = NewCreateInvitationLogic(f.as(t, "anne"), f.svc).CreateInvitation(&types.CreateInvitationRequest{Id: "alpha-id", Email: "x@example.com", Role: "owner"})
 	assert.Equal(t, 400, status(err))
 
-	// A new person gets a one-time link for the brand and role.
+	// A new person gets a one-time link for the brand and role, by email
+	// only: the inviter never sees it.
 	resp, err := NewCreateInvitationLogic(f.as(t, "anne"), f.svc).CreateInvitation(&types.CreateInvitationRequest{Id: "alpha-id", Email: " New@Example.com ", Role: "member"})
 	require.NoError(t, err)
-	assert.False(t, resp.Added)
 	assert.Equal(t, "new@example.com", resp.Email)
 	assert.False(t, resp.EmailSent, "no mail provider in tests; the response says so")
-	require.Contains(t, resp.InviteUrl, "https://outlet.test/auth/register?token=")
-	token := resp.InviteUrl[len("https://outlet.test/auth/register?token="):]
+	assert.NotEmpty(t, resp.ExpiresAt)
+	token := pendingToken(t, f, "alpha-id", "new@example.com")
 	inv, err := f.svc.DB.GetOrgInvitationByToken(ctx, token)
 	require.NoError(t, err)
 	assert.Equal(t, "alpha-id", inv.OrgID)
 	assert.Equal(t, "member", inv.Role)
 
 	// A second invitation replaces the first.
-	resp2, err := NewCreateInvitationLogic(f.as(t, "anne"), f.svc).CreateInvitation(&types.CreateInvitationRequest{Id: "alpha-id", Email: "new@example.com"})
+	_, err = NewCreateInvitationLogic(f.as(t, "anne"), f.svc).CreateInvitation(&types.CreateInvitationRequest{Id: "alpha-id", Email: "new@example.com"})
 	require.NoError(t, err)
-	assert.NotEqual(t, resp.InviteUrl, resp2.InviteUrl)
+	assert.NotEqual(t, token, pendingToken(t, f, "alpha-id", "new@example.com"))
 	_, err = f.svc.DB.GetOrgInvitationByToken(ctx, token)
 	assert.ErrorIs(t, err, sql.ErrNoRows)
 
-	// Someone with an account joins at once.
+	// Someone with an account gets an invitation too, and the answer looks
+	// the same, so it doesn't say who has an account. They join only when
+	// they accept it, signed in as the invited address.
 	resp, err = NewCreateInvitationLogic(f.as(t, "root"), f.svc).CreateInvitation(&types.CreateInvitationRequest{Id: "bravo-id", Email: "mike@example.com", Role: "admin"})
 	require.NoError(t, err)
-	assert.True(t, resp.Added)
+	assert.Equal(t, "mike@example.com", resp.Email)
+	_, err = access.Check(ctx, f.svc.DB, "mike", "bravo-id", access.Member)
+	assert.Error(t, err, "not a member until he accepts")
+
+	token = pendingToken(t, f, "bravo-id", "mike@example.com")
+	_, err = adminauth.NewAcceptInvitationLogic(f.as(t, "anne"), f.svc).AcceptInvitation(&types.AcceptInvitationRequest{Token: token})
+	assert.Equal(t, 403, status(err), "someone else can't use mike's invitation")
+	_, err = adminauth.NewAcceptInvitationLogic(f.as(t, "mike"), f.svc).AcceptInvitation(&types.AcceptInvitationRequest{Token: token})
+	require.NoError(t, err)
 	_, err = access.Check(ctx, f.svc.DB, "mike", "bravo-id", access.Admin)
 	assert.NoError(t, err)
+	_, err = adminauth.NewAcceptInvitationLogic(f.as(t, "mike"), f.svc).AcceptInvitation(&types.AcceptInvitationRequest{Token: token})
+	assert.Equal(t, 400, status(err), "an invitation works once")
+}
+
+// pendingToken reads the token of the open invitation for an address. In
+// production it reaches the person only by email.
+func pendingToken(t *testing.T, f restFixture, brandID, email string) string {
+	t.Helper()
+	var token string
+	require.NoError(t, f.svc.DB.GetDB().QueryRow(`SELECT token FROM org_invitations WHERE org_id = ? AND email = ? AND accepted_at IS NULL`, brandID, email).Scan(&token))
+	return token
 }
