@@ -3,11 +3,10 @@ package campaigns
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"errors"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -29,19 +28,28 @@ func NewUpdateCampaignLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Up
 }
 
 func (l *UpdateCampaignLogic) UpdateCampaign(req *types.UpdateCampaignRequest) (resp *types.CampaignInfo, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, errors.New("org_id not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
+	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, req.FromEmail); err != nil {
+		return nil, err
+	}
 	var listIds, excludeListIds interface{}
 	if len(req.ListIds) > 0 {
-		data, _ := json.Marshal(req.ListIds)
-		listIds = string(data)
+		ids, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ListIds)
+		if err != nil {
+			return nil, err
+		}
+		listIds = db.EncodeListIDs(ids)
 	}
 	if len(req.ExcludeListIds) > 0 {
-		data, _ := json.Marshal(req.ExcludeListIds)
-		excludeListIds = string(data)
+		ids, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ExcludeListIds)
+		if err != nil {
+			return nil, err
+		}
+		excludeListIds = db.EncodeListIDs(ids)
 	}
 
 	var trackOpens, trackClicks sql.NullInt64

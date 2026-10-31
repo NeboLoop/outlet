@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -28,9 +28,9 @@ func NewDeleteEmailDesignLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 }
 
 func (l *DeleteEmailDesignLogic) DeleteEmailDesign(req *types.DeleteEmailDesignRequest) (resp *types.AnalyticsResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, errors.New("org_id not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	designID, err := strconv.ParseInt(req.Id, 10, 64)

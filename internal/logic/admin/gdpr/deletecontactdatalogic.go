@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -38,6 +39,9 @@ func (l *DeleteContactDataLogic) DeleteContactData(req *types.GDPRDeleteRequest)
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("contact not found")
 		}
+		return nil, err
+	}
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, contact.OrgID.String, access.Admin); err != nil {
 		return nil, err
 	}
 

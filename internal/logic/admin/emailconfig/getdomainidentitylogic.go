@@ -3,6 +3,7 @@ package emailconfig
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
@@ -26,6 +27,10 @@ func NewGetDomainIdentityLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 }
 
 func (l *GetDomainIdentityLogic) GetDomainIdentity(req *types.GetDomainIdentityRequest) (resp *types.DomainIdentityInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.OrgId, access.Member); err != nil {
+		return nil, err
+	}
+
 	identity, err := l.svcCtx.DB.GetDomainIdentity(l.ctx, req.Id)
 	if err != nil {
 		return nil, errorx.NewNotFoundError("Domain identity not found")

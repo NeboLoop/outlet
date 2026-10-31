@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 
 	"github.com/google/uuid"
@@ -234,8 +235,11 @@ func (p *EmailProcessor) sendToRecipient(recipient, subject, htmlBody, plainText
 		fromName = orgSettings.FromName.String
 	}
 
-	// Send the email
-	sendErr := p.svcCtx.EmailService.SendEmailFrom(ctx, fromEmail, fromName, recipient, subject, htmlBody)
+	// Send the email, only from one of the brand's own domains
+	sendErr := email.CheckSender(ctx, p.svcCtx.DB, p.org.ID, fromEmail)
+	if sendErr == nil {
+		sendErr = p.svcCtx.EmailService.SendEmailFrom(ctx, fromEmail, fromName, recipient, subject, htmlBody)
+	}
 
 	if sendErr != nil {
 		// Update status to failed

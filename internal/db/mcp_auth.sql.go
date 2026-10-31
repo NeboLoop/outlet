@@ -12,7 +12,7 @@ import (
 
 const cleanupExpiredMCPOAuthCodes = `-- name: CleanupExpiredMCPOAuthCodes :exec
 DELETE FROM mcp_oauth_codes
-WHERE expires_at < datetime('now') OR used_at IS NOT NULL
+WHERE datetime(expires_at) < datetime('now') OR used_at IS NOT NULL
 `
 
 func (q *Queries) CleanupExpiredMCPOAuthCodes(ctx context.Context) error {
@@ -22,8 +22,8 @@ func (q *Queries) CleanupExpiredMCPOAuthCodes(ctx context.Context) error {
 
 const cleanupExpiredMCPOAuthTokens = `-- name: CleanupExpiredMCPOAuthTokens :exec
 DELETE FROM mcp_oauth_tokens
-WHERE (expires_at < datetime('now') AND (refresh_expires_at IS NULL OR refresh_expires_at < datetime('now')))
-   OR revoked_at < datetime('now', '-30 days')
+WHERE (datetime(expires_at) < datetime('now') AND (refresh_expires_at IS NULL OR datetime(refresh_expires_at) < datetime('now')))
+   OR datetime(revoked_at) < datetime('now', '-30 days')
 `
 
 func (q *Queries) CleanupExpiredMCPOAuthTokens(ctx context.Context) error {
@@ -85,6 +85,38 @@ func (q *Queries) CreateMCPAPIKey(ctx context.Context, arg CreateMCPAPIKeyParams
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const createMCPAuditLog = `-- name: CreateMCPAuditLog :exec
+
+INSERT INTO mcp_audit_log (id, user_id, user_email, tool, action, org_id, target, result, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))
+`
+
+type CreateMCPAuditLogParams struct {
+	ID        string         `json:"id"`
+	UserID    string         `json:"user_id"`
+	UserEmail string         `json:"user_email"`
+	Tool      string         `json:"tool"`
+	Action    string         `json:"action"`
+	OrgID     sql.NullString `json:"org_id"`
+	Target    sql.NullString `json:"target"`
+	Result    string         `json:"result"`
+}
+
+// MCP audit log (every change made through MCP)
+func (q *Queries) CreateMCPAuditLog(ctx context.Context, arg CreateMCPAuditLogParams) error {
+	_, err := q.db.ExecContext(ctx, createMCPAuditLog,
+		arg.ID,
+		arg.UserID,
+		arg.UserEmail,
+		arg.Tool,
+		arg.Action,
+		arg.OrgID,
+		arg.Target,
+		arg.Result,
+	)
+	return err
 }
 
 const createMCPOAuthClient = `-- name: CreateMCPOAuthClient :one
@@ -265,7 +297,7 @@ FROM mcp_api_keys k
 JOIN users u ON k.user_id = u.id
 WHERE k.key_hash = ?1
   AND k.revoked_at IS NULL
-  AND (k.expires_at IS NULL OR k.expires_at > datetime('now'))
+  AND (k.expires_at IS NULL OR datetime(k.expires_at) > datetime('now'))
 `
 
 type GetMCPAPIKeyByHashRow struct {
@@ -380,7 +412,7 @@ FROM mcp_oauth_codes c
 JOIN mcp_oauth_clients cl ON c.client_id = cl.id
 WHERE c.code_hash = ?1
   AND c.used_at IS NULL
-  AND c.expires_at > datetime('now')
+  AND datetime(c.expires_at) > datetime('now')
 `
 
 type GetMCPOAuthCodeByHashRow struct {
@@ -428,7 +460,7 @@ JOIN users u ON t.user_id = u.id
 JOIN mcp_oauth_clients cl ON t.client_id = cl.id
 WHERE t.access_token_hash = ?1
   AND t.revoked_at IS NULL
-  AND t.expires_at > datetime('now')
+  AND datetime(t.expires_at) > datetime('now')
 `
 
 type GetMCPOAuthTokenByAccessHashRow struct {
@@ -484,7 +516,7 @@ JOIN users u ON t.user_id = u.id
 JOIN mcp_oauth_clients cl ON t.client_id = cl.id
 WHERE t.refresh_token_hash = ?1
   AND t.revoked_at IS NULL
-  AND (t.refresh_expires_at IS NULL OR t.refresh_expires_at > datetime('now'))
+  AND (t.refresh_expires_at IS NULL OR datetime(t.refresh_expires_at) > datetime('now'))
 `
 
 type GetMCPOAuthTokenByRefreshHashRow struct {
@@ -539,27 +571,6 @@ WHERE session_id = ?1
 
 func (q *Queries) GetMCPSession(ctx context.Context, sessionID string) (McpSession, error) {
 	row := q.db.QueryRowContext(ctx, getMCPSession, sessionID)
-	var i McpSession
-	err := row.Scan(
-		&i.SessionID,
-		&i.UserID,
-		&i.OrgID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getMCPSessionByUser = `-- name: GetMCPSessionByUser :one
-SELECT session_id, user_id, org_id, created_at, updated_at FROM mcp_sessions
-WHERE user_id = ?1 AND org_id IS NOT NULL
-ORDER BY updated_at DESC
-LIMIT 1
-`
-
-// Fallback: get most recent org selection for a user (when session ID changes)
-func (q *Queries) GetMCPSessionByUser(ctx context.Context, userID string) (McpSession, error) {
-	row := q.db.QueryRowContext(ctx, getMCPSessionByUser, userID)
 	var i McpSession
 	err := row.Scan(
 		&i.SessionID,
@@ -664,15 +675,24 @@ func (q *Queries) MarkMCPOAuthCodeUsed(ctx context.Context, id string) error {
 	return err
 }
 
-const revokeMCPAPIKey = `-- name: RevokeMCPAPIKey :exec
+const revokeMCPAPIKey = `-- name: RevokeMCPAPIKey :execrows
 UPDATE mcp_api_keys
 SET revoked_at = datetime('now'), updated_at = datetime('now')
-WHERE id = ?1
+WHERE id = ?1 AND user_id = ?2 AND revoked_at IS NULL
 `
 
-func (q *Queries) RevokeMCPAPIKey(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, revokeMCPAPIKey, id)
-	return err
+type RevokeMCPAPIKeyParams struct {
+	ID     string `json:"id"`
+	UserID string `json:"user_id"`
+}
+
+// People revoke their own keys.
+func (q *Queries) RevokeMCPAPIKey(ctx context.Context, arg RevokeMCPAPIKeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeMCPAPIKey, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const revokeMCPOAuthToken = `-- name: RevokeMCPOAuthToken :exec

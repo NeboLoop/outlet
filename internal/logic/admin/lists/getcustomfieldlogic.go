@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -25,9 +26,8 @@ func NewGetCustomFieldLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Ge
 }
 
 func (l *GetCustomFieldLogic) GetCustomField(req *types.GetCustomFieldRequest) (resp *types.CustomFieldInfo, err error) {
-	field, err := l.svcCtx.DB.GetCustomField(l.ctx, req.FieldId)
+	field, err := requireCustomField(l.ctx, l.svcCtx, req.ListId, req.FieldId, access.Member)
 	if err != nil {
-		l.Errorf("Failed to get custom field %s: %v", req.FieldId, err)
 		return nil, err
 	}
 

@@ -3,6 +3,10 @@
 
 package types
 
+type AcceptInvitationRequest struct {
+	Token string `json:"token"` // the invitation token from the email
+}
+
 type AddContactTagsRequest struct {
 	Id   string   `path:"id"` // Contact ID or email
 	Tags []string `json:"tags"`
@@ -319,6 +323,19 @@ type CreateInitialAdminRequest struct {
 type CreateInitialAdminResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
+}
+
+type CreateInvitationRequest struct {
+	Id    string `path:"id"` // brand ID
+	Email string `json:"email"`
+	Role  string `json:"role,optional"` // admin or member (default member)
+}
+
+type CreateInvitationResponse struct {
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	ExpiresAt string `json:"expires_at"` // when the invitation stops working
+	EmailSent bool   `json:"email_sent"` // whether the invitation email went out; if not, invite again
 }
 
 type CreateListRequest struct {
@@ -1224,12 +1241,11 @@ type RegenerateApiKeyRequest struct {
 }
 
 type RegisterRequest struct {
-	Email     string `json:"email"`
+	Token     string `json:"token,optional"` // Invitation token (required): it decides the email, brand and role
 	Password  string `json:"password"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Phone     string `json:"phone,optional"`
-	Token     string `json:"token,optional"` // Optional invitation token
 }
 
 type RegisterResponse struct {
@@ -1797,13 +1813,12 @@ type ValidateInvitationRequest struct {
 }
 
 type ValidateInvitationResponse struct {
-	Email     string `json:"email"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Phone     string `json:"phone"`
-	Role      string `json:"role"`
-	Valid     bool   `json:"valid"`
-	Message   string `json:"message,omitempty"`
+	Email      string `json:"email"`
+	Role       string `json:"role"`        // The role in the brand: admin or member
+	BrandName  string `json:"brand_name"`  // The brand the invitation joins
+	HasAccount bool   `json:"has_account"` // the invited address already has an account: sign in as it and accept
+	Valid      bool   `json:"valid"`
+	Message    string `json:"message,omitempty"`
 }
 
 type VerifyEmailRequest struct {

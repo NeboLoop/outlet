@@ -3,6 +3,9 @@ package organizations
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -24,7 +27,11 @@ func NewListOrganizationsLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 }
 
 func (l *ListOrganizationsLogic) ListOrganizations() (resp *types.OrgListResponse, err error) {
-	orgs, err := l.svcCtx.DB.ListOrganizations(l.ctx)
+	user, ok := access.User(l.ctx)
+	if !ok {
+		return nil, errorx.NewUnauthorizedError("Sign in first.")
+	}
+	orgs, err := access.Brands(l.ctx, l.svcCtx.DB, user.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +42,7 @@ func (l *ListOrganizationsLogic) ListOrganizations() (resp *types.OrgListRespons
 			Id:               org.ID,
 			Name:             org.Name,
 			Slug:             org.Slug,
-			ApiKey:           org.ApiKey,
+			ApiKey:           brandAPIKey(org.Organization, org.Role),
 			BillingStatus:    "trial",
 			Plan:             "starter",
 			MaxContacts:      int(org.MaxContacts.Int64),
@@ -52,4 +59,13 @@ func (l *ListOrganizationsLogic) ListOrganizations() (resp *types.OrgListRespons
 		Organizations: orgInfos,
 		Total:         len(orgInfos),
 	}, nil
+}
+
+// brandAPIKey shows the brand's API key to its admins only: it sends mail as
+// the brand.
+func brandAPIKey(org db.Organization, role access.Role) string {
+	if role == access.Member {
+		return ""
+	}
+	return org.ApiKey
 }

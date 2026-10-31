@@ -54,11 +54,16 @@ func TestGenerateToken(t *testing.T) {
 		assert.NotEqual(t, token1, token2)
 	})
 
-	t.Run("handles empty secret", func(t *testing.T) {
-		// Empty secret is technically valid for HMAC signing
+	t.Run("refuses an empty secret", func(t *testing.T) {
+		// Anyone could sign a token with an empty secret.
 		token, err := GenerateToken("user-1", "user@example.com", "admin", "", time.Hour)
+		require.Error(t, err)
+		assert.Empty(t, token)
+
+		signed, err := GenerateToken("user-1", "user@example.com", "admin", testSecret, time.Hour)
 		require.NoError(t, err)
-		assert.NotEmpty(t, token)
+		_, err = ValidateToken(signed, "")
+		require.Error(t, err)
 	})
 
 	t.Run("handles empty user fields", func(t *testing.T) {

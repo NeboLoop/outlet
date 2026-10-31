@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -28,6 +29,10 @@ func NewCreateTemplateLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Cr
 }
 
 func (l *CreateTemplateLogic) CreateTemplate(req *types.CreateTemplateRequest) (resp *types.TemplateInfo, err error) {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Sequence, req.SequenceId, access.Member); err != nil {
+		return nil, err
+	}
+
 	templateType := sql.NullString{String: "simple", Valid: true}
 	if req.TemplateType != "" {
 		templateType = sql.NullString{String: req.TemplateType, Valid: true}

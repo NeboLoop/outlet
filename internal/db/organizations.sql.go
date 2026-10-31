@@ -10,10 +10,24 @@ import (
 	"database/sql"
 )
 
+const acceptOrgInvitation = `-- name: AcceptOrgInvitation :execrows
+UPDATE org_invitations
+SET accepted_at = datetime('now')
+WHERE id = ?1 AND accepted_at IS NULL AND datetime(expires_at) > datetime('now')
+`
+
+func (q *Queries) AcceptOrgInvitation(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, acceptOrgInvitation, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const addUserToOrganization = `-- name: AddUserToOrganization :exec
 INSERT INTO org_users (org_id, user_id, role, created_at)
 VALUES (?1, ?2, ?3, datetime('now'))
-ON CONFLICT (org_id, user_id) DO UPDATE SET role = sqlc.arg(role)
+ON CONFLICT (org_id, user_id) DO UPDATE SET role = excluded.role
 `
 
 type AddUserToOrganizationParams struct {
@@ -25,6 +39,42 @@ type AddUserToOrganizationParams struct {
 func (q *Queries) AddUserToOrganization(ctx context.Context, arg AddUserToOrganizationParams) error {
 	_, err := q.db.ExecContext(ctx, addUserToOrganization, arg.OrgID, arg.UserID, arg.Role)
 	return err
+}
+
+const createOrgInvitation = `-- name: CreateOrgInvitation :one
+INSERT INTO org_invitations (id, org_id, email, role, token, expires_at, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5, datetime('now', '+7 days'), datetime('now'))
+RETURNING id, org_id, email, role, token, expires_at, accepted_at, created_at
+`
+
+type CreateOrgInvitationParams struct {
+	ID    string         `json:"id"`
+	OrgID string         `json:"org_id"`
+	Email string         `json:"email"`
+	Role  sql.NullString `json:"role"`
+	Token string         `json:"token"`
+}
+
+func (q *Queries) CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitationParams) (OrgInvitation, error) {
+	row := q.db.QueryRowContext(ctx, createOrgInvitation,
+		arg.ID,
+		arg.OrgID,
+		arg.Email,
+		arg.Role,
+		arg.Token,
+	)
+	var i OrgInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Email,
+		&i.Role,
+		&i.Token,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const createOrganization = `-- name: CreateOrganization :one
@@ -87,6 +137,22 @@ func (q *Queries) DeleteOrganization(ctx context.Context, id string) error {
 	return err
 }
 
+const deletePendingOrgInvitations = `-- name: DeletePendingOrgInvitations :exec
+DELETE FROM org_invitations
+WHERE org_id = ?1 AND email = ?2 COLLATE NOCASE AND accepted_at IS NULL
+`
+
+type DeletePendingOrgInvitationsParams struct {
+	OrgID string `json:"org_id"`
+	Email string `json:"email"`
+}
+
+// A new invitation replaces any earlier one for the same person and brand.
+func (q *Queries) DeletePendingOrgInvitations(ctx context.Context, arg DeletePendingOrgInvitationsParams) error {
+	_, err := q.db.ExecContext(ctx, deletePendingOrgInvitations, arg.OrgID, arg.Email)
+	return err
+}
+
 const getOrgEmailSettings = `-- name: GetOrgEmailSettings :one
 SELECT from_name, from_email, reply_to
 FROM organizations
@@ -104,6 +170,58 @@ func (q *Queries) GetOrgEmailSettings(ctx context.Context, id string) (GetOrgEma
 	var i GetOrgEmailSettingsRow
 	err := row.Scan(&i.FromName, &i.FromEmail, &i.ReplyTo)
 	return i, err
+}
+
+const getOrgInvitationByToken = `-- name: GetOrgInvitationByToken :one
+SELECT i.id, i.org_id, i.email, COALESCE(i.role, 'member') AS role, i.accepted_at,
+       CAST(datetime(i.expires_at) <= datetime('now') AS INTEGER) AS expired,
+       o.name AS org_name
+FROM org_invitations i
+JOIN organizations o ON o.id = i.org_id
+WHERE i.token = ?1
+`
+
+type GetOrgInvitationByTokenRow struct {
+	ID         string         `json:"id"`
+	OrgID      string         `json:"org_id"`
+	Email      string         `json:"email"`
+	Role       string         `json:"role"`
+	AcceptedAt sql.NullString `json:"accepted_at"`
+	Expired    int64          `json:"expired"`
+	OrgName    string         `json:"org_name"`
+}
+
+func (q *Queries) GetOrgInvitationByToken(ctx context.Context, token string) (GetOrgInvitationByTokenRow, error) {
+	row := q.db.QueryRowContext(ctx, getOrgInvitationByToken, token)
+	var i GetOrgInvitationByTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Email,
+		&i.Role,
+		&i.AcceptedAt,
+		&i.Expired,
+		&i.OrgName,
+	)
+	return i, err
+}
+
+const getOrgUserRole = `-- name: GetOrgUserRole :one
+SELECT COALESCE(role, 'member') AS role FROM org_users
+WHERE org_id = ?1 AND user_id = ?2
+`
+
+type GetOrgUserRoleParams struct {
+	OrgID  string `json:"org_id"`
+	UserID string `json:"user_id"`
+}
+
+// The person's role in one brand. No row means they don't belong to it.
+func (q *Queries) GetOrgUserRole(ctx context.Context, arg GetOrgUserRoleParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getOrgUserRole, arg.OrgID, arg.UserID)
+	var role string
+	err := row.Scan(&role)
+	return role, err
 }
 
 const getOrganizationByAPIKey = `-- name: GetOrganizationByAPIKey :one

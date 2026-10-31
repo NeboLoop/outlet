@@ -43,7 +43,8 @@ type BlocklistInput struct {
 	PageSize int `json:"page_size,omitempty" jsonschema:"Items per page (default: 20, max: 100)"`
 
 	// Confirmation
-	Confirm bool `json:"confirm,omitempty" jsonschema:"Confirmation for destructive actions (suppression.clear)"`
+	Confirm     bool `json:"confirm,omitempty" jsonschema:"Confirmation for destructive actions (suppression.clear)"`
+	ConfirmLive bool `json:"confirm_live,omitempty" jsonschema:"Set to true to clear the list while the brand's API key is in live use (suppression.clear)"`
 }
 
 // RegisterBlocklistTool registers the blocklist tool.
@@ -198,7 +199,7 @@ func handleSuppression(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 }
 
 func handleSuppressionList(ctx context.Context, toolCtx *mcpctx.ToolContext, input BlocklistInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -217,14 +218,14 @@ func handleSuppressionList(ctx context.Context, toolCtx *mcpctx.ToolContext, inp
 	offset := (page - 1) * pageSize
 
 	// Get total count
-	total, err := toolCtx.DB().CountSuppressedEmails(ctx, toolCtx.BrandID())
+	total, err := toolCtx.DB().CountSuppressedEmails(ctx, toolCtx.BrandID(ctx))
 	if err != nil {
 		total = 0
 	}
 
 	// Get list
 	suppressions, err := toolCtx.DB().ListSuppressedEmails(ctx, db.ListSuppressedEmailsParams{
-		OrgID:      toolCtx.BrandID(),
+		OrgID:      toolCtx.BrandID(ctx),
 		PageOffset: int64(offset),
 		PageSize:   int64(pageSize),
 	})
@@ -252,7 +253,7 @@ func handleSuppressionList(ctx context.Context, toolCtx *mcpctx.ToolContext, inp
 }
 
 func handleSuppressionAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, input BlocklistInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -266,7 +267,7 @@ func handleSuppressionAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	}
 
 	suppression, err := toolCtx.DB().AddToSuppressionList(ctx, db.AddToSuppressionListParams{
-		OrgID:  toolCtx.BrandID(),
+		OrgID:  toolCtx.BrandID(ctx),
 		Email:  input.Email,
 		Reason: sql.NullString{String: input.Reason, Valid: input.Reason != ""},
 		Source: sql.NullString{String: source, Valid: true},
@@ -285,7 +286,7 @@ func handleSuppressionAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 }
 
 func handleSuppressionDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input BlocklistInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -293,7 +294,7 @@ func handleSuppressionDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, i
 		// Delete by ID
 		err := toolCtx.DB().DeleteSuppressionByID(ctx, db.DeleteSuppressionByIDParams{
 			ID:    input.ID,
-			OrgID: toolCtx.BrandID(),
+			OrgID: toolCtx.BrandID(ctx),
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to delete suppression: %w", err)
@@ -310,7 +311,7 @@ func handleSuppressionDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, i
 
 	// Delete by email
 	err := toolCtx.DB().DeleteFromSuppressionList(ctx, db.DeleteFromSuppressionListParams{
-		OrgID: toolCtx.BrandID(),
+		OrgID: toolCtx.BrandID(ctx),
 		Email: input.Email,
 	})
 	if err != nil {
@@ -324,7 +325,7 @@ func handleSuppressionDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, i
 }
 
 func handleSuppressionBulkAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, input BlocklistInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -349,7 +350,7 @@ func handleSuppressionBulkAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, 
 
 		// Check if already exists
 		existing, err := toolCtx.DB().GetSuppressedEmail(ctx, db.GetSuppressedEmailParams{
-			OrgID: toolCtx.BrandID(),
+			OrgID: toolCtx.BrandID(ctx),
 			Email: email,
 		})
 		if err == nil && existing.ID > 0 {
@@ -358,7 +359,7 @@ func handleSuppressionBulkAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, 
 		}
 
 		_, err = toolCtx.DB().AddToSuppressionList(ctx, db.AddToSuppressionListParams{
-			OrgID:  toolCtx.BrandID(),
+			OrgID:  toolCtx.BrandID(ctx),
 			Email:  email,
 			Reason: sql.NullString{String: input.Reason, Valid: input.Reason != ""},
 			Source: sql.NullString{String: source, Valid: true},
@@ -378,7 +379,7 @@ func handleSuppressionBulkAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, 
 }
 
 func handleSuppressionClear(ctx context.Context, toolCtx *mcpctx.ToolContext, input BlocklistInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -387,9 +388,9 @@ func handleSuppressionClear(ctx context.Context, toolCtx *mcpctx.ToolContext, in
 	}
 
 	// Get count before clearing
-	count, _ := toolCtx.DB().CountSuppressedEmails(ctx, toolCtx.BrandID())
+	count, _ := toolCtx.DB().CountSuppressedEmails(ctx, toolCtx.BrandID(ctx))
 
-	err := toolCtx.DB().ClearSuppressionList(ctx, toolCtx.BrandID())
+	err := toolCtx.DB().ClearSuppressionList(ctx, toolCtx.BrandID(ctx))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to clear suppression list: %w", err)
 	}
@@ -419,7 +420,7 @@ func handleBlockedDomain(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 }
 
 func handleDomainList(ctx context.Context, toolCtx *mcpctx.ToolContext, input BlocklistInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -438,14 +439,14 @@ func handleDomainList(ctx context.Context, toolCtx *mcpctx.ToolContext, input Bl
 	offset := (page - 1) * pageSize
 
 	// Get total count
-	total, err := toolCtx.DB().CountBlockedDomains(ctx, toolCtx.BrandID())
+	total, err := toolCtx.DB().CountBlockedDomains(ctx, toolCtx.BrandID(ctx))
 	if err != nil {
 		total = 0
 	}
 
 	// Get list
 	domains, err := toolCtx.DB().ListBlockedDomains(ctx, db.ListBlockedDomainsParams{
-		OrgID:      toolCtx.BrandID(),
+		OrgID:      toolCtx.BrandID(ctx),
 		PageOffset: int64(offset),
 		PageSize:   int64(pageSize),
 	})
@@ -472,7 +473,7 @@ func handleDomainList(ctx context.Context, toolCtx *mcpctx.ToolContext, input Bl
 }
 
 func handleDomainAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, input BlocklistInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -481,7 +482,7 @@ func handleDomainAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, input Blo
 	}
 
 	domain, err := toolCtx.DB().CreateBlockedDomain(ctx, db.CreateBlockedDomainParams{
-		OrgID:  toolCtx.BrandID(),
+		OrgID:  toolCtx.BrandID(ctx),
 		Domain: input.Domain,
 		Reason: sql.NullString{String: input.Reason, Valid: input.Reason != ""},
 	})
@@ -498,7 +499,7 @@ func handleDomainAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, input Blo
 }
 
 func handleDomainDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input BlocklistInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -506,7 +507,7 @@ func handleDomainDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 		// Delete by ID
 		err := toolCtx.DB().DeleteBlockedDomainByID(ctx, db.DeleteBlockedDomainByIDParams{
 			ID:    input.ID,
-			OrgID: toolCtx.BrandID(),
+			OrgID: toolCtx.BrandID(ctx),
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to delete blocked domain: %w", err)
@@ -523,7 +524,7 @@ func handleDomainDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 
 	// Delete by domain name
 	err := toolCtx.DB().DeleteBlockedDomain(ctx, db.DeleteBlockedDomainParams{
-		OrgID:  toolCtx.BrandID(),
+		OrgID:  toolCtx.BrandID(ctx),
 		Domain: input.Domain,
 	})
 	if err != nil {
@@ -537,7 +538,7 @@ func handleDomainDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 }
 
 func handleDomainBulkAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, input BlocklistInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -556,7 +557,7 @@ func handleDomainBulkAdd(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		}
 
 		err := toolCtx.DB().BulkInsertBlockedDomains(ctx, db.BulkInsertBlockedDomainsParams{
-			OrgID:  toolCtx.BrandID(),
+			OrgID:  toolCtx.BrandID(ctx),
 			Domain: domain,
 			Reason: sql.NullString{String: input.Reason, Valid: input.Reason != ""},
 		})

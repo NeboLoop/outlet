@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/services/email"
@@ -30,6 +31,10 @@ func NewCreateDomainIdentityLogic(ctx context.Context, svcCtx *svc.ServiceContex
 }
 
 func (l *CreateDomainIdentityLogic) CreateDomainIdentity(req *types.CreateDomainIdentityRequest) (resp *types.DomainIdentityInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.OrgId, access.Admin); err != nil {
+		return nil, err
+	}
+
 	// Get the organization to get its email settings
 	org, err := l.svcCtx.DB.GetOrganizationByID(l.ctx, req.OrgId)
 	if err != nil {
@@ -56,6 +61,9 @@ func (l *CreateDomainIdentityLogic) CreateDomainIdentity(req *types.CreateDomain
 	})
 	if err == nil && existing.ID != "" {
 		return nil, errorx.NewBadRequestError("Domain identity already exists for this domain")
+	}
+	if err := email.ClaimDomain(l.ctx, l.svcCtx.DB, req.OrgId, domain); err != nil {
+		return nil, err
 	}
 
 	// Get AWS credentials from platform settings

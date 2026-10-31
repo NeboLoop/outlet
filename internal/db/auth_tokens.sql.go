@@ -61,7 +61,7 @@ func (q *Queries) DeleteAuthTokensByUser(ctx context.Context, arg DeleteAuthToke
 
 const deleteExpiredAuthTokens = `-- name: DeleteExpiredAuthTokens :exec
 DELETE FROM auth_tokens
-WHERE expires_at < datetime('now') OR used_at IS NOT NULL
+WHERE datetime(expires_at) < datetime('now') OR used_at IS NOT NULL
 `
 
 func (q *Queries) DeleteExpiredAuthTokens(ctx context.Context) error {
@@ -74,7 +74,7 @@ SELECT id, user_id, token, token_type, expires_at, used_at, created_at
 FROM auth_tokens
 WHERE token = ?1
   AND used_at IS NULL
-  AND expires_at > datetime('now')
+  AND datetime(expires_at) > datetime('now')
 LIMIT 1
 `
 
@@ -99,7 +99,7 @@ FROM auth_tokens
 WHERE user_id = ?1
   AND token_type = ?2
   AND used_at IS NULL
-  AND expires_at > datetime('now')
+  AND datetime(expires_at) > datetime('now')
 ORDER BY created_at DESC
 LIMIT 1
 `

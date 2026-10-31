@@ -4,8 +4,8 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -28,12 +28,9 @@ func NewListListsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *ListLis
 }
 
 func (l *ListListsLogic) ListLists() (resp *types.ListListsResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		l.Errorf("Failed to get org ID from context - X-Org-Id header missing")
-		return &types.ListListsResponse{
-			Lists: []types.ListInfo{},
-		}, nil
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	rows, err := l.svcCtx.DB.ListEmailLists(l.ctx, orgID)

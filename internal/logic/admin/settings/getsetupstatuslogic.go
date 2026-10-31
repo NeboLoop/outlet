@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -24,6 +25,10 @@ func NewGetSetupStatusLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Ge
 }
 
 func (l *GetSetupStatusLogic) GetSetupStatus() (resp *types.SetupStatusResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Required AWS settings for platform to be fully configured
 	requiredAwsSettings := []string{"aws_access_key", "aws_secret_key", "aws_region"}
 

@@ -11,7 +11,7 @@ FROM mcp_api_keys k
 JOIN users u ON k.user_id = u.id
 WHERE k.key_hash = sqlc.arg(key_hash)
   AND k.revoked_at IS NULL
-  AND (k.expires_at IS NULL OR k.expires_at > datetime('now'));
+  AND (k.expires_at IS NULL OR datetime(k.expires_at) > datetime('now'));
 
 -- name: GetMCPAPIKeyByPrefix :many
 SELECT * FROM mcp_api_keys
@@ -28,10 +28,11 @@ UPDATE mcp_api_keys
 SET last_used_at = datetime('now'), updated_at = datetime('now')
 WHERE id = sqlc.arg(id);
 
--- name: RevokeMCPAPIKey :exec
+-- name: RevokeMCPAPIKey :execrows
+-- People revoke their own keys.
 UPDATE mcp_api_keys
 SET revoked_at = datetime('now'), updated_at = datetime('now')
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id) AND revoked_at IS NULL;
 
 -- name: DeleteMCPAPIKey :exec
 DELETE FROM mcp_api_keys WHERE id = sqlc.arg(id);
@@ -81,7 +82,7 @@ FROM mcp_oauth_codes c
 JOIN mcp_oauth_clients cl ON c.client_id = cl.id
 WHERE c.code_hash = sqlc.arg(code_hash)
   AND c.used_at IS NULL
-  AND c.expires_at > datetime('now');
+  AND datetime(c.expires_at) > datetime('now');
 
 -- name: MarkMCPOAuthCodeUsed :exec
 UPDATE mcp_oauth_codes
@@ -90,7 +91,7 @@ WHERE id = sqlc.arg(id);
 
 -- name: CleanupExpiredMCPOAuthCodes :exec
 DELETE FROM mcp_oauth_codes
-WHERE expires_at < datetime('now') OR used_at IS NOT NULL;
+WHERE datetime(expires_at) < datetime('now') OR used_at IS NOT NULL;
 
 -- MCP OAuth Tokens
 
@@ -107,7 +108,7 @@ JOIN users u ON t.user_id = u.id
 JOIN mcp_oauth_clients cl ON t.client_id = cl.id
 WHERE t.access_token_hash = sqlc.arg(access_token_hash)
   AND t.revoked_at IS NULL
-  AND t.expires_at > datetime('now');
+  AND datetime(t.expires_at) > datetime('now');
 
 -- name: GetMCPOAuthTokenByRefreshHash :one
 SELECT t.*, u.email as user_email, u.name as user_name, u.role as user_role, u.status as user_status,
@@ -117,7 +118,7 @@ JOIN users u ON t.user_id = u.id
 JOIN mcp_oauth_clients cl ON t.client_id = cl.id
 WHERE t.refresh_token_hash = sqlc.arg(refresh_token_hash)
   AND t.revoked_at IS NULL
-  AND (t.refresh_expires_at IS NULL OR t.refresh_expires_at > datetime('now'));
+  AND (t.refresh_expires_at IS NULL OR datetime(t.refresh_expires_at) > datetime('now'));
 
 -- name: RevokeMCPOAuthToken :exec
 UPDATE mcp_oauth_tokens
@@ -131,8 +132,8 @@ WHERE user_id = sqlc.arg(user_id) AND revoked_at IS NULL;
 
 -- name: CleanupExpiredMCPOAuthTokens :exec
 DELETE FROM mcp_oauth_tokens
-WHERE (expires_at < datetime('now') AND (refresh_expires_at IS NULL OR refresh_expires_at < datetime('now')))
-   OR revoked_at < datetime('now', '-30 days');
+WHERE (datetime(expires_at) < datetime('now') AND (refresh_expires_at IS NULL OR datetime(refresh_expires_at) < datetime('now')))
+   OR datetime(revoked_at) < datetime('now', '-30 days');
 
 -- MCP Sessions (for persisting org selection across server restarts)
 
@@ -147,13 +148,6 @@ ON CONFLICT (session_id) DO UPDATE SET
 SELECT * FROM mcp_sessions
 WHERE session_id = sqlc.arg(session_id);
 
--- name: GetMCPSessionByUser :one
--- Fallback: get most recent org selection for a user (when session ID changes)
-SELECT * FROM mcp_sessions
-WHERE user_id = sqlc.arg(user_id) AND org_id IS NOT NULL
-ORDER BY updated_at DESC
-LIMIT 1;
-
 -- name: DeleteMCPSession :exec
 DELETE FROM mcp_sessions WHERE session_id = sqlc.arg(session_id);
 
@@ -161,3 +155,9 @@ DELETE FROM mcp_sessions WHERE session_id = sqlc.arg(session_id);
 -- Delete sessions older than 30 days
 DELETE FROM mcp_sessions
 WHERE updated_at < datetime('now', '-30 days');
+
+-- MCP audit log (every change made through MCP)
+
+-- name: CreateMCPAuditLog :exec
+INSERT INTO mcp_audit_log (id, user_id, user_email, tool, action, org_id, target, result, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(user_id), sqlc.arg(user_email), sqlc.arg(tool), sqlc.arg(action), sqlc.arg(org_id), sqlc.arg(target), sqlc.arg(result), datetime('now'));

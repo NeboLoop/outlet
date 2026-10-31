@@ -11,6 +11,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/middleware"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -148,7 +149,6 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
 
 		// Send confirmation email asynchronously
 		go func() {
-			_ = capturedOrgID // Mark as used
 			name := contactName
 			if name == "" {
 				name = toEmail
@@ -215,14 +215,18 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
 </html>`, name, listName, confirmSection, orgName)
 			}
 
-			err := l.svcCtx.EmailService.SendEmailFrom(
-				context.Background(),
-				fromEmail,
-				fromName,
-				toEmail,
-				subject,
-				body,
-			)
+			// The brand sends only from its own domains.
+			err := email.CheckSender(context.Background(), l.svcCtx.DB, capturedOrgID, fromEmail)
+			if err == nil {
+				err = l.svcCtx.EmailService.SendEmailFrom(
+					context.Background(),
+					fromEmail,
+					fromName,
+					toEmail,
+					subject,
+					body,
+				)
+			}
 			if err != nil {
 				logx.Errorf("Failed to send confirmation email to %s: %v", toEmail, err)
 			}

@@ -2,16 +2,15 @@ package auth
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
 
 	"github.com/zeromicro/go-zero/core/logx"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type LoginLogic struct {
@@ -29,36 +28,11 @@ func NewLoginLogic(ctx context.Context, svcCtx *svc.ServiceContext) *LoginLogic 
 }
 
 func (l *LoginLogic) Login(req *types.LoginRequest) (resp *types.LoginResponse, err error) {
-	// Validate input
-	if req.Email == "" || req.Password == "" {
-		return nil, fmt.Errorf("email and password are required")
-	}
-
-	// Get user from database by email
-	user, err := l.svcCtx.DB.GetUserByEmail(l.ctx, req.Email)
-	if err == sql.ErrNoRows {
-		l.Errorf("Login attempt for non-existent user: %s", req.Email)
-		return nil, fmt.Errorf("invalid email or password")
-	}
+	// Checks the password, the lock after wrong passwords, and that the
+	// account is active; records the sign-in.
+	user, err := access.SignIn(l.ctx, l.svcCtx.DB, req.Email, req.Password)
 	if err != nil {
-		l.Errorf("Database error getting user: %v", err)
-		return nil, fmt.Errorf("database error")
-	}
-
-	// Verify password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		l.Errorf("Invalid password attempt for user: %s", req.Email)
-		// Increment failed login attempts
-		_ = l.svcCtx.DB.IncrementFailedLogins(l.ctx, user.ID)
-		return nil, fmt.Errorf("invalid email or password")
-	}
-
-	// Check if account is locked
-	if user.LockedUntil.Valid && user.LockedUntil.String != "" {
-		lockedUntil, parseErr := time.Parse(time.RFC3339, user.LockedUntil.String)
-		if parseErr == nil && time.Now().Before(lockedUntil) {
-			return nil, fmt.Errorf("account is locked until %s", user.LockedUntil.String)
-		}
+		return nil, err
 	}
 
 	// Generate access token
@@ -87,12 +61,6 @@ func (l *LoginLogic) Login(req *types.LoginRequest) (resp *types.LoginResponse, 
 	if err != nil {
 		l.Errorf("Error generating refresh token: %v", err)
 		return nil, fmt.Errorf("failed to generate refresh token")
-	}
-
-	// Update last login and reset failed attempts
-	if err := l.svcCtx.DB.UpdateLastLogin(l.ctx, user.ID); err != nil {
-		l.Errorf("Failed to update last login: %v", err)
-		// Don't fail the login, just log the error
 	}
 
 	l.Infof("User logged in successfully: %s (role: %s)", user.Email, user.Role)

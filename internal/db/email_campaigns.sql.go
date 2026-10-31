@@ -295,12 +295,18 @@ func (q *Queries) DeleteCampaign(ctx context.Context, arg DeleteCampaignParams) 
 const getActiveSubscribersForList = `-- name: GetActiveSubscribersForList :many
 SELECT c.id as contact_id, c.email, c.name, ls.list_id
 FROM list_subscribers ls
+JOIN email_lists l ON l.id = ls.list_id AND l.org_id = ?1
 JOIN contacts c ON c.id = ls.contact_id
-WHERE ls.list_id = ?1
+WHERE ls.list_id = ?2
   AND ls.status = 'active'
-  AND c.bounced_at IS NULL
+  AND c.blocked_at IS NULL
   AND c.unsubscribed_at IS NULL
 `
+
+type GetActiveSubscribersForListParams struct {
+	OrgID  string `json:"org_id"`
+	ListID int64  `json:"list_id"`
+}
 
 type GetActiveSubscribersForListRow struct {
 	ContactID string `json:"contact_id"`
@@ -309,8 +315,9 @@ type GetActiveSubscribersForListRow struct {
 	ListID    int64  `json:"list_id"`
 }
 
-func (q *Queries) GetActiveSubscribersForList(ctx context.Context, listID int64) ([]GetActiveSubscribersForListRow, error) {
-	rows, err := q.db.QueryContext(ctx, getActiveSubscribersForList, listID)
+// Only a list of the campaign's own brand gives recipients.
+func (q *Queries) GetActiveSubscribersForList(ctx context.Context, arg GetActiveSubscribersForListParams) ([]GetActiveSubscribersForListRow, error) {
+	rows, err := q.db.QueryContext(ctx, getActiveSubscribersForList, arg.OrgID, arg.ListID)
 	if err != nil {
 		return nil, err
 	}
@@ -734,7 +741,7 @@ func (q *Queries) GetPendingCampaignSends(ctx context.Context, limitCount int64)
 
 const getScheduledCampaigns = `-- name: GetScheduledCampaigns :many
 SELECT id, org_id, design_id, name, subject, preview_text, from_name, from_email, reply_to, html_body, plain_text, list_ids, exclude_list_ids, segment_filter, status, scheduled_at, started_at, completed_at, track_opens, track_clicks, recipients_count, sent_count, delivered_count, opened_count, clicked_count, bounced_count, complained_count, unsubscribed_count, created_at, updated_at FROM email_campaigns
-WHERE status = 'scheduled' AND scheduled_at <= datetime('now')
+WHERE status = 'scheduled' AND datetime(scheduled_at) <= datetime('now')
 ORDER BY scheduled_at ASC
 `
 
@@ -1179,7 +1186,7 @@ func (q *Queries) RecordCampaignOpen(ctx context.Context, id string) error {
 const scheduleCampaign = `-- name: ScheduleCampaign :one
 UPDATE email_campaigns
 SET status = 'scheduled',
-    scheduled_at = ?1,
+    scheduled_at = COALESCE(?1, datetime('now')),
     updated_at = datetime('now')
 WHERE id = ?2 AND org_id = ?3 AND status = 'draft'
 RETURNING id, org_id, design_id, name, subject, preview_text, from_name, from_email, reply_to, html_body, plain_text, list_ids, exclude_list_ids, segment_filter, status, scheduled_at, started_at, completed_at, track_opens, track_clicks, recipients_count, sent_count, delivered_count, opened_count, clicked_count, bounced_count, complained_count, unsubscribed_count, created_at, updated_at
@@ -1191,6 +1198,8 @@ type ScheduleCampaignParams struct {
 	OrgID       string         `json:"org_id"`
 }
 
+// The one way a campaign starts sending: the scheduler picks it up once
+// scheduled_at has passed. No scheduled_at means now.
 func (q *Queries) ScheduleCampaign(ctx context.Context, arg ScheduleCampaignParams) (EmailCampaign, error) {
 	row := q.db.QueryRowContext(ctx, scheduleCampaign, arg.ScheduledAt, arg.ID, arg.OrgID)
 	var i EmailCampaign

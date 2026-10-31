@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
 	"github.com/outlet-sh/outlet/internal/services/email"
@@ -51,7 +52,8 @@ type BrandInput struct {
 	MaxContacts *int64 `json:"max_contacts,omitempty" jsonschema:"Set max contacts limit (0 or null for unlimited). For brand.update."`
 
 	// Delete confirmation
-	Confirm bool `json:"confirm,omitempty" jsonschema:"Set to true to confirm deletion. For brand.delete, domain.delete."`
+	Confirm     bool `json:"confirm,omitempty" jsonschema:"Set to true to confirm deletion. For brand.delete, domain.delete."`
+	ConfirmLive bool `json:"confirm_live,omitempty" jsonschema:"Set to true to delete a brand whose API key is in live use. For brand.delete."`
 }
 
 // RegisterBrandTool registers the unified brand tool.
@@ -70,11 +72,11 @@ Resources:
 
 BRAND RESOURCE:
 - brand.list: List all brands you have access to
-- brand.select: Select a brand to work with (OAuth only, requires: brand_id or slug)
+- brand.select: Select a brand to work with (requires: brand_id or slug). Each new session chooses its brand.
 - brand.get: Get current brand details
 - brand.update: Update brand settings (optional: name, from_name, from_email, reply_to, app_url, max_contacts)
 - brand.create: Create a new brand (requires: name)
-- brand.delete: Delete brand (requires: confirm=true)
+- brand.delete: Delete a brand (requires: id or slug, confirm=true; confirm_live=true if its API key is in live use)
 - brand.dashboard_stats: Get dashboard statistics
 
 DOMAIN RESOURCE:
@@ -82,7 +84,7 @@ DOMAIN RESOURCE:
 - domain.create: Add a domain for verification (requires: domain)
 - domain.get: Get domain details with DNS records (requires: id)
 - domain.refresh: Check verification status with SES (requires: id)
-- domain.delete: Remove a domain (requires: id)
+- domain.delete: Remove a domain; the brand can no longer send from it (requires: id, confirm=true)
 
 Max Contacts:
 - max_contacts: Set the maximum number of contacts allowed (brand.update)
@@ -99,6 +101,7 @@ Examples:
   brand(resource: brand, action: update, app_url: "")  # clear, use platform default
   brand(resource: brand, action: update, max_contacts: 0)  # unlimited
   brand(resource: brand, action: create, name: "New Company")
+  brand(resource: brand, action: delete, slug: "old-company", confirm: true)
   brand(resource: brand, action: dashboard_stats)
   brand(resource: domain, action: list)
   brand(resource: domain, action: create, domain: "example.com")
@@ -223,7 +226,7 @@ func handleBrandList(ctx context.Context, toolCtx *mcpctx.ToolContext, input Bra
 	items := make([]BrandListItem, 0)
 
 	if toolCtx.AuthMode() == mcpctx.AuthModeAPIKey {
-		brand := toolCtx.Brand()
+		brand := toolCtx.SessionBrand()
 		items = append(items, BrandListItem{
 			ID:       brand.ID,
 			Name:     brand.Name,
@@ -231,18 +234,18 @@ func handleBrandList(ctx context.Context, toolCtx *mcpctx.ToolContext, input Bra
 			Selected: true,
 		})
 	} else {
-		allBrands, err := toolCtx.DB().ListOrganizations(ctx)
+		brands, err := access.Brands(ctx, toolCtx.DB(), toolCtx.UserID())
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list brands: %w", err)
 		}
 
-		currentBrandID := toolCtx.BrandID()
-		for _, brand := range allBrands {
+		currentBrandID := toolCtx.SessionBrand().ID
+		for _, brand := range brands {
 			items = append(items, BrandListItem{
 				ID:       brand.ID,
 				Name:     brand.Name,
 				Slug:     brand.Slug,
-				Role:     "admin",
+				Role:     string(brand.Role),
 				Selected: brand.ID == currentBrandID,
 			})
 		}
@@ -256,17 +259,11 @@ func handleBrandList(ctx context.Context, toolCtx *mcpctx.ToolContext, input Bra
 }
 
 func handleBrandSelect(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	// Accept either brand_id or id for the brand ID (users might use either)
-	brandID := input.BrandID
-	if brandID == "" && input.ID != "" {
-		brandID = input.ID
-	}
-
 	fmt.Printf("[MCP brand.select] Starting - AuthMode: %v, SessionID: %s, BrandID: %q, ID: %q, Slug: %q\n",
 		toolCtx.AuthMode(), toolCtx.SessionID(), input.BrandID, input.ID, input.Slug)
 
 	if toolCtx.AuthMode() == mcpctx.AuthModeAPIKey {
-		brand := toolCtx.Brand()
+		brand := toolCtx.SessionBrand()
 		fmt.Printf("[MCP brand.select] API key mode - returning brand: %s\n", brand.Name)
 		return nil, BrandSelectOutput{
 			ID:       brand.ID,
@@ -277,32 +274,14 @@ func handleBrandSelect(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 		}, nil
 	}
 
-	if brandID == "" && input.Slug == "" {
-		fmt.Println("[MCP brand.select] ERROR: neither brand_id/id nor slug provided")
+	// The brand the call names, as the gate found it and checked it.
+	fullBrand := toolCtx.Brand(ctx)
+	if fullBrand.ID == "" {
 		return nil, nil, mcpctx.NewValidationError("either id, brand_id, or slug is required for brand.select", "id")
 	}
 
-	var fullBrand db.Organization
-	var err error
-
-	if brandID != "" {
-		fmt.Printf("[MCP brand.select] Looking up by ID: %s\n", brandID)
-		fullBrand, err = toolCtx.DB().GetOrganizationByID(ctx, brandID)
-	} else {
-		fmt.Printf("[MCP brand.select] Looking up by slug: %s\n", input.Slug)
-		fullBrand, err = toolCtx.DB().GetOrganizationBySlug(ctx, input.Slug)
-	}
-	if err != nil {
-		fmt.Printf("[MCP brand.select] ERROR: brand lookup failed: %v\n", err)
-		if brandID != "" {
-			return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("brand with ID '%s' not found", brandID))
-		}
-		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("brand with slug '%s' not found", input.Slug))
-	}
-
-	fmt.Printf("[MCP brand.select] Found brand: %s (%s), calling SelectBrand\n", fullBrand.Name, fullBrand.ID)
 	toolCtx.SelectBrand(fullBrand)
-	fmt.Printf("[MCP brand.select] SelectBrand completed, HasBrand: %v\n", toolCtx.HasBrand())
+	fmt.Printf("[MCP brand.select] Selected brand: %s (%s)\n", fullBrand.Name, fullBrand.ID)
 
 	return nil, BrandSelectOutput{
 		ID:       fullBrand.ID,
@@ -314,10 +293,10 @@ func handleBrandSelect(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 }
 
 func handleBrandGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
-	brand := toolCtx.Brand()
+	brand := toolCtx.Brand(ctx)
 
 	return nil, BrandGetOutput{
 		ID:          brand.ID,
@@ -332,14 +311,14 @@ func handleBrandGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input Bran
 }
 
 func handleBrandUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
-	brand := toolCtx.Brand()
+	brand := toolCtx.Brand(ctx)
 
 	if input.FromName != "" || input.FromEmail != "" || input.ReplyTo != "" {
 		_, err := toolCtx.DB().UpdateOrgEmailSettings(ctx, db.UpdateOrgEmailSettingsParams{
-			ID:        toolCtx.BrandID(),
+			ID:        toolCtx.BrandID(ctx),
 			FromName:  input.FromName,
 			FromEmail: input.FromEmail,
 			ReplyTo:   input.ReplyTo,
@@ -356,7 +335,7 @@ func handleBrandUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 			maxContacts = sql.NullInt64{Int64: *input.MaxContacts, Valid: true}
 		}
 		_, err := toolCtx.DB().UpdateOrgMaxContacts(ctx, db.UpdateOrgMaxContactsParams{
-			ID:          toolCtx.BrandID(),
+			ID:          toolCtx.BrandID(ctx),
 			MaxContacts: maxContacts,
 		})
 		if err != nil {
@@ -367,7 +346,7 @@ func handleBrandUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 	// Update app_url if explicitly provided (pointer distinguishes "not set" from "clear")
 	if input.AppURL != nil {
 		_, err := toolCtx.DB().UpdateOrgAppUrl(ctx, db.UpdateOrgAppUrlParams{
-			ID:     toolCtx.BrandID(),
+			ID:     toolCtx.BrandID(ctx),
 			AppUrl: sql.NullString{String: *input.AppURL, Valid: *input.AppURL != ""},
 		})
 		if err != nil {
@@ -378,7 +357,7 @@ func handleBrandUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 	// Update name if provided
 	if input.Name != "" {
 		_, err := toolCtx.DB().UpdateOrganization(ctx, db.UpdateOrganizationParams{
-			ID:   toolCtx.BrandID(),
+			ID:   toolCtx.BrandID(ctx),
 			Name: input.Name,
 		})
 		if err != nil {
@@ -386,7 +365,7 @@ func handleBrandUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 		}
 	}
 
-	updatedBrand, err := toolCtx.DB().GetOrganizationByID(ctx, toolCtx.BrandID())
+	updatedBrand, err := toolCtx.DB().GetOrganizationByID(ctx, toolCtx.BrandID(ctx))
 	if err != nil {
 		return nil, BrandUpdateOutput{
 			ID:        brand.ID,
@@ -496,19 +475,22 @@ func handleBrandCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 }
 
 func handleBrandDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
-		return nil, nil, err
+	// brand.delete acts on the brand it names, as the gate found it and
+	// checked it, never on the session's choice.
+	brand := toolCtx.Brand(ctx)
+	if brand.ID == "" {
+		return nil, nil, mcpctx.NewValidationError("name the brand: pass id, brand_id or slug", "id")
 	}
 
 	if !input.Confirm {
 		return nil, nil, mcpctx.NewValidationError("confirm=true is required to delete a brand", "confirm")
 	}
 
-	brand := toolCtx.Brand()
-
-	err := toolCtx.DB().DeleteOrganization(ctx, brand.ID)
-	if err != nil {
+	if err := toolCtx.DB().DeleteOrganization(ctx, brand.ID); err != nil {
 		return nil, nil, fmt.Errorf("failed to delete brand: %w", err)
+	}
+	if toolCtx.SessionBrand().ID == brand.ID {
+		toolCtx.ClearBrand()
 	}
 
 	return nil, BrandDeleteOutput{
@@ -520,11 +502,11 @@ func handleBrandDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input B
 }
 
 func handleBrandDashboardStats(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
-	brandID := toolCtx.BrandID()
+	brandID := toolCtx.BrandID(ctx)
 
 	// Get subscriber stats
 	var totalContacts, new30d, new7d int64
@@ -639,11 +621,11 @@ func handleDomain(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandI
 }
 
 func handleDomainIdentityList(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
-	domains, err := toolCtx.DB().ListDomainIdentitiesByOrg(ctx, toolCtx.BrandID())
+	domains, err := toolCtx.DB().ListDomainIdentitiesByOrg(ctx, toolCtx.BrandID(ctx))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list domains: %w", err)
 	}
@@ -667,12 +649,15 @@ func handleDomainIdentityList(ctx context.Context, toolCtx *mcpctx.ToolContext, 
 }
 
 func handleDomainIdentityCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
 	if strings.TrimSpace(input.Domain) == "" {
 		return nil, nil, mcpctx.NewValidationError("domain is required", "domain")
+	}
+	if err := email.ClaimDomain(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), input.Domain); err != nil {
+		return nil, nil, err
 	}
 
 	domainID := uuid.New().String()
@@ -680,7 +665,7 @@ func handleDomainIdentityCreate(ctx context.Context, toolCtx *mcpctx.ToolContext
 
 	domain, err := toolCtx.DB().CreateDomainIdentity(ctx, db.CreateDomainIdentityParams{
 		ID:                 domainID,
-		OrgID:              toolCtx.BrandID(),
+		OrgID:              toolCtx.BrandID(ctx),
 		Domain:             input.Domain,
 		VerificationStatus: sql.NullString{String: "pending", Valid: true},
 		DkimStatus:         sql.NullString{String: "pending", Valid: true},
@@ -701,7 +686,7 @@ func handleDomainIdentityCreate(ctx context.Context, toolCtx *mcpctx.ToolContext
 }
 
 func handleDomainIdentityGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -714,7 +699,7 @@ func handleDomainIdentityGet(ctx context.Context, toolCtx *mcpctx.ToolContext, i
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("domain %s not found", input.ID))
 	}
 
-	if domain.OrgID != toolCtx.BrandID() {
+	if domain.OrgID != toolCtx.BrandID(ctx) {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("domain %s not found", input.ID))
 	}
 
@@ -734,7 +719,7 @@ func handleDomainIdentityGet(ctx context.Context, toolCtx *mcpctx.ToolContext, i
 }
 
 func handleDomainIdentityRefresh(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -747,7 +732,7 @@ func handleDomainIdentityRefresh(ctx context.Context, toolCtx *mcpctx.ToolContex
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("domain %s not found", input.ID))
 	}
 
-	if domain.OrgID != toolCtx.BrandID() {
+	if domain.OrgID != toolCtx.BrandID(ctx) {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("domain %s not found", input.ID))
 	}
 
@@ -758,7 +743,7 @@ func handleDomainIdentityRefresh(ctx context.Context, toolCtx *mcpctx.ToolContex
 	}
 
 	// Check for org-specific AWS credentials
-	emailConfig, err := email.GetOrgEmailConfig(ctx, toolCtx.DB(), toolCtx.BrandID())
+	emailConfig, err := email.GetOrgEmailConfig(ctx, toolCtx.DB(), toolCtx.BrandID(ctx))
 	if err == nil && emailConfig.HasOwnAWSCredentials() {
 		region = emailConfig.AWSRegion
 		accessKey = emailConfig.AWSAccessKey
@@ -796,7 +781,7 @@ func handleDomainIdentityRefresh(ctx context.Context, toolCtx *mcpctx.ToolContex
 		// Set up bounce notifications
 		svc := toolCtx.Svc()
 		if svc.Config.App.BaseURL != "" {
-			webhookURL := svc.Config.App.BaseURL + "/webhooks/ses/" + toolCtx.BrandID()
+			webhookURL := svc.Config.App.BaseURL + "/webhooks/ses/" + toolCtx.BrandID(ctx)
 			_ = email.SetupBounceNotifications(ctx, region, accessKey, secretKey, domain.Domain, webhookURL)
 		}
 
@@ -878,12 +863,17 @@ func getAWSCredentialsForMCP(ctx context.Context, toolCtx *mcpctx.ToolContext) (
 }
 
 func handleDomainIdentityDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
 	if strings.TrimSpace(input.ID) == "" {
 		return nil, nil, mcpctx.NewValidationError("id is required", "id")
+	}
+	// The brand sends only from its own domains: removing one stops the
+	// mail sent from it.
+	if !input.Confirm {
+		return nil, nil, mcpctx.NewValidationError("confirm=true is required to delete a domain: the brand can no longer send from it", "confirm")
 	}
 
 	domain, err := toolCtx.DB().GetDomainIdentity(ctx, input.ID)
@@ -891,7 +881,7 @@ func handleDomainIdentityDelete(ctx context.Context, toolCtx *mcpctx.ToolContext
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("domain %s not found", input.ID))
 	}
 
-	if domain.OrgID != toolCtx.BrandID() {
+	if domain.OrgID != toolCtx.BrandID(ctx) {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("domain %s not found", input.ID))
 	}
 

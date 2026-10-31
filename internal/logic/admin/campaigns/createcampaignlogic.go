@@ -3,12 +3,11 @@ package campaigns
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"errors"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -31,13 +30,22 @@ func NewCreateCampaignLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Cr
 }
 
 func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (resp *types.CampaignInfo, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, errors.New("org_id not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
-	listIdsJSON, _ := json.Marshal(req.ListIds)
-	excludeListIdsJSON, _ := json.Marshal(req.ExcludeListIds)
+	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, req.FromEmail); err != nil {
+		return nil, err
+	}
+	listIDs, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ListIds)
+	if err != nil {
+		return nil, err
+	}
+	excludeListIDs, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ExcludeListIds)
+	if err != nil {
+		return nil, err
+	}
 
 	var designID sql.NullInt64
 	if req.DesignId != nil {
@@ -70,8 +78,8 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 		ReplyTo:        sql.NullString{String: req.ReplyTo, Valid: req.ReplyTo != ""},
 		HtmlBody:       req.HtmlBody,
 		PlainText:      sql.NullString{String: req.PlainText, Valid: req.PlainText != ""},
-		ListIds:        sql.NullString{String: string(listIdsJSON), Valid: true},
-		ExcludeListIds: sql.NullString{String: string(excludeListIdsJSON), Valid: len(req.ExcludeListIds) > 0},
+		ListIds:        sql.NullString{String: db.EncodeListIDs(listIDs), Valid: true},
+		ExcludeListIds: sql.NullString{String: db.EncodeListIDs(excludeListIDs), Valid: len(excludeListIDs) > 0},
 		Status:         sql.NullString{String: "draft", Valid: true},
 		TrackOpens:     trackOpens,
 		TrackClicks:    trackClicks,

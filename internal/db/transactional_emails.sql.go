@@ -174,6 +174,25 @@ func (q *Queries) DeleteTransactionalEmail(ctx context.Context, arg DeleteTransa
 	return err
 }
 
+const getRecentAPIKeySends = `-- name: GetRecentAPIKeySends :one
+SELECT COUNT(*) AS sends, CAST(COALESCE(MAX(created_at), '') AS TEXT) AS last_sent_at
+FROM transactional_sends
+WHERE org_id = ?1 AND created_at >= datetime('now', '-7 days')
+`
+
+type GetRecentAPIKeySendsRow struct {
+	Sends      int64  `json:"sends"`
+	LastSentAt string `json:"last_sent_at"`
+}
+
+// Mail sent with the brand's API key (the SDK and SMTP) in the last 7 days.
+func (q *Queries) GetRecentAPIKeySends(ctx context.Context, orgID string) (GetRecentAPIKeySendsRow, error) {
+	row := q.db.QueryRowContext(ctx, getRecentAPIKeySends, orgID)
+	var i GetRecentAPIKeySendsRow
+	err := row.Scan(&i.Sends, &i.LastSentAt)
+	return i, err
+}
+
 const getTransactionalEmail = `-- name: GetTransactionalEmail :one
 SELECT id, org_id, design_id, name, slug, description, subject, html_body, plain_text, from_name, from_email, reply_to, is_active, created_at, updated_at FROM transactional_emails
 WHERE id = ?1 AND org_id = ?2

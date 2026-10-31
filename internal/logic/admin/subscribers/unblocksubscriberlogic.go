@@ -3,6 +3,7 @@ package subscribers
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -25,6 +26,9 @@ func NewUnblockSubscriberLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 
 func (l *UnblockSubscriberLogic) UnblockSubscriber(req *types.SubscriberActionRequest) (resp *types.SubscriberInfo, err error) {
 	contactID := req.Id
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Contact, contactID, access.Member); err != nil {
+		return nil, err
+	}
 
 	// Unblock the contact
 	err = l.svcCtx.DB.UnblockContact(l.ctx, contactID)

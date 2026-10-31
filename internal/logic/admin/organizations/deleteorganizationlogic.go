@@ -3,6 +3,7 @@ package organizations
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -24,6 +25,10 @@ func NewDeleteOrganizationLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *DeleteOrganizationLogic) DeleteOrganization(req *types.DeleteOrgRequest) (*types.Response, error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.Id, access.Admin); err != nil {
+		return nil, err
+	}
+
 	err := l.svcCtx.DB.DeleteOrganization(l.ctx, req.Id)
 	if err != nil {
 		return nil, err

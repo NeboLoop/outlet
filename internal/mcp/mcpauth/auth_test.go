@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"sync"
 	"testing"
 	"time"
 
@@ -193,24 +192,6 @@ func TestAuthenticator_TokenVerifier_ReturnsFunction(t *testing.T) {
 	assert.NotNil(t, verifier, "TokenVerifier should return a function")
 }
 
-func TestAuthenticator_InvalidateAPIKey(t *testing.T) {
-	auth := NewAuthenticator(nil)
-
-	// Should not panic when invalidating non-existent key
-	assert.NotPanics(t, func() {
-		auth.InvalidateAPIKey("nonexistent-key")
-	})
-}
-
-func TestAuthenticator_InvalidateAPIKeyByHash(t *testing.T) {
-	auth := NewAuthenticator(nil)
-
-	// Should not panic when invalidating non-existent hash
-	assert.NotPanics(t, func() {
-		auth.InvalidateAPIKeyByHash("nonexistent-hash")
-	})
-}
-
 // ========== API Key Format Tests ==========
 
 func TestAPIKeyFormat_Prefix(t *testing.T) {
@@ -246,146 +227,6 @@ func TestTokenVerifier_OAuthPath(t *testing.T) {
 	// Verify that non-lv_ tokens would go through OAuth path
 	token := "oauth_access_token_123"
 	assert.False(t, len(token) >= 3 && token[:3] == "lv_", "OAuth token should not have lv_ prefix")
-}
-
-// ========== Cache Tests ==========
-
-func TestAuthenticator_CacheOperations(t *testing.T) {
-	auth := NewAuthenticator(nil)
-
-	// Store something in cache (simulating what happens after successful verification)
-	testKey := "test-api-key"
-	hash := HashToken(testKey)
-
-	// Manually store in cache for testing
-	auth.keyCache.Store(hash, &cachedKey{
-		userInfo: &UserInfo{
-			UserID:   "test-user-id",
-			Email:    "test@example.com",
-			AuthMode: AuthModeAPIKey,
-		},
-		expiresAt: time.Now().Add(1 * time.Hour),
-	})
-
-	// Verify it's cached
-	_, found := auth.keyCache.Load(hash)
-	assert.True(t, found, "Key should be in cache")
-
-	// Invalidate by key
-	auth.InvalidateAPIKey(testKey)
-
-	// Verify it's gone
-	_, found = auth.keyCache.Load(hash)
-	assert.False(t, found, "Key should be removed from cache")
-}
-
-func TestAuthenticator_CacheInvalidateByHash(t *testing.T) {
-	auth := NewAuthenticator(nil)
-
-	testKey := "test-api-key-2"
-	hash := HashToken(testKey)
-
-	// Store in cache
-	auth.keyCache.Store(hash, &cachedKey{
-		userInfo: &UserInfo{
-			UserID: "test-user-id",
-		},
-	})
-
-	// Verify cached
-	_, found := auth.keyCache.Load(hash)
-	assert.True(t, found, "Key should be in cache")
-
-	// Invalidate by hash directly
-	auth.InvalidateAPIKeyByHash(hash)
-
-	// Verify removed
-	_, found = auth.keyCache.Load(hash)
-	assert.False(t, found, "Key should be removed from cache")
-}
-
-func TestAuthenticator_CacheExpiration(t *testing.T) {
-	auth := NewAuthenticator(nil)
-
-	testKey := "expired-key"
-	hash := HashToken(testKey)
-
-	// Store expired key in cache
-	auth.keyCache.Store(hash, &cachedKey{
-		userInfo: &UserInfo{
-			UserID:   "test-user-id",
-			AuthMode: AuthModeAPIKey,
-		},
-		expiresAt: time.Now().Add(-1 * time.Hour), // Already expired
-	})
-
-	// When verifying, expired keys should be rejected
-	// (The actual verification would check this, but we can't fully test without DB)
-	cached, found := auth.keyCache.Load(hash)
-	require.True(t, found, "Cached key should be found")
-
-	ck := cached.(*cachedKey)
-	assert.True(t, time.Now().After(ck.expiresAt), "Key should be expired")
-}
-
-func TestAuthenticator_CacheRevocation(t *testing.T) {
-	auth := NewAuthenticator(nil)
-
-	testKey := "revoked-key"
-	hash := HashToken(testKey)
-
-	revokedTime := time.Now()
-
-	// Store revoked key in cache
-	auth.keyCache.Store(hash, &cachedKey{
-		userInfo: &UserInfo{
-			UserID:   "test-user-id",
-			AuthMode: AuthModeAPIKey,
-		},
-		revokedAt: &revokedTime,
-	})
-
-	// When verifying, revoked keys should be rejected
-	cached, found := auth.keyCache.Load(hash)
-	require.True(t, found, "Cached key should be found")
-
-	ck := cached.(*cachedKey)
-	assert.NotNil(t, ck.revokedAt, "Key should be marked as revoked")
-}
-
-// ========== Concurrent Access Tests ==========
-
-func TestAuthenticator_ConcurrentCacheAccess(t *testing.T) {
-	auth := NewAuthenticator(nil)
-
-	var wg sync.WaitGroup
-	numGoroutines := 100
-
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-
-			key := "key-" + string(rune('0'+idx%10))
-			hash := HashToken(key)
-
-			// Store
-			auth.keyCache.Store(hash, &cachedKey{
-				userInfo: &UserInfo{UserID: "user-" + string(rune('0'+idx%10))},
-			})
-
-			// Load
-			if cached, ok := auth.keyCache.Load(hash); ok {
-				_ = cached.(*cachedKey).userInfo.UserID
-			}
-
-			// Delete
-			auth.keyCache.Delete(hash)
-		}(i)
-	}
-
-	wg.Wait()
-	// Test passes if no race condition panic occurs
 }
 
 // ========== AuthMode Constants Tests ==========

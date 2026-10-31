@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -29,6 +30,10 @@ func NewUpdateBackupSettingsLogic(ctx context.Context, svcCtx *svc.ServiceContex
 }
 
 func (l *UpdateBackupSettingsLogic) UpdateBackupSettings(req *types.BackupSettingsRequest) (resp *types.BackupSettingsResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Helper to upsert a text setting
 	upsertText := func(key, value, desc string) error {
 		_, err := l.svcCtx.DB.UpsertPlatformSetting(l.ctx, db.UpsertPlatformSettingParams{

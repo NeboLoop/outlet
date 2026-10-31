@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
@@ -31,6 +32,10 @@ func NewCreateOrganizationLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *CreateOrganizationLogic) CreateOrganization(req *types.CreateOrgRequest) (resp *types.OrgInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Generate API key
 	apiKeyBytes := make([]byte, 32)
 	if _, err := rand.Read(apiKeyBytes); err != nil {

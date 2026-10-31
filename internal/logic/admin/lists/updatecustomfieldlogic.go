@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -29,9 +30,8 @@ func NewUpdateCustomFieldLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 
 func (l *UpdateCustomFieldLogic) UpdateCustomField(req *types.UpdateCustomFieldRequest) (resp *types.CustomFieldInfo, err error) {
 	// Get existing field to merge with updates
-	existing, err := l.svcCtx.DB.GetCustomField(l.ctx, req.FieldId)
+	existing, err := requireCustomField(l.ctx, l.svcCtx, req.ListId, req.FieldId, access.Member)
 	if err != nil {
-		l.Errorf("Failed to get custom field %s: %v", req.FieldId, err)
 		return nil, err
 	}
 

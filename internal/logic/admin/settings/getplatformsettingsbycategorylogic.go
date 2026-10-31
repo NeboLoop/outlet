@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -26,6 +27,10 @@ func NewGetPlatformSettingsByCategoryLogic(ctx context.Context, svcCtx *svc.Serv
 }
 
 func (l *GetPlatformSettingsByCategoryLogic) GetPlatformSettingsByCategory(req *types.GetPlatformSettingsByCategoryRequest) (resp *types.GetPlatformSettingsResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Initialize as empty slice so JSON returns [] not null
 	settings := make([]types.PlatformSettingInfo, 0)
 

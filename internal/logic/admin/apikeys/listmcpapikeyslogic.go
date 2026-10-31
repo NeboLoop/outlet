@@ -3,6 +3,7 @@ package apikeys
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -26,10 +27,11 @@ func NewListMCPAPIKeysLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Li
 
 func (l *ListMCPAPIKeysLogic) ListMCPAPIKeys() (resp *types.ListMCPAPIKeysResponse, err error) {
 	// Get user ID from context
-	userID, ok := l.ctx.Value("userId").(string)
+	user, ok := access.User(l.ctx)
 	if !ok {
 		return nil, errorx.NewUnauthorizedError("Unauthorized")
 	}
+	userID := user.ID
 
 	// List API keys for this user
 	keys, err := l.svcCtx.DB.ListMCPAPIKeysByUser(l.ctx, userID)

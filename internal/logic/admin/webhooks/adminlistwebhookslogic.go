@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/outlet-sh/outlet/internal/middleware"
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -28,9 +28,9 @@ func NewAdminListWebhooksLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 }
 
 func (l *AdminListWebhooksLogic) AdminListWebhooks() (resp *types.ListWebhooksResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, fmt.Errorf("organization not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Admin)
+	if err != nil {
+		return nil, err
 	}
 
 	webhooks, err := l.svcCtx.DB.ListWebhooks(l.ctx, orgID)

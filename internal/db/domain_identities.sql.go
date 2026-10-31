@@ -10,6 +10,44 @@ import (
 	"database/sql"
 )
 
+const countBrandDomain = `-- name: CountBrandDomain :one
+SELECT COUNT(*) FROM domain_identities
+WHERE org_id = ?1 AND LOWER(domain) = LOWER(?2)
+`
+
+type CountBrandDomainParams struct {
+	OrgID  string `json:"org_id"`
+	Domain string `json:"domain"`
+}
+
+func (q *Queries) CountBrandDomain(ctx context.Context, arg CountBrandDomainParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countBrandDomain, arg.OrgID, arg.Domain)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOtherBrandsWithDomain = `-- name: CountOtherBrandsWithDomain :one
+
+SELECT COUNT(*) FROM domain_identities
+WHERE LOWER(domain) = LOWER(?1) AND org_id <> ?2
+`
+
+type CountOtherBrandsWithDomainParams struct {
+	Domain string `json:"domain"`
+	OrgID  string `json:"org_id"`
+}
+
+// A domain belongs to one brand: brands verify their domains on a shared
+// SES account, so a second brand holding the same domain could send as it
+// or delete it from SES.
+func (q *Queries) CountOtherBrandsWithDomain(ctx context.Context, arg CountOtherBrandsWithDomainParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOtherBrandsWithDomain, arg.Domain, arg.OrgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createDomainIdentity = `-- name: CreateDomainIdentity :one
 INSERT INTO domain_identities (
     id, org_id, domain, verification_status, dkim_status,

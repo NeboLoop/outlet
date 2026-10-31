@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -28,11 +29,14 @@ func NewUpdateContactConsentLogic(ctx context.Context, svcCtx *svc.ServiceContex
 
 func (l *UpdateContactConsentLogic) UpdateContactConsent(req *types.UpdateGDPRConsentRequest) (resp *types.GDPRConsentInfo, err error) {
 	// Verify contact exists
-	_, err = l.svcCtx.DB.GetContact(l.ctx, req.ContactId)
+	contact, err := l.svcCtx.DB.GetContact(l.ctx, req.ContactId)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("contact not found")
 		}
+		return nil, err
+	}
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, contact.OrgID.String, access.Member); err != nil {
 		return nil, err
 	}
 

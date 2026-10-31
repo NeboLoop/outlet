@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -26,6 +27,10 @@ func NewGetSequenceStatsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *
 }
 
 func (l *GetSequenceStatsLogic) GetSequenceStats(req *types.SequenceStatsRequest) (resp *types.SequenceStatsResponse, err error) {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Sequence, req.Id, access.Member); err != nil {
+		return nil, err
+	}
+
 	id, err := strconv.ParseInt(req.Id, 10, 64)
 	if err != nil {
 		l.Errorf("Invalid sequence ID %s: %v", req.Id, err)

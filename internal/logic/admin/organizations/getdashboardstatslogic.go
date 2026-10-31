@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -25,6 +26,10 @@ func NewGetDashboardStatsLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 }
 
 func (l *GetDashboardStatsLogic) GetDashboardStats(req *types.GetDashboardStatsRequest) (resp *types.DashboardStatsResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.Id, access.Member); err != nil {
+		return nil, err
+	}
+
 	orgID := req.Id
 
 	resp = &types.DashboardStatsResponse{}
@@ -74,8 +79,8 @@ func (l *GetDashboardStatsLogic) GetDashboardStats(req *types.GetDashboardStatsR
 
 	// MCP config check - check if user has any MCP API keys
 	resp.HasMCPConfigured = false
-	if userID, ok := l.ctx.Value("userId").(string); ok {
-		mcpKeys, err := l.svcCtx.DB.ListMCPAPIKeysByUser(l.ctx, userID)
+	if user, ok := access.User(l.ctx); ok {
+		mcpKeys, err := l.svcCtx.DB.ListMCPAPIKeysByUser(l.ctx, user.ID)
 		if err == nil && len(mcpKeys) > 0 {
 			// Check if any keys are active (not revoked)
 			for _, key := range mcpKeys {

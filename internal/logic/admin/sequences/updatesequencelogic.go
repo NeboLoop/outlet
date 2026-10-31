@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -28,6 +29,11 @@ func NewUpdateSequenceLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Up
 }
 
 func (l *UpdateSequenceLogic) UpdateSequence(req *types.UpdateSequenceRequest) (resp *types.SequenceInfo, err error) {
+	orgID, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Sequence, req.Id, access.Member)
+	if err != nil {
+		return nil, err
+	}
+
 	sequence, err := l.svcCtx.DB.GetSequenceByID(l.ctx, req.Id)
 	if err != nil {
 		l.Errorf("Failed to get sequence %s: %v", req.Id, err)
@@ -76,6 +82,9 @@ func (l *UpdateSequenceLogic) UpdateSequence(req *types.UpdateSequenceRequest) (
 			// Clear the chained sequence
 			onCompletionSequenceId = sql.NullString{Valid: false}
 		} else {
+			if err := access.SameBrand(l.ctx, l.svcCtx.DB, access.Sequence, *req.OnCompletionSequenceId, orgID); err != nil {
+				return nil, err
+			}
 			onCompletionSequenceId = sql.NullString{String: *req.OnCompletionSequenceId, Valid: true}
 		}
 	}
@@ -83,6 +92,9 @@ func (l *UpdateSequenceLogic) UpdateSequence(req *types.UpdateSequenceRequest) (
 	// Handle list_id - use existing value if not provided in request
 	listID := sequence.ListID
 	if req.ListId != nil && *req.ListId != "" {
+		if err := access.SameBrand(l.ctx, l.svcCtx.DB, access.List, *req.ListId, orgID); err != nil {
+			return nil, err
+		}
 		newListID, parseErr := strconv.ParseInt(*req.ListId, 10, 64)
 		if parseErr == nil {
 			listID = sql.NullInt64{Int64: newListID, Valid: true}

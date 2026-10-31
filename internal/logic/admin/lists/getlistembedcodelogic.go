@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -33,9 +34,12 @@ func (l *GetListEmbedCodeLogic) GetListEmbedCode(req *types.GetEmbedCodeRequest)
 		return nil, fmt.Errorf("invalid list ID: %w", err)
 	}
 
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.List, req.Id, access.Member); err != nil {
+		return nil, err
+	}
 	list, err := l.svcCtx.DB.GetEmailList(l.ctx, listID)
 	if err != nil {
-		return nil, fmt.Errorf("list not found: %w", err)
+		return nil, err
 	}
 
 	baseURL := l.svcCtx.Config.App.BaseURL

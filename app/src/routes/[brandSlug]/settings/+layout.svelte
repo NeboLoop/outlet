@@ -11,6 +11,7 @@
 		{ name: 'Email', href: `/${brandSlug}/settings/email` },
 		{ name: 'SMTP', href: `/${brandSlug}/settings/smtp` },
 		{ name: 'Webhooks', href: `/${brandSlug}/settings/webhooks` },
+		{ name: 'People', href: `/${brandSlug}/settings/people` },
 		{ name: 'Privacy', href: `/${brandSlug}/settings/privacy` }
 	]);
 

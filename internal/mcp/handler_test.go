@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -161,12 +162,12 @@ func TestHandler_StoreBrandSelection(t *testing.T) {
 	brandID := uuid.New().String()
 
 	// Directly test the in-memory cache (avoid triggering the DB goroutine)
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	// Check memory cache
 	cached, ok := handler.brandSelectionCache.Load(sessionID)
 	require.True(t, ok, "Brand selection should be in memory cache")
-	assert.Equal(t, brandID, cached.(string), "BrandID should match")
+	assert.Equal(t, brandID, cached.(brandSelection).brandID, "BrandID should match")
 }
 
 func TestHandler_ClearBrandSelection(t *testing.T) {
@@ -180,7 +181,7 @@ func TestHandler_ClearBrandSelection(t *testing.T) {
 	brandID := uuid.New().String()
 
 	// Store directly to cache
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	// Verify stored
 	_, ok := handler.brandSelectionCache.Load(sessionID)
@@ -215,9 +216,9 @@ func TestHandler_MultiTenant_DifferentBrandsPerSession(t *testing.T) {
 	tc2.SelectBrand(brand2)
 
 	// Verify isolation
-	assert.Equal(t, brand1.ID, tc1.BrandID(), "User 1 should have Brand 1")
-	assert.Equal(t, brand2.ID, tc2.BrandID(), "User 2 should have Brand 2")
-	assert.NotEqual(t, tc1.BrandID(), tc2.BrandID(), "Brands should be different")
+	assert.Equal(t, brand1.ID, tc1.SessionBrand().ID, "User 1 should have Brand 1")
+	assert.Equal(t, brand2.ID, tc2.SessionBrand().ID, "User 2 should have Brand 2")
+	assert.NotEqual(t, tc1.SessionBrand().ID, tc2.SessionBrand().ID, "Brands should be different")
 }
 
 func TestHandler_MultiTenant_SameUserMultipleSessions(t *testing.T) {
@@ -251,8 +252,8 @@ func TestHandler_MultiTenant_SameUserMultipleSessions(t *testing.T) {
 	data1 := cached1.(*sessionData)
 	data2 := cached2.(*sessionData)
 
-	assert.Equal(t, brand1.ID, data1.toolCtx.BrandID(), "Session 1 should have Brand 1")
-	assert.Equal(t, brand2.ID, data2.toolCtx.BrandID(), "Session 2 should have Brand 2")
+	assert.Equal(t, brand1.ID, data1.toolCtx.SessionBrand().ID, "Session 1 should have Brand 1")
+	assert.Equal(t, brand2.ID, data2.toolCtx.SessionBrand().ID, "Session 2 should have Brand 2")
 }
 
 func TestHandler_MultiTenant_BrandIsolation_RequireBrand(t *testing.T) {
@@ -263,7 +264,7 @@ func TestHandler_MultiTenant_BrandIsolation_RequireBrand(t *testing.T) {
 	tc := mcpctx.NewUserToolContext(nil, user, "req-1", "agent/1.0", "session-1")
 
 	// Should require brand selection before operations
-	err := tc.RequireBrand()
+	err := tc.RequireBrand(mcpctx.WithCallBrand(context.Background(), tc.SessionBrand()))
 	assert.Error(t, err, "Should error when no brand selected")
 	assert.Equal(t, mcpctx.ErrNoBrandSelected, err)
 
@@ -272,7 +273,7 @@ func TestHandler_MultiTenant_BrandIsolation_RequireBrand(t *testing.T) {
 	tc.SelectBrand(brand)
 
 	// Now should not error
-	err = tc.RequireBrand()
+	err = tc.RequireBrand(mcpctx.WithCallBrand(context.Background(), tc.SessionBrand()))
 	assert.NoError(t, err, "Should not error after brand selection")
 }
 
@@ -285,12 +286,12 @@ func TestHandler_SessionRestore_FromMemoryCache(t *testing.T) {
 	brandID := uuid.New().String()
 
 	// Store brand selection in memory cache
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	// Verify it can be retrieved
 	cached, ok := handler.brandSelectionCache.Load(sessionID)
 	require.True(t, ok, "Should find brand in memory cache")
-	assert.Equal(t, brandID, cached.(string))
+	assert.Equal(t, brandID, cached.(brandSelection).brandID)
 }
 
 // ========== Concurrent Access Tests ==========
@@ -310,11 +311,11 @@ func TestHandler_ConcurrentSessionAccess(t *testing.T) {
 			brandID := uuid.New().String()
 
 			// Store
-			handler.brandSelectionCache.Store(sessionID, brandID)
+			handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 			// Load
 			if cached, ok := handler.brandSelectionCache.Load(sessionID); ok {
-				_ = cached.(string)
+				_ = cached.(brandSelection)
 			}
 
 			// Store session
@@ -357,11 +358,11 @@ func TestHandler_ConcurrentBrandSelection(t *testing.T) {
 			tc.SelectBrand(brand)
 
 			// Store directly in cache (avoid DB goroutine)
-			handler.brandSelectionCache.Store(sessionID, brandID)
+			handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 			// Read brand
-			_ = tc.BrandID()
-			_ = tc.HasBrand()
+			_ = tc.SessionBrand().ID
+			_ = (tc.SessionBrand().ID != "")
 
 			// Read from cache
 			_, _ = handler.brandSelectionCache.Load(sessionID)
@@ -413,8 +414,8 @@ func TestHandler_ToolContext_BrandContext(t *testing.T) {
 
 	tc := mcpctx.NewToolContext(nil, brand, "req-123", "test-agent/1.0")
 
-	assert.Equal(t, brand.ID, tc.BrandID(), "BrandID should match")
-	assert.True(t, tc.HasBrand(), "Should have brand")
+	assert.Equal(t, brand.ID, tc.SessionBrand().ID, "BrandID should match")
+	assert.True(t, (tc.SessionBrand().ID != ""), "Should have brand")
 	assert.Equal(t, mcpctx.AuthModeAPIKey, tc.AuthMode(), "Should be API key mode")
 	assert.Empty(t, tc.SessionID(), "SessionID should be empty for API key mode")
 }
@@ -427,9 +428,9 @@ func TestHandler_APIKeyMode_NoBrandSelection(t *testing.T) {
 	// API key mode: brand is set directly, no selection needed
 	tc := mcpctx.NewToolContext(nil, brand, "req-123", "agent/1.0")
 
-	assert.True(t, tc.HasBrand(), "Should have brand in API key mode")
-	assert.Equal(t, brand.ID, tc.BrandID())
-	assert.NoError(t, tc.RequireBrand(), "RequireBrand should pass")
+	assert.True(t, (tc.SessionBrand().ID != ""), "Should have brand in API key mode")
+	assert.Equal(t, brand.ID, tc.SessionBrand().ID)
+	assert.NoError(t, tc.RequireBrand(mcpctx.WithCallBrand(context.Background(), tc.SessionBrand())), "RequireBrand should pass")
 }
 
 func TestHandler_OAuthMode_RequiresBrandSelection(t *testing.T) {
@@ -438,17 +439,17 @@ func TestHandler_OAuthMode_RequiresBrandSelection(t *testing.T) {
 	// OAuth mode: brand must be selected
 	tc := mcpctx.NewUserToolContext(nil, user, "req-123", "agent/1.0", "session-123")
 
-	assert.False(t, tc.HasBrand(), "Should not have brand before selection")
-	assert.Equal(t, "", tc.BrandID())
-	assert.Error(t, tc.RequireBrand(), "RequireBrand should fail before selection")
+	assert.False(t, (tc.SessionBrand().ID != ""), "Should not have brand before selection")
+	assert.Equal(t, "", tc.SessionBrand().ID)
+	assert.Error(t, tc.RequireBrand(mcpctx.WithCallBrand(context.Background(), tc.SessionBrand())), "RequireBrand should fail before selection")
 
 	// Select brand
 	brand := createTestBrand(uuid.New().String(), "Selected Brand")
 	tc.SelectBrand(brand)
 
-	assert.True(t, tc.HasBrand(), "Should have brand after selection")
-	assert.Equal(t, brand.ID, tc.BrandID())
-	assert.NoError(t, tc.RequireBrand(), "RequireBrand should pass after selection")
+	assert.True(t, (tc.SessionBrand().ID != ""), "Should have brand after selection")
+	assert.Equal(t, brand.ID, tc.SessionBrand().ID)
+	assert.NoError(t, tc.RequireBrand(mcpctx.WithCallBrand(context.Background(), tc.SessionBrand())), "RequireBrand should pass after selection")
 }
 
 // ========== Session Data Tests ==========
@@ -484,11 +485,11 @@ func TestHandler_UUIDSessionID(t *testing.T) {
 	sessionID := uuid.New().String()
 	brandID := uuid.New().String()
 
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	cached, ok := handler.brandSelectionCache.Load(sessionID)
 	assert.True(t, ok, "UUID session ID should work")
-	assert.Equal(t, brandID, cached.(string))
+	assert.Equal(t, brandID, cached.(brandSelection).brandID)
 }
 
 func TestHandler_SpecialCharacterSessionID(t *testing.T) {
@@ -498,11 +499,11 @@ func TestHandler_SpecialCharacterSessionID(t *testing.T) {
 	sessionID := "session-with-special!@#$%"
 	brandID := uuid.New().String()
 
-	handler.brandSelectionCache.Store(sessionID, brandID)
+	handler.brandSelectionCache.Store(sessionID, brandSelection{userID: "u1", brandID: brandID})
 
 	cached, ok := handler.brandSelectionCache.Load(sessionID)
 	assert.True(t, ok, "Special character session ID should work")
-	assert.Equal(t, brandID, cached.(string))
+	assert.Equal(t, brandID, cached.(brandSelection).brandID)
 }
 
 // ========== HTTP Method Tests ==========

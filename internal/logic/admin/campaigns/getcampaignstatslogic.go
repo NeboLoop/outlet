@@ -2,10 +2,9 @@ package campaigns
 
 import (
 	"context"
-	"errors"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -27,9 +26,9 @@ func NewGetCampaignStatsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *
 }
 
 func (l *GetCampaignStatsLogic) GetCampaignStats(req *types.GetCampaignRequest) (resp *types.CampaignStatsResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, errors.New("org_id not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	campaign, err := l.svcCtx.DB.GetCampaign(l.ctx, db.GetCampaignParams{

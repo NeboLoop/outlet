@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/version"
@@ -44,6 +45,10 @@ type UpdateAPIResponse struct {
 }
 
 func (l *CheckForUpdatesLogic) CheckForUpdates() (resp *types.UpdateCheckResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+		return nil, err
+	}
+
 	// Build the check URL
 	url := fmt.Sprintf("%s/api/v1/updates/check?version=%s&os=%s&arch=%s",
 		UpdateServerURL, version.Version, runtime.GOOS, runtime.GOARCH)

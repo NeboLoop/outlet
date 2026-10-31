@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -33,9 +34,11 @@ func (l *GetListLogic) GetList(req *types.GetListRequest) (resp *types.ListInfo,
 		return nil, fmt.Errorf("invalid list ID: %w", err)
 	}
 
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.List, req.Id, access.Member); err != nil {
+		return nil, err
+	}
 	list, err := l.svcCtx.DB.GetEmailList(l.ctx, id)
 	if err != nil {
-		l.Errorf("Failed to get list %d: %v", id, err)
 		return nil, err
 	}
 

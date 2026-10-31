@@ -255,6 +255,17 @@ func (s *CampaignScheduler) checkScheduledCampaigns() {
 func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	logx.Infof("Processing campaign %s: %s", campaign.ID, campaign.Name)
 
+	// A campaign sends only from one of its brand's domains. One that can't
+	// send is paused (the admin shows it as an error); "failed" is not a
+	// campaign status.
+	if err := email.CheckSender(s.ctx, s.store, campaign.OrgID, campaign.FromEmail.String); err != nil {
+		logx.Errorf("Campaign %s can't send: %v", campaign.ID, err)
+		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
+			ID:     campaign.ID,
+			Status: sql.NullString{String: "paused", Valid: true},
+		})
+	}
+
 	// Create pipe for this campaign
 	s.getOrCreatePipe(campaign.ID)
 
@@ -267,13 +278,12 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 		return err
 	}
 
-	// Parse list_ids (comma-separated)
-	listIDs := parseListIDs(campaign.ListIds.String)
+	listIDs := db.DecodeListIDs(campaign.ListIds.String)
 	if len(listIDs) == 0 {
 		logx.Errorf("Campaign %s has no target lists", campaign.ID)
 		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
 			ID:     campaign.ID,
-			Status: sql.NullString{String: "failed", Valid: true},
+			Status: sql.NullString{String: "paused", Valid: true},
 		})
 	}
 
@@ -281,7 +291,10 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	subscriberMap := make(map[string]db.GetActiveSubscribersForListRow)
 
 	for _, listID := range listIDs {
-		subscribers, err := s.store.GetActiveSubscribersForList(s.ctx, listID)
+		subscribers, err := s.store.GetActiveSubscribersForList(s.ctx, db.GetActiveSubscribersForListParams{
+			OrgID:  campaign.OrgID,
+			ListID: listID,
+		})
 		if err != nil {
 			logx.Errorf("Failed to get subscribers for list %d: %v", listID, err)
 			continue
@@ -295,10 +308,13 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 		}
 	}
 
-	// Parse exclude_list_ids and remove those contacts
-	excludeListIDs := parseListIDs(campaign.ExcludeListIds.String)
+	// Remove the contacts of the excluded lists
+	excludeListIDs := db.DecodeListIDs(campaign.ExcludeListIds.String)
 	for _, excludeListID := range excludeListIDs {
-		excludedSubs, err := s.store.GetActiveSubscribersForList(s.ctx, excludeListID)
+		excludedSubs, err := s.store.GetActiveSubscribersForList(s.ctx, db.GetActiveSubscribersForListParams{
+			OrgID:  campaign.OrgID,
+			ListID: excludeListID,
+		})
 		if err != nil {
 			logx.Errorf("Failed to get excluded subscribers for list %d: %v", excludeListID, err)
 			continue
@@ -636,36 +652,6 @@ func (s *CampaignScheduler) Stats() (scheduled, sent, failed int64) {
 func (s *CampaignScheduler) SetRateLimit(rate int) {
 	s.limiter.SetGlobalRate(rate)
 	logx.Infof("Campaign scheduler rate limit updated to %d/sec", rate)
-}
-
-// parseListIDs parses comma-separated list IDs
-func parseListIDs(s string) []int64 {
-	if s == "" {
-		return nil
-	}
-
-	parts := strings.Split(s, ",")
-	var ids []int64
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		var id int64
-		var valid bool
-		for _, c := range p {
-			if c >= '0' && c <= '9' {
-				id = id*10 + int64(c-'0')
-				valid = true
-			} else {
-				break
-			}
-		}
-		if valid && id > 0 {
-			ids = append(ids, id)
-		}
-	}
-	return ids
 }
 
 // StartCampaignScheduler starts the campaign scheduler from service context

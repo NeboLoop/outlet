@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -29,9 +29,9 @@ func NewListBlockedDomainsLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *ListBlockedDomainsLogic) ListBlockedDomains(req *types.ListBlockedDomainsRequest) (resp *types.ListBlockedDomainsResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, fmt.Errorf("organization ID not found")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	offset := int64((req.Page - 1) * req.Limit)

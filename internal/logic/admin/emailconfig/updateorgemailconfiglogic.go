@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -26,6 +27,10 @@ func NewUpdateOrgEmailConfigLogic(ctx context.Context, svcCtx *svc.ServiceContex
 }
 
 func (l *UpdateOrgEmailConfigLogic) UpdateOrgEmailConfig(req *types.UpdateOrgEmailConfigRequest) (resp *types.OrgEmailConfigInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.OrgId, access.Admin); err != nil {
+		return nil, err
+	}
+
 	// Get existing config first
 	config, err := email.GetOrgEmailConfig(l.ctx, l.svcCtx.DB, req.OrgId)
 	if err != nil {

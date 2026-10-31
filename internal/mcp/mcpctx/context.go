@@ -80,40 +80,45 @@ func (t *ToolContext) SessionID() string {
 	return t.sessionID
 }
 
-// BrandID returns the brand ID for scoping queries.
-// Returns empty string if no brand is available (OAuth without selection).
-func (t *ToolContext) BrandID() string {
-	brand := t.currentBrand()
-	if brand == nil {
-		return ""
-	}
-	return brand.ID
-}
-
-// Brand returns the full brand record.
-// Returns zero-value struct if no brand is available.
-func (t *ToolContext) Brand() db.Organization {
-	brand := t.currentBrand()
-	if brand == nil {
-		return db.Organization{}
-	}
-	return *brand
-}
-
-// HasBrand returns true if a brand is available for operations.
-func (t *ToolContext) HasBrand() bool {
-	return t.currentBrand() != nil
-}
-
-// currentBrand returns the current brand based on auth mode.
-func (t *ToolContext) currentBrand() *db.Organization {
+// SessionBrand returns the brand this session works in: the API key's
+// brand, or the one brand.select chose. It is the zero value when none is
+// chosen. Only the gate reads it: it checks the caller's access to that
+// brand and hands the brand to the call (WithCallBrand), and tool handlers
+// use only that one.
+func (t *ToolContext) SessionBrand() db.Organization {
 	if t.authMode == AuthModeAPIKey {
-		return t.brand
+		if t.brand == nil {
+			return db.Organization{}
+		}
+		return *t.brand
 	}
-	// OAuth mode: use selected brand
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.selectedBrand
+	if t.selectedBrand == nil {
+		return db.Organization{}
+	}
+	return *t.selectedBrand
+}
+
+type callBrandKey struct{}
+
+// WithCallBrand records the brand the gate checked for one tool call.
+func WithCallBrand(ctx context.Context, brand db.Organization) context.Context {
+	return context.WithValue(ctx, callBrandKey{}, brand)
+}
+
+// Brand returns the brand this tool call acts in: the one the gate checked
+// the caller's access to. A brand.select running at the same time on the
+// same session doesn't change it. It is the zero value when the call has no
+// brand.
+func (t *ToolContext) Brand(ctx context.Context) db.Organization {
+	brand, _ := ctx.Value(callBrandKey{}).(db.Organization)
+	return brand
+}
+
+// BrandID returns the ID of the brand this tool call acts in, or "".
+func (t *ToolContext) BrandID(ctx context.Context) string {
+	return t.Brand(ctx).ID
 }
 
 // AuthMode returns the authentication mode.
@@ -228,10 +233,10 @@ var ErrNoBrandSelected = &ToolError{
 	Message: "No brand selected. Use brand.list to see available brands and brand.select to choose one.",
 }
 
-// RequireBrand returns an error if no brand is available.
+// RequireBrand returns an error if this tool call has no brand.
 // Use this at the start of tools that need brand context.
-func (t *ToolContext) RequireBrand() error {
-	if !t.HasBrand() {
+func (t *ToolContext) RequireBrand(ctx context.Context) error {
+	if t.BrandID(ctx) == "" {
 		return ErrNoBrandSelected
 	}
 	return nil

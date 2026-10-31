@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -27,6 +28,10 @@ func NewGetSequenceLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetSe
 }
 
 func (l *GetSequenceLogic) GetSequence(req *types.GetSequenceRequest) (resp *types.SequenceDetailResponse, err error) {
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Sequence, req.Id, access.Member); err != nil {
+		return nil, err
+	}
+
 	sequence, err := l.svcCtx.DB.GetSequenceByID(l.ctx, req.Id)
 	if err != nil {
 		l.Errorf("Failed to get sequence %s: %v", req.Id, err)

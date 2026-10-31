@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -27,6 +28,10 @@ func NewRegenerateOrgApiKeyLogic(ctx context.Context, svcCtx *svc.ServiceContext
 }
 
 func (l *RegenerateOrgApiKeyLogic) RegenerateOrgApiKey(req *types.RegenerateApiKeyRequest) (resp *types.OrgInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.Id, access.Admin); err != nil {
+		return nil, err
+	}
+
 	// Get current org to retrieve old API key for cache invalidation
 	currentOrg, err := l.svcCtx.DB.GetOrganizationByID(l.ctx, req.Id)
 	if err != nil {

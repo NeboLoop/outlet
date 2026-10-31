@@ -3,6 +3,7 @@ package organizations
 import (
 	"context"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -29,11 +30,16 @@ func (l *GetOrganizationBySlugLogic) GetOrganizationBySlug(req *types.GetOrgBySl
 		return nil, err
 	}
 
+	caller, err := access.Require(l.ctx, l.svcCtx.DB, org.ID, access.Member)
+	if err != nil {
+		return nil, err
+	}
+
 	return &types.OrgInfo{
 		Id:               org.ID,
 		Name:             org.Name,
 		Slug:             org.Slug,
-		ApiKey:           org.ApiKey,
+		ApiKey:           brandAPIKey(org, caller.Role),
 		BillingStatus:    "trial",
 		Plan:             "starter",
 		MaxContacts:      int(org.MaxContacts.Int64),

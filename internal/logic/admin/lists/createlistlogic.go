@@ -3,11 +3,10 @@ package lists
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -30,29 +29,10 @@ func NewCreateListLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Create
 }
 
 func (l *CreateListLogic) CreateList(req *types.CreateListRequest) (resp *types.ListInfo, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		userIDValue := l.ctx.Value("userId")
-		if userIDValue == nil {
-			return nil, fmt.Errorf("organization ID not found - please select an organization")
-		}
-
-		userID, ok := userIDValue.(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid user ID in context")
-		}
-
-		orgs, err := l.svcCtx.DB.GetUserOrganizations(l.ctx, userID)
-		if err != nil {
-			l.Errorf("Failed to get user organizations: %v", err)
-			return nil, fmt.Errorf("failed to get user organizations")
-		}
-
-		if len(orgs) == 0 {
-			return nil, fmt.Errorf("user has no organizations")
-		}
-
-		orgID = orgs[0].ID
+	// The request names its brand; it never falls back to some other brand.
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	list, err := l.svcCtx.DB.CreateEmailList(l.ctx, db.CreateEmailListParams{

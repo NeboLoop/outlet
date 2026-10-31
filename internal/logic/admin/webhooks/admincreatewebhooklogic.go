@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -32,9 +32,9 @@ func NewAdminCreateWebhookLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *AdminCreateWebhookLogic) AdminCreateWebhook(req *types.RegisterWebhookRequest) (resp *types.RegisterWebhookResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, fmt.Errorf("organization not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Admin)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.Url == "" {

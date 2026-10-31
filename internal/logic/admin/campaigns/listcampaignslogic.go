@@ -3,12 +3,10 @@ package campaigns
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"errors"
 	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -31,9 +29,9 @@ func NewListCampaignsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Lis
 }
 
 func (l *ListCampaignsLogic) ListCampaigns(req *types.ListCampaignsRequest) (resp *types.ListCampaignsResponse, err error) {
-	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
-	if !ok {
-		return nil, errors.New("org_id not found in context")
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
+		return nil, err
 	}
 
 	limit := req.Limit
@@ -91,13 +89,12 @@ func (l *ListCampaignsLogic) ListCampaigns(req *types.ListCampaignsRequest) (res
 }
 
 func campaignToInfo(c db.EmailCampaign) types.CampaignInfo {
-	var listIds []string
-	if c.ListIds.Valid && c.ListIds.String != "" {
-		json.Unmarshal([]byte(c.ListIds.String), &listIds)
+	var listIds, excludeListIds []string
+	for _, id := range db.DecodeListIDs(c.ListIds.String) {
+		listIds = append(listIds, strconv.FormatInt(id, 10))
 	}
-	var excludeListIds []string
-	if c.ExcludeListIds.Valid && c.ExcludeListIds.String != "" {
-		json.Unmarshal([]byte(c.ExcludeListIds.String), &excludeListIds)
+	for _, id := range db.DecodeListIDs(c.ExcludeListIds.String) {
+		excludeListIds = append(excludeListIds, strconv.FormatInt(id, 10))
 	}
 
 	var designId *string

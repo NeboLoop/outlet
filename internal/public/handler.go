@@ -495,6 +495,10 @@ func (h *Handler) sendConfirmationEmail(ctx context.Context, list db.GetListByPu
 		fromName = list.FromName.String
 	}
 
+	// The brand sends only from its own domains.
+	if err := email.CheckSender(ctx, h.svcCtx.DB, list.OrgID, fromEmail); err != nil {
+		return err
+	}
 	return h.emailService.SendEmailFrom(ctx, fromEmail, fromName, toEmail, subject, htmlBody)
 }
 

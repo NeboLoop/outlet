@@ -128,7 +128,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	return &ServiceContext{
 		Config:            c,
 		DB:                store,
-		Auth:              middleware.NewAuthMiddleware().Handle,
+		Auth:              middleware.NewAuthMiddleware(c.Auth.AccessSecret, store).Handle,
 		APIKeyAuth:        apiKeyMiddleware.Handle,
 		APIKeyMiddleware:  apiKeyMiddleware,
 		AuthRateLimit:     authRateLimiter.Handle,

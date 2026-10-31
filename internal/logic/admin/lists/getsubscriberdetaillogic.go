@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 
+	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -26,10 +29,18 @@ func NewGetSubscriberDetailLogic(ctx context.Context, svcCtx *svc.ServiceContext
 }
 
 func (l *GetSubscriberDetailLogic) GetSubscriberDetail(req *types.GetSubscriberDetailRequest) (resp *types.SubscriberDetailResponse, err error) {
+	listID, err := strconv.ParseInt(req.Id, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid list ID: %w", err)
+	}
+	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.List, strconv.FormatInt(listID, 10), access.Member); err != nil {
+		return nil, err
+	}
+
 	// Get detailed subscriber info
 	detail, err := l.svcCtx.DB.GetListSubscriberDetail(l.ctx, req.SubscriberId)
-	if err != nil {
-		return nil, fmt.Errorf("subscriber not found: %w", err)
+	if err != nil || detail.ListID != listID {
+		return nil, errorx.NewNotFoundError("Subscriber not found.")
 	}
 
 	// Get custom field values for this subscriber

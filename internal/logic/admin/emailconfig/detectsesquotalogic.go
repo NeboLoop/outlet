@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -26,6 +27,10 @@ func NewDetectSESQuotaLogic(ctx context.Context, svcCtx *svc.ServiceContext) *De
 }
 
 func (l *DetectSESQuotaLogic) DetectSESQuota(req *types.DetectSESQuotaRequest) (resp *types.SESQuotaResponse, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.OrgId, access.Admin); err != nil {
+		return nil, err
+	}
+
 	accessKey := req.AWSAccessKey
 	secretKey := req.AWSSecretKey
 	region := req.AWSRegion

@@ -10,6 +10,7 @@ import (
 )
 
 type Querier interface {
+	AcceptOrgInvitation(ctx context.Context, id string) (int64, error)
 	AddBlockedDomain(ctx context.Context, arg AddBlockedDomainParams) (BlockedDomain, error)
 	AddContactTag(ctx context.Context, arg AddContactTagParams) (ContactTag, error)
 	// ========== SUPPRESSION LIST ==========
@@ -46,6 +47,7 @@ type Querier interface {
 	CountBackups(ctx context.Context) (int64, error)
 	CountBlockedDomains(ctx context.Context, orgID string) (int64, error)
 	CountBouncesInDateRange(ctx context.Context, arg CountBouncesInDateRangeParams) (int64, error)
+	CountBrandDomain(ctx context.Context, arg CountBrandDomainParams) (int64, error)
 	CountCampaignSendsByStatus(ctx context.Context, arg CountCampaignSendsByStatusParams) (int64, error)
 	CountCampaigns(ctx context.Context, orgID string) (int64, error)
 	CountCampaignsByStatus(ctx context.Context, arg CountCampaignsByStatusParams) (int64, error)
@@ -61,6 +63,10 @@ type Querier interface {
 	CountListSubscribers(ctx context.Context, arg CountListSubscribersParams) (int64, error)
 	// Count rules with optional filters
 	CountOrgRules(ctx context.Context, arg CountOrgRulesParams) (int64, error)
+	// A domain belongs to one brand: brands verify their domains on a shared
+	// SES account, so a second brand holding the same domain could send as it
+	// or delete it from SES.
+	CountOtherBrandsWithDomain(ctx context.Context, arg CountOtherBrandsWithDomainParams) (int64, error)
 	CountPendingCampaignSends(ctx context.Context, campaignID string) (int64, error)
 	CountSentCampaignSends(ctx context.Context, campaignID string) (int64, error)
 	CountSuppressedEmails(ctx context.Context, orgID string) (int64, error)
@@ -103,12 +109,15 @@ type Querier interface {
 	CreateListSubscriber(ctx context.Context, arg CreateListSubscriberParams) (ListSubscriber, error)
 	// MCP API Keys
 	CreateMCPAPIKey(ctx context.Context, arg CreateMCPAPIKeyParams) (McpApiKey, error)
+	// MCP audit log (every change made through MCP)
+	CreateMCPAuditLog(ctx context.Context, arg CreateMCPAuditLogParams) error
 	// MCP OAuth Clients
 	CreateMCPOAuthClient(ctx context.Context, arg CreateMCPOAuthClientParams) (McpOauthClient, error)
 	// MCP OAuth Authorization Codes
 	CreateMCPOAuthCode(ctx context.Context, arg CreateMCPOAuthCodeParams) (McpOauthCode, error)
 	// MCP OAuth Tokens
 	CreateMCPOAuthToken(ctx context.Context, arg CreateMCPOAuthTokenParams) (McpOauthToken, error)
+	CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitationParams) (OrgInvitation, error)
 	// Create a new rule
 	CreateOrgRule(ctx context.Context, arg CreateOrgRuleParams) (OrgRule, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
@@ -154,6 +163,8 @@ type Querier interface {
 	// Delete a rule
 	DeleteOrgRule(ctx context.Context, arg DeleteOrgRuleParams) error
 	DeleteOrganization(ctx context.Context, id string) error
+	// A new invitation replaces any earlier one for the same person and brand.
+	DeletePendingOrgInvitations(ctx context.Context, arg DeletePendingOrgInvitationsParams) error
 	DeletePlatformSetting(ctx context.Context, key string) error
 	// Delete a rule template
 	DeleteRuleTemplate(ctx context.Context, id string) error
@@ -162,11 +173,14 @@ type Querier interface {
 	DeleteTemplate(ctx context.Context, id string) error
 	DeleteTransactionalEmail(ctx context.Context, arg DeleteTransactionalEmailParams) error
 	DeleteUnconfirmedContactsOlderThan(ctx context.Context, arg DeleteUnconfirmedContactsOlderThanParams) (int64, error)
-	DeleteUser(ctx context.Context, id string) error
+	// The last active super admin is never deleted: with none left, nobody runs
+	// the platform and the first-run setup would open to anyone.
+	DeleteUser(ctx context.Context, id string) (int64, error)
 	DeleteWebhook(ctx context.Context, arg DeleteWebhookParams) error
 	GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiveEntryRuleForTriggerParams) ([]GetActiveEntryRuleForTriggerRow, error)
 	GetActiveSequenceForContact(ctx context.Context, contactID sql.NullString) (GetActiveSequenceForContactRow, error)
-	GetActiveSubscribersForList(ctx context.Context, listID int64) ([]GetActiveSubscribersForListRow, error)
+	// Only a list of the campaign's own brand gives recipients.
+	GetActiveSubscribersForList(ctx context.Context, arg GetActiveSubscribersForListParams) ([]GetActiveSubscribersForListRow, error)
 	// Get all rules for an organization (including disabled), for admin listing
 	GetAllOrgRules(ctx context.Context, orgID string) ([]OrgRule, error)
 	GetAllOrgsContactStats(ctx context.Context) ([]GetAllOrgsContactStatsRow, error)
@@ -242,6 +256,7 @@ type Querier interface {
 	// Get enabled rules for a specific entity (e.g., email_list, product)
 	GetEntityRules(ctx context.Context, arg GetEntityRulesParams) ([]OrgRule, error)
 	GetEntryRule(ctx context.Context, id string) (SequenceEntryRule, error)
+	GetEntryRuleOrgID(ctx context.Context, id string) (string, error)
 	// Retry Worker Queries
 	GetFailedCampaignSendsForRetry(ctx context.Context, limitCount int64) ([]GetFailedCampaignSendsForRetryRow, error)
 	GetImportJob(ctx context.Context, arg GetImportJobParams) (ImportJob, error)
@@ -262,11 +277,10 @@ type Querier interface {
 	GetMCPOAuthTokenByAccessHash(ctx context.Context, accessTokenHash string) (GetMCPOAuthTokenByAccessHashRow, error)
 	GetMCPOAuthTokenByRefreshHash(ctx context.Context, refreshTokenHash sql.NullString) (GetMCPOAuthTokenByRefreshHashRow, error)
 	GetMCPSession(ctx context.Context, sessionID string) (McpSession, error)
-	// Fallback: get most recent org selection for a user (when session ID changes)
-	GetMCPSessionByUser(ctx context.Context, userID string) (McpSession, error)
 	GetNextTemplate(ctx context.Context, arg GetNextTemplateParams) (GetNextTemplateRow, error)
 	GetOrgEmailConfig(ctx context.Context, id string) (GetOrgEmailConfigRow, error)
 	GetOrgEmailSettings(ctx context.Context, id string) (GetOrgEmailSettingsRow, error)
+	GetOrgInvitationByToken(ctx context.Context, token string) (GetOrgInvitationByTokenRow, error)
 	// Get a single rule by ID
 	GetOrgRuleById(ctx context.Context, arg GetOrgRuleByIdParams) (OrgRule, error)
 	// =====================================================
@@ -278,6 +292,8 @@ type Querier interface {
 	GetOrgRulesByCategory(ctx context.Context, arg GetOrgRulesByCategoryParams) ([]OrgRule, error)
 	// Get rules with optional category and enabled filters
 	GetOrgRulesFiltered(ctx context.Context, arg GetOrgRulesFilteredParams) ([]OrgRule, error)
+	// The person's role in one brand. No row means they don't belong to it.
+	GetOrgUserRole(ctx context.Context, arg GetOrgUserRoleParams) (string, error)
 	GetOrganizationByAPIKey(ctx context.Context, apiKey string) (Organization, error)
 	GetOrganizationByID(ctx context.Context, id string) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
@@ -289,6 +305,9 @@ type Querier interface {
 	GetPlatformSettingValue(ctx context.Context, key string) (GetPlatformSettingValueRow, error)
 	GetPlatformSettingsByCategory(ctx context.Context, category string) ([]PlatformSetting, error)
 	GetPlatformSettingsValues(ctx context.Context, category string) ([]GetPlatformSettingsValuesRow, error)
+	GetQueuedEmailOrgID(ctx context.Context, id string) (string, error)
+	// Mail sent with the brand's API key (the SDK and SMTP) in the last 7 days.
+	GetRecentAPIKeySends(ctx context.Context, orgID string) (GetRecentAPIKeySendsRow, error)
 	// Get a single rule template by ID
 	GetRuleTemplateById(ctx context.Context, id string) (RuleTemplate, error)
 	// =====================================================
@@ -306,6 +325,9 @@ type Querier interface {
 	GetSequenceByListAndTrigger(ctx context.Context, arg GetSequenceByListAndTriggerParams) (GetSequenceByListAndTriggerRow, error)
 	// SDK Sequence queries
 	GetSequenceByOrgAndSlug(ctx context.Context, arg GetSequenceByOrgAndSlugParams) (GetSequenceByOrgAndSlugRow, error)
+	// Which brand a record belongs to, for records that don't carry it directly
+	// (or don't always). The access check uses the answer.
+	GetSequenceOrgID(ctx context.Context, id string) (string, error)
 	GetSequenceStats(ctx context.Context, sequenceID sql.NullString) (GetSequenceStatsRow, error)
 	GetSubscriberCampaignActivity(ctx context.Context, contactID string) ([]GetSubscriberCampaignActivityRow, error)
 	// Returns field_key -> value pairs for use in email merge tags
@@ -313,6 +335,7 @@ type Querier interface {
 	GetSubscriberSequenceEnrollments(ctx context.Context, contactID sql.NullString) ([]GetSubscriberSequenceEnrollmentsRow, error)
 	GetSuppressedEmail(ctx context.Context, arg GetSuppressedEmailParams) (SuppressionList, error)
 	GetTemplateByID(ctx context.Context, id string) (GetTemplateByIDRow, error)
+	GetTemplateOrgID(ctx context.Context, id string) (string, error)
 	GetTransactionalEmail(ctx context.Context, arg GetTransactionalEmailParams) (TransactionalEmail, error)
 	GetTransactionalEmailBySlug(ctx context.Context, arg GetTransactionalEmailBySlugParams) (TransactionalEmail, error)
 	GetTransactionalSend(ctx context.Context, id string) (TransactionalSend, error)
@@ -413,9 +436,12 @@ type Querier interface {
 	ResetFailedLogins(ctx context.Context, id string) error
 	ResubscribeContact(ctx context.Context, id string) error
 	ResumeContactSequence(ctx context.Context, arg ResumeContactSequenceParams) error
-	RevokeMCPAPIKey(ctx context.Context, id string) error
+	// People revoke their own keys.
+	RevokeMCPAPIKey(ctx context.Context, arg RevokeMCPAPIKeyParams) (int64, error)
 	RevokeMCPOAuthToken(ctx context.Context, id string) error
 	RevokeMCPOAuthTokensByUser(ctx context.Context, userID string) error
+	// The one way a campaign starts sending: the scheduler picks it up once
+	// scheduled_at has passed. No scheduled_at means now.
 	ScheduleCampaign(ctx context.Context, arg ScheduleCampaignParams) (EmailCampaign, error)
 	SetCampaignRecipientsCount(ctx context.Context, arg SetCampaignRecipientsCountParams) error
 	SetContactVerificationToken(ctx context.Context, arg SetContactVerificationTokenParams) error

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
@@ -30,6 +31,10 @@ func NewUpdateOrgEmailSettingsLogic(ctx context.Context, svcCtx *svc.ServiceCont
 }
 
 func (l *UpdateOrgEmailSettingsLogic) UpdateOrgEmailSettings(req *types.UpdateOrgEmailSettingsRequest) (resp *types.OrgInfo, err error) {
+	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.Id, access.Admin); err != nil {
+		return nil, err
+	}
+
 	// Update email settings (from_name, from_email, reply_to)
 	org, err := l.svcCtx.DB.UpdateOrgEmailSettings(l.ctx, db.UpdateOrgEmailSettingsParams{
 		ID:        req.Id,

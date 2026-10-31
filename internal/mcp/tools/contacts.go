@@ -192,7 +192,7 @@ func contactHandler(toolCtx *mcpctx.ToolContext) func(ctx context.Context, req *
 }
 
 func handleContactCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -202,7 +202,7 @@ func handleContactCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 
 	// Check if contact already exists
 	existing, err := toolCtx.DB().GetContactByOrgAndEmail(ctx, db.GetContactByOrgAndEmailParams{
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 		Email: input.Email,
 	})
 	if err == nil {
@@ -218,7 +218,7 @@ func handleContactCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 	contactID := uuid.New().String()
 	contact, err := toolCtx.DB().CreateContact(ctx, db.CreateContactParams{
 		ID:     contactID,
-		OrgID:  sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID:  sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 		Email:  input.Email,
 		Name:   input.Name,
 		Source: sql.NullString{String: input.Source, Valid: input.Source != ""},
@@ -237,7 +237,7 @@ func handleContactCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 }
 
 func handleContactList(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -263,7 +263,7 @@ func handleContactList(ctx context.Context, toolCtx *mcpctx.ToolContext, input C
 		})
 	} else {
 		contacts, err = toolCtx.DB().ListContactsByOrg(ctx, db.ListContactsByOrgParams{
-			OrgID:      sql.NullString{String: toolCtx.BrandID(), Valid: true},
+			OrgID:      sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 			PageOffset: offset,
 			PageSize:   pageSize,
 		})
@@ -302,7 +302,7 @@ func handleContactList(ctx context.Context, toolCtx *mcpctx.ToolContext, input C
 }
 
 func handleContactGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -312,7 +312,7 @@ func handleContactGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input Co
 
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ID))
@@ -344,7 +344,7 @@ func handleContactGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input Co
 }
 
 func handleContactUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -358,7 +358,7 @@ func handleContactUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 	// Verify contact exists
 	_, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ID))
@@ -380,7 +380,7 @@ func handleContactUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 }
 
 func handleContactAddTags(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -394,7 +394,7 @@ func handleContactAddTags(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	// Verify contact exists
 	_, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ID))
@@ -429,7 +429,7 @@ func handleContactAddTags(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 }
 
 func handleContactRemoveTags(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -443,7 +443,7 @@ func handleContactRemoveTags(ctx context.Context, toolCtx *mcpctx.ToolContext, i
 	// Verify contact exists
 	_, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ID))
@@ -482,7 +482,7 @@ func handleContactRemoveTags(ctx context.Context, toolCtx *mcpctx.ToolContext, i
 }
 
 func handleContactUnsubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -493,14 +493,14 @@ func handleContactUnsubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, 
 	// Verify contact exists
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ID))
 	}
 
 	err = toolCtx.DB().GlobalUnsubscribeByOrgAndEmail(ctx, db.GlobalUnsubscribeByOrgAndEmailParams{
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 		Email: contact.Email,
 	})
 	if err != nil {
@@ -514,7 +514,7 @@ func handleContactUnsubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, 
 }
 
 func handleContactBlock(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -525,7 +525,7 @@ func handleContactBlock(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 	// Verify contact exists
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ID))
@@ -543,7 +543,7 @@ func handleContactBlock(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 }
 
 func handleContactUnblock(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -554,7 +554,7 @@ func handleContactUnblock(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	// Verify contact exists
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ID))
@@ -572,7 +572,7 @@ func handleContactUnblock(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 }
 
 func handleContactActivity(ctx context.Context, toolCtx *mcpctx.ToolContext, input ContactInput) (*mcp.CallToolResult, any, error) {
-	if err := toolCtx.RequireBrand(); err != nil {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -583,7 +583,7 @@ func handleContactActivity(ctx context.Context, toolCtx *mcpctx.ToolContext, inp
 	// Verify contact exists
 	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
 		ID:    input.ID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(), Valid: true},
+		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
 	})
 	if err != nil {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ID))
