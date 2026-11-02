@@ -46,7 +46,7 @@ func (s *Service) unhealthy(ctx context.Context, mb db.PoolMailbox, now time.Tim
 			}
 		}
 		if len(kinds) == n && faults == n {
-			return "provider", fmt.Sprintf("its mail provider refused the connection, sign-in or sender on the last %d tries", n), nil
+			return "provider", fmt.Sprintf("its mail provider refused the connection, sign-in, sender, quota or message on the last %d tries", n), nil
 		}
 	}
 
@@ -121,7 +121,9 @@ func (s *Service) pause(ctx context.Context, mb db.PoolMailbox, kind, reason str
 }
 
 // checkDomain pauses a domain once DomainPauseShare of its mailboxes are
-// paused, and tells each tenant whose mailbox there stops with it.
+// paused for list health or policy blocks (admin and provider pauses say
+// nothing about the domain), and tells each tenant whose mailbox there
+// stops with it. An auto-paused domain resumes only by an admin.
 func (s *Service) checkDomain(ctx context.Context, domainID string) error {
 	counts, err := s.store.CountPoolDomainMailboxes(ctx, domainID)
 	if err != nil || counts.Total == 0 {
@@ -130,7 +132,7 @@ func (s *Service) checkDomain(ctx context.Context, domainID string) error {
 	if float64(counts.Paused)/float64(counts.Total) < s.cfg.DomainPauseShare {
 		return nil
 	}
-	reason := fmt.Sprintf("%d of its %d mailboxes are paused", counts.Paused, counts.Total)
+	reason := fmt.Sprintf("%d of its %d mailboxes are paused for list health or policy blocks", counts.Paused, counts.Total)
 	n, err := s.store.PausePoolDomain(ctx, db.PausePoolDomainParams{PausedReason: nullString(reason), ID: domainID})
 	if err != nil || n == 0 {
 		return err

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/mail"
 	"net/textproto"
@@ -42,23 +41,32 @@ type SendResult struct {
 	MailboxID      string
 	MailboxAddress string
 	Status         string // sent, failed, or sending (a first try still in flight)
-	FailureKind    string // recipient, policy, provider, transient
+	FailureKind    string // policy, provider, transient
 	SMTPCode       int
 	SMTPResponse   string
 }
 
 // Send sends one email from the tenant's sticky mailbox. Refusals before
 // anything leaves: 400 bad input, 404 not the tenant's mailbox, 409 the
-// mailbox, its domain or the tenant is held, 422 the address is on the pool
-// blocklist, 429 over today's allowance or inside the gap, 503 pool off or
-// no mailboxes. Once the SMTP server has answered the result is 200 with
-// status sent or failed.
+// mailbox, its domain or the tenant is held, or the mailbox's domain is
+// reserved, 422 the address is blocked (a hard bounce or complaint, or the
+// org's suppression list or blocked domains), 429 over today's allowance or
+// inside the gap, 503 pool off, no bounce domain or no mailboxes. Once the
+// SMTP server has answered the result is 200 with status sent or failed.
+//
+// Unsubscribes live in the org's one suppression_list: the one-click
+// unsubscribe handler behind ListUnsubscribeURL writes there through
+// Outlet's existing suppression routes (the blocklist MCP tool or
+// /api/admin/suppression-list), never a second store.
 func (s *Service) Send(ctx context.Context, in SendInput) (*SendResult, error) {
 	if err := s.on(); err != nil {
 		return nil, err
 	}
 	if s.cfg.BounceDomain == "" {
 		return nil, errorx.NewCodeError(http.StatusServiceUnavailable, "pool has no bounce domain")
+	}
+	if s.cfg.IsReserved(s.cfg.BounceDomain) {
+		return nil, errorx.NewCodeError(http.StatusServiceUnavailable, "pool bounce domain "+s.cfg.BounceDomain+" is reserved")
 	}
 	to, err := checkSendInput(in)
 	if err != nil {
@@ -81,17 +89,20 @@ func (s *Service) Send(ctx context.Context, in SendInput) (*SendResult, error) {
 	if held {
 		return nil, errorx.NewCodeError(http.StatusConflict, "tenant held: its mailboxes were paused for list health too often; clean the list, then an admin clears the hold")
 	}
-	blocked, err := s.store.IsPoolAddressBlocked(ctx, to)
+	blocked, err := s.blocked(ctx, in.OrgID, to)
 	if err != nil {
 		return nil, err
 	}
-	if blocked == 1 {
-		return nil, errorx.NewCodeError(http.StatusUnprocessableEntity, "address is on the pool blocklist (hard bounce or complaint)")
+	if blocked {
+		return nil, errorx.NewCodeError(http.StatusUnprocessableEntity, blockedReason)
 	}
 
 	mb, err := s.pick(ctx, in, to, now)
 	if err != nil {
 		return nil, err
+	}
+	if d := domainOf(mb.Address); s.cfg.IsReserved(d) {
+		return nil, errorx.NewCodeError(http.StatusConflict, "mailbox domain "+d+" is reserved: the pool never sends as it")
 	}
 
 	// Check the allowance and gap and reserve the send under the mailbox
@@ -162,16 +173,6 @@ func (s *Service) Send(ctx context.Context, in SendInput) (*SendResult, error) {
 	}
 	if err := s.store.FinishPoolSend(ctx, finish); err != nil {
 		return nil, err
-	}
-	if res.FailureKind == "recipient" {
-		// The receiving server refused the address outright: a hard bounce.
-		send, err := s.store.GetPoolSend(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.recordBounce(ctx, send, mb.Address, true, fmt.Sprintf("%d %s", res.SMTPCode, res.SMTPResponse), ""); err != nil {
-			return nil, err
-		}
 	}
 	if err := s.evaluate(ctx, mb.ID); err != nil {
 		return nil, err
@@ -321,10 +322,26 @@ func (s *Service) result(ctx context.Context, send db.PoolSend) (*SendResult, er
 	}, nil
 }
 
-// classify sorts an SMTP failure: provider (the mailbox's own server refused
-// the account), policy (a receiving server blocked it for policy or
-// reputation), recipient (refused the address: a hard bounce) or transient
-// (try again later).
+// blockedReason answers a send or verify of a blocked address.
+const blockedReason = "address is blocked: a hard bounce or complaint, or on this org's suppression list or blocked domains"
+
+// blocked reports whether the address may not get pool mail: a hard bounce
+// or complaint anywhere, or the org's suppression list or blocked domains.
+// Soft bounces do not block.
+func (s *Service) blocked(ctx context.Context, orgID, email string) (bool, error) {
+	n, err := s.store.IsEmailFullyBlocked(ctx, db.IsEmailFullyBlockedParams{
+		CheckEmail: email, HardBouncesOnly: 1, CheckOrgID: orgID,
+	})
+	return n == 1, err
+}
+
+// classify sorts an SMTP failure. Every answer during the send comes from
+// the mailbox's own provider, which relays the mail later; the recipient's
+// server never answers here, so a refusal is never a recipient bounce (hard
+// bounces come only from DSNs matched by VERP in IngestReport). It is
+// provider (the provider refused the account, its quota or rate, or the
+// message), policy (5.7.x, or the provider says policy or reputation) or
+// transient (4xx: try again later).
 func classify(err error) (kind string, code int, response string) {
 	var te *textproto.Error
 	hasCode := errors.As(err, &te)
@@ -339,13 +356,31 @@ func classify(err error) (kind string, code int, response string) {
 		return "provider", code, response
 	case !hasCode:
 		return "provider", code, response
+	case code >= 500 && isQuota(response):
+		return "provider", code, response
 	case code >= 500 && isPolicy(response):
 		return "policy", code, response
 	case code >= 500:
-		return "recipient", code, response
+		return "provider", code, response
 	default:
 		return "transient", code, response
 	}
+}
+
+// isQuota: the provider refused for its sending quota or rate (enhanced
+// status 5.4.5, or the server says so), a fault of the account, not of
+// policy or the recipient.
+func isQuota(response string) bool {
+	r := strings.ToLower(response)
+	if strings.HasPrefix(r, "5.4.5") || strings.Contains(r, " 5.4.5") {
+		return true
+	}
+	for _, w := range []string{"quota", "limit exceeded", "rate limit", "too many messages", "sending limit"} {
+		if strings.Contains(r, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // isPolicy: a refusal for policy or sending reputation rather than for the

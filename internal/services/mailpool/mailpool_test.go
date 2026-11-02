@@ -11,7 +11,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -449,9 +451,21 @@ func TestReportParsingDSNAndARF(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "bounce", r.Kind)
 	assert.False(t, r.Hard)
-	blocked, err := h.store.IsPoolAddressBlocked(h.ctx, "full@example.com")
+	blocked, err := h.s.blocked(h.ctx, org, "full@example.com")
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), blocked)
+	assert.False(t, blocked)
+
+	// A failed DSN matched by Message-ID alone never came back to the VERP
+	// address: recorded soft, not a hard bounce.
+	h.gap()
+	odd, err := h.send("acct-1", "odd@example.com", "t5")
+	require.NoError(t, err)
+	r, err = h.s.IngestReport(h.ctx, org, []byte(fmt.Sprintf(dsnTemplate, "postmaster@"+bounce, "odd@example.com", "failed", "5.1.1", "550 5.1.1 no such user", odd.MessageID)))
+	require.NoError(t, err)
+	assert.False(t, r.Hard)
+	blocked, err = h.s.blocked(h.ctx, org, "odd@example.com")
+	require.NoError(t, err)
+	assert.False(t, blocked)
 
 	// Complaint (ARF).
 	r, err = h.s.IngestReport(h.ctx, org, []byte(fmt.Sprintf(arfTemplate, verp(angry), "angry@example.com", angry.MessageID)))
@@ -508,7 +522,7 @@ func TestBounceThresholdPausesMailboxThenDomain(t *testing.T) {
 	dom, err := h.store.GetPoolDomain(h.ctx, d.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "paused", dom.Status)
-	assert.Equal(t, "1 of its 2 mailboxes are paused", dom.PausedReason.String)
+	assert.Equal(t, "1 of its 2 mailboxes are paused for list health or policy blocks", dom.PausedReason.String)
 	other := mbs[0].ID
 	if other == mine {
 		other = mbs[1].ID
@@ -570,12 +584,15 @@ func TestAuthFaultPauseIsMovable(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, httpCode(err))
 	assert.Contains(t, err.Error(), "the queue may move")
 	// No address was blocked by the provider's refusals.
-	blocked, err := h.store.IsPoolAddressBlocked(h.ctx, "l0@example.com")
+	blocked, err := h.s.blocked(h.ctx, org, "l0@example.com")
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), blocked)
+	assert.False(t, blocked)
 }
 
-func TestRecipientAndPolicyRefusals(t *testing.T) {
+// Every refusal during the send comes from the mailbox's own provider, which
+// relays the mail later: it is never a recipient bounce, blocks no address
+// and never counts toward the bounce pause.
+func TestSendTimeRefusalsAreNeverBounces(t *testing.T) {
 	h := newHarness(t, testConfig())
 	h.addMailboxes("outreach-a.test", 1, 10)
 	_, _, err := h.s.Assign(h.ctx, org, "acct-1", 1)
@@ -585,26 +602,182 @@ func TestRecipientAndPolicyRefusals(t *testing.T) {
 	res, err := h.send("acct-1", "nobody@example.com", "r1")
 	require.NoError(t, err)
 	assert.Equal(t, "failed", res.Status)
-	assert.Equal(t, "recipient", res.FailureKind)
-	blocked, err := h.store.IsPoolAddressBlocked(h.ctx, "nobody@example.com")
+	assert.Equal(t, "provider", res.FailureKind)
+	assert.Equal(t, 550, res.SMTPCode)
+
+	h.gap()
+	h.smtp.rejectData("big@example.com", "552 5.3.4 message size exceeds fixed limit")
+	res, err = h.send("acct-1", "big@example.com", "r2")
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), blocked)
+	assert.Equal(t, "provider", res.FailureKind)
+
+	// Two provider faults in a row stay under ProviderFaultsToPause; a
+	// sent email breaks the run.
+	h.gap()
+	res, err = h.send("acct-1", "fine@example.com", "r3")
+	require.NoError(t, err)
+	assert.Equal(t, "sent", res.Status)
+
+	h.gap()
+	h.smtp.reject("quota@example.com", "550 5.4.5 Daily user sending limit exceeded")
+	res, err = h.send("acct-1", "quota@example.com", "r4")
+	require.NoError(t, err)
+	assert.Equal(t, "provider", res.FailureKind)
+
+	h.gap()
+	h.smtp.reject("later@example.com", "451 4.3.0 try again later")
+	res, err = h.send("acct-1", "later@example.com", "r5")
+	require.NoError(t, err)
+	assert.Equal(t, "transient", res.FailureKind)
+
+	for _, addr := range []string{"nobody@example.com", "big@example.com", "quota@example.com", "later@example.com"} {
+		blocked, err := h.s.blocked(h.ctx, org, addr)
+		require.NoError(t, err)
+		assert.False(t, blocked, addr)
+	}
+	var bounces int
+	require.NoError(t, h.store.GetDB().QueryRow(`SELECT COUNT(*) FROM email_bounce`).Scan(&bounces))
+	assert.Zero(t, bounces, "a send-time refusal writes no bounce")
+	c, err := h.s.Capacity(h.ctx, org, "acct-1")
+	require.NoError(t, err)
+	assert.Equal(t, "active", c.Mailboxes[0].Status)
 
 	for i := 0; i < 3; i++ {
 		h.gap()
 		to := fmt.Sprintf("p%d@example.com", i)
-		h.smtp.reject(to, "550 5.7.1 message blocked for sender reputation")
+		h.smtp.rejectData(to, "554 5.7.1 message blocked for sender reputation")
 		res, err := h.send("acct-1", to, fmt.Sprintf("p%d", i))
 		require.NoError(t, err)
 		assert.Equal(t, "policy", res.FailureKind)
 	}
-	c, err := h.s.Capacity(h.ctx, org, "acct-1")
+	c, err = h.s.Capacity(h.ctx, org, "acct-1")
 	require.NoError(t, err)
 	assert.Equal(t, "paused", c.Mailboxes[0].Status)
 	assert.Equal(t, "policy", c.Mailboxes[0].PauseKind)
-	blocked, err = h.store.IsPoolAddressBlocked(h.ctx, "p0@example.com")
+	blocked, err := h.s.blocked(h.ctx, org, "p0@example.com")
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), blocked, "a policy block is not the address's fault")
+	assert.False(t, blocked, "a policy block is not the address's fault")
+}
+
+func TestClassifySendTimeRefusals(t *testing.T) {
+	for line, want := range map[string]string{
+		"550 5.1.1 no such user":                          "provider",
+		"550 5.4.5 Daily user sending limit exceeded":     "provider",
+		"554 5.6.0 message content refused":               "provider",
+		"552 5.3.4 message size exceeds fixed limit":      "provider",
+		"550 5.4.5 sending quota exceeded, see policy":    "provider",
+		"554 5.7.1 message blocked for sender reputation": "policy",
+		"550 message rejected as spam":                    "policy",
+		"421 4.7.0 try again later":                       "transient",
+		"452 4.5.3 too many recipients":                   "transient",
+	} {
+		code, _ := strconv.Atoi(line[:3])
+		kind, gotCode, _ := classify(fmt.Errorf("RCPT TO failed: %w", &textproto.Error{Code: code, Msg: line[4:]}))
+		assert.Equal(t, want, kind, line)
+		assert.Equal(t, code, gotCode, line)
+	}
+}
+
+// A brand's suppression list and blocked domains stop pool mail too: one
+// blocklist for every sender.
+func TestSuppressionListAndBlockedDomainsRefuseSend(t *testing.T) {
+	h := newHarness(t, testConfig())
+	h.addMailboxes("outreach-a.test", 1, 10)
+	_, _, err := h.s.Assign(h.ctx, org, "acct-1", 1)
+	require.NoError(t, err)
+	_, err = h.store.GetDB().Exec(`INSERT INTO organizations (id, name, slug, api_key) VALUES (?, 'NeboAI hub', 'hub', 'k')`, org)
+	require.NoError(t, err)
+	_, err = h.store.AddToSuppressionList(h.ctx, db.AddToSuppressionListParams{
+		OrgID: org, Email: "Optout@Example.com", Reason: sql.NullString{String: "unsubscribed", Valid: true}, Source: sql.NullString{String: "unsubscribe", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = h.store.CreateBlockedDomain(h.ctx, db.CreateBlockedDomainParams{OrgID: org, Domain: "donotcontact.test"})
+	require.NoError(t, err)
+
+	_, err = h.send("acct-1", "optout@example.com", "s1")
+	assert.Equal(t, http.StatusUnprocessableEntity, httpCode(err))
+	_, err = h.send("acct-1", "ceo@donotcontact.test", "s2")
+	assert.Equal(t, http.StatusUnprocessableEntity, httpCode(err))
+	assert.Empty(t, h.smtp.sent())
+
+	// Another org's list does not apply.
+	blocked, err := h.s.blocked(h.ctx, "org-other", "optout@example.com")
+	require.NoError(t, err)
+	assert.False(t, blocked)
+
+	got, err := h.s.Verify(h.ctx, org, []string{"optout@example.com", "ceo@donotcontact.test", "lead@example.com"})
+	require.NoError(t, err)
+	assert.True(t, got[0].Blocked)
+	assert.False(t, got[0].OK)
+	assert.True(t, got[1].Blocked)
+	assert.True(t, got[2].OK)
+}
+
+// The pool never sends as, or bounces to, neboai.com, nebo.bot, neboloop.com
+// or this deployment's own domains, nor any subdomain of them.
+func TestReservedDomainsNeverSend(t *testing.T) {
+	cfg := testConfig()
+	cfg.ReservedDomains = []string{"neboai.com", "nebo.bot", "neboloop.com", "send.outlet.test, track.outlet.test"}
+	h := newHarness(t, cfg)
+	for _, d := range []string{"neboai.com", "NeboAI.com", "mail.neboai.com", "nebo.bot", "x.nebo.bot", "neboloop.com", "track.outlet.test", "a.send.outlet.test"} {
+		_, err := h.s.CreateDomain(h.ctx, d)
+		assert.Equal(t, http.StatusBadRequest, httpCode(err), d)
+	}
+	_, err := h.s.CreateDomain(h.ctx, "notneboai.com")
+	require.NoError(t, err, "only the domain and its subdomains are reserved")
+
+	// A row added before the list existed can't send.
+	h.addMailboxes("outreach-a.test", 1, 10)
+	_, err = h.store.GetDB().Exec(`UPDATE pool_domains SET domain = 'neboai.com' WHERE domain = 'outreach-a.test'`)
+	require.NoError(t, err)
+	_, err = h.store.GetDB().Exec(`UPDATE pool_mailboxes SET address = 'rep0@neboai.com' WHERE address = 'rep0@outreach-a.test'`)
+	require.NoError(t, err)
+	_, _, err = h.s.Assign(h.ctx, org, "acct-1", 1)
+	require.NoError(t, err)
+	_, err = h.send("acct-1", "lead@example.com", "r1")
+	assert.Equal(t, http.StatusConflict, httpCode(err))
+	assert.Contains(t, err.Error(), "reserved")
+	assert.Empty(t, h.smtp.sent())
+
+	// A reserved bounce domain refuses every send.
+	cfg.BounceDomain = "b.neboai.com"
+	h2 := newHarness(t, cfg)
+	h2.addMailboxes("outreach-b.test", 1, 10)
+	_, _, err = h2.s.Assign(h2.ctx, org, "acct-1", 1)
+	require.NoError(t, err)
+	_, err = h2.send("acct-1", "lead@example.com", "r1")
+	assert.Equal(t, http.StatusServiceUnavailable, httpCode(err))
+	assert.Empty(t, h2.smtp.sent())
+}
+
+// Provider and admin pauses say nothing about the domain's reputation: two
+// of three mailboxes paused that way leave the domain sending.
+func TestProviderPausesLeaveTheDomainActive(t *testing.T) {
+	h := newHarness(t, testConfig())
+	d, mbs := h.addMailboxes("outreach-a.test", 3, 10)
+	_, _, err := h.s.Assign(h.ctx, org, "acct-1", 3)
+	require.NoError(t, err)
+	for i, kind := range []string{"provider", "admin"} {
+		mb, err := h.store.GetPoolMailbox(h.ctx, mbs[i].ID)
+		require.NoError(t, err)
+		require.NoError(t, h.s.pause(h.ctx, mb, kind, "sign-in refused", h.clock))
+	}
+	dom, err := h.store.GetPoolDomain(h.ctx, d.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "active", dom.Status)
+
+	res, err := h.send("acct-1", "lead@example.com", "k1")
+	require.NoError(t, err)
+	assert.Equal(t, "sent", res.Status)
+	assert.Equal(t, mbs[2].ID, res.MailboxID)
+	c, err := h.s.Capacity(h.ctx, org, "acct-1")
+	require.NoError(t, err)
+	for _, m := range c.Mailboxes {
+		if m.ID == mbs[0].ID {
+			assert.Equal(t, "provider", m.PauseKind)
+			assert.True(t, m.Movable)
+		}
+	}
 }
 
 func TestRepeatPausesHoldTheTenant(t *testing.T) {
@@ -637,7 +810,7 @@ func TestVerifyWithoutSMTPProbing(t *testing.T) {
 	_, err := h.store.CreateEmailComplaint(h.ctx, db.CreateEmailComplaintParams{ID: "c1", Email: "angry@example.com", EmailForLower: "angry@example.com"})
 	require.NoError(t, err)
 
-	got, err := h.s.Verify(h.ctx, []string{"Info@Example.com", "lead@nomx.test", "x@mailinator.com", "not-an-address", "angry@example.com"})
+	got, err := h.s.Verify(h.ctx, org, []string{"Info@Example.com", "lead@nomx.test", "x@mailinator.com", "not-an-address", "angry@example.com"})
 	require.NoError(t, err)
 	require.Len(t, got, 5)
 	assert.Equal(t, VerifyResult{Email: "info@example.com", Syntax: true, MX: true, Role: true, OK: true}, got[0])

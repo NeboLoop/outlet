@@ -19,6 +19,7 @@ type fakeSMTP struct {
 	mu       sync.Mutex
 	authFail bool              // answer 535 to AUTH
 	rcptCode map[string]string // recipient -> reply line, e.g. "550 5.1.1 no such user"
+	dataCode map[string]string // recipient -> reply line at the end of DATA, e.g. "554 5.6.0 content refused"
 	messages []fakeMessage
 }
 
@@ -33,7 +34,7 @@ func newFakeSMTP(t *testing.T) *fakeSMTP {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeSMTP{t: t, ln: ln, port: ln.Addr().(*net.TCPAddr).Port, rcptCode: map[string]string{}}
+	f := &fakeSMTP{t: t, ln: ln, port: ln.Addr().(*net.TCPAddr).Port, rcptCode: map[string]string{}, dataCode: map[string]string{}}
 	t.Cleanup(func() { ln.Close() })
 	go f.serve()
 	return f
@@ -48,6 +49,12 @@ func (f *fakeSMTP) setAuthFail(v bool) {
 func (f *fakeSMTP) reject(rcpt, line string) {
 	f.mu.Lock()
 	f.rcptCode[strings.ToLower(rcpt)] = line
+	f.mu.Unlock()
+}
+
+func (f *fakeSMTP) rejectData(rcpt, line string) {
+	f.mu.Lock()
+	f.dataCode[strings.ToLower(rcpt)] = line
 	f.mu.Unlock()
 }
 
@@ -122,6 +129,17 @@ func (f *fakeSMTP) handle(c net.Conn) {
 			}
 			cur.Data = b.String()
 			f.mu.Lock()
+			var refusal string
+			for _, rc := range cur.Rcpt {
+				if line, ok := f.dataCode[rc]; ok {
+					refusal = line
+				}
+			}
+			if refusal != "" {
+				f.mu.Unlock()
+				w(refusal)
+				continue
+			}
 			f.messages = append(f.messages, cur)
 			n := len(f.messages)
 			f.mu.Unlock()

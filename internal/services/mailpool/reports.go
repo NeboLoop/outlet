@@ -132,7 +132,8 @@ type ReportResult struct {
 // IngestReport takes a DSN (RFC 3464) or ARF (RFC 5965) message, matches
 // it to a pool send by its VERP address or the original Message-ID,
 // records it in the existing bounce and complaint tables and re-checks the
-// mailbox's health.
+// mailbox's health. Only a DSN that came back to the send's VERP address
+// records a hard bounce; one matched by Message-ID alone counts as soft.
 func (s *Service) IngestReport(ctx context.Context, orgID string, raw []byte) (*ReportResult, error) {
 	if err := s.on(); err != nil {
 		return nil, err
@@ -141,7 +142,7 @@ func (s *Service) IngestReport(ctx context.Context, orgID string, raw []byte) (*
 	if err != nil {
 		return nil, errorx.NewBadRequestError("not a delivery status or feedback report: " + err.Error())
 	}
-	send, err := s.matchSend(ctx, r)
+	send, byVERP, err := s.matchSend(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +182,7 @@ func (s *Service) IngestReport(ctx context.Context, orgID string, raw []byte) (*
 		}
 	default:
 		res.Kind = "bounce"
-		res.Hard = strings.HasPrefix(r.status, "5") || (r.status == "" && r.action == "failed")
+		res.Hard = byVERP && (strings.HasPrefix(r.status, "5") || (r.status == "" && r.action == "failed"))
 		if err := s.recordBounce(ctx, send, mb.Address, res.Hard, firstNonEmpty(r.diagnostic, r.status), string(raw)); err != nil {
 			return nil, err
 		}
@@ -192,19 +193,21 @@ func (s *Service) IngestReport(ctx context.Context, orgID string, raw []byte) (*
 	return res, nil
 }
 
-func (s *Service) matchSend(ctx context.Context, r *report) (db.PoolSend, error) {
-	var send db.PoolSend
-	err := sql.ErrNoRows
+// matchSend finds the report's send by its VERP address, else by the
+// original Message-ID; byVERP says which.
+func (s *Service) matchSend(ctx context.Context, r *report) (send db.PoolSend, byVERP bool, err error) {
+	err = sql.ErrNoRows
 	if r.verpID != "" {
 		send, err = s.store.GetPoolSend(ctx, r.verpID)
+		byVERP = err == nil
 	}
 	if errors.Is(err, sql.ErrNoRows) && r.origMessageID != "" {
 		send, err = s.store.GetPoolSendByMessageID(ctx, strings.ToLower(r.origMessageID))
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		return send, errorx.NewNotFoundError("no pool send matches this report")
+		return send, false, errorx.NewNotFoundError("no pool send matches this report")
 	}
-	return send, err
+	return send, byVERP, err
 }
 
 func firstNonEmpty(v ...string) string {

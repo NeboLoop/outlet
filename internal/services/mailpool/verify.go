@@ -23,15 +23,15 @@ type VerifyResult struct {
 	MX         bool
 	Disposable bool
 	Role       bool // info@, sales@ ...: allowed, reported only
-	Blocked    bool // on the pool blocklist (hard bounce or complaint)
+	Blocked    bool // a hard bounce or complaint, or the org's suppression list or blocked domains
 	OK         bool
 	Reason     string
 }
 
 // Verify checks syntax, MX and disposable domains with emailval, never
-// probing a mail server over SMTP, plus the pool blocklist. Role addresses
-// pass.
-func (s *Service) Verify(ctx context.Context, emails []string) ([]VerifyResult, error) {
+// probing a mail server over SMTP, plus the same blocklist Send checks for
+// orgID. Role addresses pass.
+func (s *Service) Verify(ctx context.Context, orgID string, emails []string) ([]VerifyResult, error) {
 	if err := s.on(); err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (s *Service) Verify(ctx context.Context, emails []string) ([]VerifyResult, 
 		go func() {
 			defer wg.Done()
 			for i := range work {
-				out[i], errs[i] = s.verifyOne(ctx, emails[i])
+				out[i], errs[i] = s.verifyOne(ctx, orgID, emails[i])
 			}
 		}()
 	}
@@ -64,7 +64,7 @@ func (s *Service) Verify(ctx context.Context, emails []string) ([]VerifyResult, 
 	return out, nil
 }
 
-func (s *Service) verifyOne(ctx context.Context, addr string) (VerifyResult, error) {
+func (s *Service) verifyOne(ctx context.Context, orgID, addr string) (VerifyResult, error) {
 	r, err := emailval.Validate(ctx, addr, &emailval.Options{
 		CheckDisposable: true,
 		AllowRole:       true,
@@ -86,13 +86,13 @@ func (s *Service) verifyOne(ctx context.Context, addr string) (VerifyResult, err
 		v.Reason = r.Messages[0]
 	}
 	if r.Valid() {
-		blocked, err := s.store.IsPoolAddressBlocked(ctx, r.Normalized)
+		blocked, err := s.blocked(ctx, orgID, r.Normalized)
 		if err != nil {
 			return VerifyResult{}, err
 		}
-		v.Blocked = blocked == 1
+		v.Blocked = blocked
 		if v.Blocked {
-			v.Reason = "on the pool blocklist (hard bounce or complaint)"
+			v.Reason = blockedReason
 		}
 	}
 	v.OK = r.Valid() && !v.Blocked

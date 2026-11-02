@@ -25,10 +25,13 @@ WHERE id = sqlc.arg(id) AND status = 'paused';
 UPDATE pool_domains SET status = 'retired'
 WHERE id = sqlc.arg(id) AND status <> 'retired';
 
+-- CountPoolDomainMailboxes counts a domain's mailboxes and those paused for
+-- list health or policy blocks: admin and provider pauses say nothing about
+-- the domain's reputation.
 -- name: CountPoolDomainMailboxes :one
 SELECT
     CAST(COUNT(*) AS INTEGER) AS total,
-    CAST(COALESCE(SUM(CASE WHEN status = 'paused' THEN 1 ELSE 0 END), 0) AS INTEGER) AS paused
+    CAST(COALESCE(SUM(CASE WHEN status = 'paused' AND paused_kind IN ('list', 'policy') THEN 1 ELSE 0 END), 0) AS INTEGER) AS paused
 FROM pool_mailboxes
 WHERE domain_id = sqlc.arg(domain_id) AND status <> 'retired';
 
@@ -184,15 +187,6 @@ FROM (
     LIMIT sqlc.arg(window_size)
 ) w
 LEFT JOIN email_complaint c ON c.pool_send_id = w.id;
-
--- IsPoolAddressBlocked: a hard bounce or a complaint blocks an address for
--- the whole pool. Soft bounces do not.
--- name: IsPoolAddressBlocked :one
-SELECT CAST((
-    (SELECT COUNT(*) FROM email_bounce WHERE email_lower = LOWER(sqlc.arg(email)) AND bounce_type = 'Permanent') +
-    (SELECT COUNT(*) FROM email_complaint WHERE email_lower = LOWER(sqlc.arg(email)))
-) > 0 AS INTEGER) AS blocked;
-
 
 -- name: CreatePoolPause :exec
 INSERT INTO pool_pauses (id, mailbox_id, tenant_org_id, tenant, kind, reason, created_at)

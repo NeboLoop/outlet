@@ -92,6 +92,11 @@ SMTP:
 Pool:
   Enabled: "${POOL_ENABLED}"
   BounceDomain: "${POOL_BOUNCE_DOMAIN}"
+  ReservedDomains:        # never sent as or bounced to, nor any subdomain (App.Domain is added too)
+    - neboai.com
+    - nebo.bot
+    - neboloop.com
+    - "${POOL_RESERVED_DOMAINS}" # comma separated: this Outlet deployment's own sending and tracking domains
   RampStart: 5            # emails a mailbox may send on its first day
   RampStep: 2             # more each day after
   Ceiling: 30             # most a mailbox ever sends in a day

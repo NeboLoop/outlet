@@ -31,7 +31,7 @@ func (l *PoolVerifyLogic) PoolVerify(req *types.PoolVerifyRequest) (resp *types.
 	if !ok || orgID == "" {
 		return nil, errorx.NewUnauthorizedError("API key required")
 	}
-	results, err := l.svcCtx.MailPool.Verify(l.ctx, req.Emails)
+	results, err := l.svcCtx.MailPool.Verify(l.ctx, orgID, req.Emails)
 	if err != nil {
 		return nil, err
 	}

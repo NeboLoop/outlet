@@ -179,9 +179,12 @@ DELETE FROM suppression_list WHERE org_id = sqlc.arg(org_id);
 
 -- ========== COMBINED BLOCK CHECK (Enhanced) ==========
 
+-- IsEmailFullyBlocked: a bounce, a complaint, the org's suppression list or
+-- the org's blocked domains. hard_bounces_only = 1 lets soft bounces through.
 -- name: IsEmailFullyBlocked :one
 SELECT CASE WHEN (
-    (SELECT COUNT(*) FROM email_bounce WHERE email_lower = LOWER(sqlc.arg(check_email))) +
+    (SELECT COUNT(*) FROM email_bounce WHERE email_lower = LOWER(sqlc.arg(check_email))
+        AND (CAST(sqlc.arg(hard_bounces_only) AS INTEGER) = 0 OR bounce_type = 'Permanent')) +
     (SELECT COUNT(*) FROM email_complaint WHERE email_lower = LOWER(sqlc.arg(check_email))) +
     (SELECT COUNT(*) FROM suppression_list sl WHERE sl.org_id = sqlc.arg(check_org_id) AND sl.email_lower = LOWER(sqlc.arg(check_email))) +
     (SELECT COUNT(*) FROM blocked_domains bd WHERE bd.org_id = sqlc.arg(check_org_id) AND bd.domain = LOWER(SUBSTR(sqlc.arg(check_email), INSTR(sqlc.arg(check_email), '@') + 1)))

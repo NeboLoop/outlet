@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/zeromicro/go-zero/rest"
@@ -55,7 +56,22 @@ func (c *Config) Validate() []string {
 		errors = append(errors, fmt.Sprintf("APP_BASE_URL must start with http:// or https://, got: %s", c.App.BaseURL))
 	}
 
+	if p := c.PoolSettings(); p.IsEnabled() && p.IsReserved(p.BounceDomain) {
+		errors = append(errors, fmt.Sprintf("POOL_BOUNCE_DOMAIN %s is reserved: the pool never bounces to a reserved domain or its subdomains", p.BounceDomain))
+	}
+
 	return errors
+}
+
+// PoolSettings is the pool's config with this deployment's own domain and
+// base URL host added to ReservedDomains.
+func (c Config) PoolSettings() PoolConfig {
+	p := c.Pool
+	p.ReservedDomains = append(append([]string{}, p.ReservedDomains...), c.App.Domain)
+	if u, err := url.Parse(c.App.BaseURL); err == nil {
+		p.ReservedDomains = append(p.ReservedDomains, u.Hostname())
+	}
+	return p
 }
 
 // MustValidate panics if configuration is invalid
@@ -120,6 +136,13 @@ type PoolConfig struct {
 	Enabled      string `json:",optional"` // "true" turns the pool on (POOL_ENABLED); off, every pool route answers 503
 	BounceDomain string `json:",optional"` // VERP Return-Path host: sends go out as b+<send id>@BounceDomain (POOL_BOUNCE_DOMAIN)
 
+	// ReservedDomains: the pool never sends as, or bounces to, these
+	// domains or their subdomains. An entry may hold several, comma
+	// separated (POOL_RESERVED_DOMAINS adds this Outlet deployment's own
+	// sending and tracking domains). Settings adds App.Domain and the
+	// App.BaseURL host.
+	ReservedDomains []string `json:",optional"`
+
 	// Ramp: a mailbox may send min(Ceiling, RampStart + RampStep*days since
 	// its warm start) emails a UTC day, at least MinGapSeconds apart.
 	RampStart     int
@@ -149,6 +172,24 @@ type PoolConfig struct {
 	DomainPauseShare      float64
 	RepeatPauses          int
 	RepeatPauseDays       int
+}
+
+// IsReserved reports whether domain is one of ReservedDomains or a
+// subdomain of one.
+func (c PoolConfig) IsReserved(domain string) bool {
+	domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+	if domain == "" {
+		return false
+	}
+	for _, entry := range c.ReservedDomains {
+		for _, r := range strings.Split(entry, ",") {
+			r = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(r)), ".")
+			if r != "" && (domain == r || strings.HasSuffix(domain, "."+r)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // IsEnabled reports whether the pool is on.

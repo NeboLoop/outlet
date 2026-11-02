@@ -140,6 +140,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Events:            eventSubject,
 		WebhookDispatcher: webhookDispatcher,
 		WebSocketHub:      wsHub,
-		MailPool:          mailpool.New(c.Pool, store, cryptoService, eventSubject),
+		MailPool:          mailpool.New(c.PoolSettings(), store, cryptoService, eventSubject),
 	}
 }

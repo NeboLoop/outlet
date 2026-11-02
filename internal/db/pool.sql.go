@@ -132,7 +132,7 @@ func (q *Queries) ClearTenantPoolPauses(ctx context.Context, arg ClearTenantPool
 const countPoolDomainMailboxes = `-- name: CountPoolDomainMailboxes :one
 SELECT
     CAST(COUNT(*) AS INTEGER) AS total,
-    CAST(COALESCE(SUM(CASE WHEN status = 'paused' THEN 1 ELSE 0 END), 0) AS INTEGER) AS paused
+    CAST(COALESCE(SUM(CASE WHEN status = 'paused' AND paused_kind IN ('list', 'policy') THEN 1 ELSE 0 END), 0) AS INTEGER) AS paused
 FROM pool_mailboxes
 WHERE domain_id = ?1 AND status <> 'retired'
 `
@@ -142,6 +142,9 @@ type CountPoolDomainMailboxesRow struct {
 	Paused int64 `json:"paused"`
 }
 
+// CountPoolDomainMailboxes counts a domain's mailboxes and those paused for
+// list health or policy blocks: admin and provider pauses say nothing about
+// the domain's reputation.
 func (q *Queries) CountPoolDomainMailboxes(ctx context.Context, domainID string) (CountPoolDomainMailboxesRow, error) {
 	row := q.db.QueryRowContext(ctx, countPoolDomainMailboxes, domainID)
 	var i CountPoolDomainMailboxesRow
@@ -508,22 +511,6 @@ func (q *Queries) GetPoolSendByMessageID(ctx context.Context, messageID string) 
 		&i.SmtpResponse,
 	)
 	return i, err
-}
-
-const isPoolAddressBlocked = `-- name: IsPoolAddressBlocked :one
-SELECT CAST((
-    (SELECT COUNT(*) FROM email_bounce WHERE email_lower = LOWER(?1) AND bounce_type = 'Permanent') +
-    (SELECT COUNT(*) FROM email_complaint WHERE email_lower = LOWER(?1))
-) > 0 AS INTEGER) AS blocked
-`
-
-// IsPoolAddressBlocked: a hard bounce or a complaint blocks an address for
-// the whole pool. Soft bounces do not.
-func (q *Queries) IsPoolAddressBlocked(ctx context.Context, email string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, isPoolAddressBlocked, email)
-	var blocked int64
-	err := row.Scan(&blocked)
-	return blocked, err
 }
 
 const lastPoolMailboxAttemptAt = `-- name: LastPoolMailboxAttemptAt :one

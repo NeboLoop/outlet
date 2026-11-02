@@ -13,7 +13,8 @@ import (
 	"github.com/outlet-sh/outlet/internal/events"
 )
 
-// CreateDomain adds a pool-only sending domain.
+// CreateDomain adds a pool-only sending domain; a reserved domain or a
+// subdomain of one is refused.
 func (s *Service) CreateDomain(ctx context.Context, domain string) (db.PoolDomain, error) {
 	if err := s.on(); err != nil {
 		return db.PoolDomain{}, err
@@ -21,6 +22,9 @@ func (s *Service) CreateDomain(ctx context.Context, domain string) (db.PoolDomai
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" || strings.ContainsAny(domain, "@ /") || !strings.Contains(domain, ".") {
 		return db.PoolDomain{}, errorx.NewBadRequestError("domain must be a domain name")
+	}
+	if s.cfg.IsReserved(domain) {
+		return db.PoolDomain{}, errorx.NewBadRequestError("domain " + domain + " is reserved: the pool never sends as it or its subdomains")
 	}
 	d, err := s.store.CreatePoolDomain(ctx, db.CreatePoolDomainParams{ID: newID(), Domain: domain, CreatedAt: fmtTime(s.now())})
 	return d, conflict(err, "domain is already in the pool")

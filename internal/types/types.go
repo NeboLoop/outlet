@@ -1359,7 +1359,7 @@ type PoolSendResponse struct {
 	MailboxId      string `json:"mailbox_id"`
 	MailboxAddress string `json:"mailbox_address"`
 	Status         string `json:"status"`                 // sent, failed, or sending (a first try still in flight)
-	FailureKind    string `json:"failure_kind,omitempty"` // recipient (hard bounce), policy, provider (mailbox account fault), transient
+	FailureKind    string `json:"failure_kind,omitempty"` // policy (5.7.x), provider (the mailbox's provider refused the account, quota or message), transient; never a recipient bounce: hard bounces come from DSNs
 	SmtpCode       int    `json:"smtp_code,omitempty"`
 	SmtpResponse   string `json:"smtp_response,omitempty"`
 }
@@ -1378,7 +1378,7 @@ type PoolVerifyResult struct {
 	Mx         bool   `json:"mx"`
 	Disposable bool   `json:"disposable"`
 	Role       bool   `json:"role"`    // allowed, reported only
-	Blocked    bool   `json:"blocked"` // on the pool blocklist (hard bounce or complaint)
+	Blocked    bool   `json:"blocked"` // a hard bounce or complaint, or the org's suppression list or blocked domains
 	Ok         bool   `json:"ok"`
 	Reason     string `json:"reason,omitempty"`
 }

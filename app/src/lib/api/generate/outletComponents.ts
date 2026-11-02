@@ -1448,7 +1448,7 @@ export interface PoolSendResponse {
 	mailbox_id: string
 	mailbox_address: string
 	status: string // sent, failed, or sending (a first try still in flight)
-	failure_kind?: string // recipient (hard bounce), policy, provider (mailbox account fault), transient
+	failure_kind?: string // policy (5.7.x), provider (the mailbox's provider refused the account, quota or message), transient; never a recipient bounce: hard bounces come from DSNs
 	smtp_code?: number
 	smtp_response?: string
 }
@@ -1467,7 +1467,7 @@ export interface PoolVerifyResult {
 	mx: boolean
 	disposable: boolean
 	role: boolean // allowed, reported only
-	blocked: boolean // on the pool blocklist (hard bounce or complaint)
+	blocked: boolean // a hard bounce or complaint, or the org's suppression list or blocked domains
 	ok: boolean
 	reason?: string
 }

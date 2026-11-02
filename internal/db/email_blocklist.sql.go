@@ -708,21 +708,25 @@ func (q *Queries) IsEmailComplaint(ctx context.Context, email string) (int64, er
 const isEmailFullyBlocked = `-- name: IsEmailFullyBlocked :one
 
 SELECT CASE WHEN (
-    (SELECT COUNT(*) FROM email_bounce WHERE email_lower = LOWER(?1)) +
+    (SELECT COUNT(*) FROM email_bounce WHERE email_lower = LOWER(?1)
+        AND (CAST(?2 AS INTEGER) = 0 OR bounce_type = 'Permanent')) +
     (SELECT COUNT(*) FROM email_complaint WHERE email_lower = LOWER(?1)) +
-    (SELECT COUNT(*) FROM suppression_list sl WHERE sl.org_id = ?2 AND sl.email_lower = LOWER(?1)) +
-    (SELECT COUNT(*) FROM blocked_domains bd WHERE bd.org_id = ?2 AND bd.domain = LOWER(SUBSTR(?1, INSTR(?1, '@') + 1)))
+    (SELECT COUNT(*) FROM suppression_list sl WHERE sl.org_id = ?3 AND sl.email_lower = LOWER(?1)) +
+    (SELECT COUNT(*) FROM blocked_domains bd WHERE bd.org_id = ?3 AND bd.domain = LOWER(SUBSTR(?1, INSTR(?1, '@') + 1)))
 ) > 0 THEN 1 ELSE 0 END as found
 `
 
 type IsEmailFullyBlockedParams struct {
-	CheckEmail string `json:"check_email"`
-	CheckOrgID string `json:"check_org_id"`
+	CheckEmail      string `json:"check_email"`
+	HardBouncesOnly int64  `json:"hard_bounces_only"`
+	CheckOrgID      string `json:"check_org_id"`
 }
 
 // ========== COMBINED BLOCK CHECK (Enhanced) ==========
+// IsEmailFullyBlocked: a bounce, a complaint, the org's suppression list or
+// the org's blocked domains. hard_bounces_only = 1 lets soft bounces through.
 func (q *Queries) IsEmailFullyBlocked(ctx context.Context, arg IsEmailFullyBlockedParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, isEmailFullyBlocked, arg.CheckEmail, arg.CheckOrgID)
+	row := q.db.QueryRowContext(ctx, isEmailFullyBlocked, arg.CheckEmail, arg.HardBouncesOnly, arg.CheckOrgID)
 	var found int64
 	err := row.Scan(&found)
 	return found, err

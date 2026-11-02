@@ -74,6 +74,9 @@ type Querier interface {
 	// or delete it from SES.
 	CountOtherBrandsWithDomain(ctx context.Context, arg CountOtherBrandsWithDomainParams) (int64, error)
 	CountPendingCampaignSends(ctx context.Context, campaignID string) (int64, error)
+	// CountPoolDomainMailboxes counts a domain's mailboxes and those paused for
+	// list health or policy blocks: admin and provider pauses say nothing about
+	// the domain's reputation.
 	CountPoolDomainMailboxes(ctx context.Context, domainID string) (CountPoolDomainMailboxesRow, error)
 	// CountPoolMailboxAttemptsSince counts the sends that reached the mail
 	// provider (a refused connection or sign-in never did).
@@ -387,11 +390,10 @@ type Querier interface {
 	IsEmailBounced(ctx context.Context, email string) (int64, error)
 	IsEmailComplaint(ctx context.Context, email string) (int64, error)
 	// ========== COMBINED BLOCK CHECK (Enhanced) ==========
+	// IsEmailFullyBlocked: a bounce, a complaint, the org's suppression list or
+	// the org's blocked domains. hard_bounces_only = 1 lets soft bounces through.
 	IsEmailFullyBlocked(ctx context.Context, arg IsEmailFullyBlockedParams) (int64, error)
 	IsEmailSuppressed(ctx context.Context, arg IsEmailSuppressedParams) (int64, error)
-	// IsPoolAddressBlocked: a hard bounce or a complaint blocks an address for
-	// the whole pool. Soft bounces do not.
-	IsPoolAddressBlocked(ctx context.Context, email string) (int64, error)
 	LastPoolMailboxAttemptAt(ctx context.Context, mailboxID string) (string, error)
 	LastPoolSendToRecipient(ctx context.Context, arg LastPoolSendToRecipientParams) (PoolSend, error)
 	ListActiveAgents(ctx context.Context) ([]ListActiveAgentsRow, error)
