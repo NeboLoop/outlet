@@ -198,6 +198,15 @@ type CancelImportJobRequest struct {
 	Id string `path:"id"`
 }
 
+type ClearPoolTenantHoldRequest struct {
+	OrgId  string `json:"org_id"`
+	Tenant string `json:"tenant"`
+}
+
+type ClearPoolTenantHoldResponse struct {
+	Cleared int `json:"cleared"`
+}
+
 type ConfirmEmailRequest struct {
 	Token string `form:"token"`
 }
@@ -367,6 +376,20 @@ type CreateOrgRequest struct {
 	FromName    string `json:"from_name,optional"`
 	FromEmail   string `json:"from_email,optional"`
 	ReplyTo     string `json:"reply_to,optional"`
+}
+
+type CreatePoolDomainRequest struct {
+	Domain string `json:"domain"`
+}
+
+type CreatePoolMailboxRequest struct {
+	DomainId      string `json:"domain_id"`
+	Address       string `json:"address"`
+	SmtpHost      string `json:"smtp_host"`
+	SmtpPort      int    `json:"smtp_port"`
+	SmtpUsername  string `json:"smtp_username"`
+	SmtpPassword  string `json:"smtp_password"`            // stored encrypted
+	WarmStartedAt string `json:"warm_started_at,optional"` // RFC 3339 or YYYY-MM-DD; default now
 }
 
 type CreateSequenceRequest struct {
@@ -1059,6 +1082,14 @@ type ListMCPAPIKeysResponse struct {
 	Total int             `json:"total"`
 }
 
+type ListPoolDomainsResponse struct {
+	Domains []PoolDomainInfo `json:"domains"`
+}
+
+type ListPoolMailboxesResponse struct {
+	Mailboxes []PoolMailboxInfo `json:"mailboxes"`
+}
+
 type ListSequenceEnrollmentsResponse struct {
 	Enrollments []SequenceEnrollmentInfo `json:"enrollments"`
 }
@@ -1225,6 +1256,131 @@ type PlatformSettingInfo struct {
 	Category    string `json:"category"`
 	Description string `json:"description,optional"`
 	IsSensitive bool   `json:"is_sensitive"`
+}
+
+type PoolAssignRequest struct {
+	Tenant string `json:"tenant"`
+	Count  int    `json:"count"`
+}
+
+type PoolAssignResponse struct {
+	Assigned   int                   `json:"assigned"`
+	Tenant     string                `json:"tenant"`
+	TenantHeld bool                  `json:"tenant_held"`
+	Mailboxes  []PoolMailboxCapacity `json:"mailboxes"`
+}
+
+type PoolCapacityRequest struct {
+	Tenant string `form:"tenant"`
+}
+
+type PoolCapacityResponse struct {
+	Tenant     string                `json:"tenant"`
+	TenantHeld bool                  `json:"tenant_held"` // repeat pauses hold the tenant until an admin clears it
+	Mailboxes  []PoolMailboxCapacity `json:"mailboxes"`
+}
+
+type PoolDomainInfo struct {
+	Id           string `json:"id"`
+	Domain       string `json:"domain"`
+	Status       string `json:"status"` // active, paused, retired
+	PausedReason string `json:"paused_reason,omitempty"`
+	CreatedAt    string `json:"created_at"`
+}
+
+type PoolMailboxCapacity struct {
+	Id             string `json:"id"`
+	Address        string `json:"address"`
+	Status         string `json:"status"` // active, paused, resting, retired (a paused domain shows as paused)
+	PausedReason   string `json:"paused_reason,omitempty"`
+	PauseKind      string `json:"pause_kind,omitempty"` // list, policy, provider, admin, domain
+	Movable        bool   `json:"movable"`              // paused for a provider fault: the tenant's queue may move to its other healthy mailboxes
+	RemainingToday int    `json:"remaining_today"`
+	NextAllowedAt  string `json:"next_allowed_at,omitempty"` // RFC 3339
+}
+
+type PoolMailboxInfo struct {
+	Id               string `json:"id"`
+	DomainId         string `json:"domain_id"`
+	Address          string `json:"address"`
+	SmtpHost         string `json:"smtp_host"`
+	SmtpPort         int    `json:"smtp_port"`
+	SmtpUsername     string `json:"smtp_username"`
+	WarmStartedAt    string `json:"warm_started_at"`
+	Status           string `json:"status"` // active, paused, resting, retired
+	PausedReason     string `json:"paused_reason,omitempty"`
+	PauseKind        string `json:"pause_kind,omitempty"`
+	TenantOrgId      string `json:"tenant_org_id,omitempty"`
+	Tenant           string `json:"tenant,omitempty"`
+	TenantAssignedAt string `json:"tenant_assigned_at,omitempty"`
+	TenantReleasedAt string `json:"tenant_released_at,omitempty"`
+	CreatedAt        string `json:"created_at"`
+}
+
+type PoolReleaseRequest struct {
+	Tenant string `json:"tenant"`
+}
+
+type PoolReleaseResponse struct {
+	Released int `json:"released"`
+}
+
+type PoolReportRequest struct {
+	Raw string `json:"raw"` // the whole RFC 3464 DSN or RFC 5965 ARF message
+}
+
+type PoolReportResponse struct {
+	MessageId string `json:"message_id"`
+	MailboxId string `json:"mailbox_id"`
+	Tenant    string `json:"tenant"`
+	Email     string `json:"email"`
+	Kind      string `json:"kind"` // bounce, complaint, policy
+	Hard      bool   `json:"hard"`
+}
+
+type PoolSendRequest struct {
+	Tenant                string            `json:"tenant"`              // the hub's account the mailbox belongs to
+	MailboxId             string            `json:"mailbox_id,optional"` // one of the tenant's mailboxes; default: the one that last wrote to this recipient, else the readiest
+	To                    string            `json:"to"`
+	FromName              string            `json:"from_name,optional"`
+	Subject               string            `json:"subject"`
+	Text                  string            `json:"text"`          // plain-text body
+	Html                  string            `json:"html,optional"` // optional HTML alternative
+	InReplyTo             string            `json:"in_reply_to,optional"`
+	References            string            `json:"references,optional"`
+	Headers               map[string]string `json:"headers,optional"`     // threading headers only; Message-ID is always ours
+	ListUnsubscribeUrl    string            `json:"list_unsubscribe_url"` // https: List-Unsubscribe + RFC 8058 one-click
+	ListUnsubscribeMailto string            `json:"list_unsubscribe_mailto,optional"`
+	IdempotencyKey        string            `json:"idempotency_key"` // a replay answers the first result and sends nothing
+}
+
+type PoolSendResponse struct {
+	MessageId      string `json:"message_id"` // without angle brackets; the header is <message_id>
+	MailboxId      string `json:"mailbox_id"`
+	MailboxAddress string `json:"mailbox_address"`
+	Status         string `json:"status"`                 // sent, failed, or sending (a first try still in flight)
+	FailureKind    string `json:"failure_kind,omitempty"` // recipient (hard bounce), policy, provider (mailbox account fault), transient
+	SmtpCode       int    `json:"smtp_code,omitempty"`
+	SmtpResponse   string `json:"smtp_response,omitempty"`
+}
+
+type PoolVerifyRequest struct {
+	Emails []string `json:"emails"` // 1 to 100
+}
+
+type PoolVerifyResponse struct {
+	Results []PoolVerifyResult `json:"results"`
+}
+
+type PoolVerifyResult struct {
+	Email      string `json:"email"`
+	Syntax     bool   `json:"syntax"`
+	Mx         bool   `json:"mx"`
+	Disposable bool   `json:"disposable"`
+	Role       bool   `json:"role"`    // allowed, reported only
+	Blocked    bool   `json:"blocked"` // on the pool blocklist (hard bounce or complaint)
+	Ok         bool   `json:"ok"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 type RefreshDomainIdentityRequest struct {
@@ -1432,6 +1588,12 @@ type SequenceStatsResponse struct {
 	Unsubscribed     int `json:"unsubscribed"`
 	EmailsSent       int `json:"emails_sent"`
 	EmailsPending    int `json:"emails_pending"`
+}
+
+type SetPoolStatusRequest struct {
+	Id     string `path:"id"`
+	Status string `json:"status"` // active (resume), paused, retired
+	Reason string `json:"reason,optional"`
 }
 
 type SetupStatusResponse struct {

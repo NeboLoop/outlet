@@ -650,6 +650,62 @@ export function getOrganizationBySlug(params: components.GetOrgBySlugRequestPara
 
 /**
  * @description 
+ */
+export function listPoolDomains() {
+	return webapi.get<components.ListPoolDomainsResponse>(`/api/admin/pool/domains`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function createPoolDomain(req: components.CreatePoolDomainRequest) {
+	return webapi.post<components.PoolDomainInfo>(`/api/admin/pool/domains`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function setPoolDomainStatus(params: components.SetPoolStatusRequestParams, req: components.SetPoolStatusRequest, id: string) {
+	return webapi.put<components.PoolDomainInfo>(`/api/admin/pool/domains/${id}/status`, params, req)
+}
+
+/**
+ * @description 
+ */
+export function listPoolMailboxes() {
+	return webapi.get<components.ListPoolMailboxesResponse>(`/api/admin/pool/mailboxes`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function createPoolMailbox(req: components.CreatePoolMailboxRequest) {
+	return webapi.post<components.PoolMailboxInfo>(`/api/admin/pool/mailboxes`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function setPoolMailboxStatus(params: components.SetPoolStatusRequestParams, req: components.SetPoolStatusRequest, id: string) {
+	return webapi.put<components.PoolMailboxInfo>(`/api/admin/pool/mailboxes/${id}/status`, params, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function clearPoolTenantHold(req: components.ClearPoolTenantHoldRequest) {
+	return webapi.post<components.ClearPoolTenantHoldResponse>(`/api/admin/pool/tenants/clear-hold`, req)
+}
+
+/**
+ * @description 
  * @param params
  */
 export function listEmailQueue(params: components.EmailQueueListRequestParams) {
@@ -1174,6 +1230,54 @@ export function getEmailStatus(params: components.GetEmailStatusRequestParams, m
  */
 export function listEmailEvents(params: components.ListEmailEventsRequestParams, messageId: string) {
 	return webapi.get<components.ListEmailEventsResponse>(`/sdk/v1/emails/${messageId}/events`, params)
+}
+
+/**
+ * @description "Assign the tenant free mailboxes"
+ * @param req
+ */
+export function poolAssign(req: components.PoolAssignRequest) {
+	return webapi.post<components.PoolAssignResponse>(`/sdk/v1/pool/assign`, req)
+}
+
+/**
+ * @description "Take a bounce (RFC 3464 DSN) or complaint (RFC 5965 ARF) report"
+ * @param req
+ */
+export function poolReport(req: components.PoolReportRequest) {
+	return webapi.post<components.PoolReportResponse>(`/sdk/v1/pool/bounces`, req)
+}
+
+/**
+ * @description "The tenant's mailboxes with today's allowance left"
+ * @param params
+ */
+export function poolCapacity(params: components.PoolCapacityRequestParams) {
+	return webapi.get<components.PoolCapacityResponse>(`/sdk/v1/pool/capacity`, params)
+}
+
+/**
+ * @description "Release every mailbox of the tenant"
+ * @param req
+ */
+export function poolRelease(req: components.PoolReleaseRequest) {
+	return webapi.post<components.PoolReleaseResponse>(`/sdk/v1/pool/release`, req)
+}
+
+/**
+ * @description "Send one email from the tenant's sticky pool mailbox"
+ * @param req
+ */
+export function poolSend(req: components.PoolSendRequest) {
+	return webapi.post<components.PoolSendResponse>(`/sdk/v1/pool/send`, req)
+}
+
+/**
+ * @description "Check addresses before their first email (no SMTP probing)"
+ * @param req
+ */
+export function poolVerify(req: components.PoolVerifyRequest) {
+	return webapi.post<components.PoolVerifyResponse>(`/sdk/v1/pool/verify`, req)
 }
 
 /**

@@ -147,6 +147,12 @@ const (
 	TopicEmailOpened     = "email.opened"     // Email opened (tracking pixel)
 	TopicEmailClicked    = "email.clicked"    // Link in email clicked
 
+	// Mailbox pool events
+	TopicPoolMessageBounced    = "pool.message.bounced"    // A pool send bounced (hard or soft)
+	TopicPoolMessageComplained = "pool.message.complained" // A pool send was reported as spam
+	TopicPoolMailboxPaused     = "pool.mailbox.paused"     // A pool mailbox stopped sending
+	TopicPoolMailboxResumed    = "pool.mailbox.resumed"    // A pool mailbox sends again
+
 	// Customer events
 	TopicCustomerCreated = "customer.created" // New customer created
 	TopicCustomerUpdated = "customer.updated" // Customer profile updated
@@ -986,6 +992,22 @@ type EmailEvent struct {
 	Status     string    `json:"status"`                // sent, bounced, complained, opened, clicked
 	BounceType string    `json:"bounce_type,omitempty"` // hard, soft
 	ClickedURL string    `json:"clicked_url,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
+}
+
+// PoolEvent is emitted for mailbox pool events; it goes to the webhooks of
+// the brand (org) that holds the tenant.
+type PoolEvent struct {
+	OrgID      string    `json:"org_id"`
+	Tenant     string    `json:"tenant"`
+	MailboxID  string    `json:"mailbox_id"`
+	MessageID  string    `json:"message_id,omitempty"`
+	Email      string    `json:"email,omitempty"`
+	Reason     string    `json:"reason"`
+	Hard       bool      `json:"hard,omitempty"`        // pool.message.bounced: a hard bounce
+	PauseKind  string    `json:"pause_kind,omitempty"`  // pool.mailbox.paused: list, policy, provider or admin
+	Movable    bool      `json:"movable,omitempty"`     // pool.mailbox.paused: the hub may move the tenant's queue to its other healthy mailboxes
+	TenantHeld bool      `json:"tenant_held,omitempty"` // pool.mailbox.paused: repeat pauses now hold the tenant
 	Timestamp  time.Time `json:"timestamp"`
 }
 

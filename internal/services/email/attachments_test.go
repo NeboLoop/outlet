@@ -103,3 +103,44 @@ func TestBuildRawMessageRejectsHeaderInjection(t *testing.T) {
 		}
 	}
 }
+
+// A pool email: plain text only, RFC 8058 one-click List-Unsubscribe, our
+// Message-ID winning over a caller's, and a Date header.
+func TestBuildMessageListUnsubscribeAndTextOnly(t *testing.T) {
+	raw, err := BuildMessage("Dana <dana@outreach.test>", "lead@example.com", "Hello", "",
+		WithTextBody("Hi there"),
+		WithHeaders(map[string]string{"Message-ID": "<theirs@x>", "In-Reply-To": "<prev@outreach.test>", "X-Evil": "no"}),
+		WithHeaders(map[string]string{"Message-ID": "<ours@outreach.test>"}),
+		WithListUnsubscribe("https://optout.test/u/t", "mailto:u@optout.test"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := string(raw)
+	for _, want := range []string{
+		"Message-ID: <ours@outreach.test>\r\n",
+		"In-Reply-To: <prev@outreach.test>\r\n",
+		"List-Unsubscribe: <https://optout.test/u/t>, <mailto:u@optout.test>\r\n",
+		"List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n",
+		"Content-Type: text/plain; charset=UTF-8",
+		"Date: ",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message lacks %q", want)
+		}
+	}
+	for _, not := range []string{"text/html", "X-Evil", "theirs@x"} {
+		if strings.Contains(msg, not) {
+			t.Errorf("message has %q", not)
+		}
+	}
+
+	// Without an https URL there is no one-click header.
+	raw, err = BuildMessage("a@b.test", "c@d.test", "s", "<p>x</p>", WithListUnsubscribe("http://plain.test/u", "u@d.test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "List-Unsubscribe: <mailto:u@d.test>\r\n") || strings.Contains(string(raw), "List-Unsubscribe-Post") {
+		t.Errorf("unexpected unsubscribe headers:\n%s", raw)
+	}
+}

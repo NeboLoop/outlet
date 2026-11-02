@@ -150,8 +150,26 @@ func (p *SMTPPool) Close() {
 	}
 }
 
-// createConnection creates a new SMTP connection
+// AccountError is the SMTP server refusing the sending account: it could
+// not be reached, refused the sign-in, or refused the sender address. It is
+// never a fault of the message or its recipient.
+type AccountError struct{ Err error }
+
+func (e *AccountError) Error() string { return e.Err.Error() }
+func (e *AccountError) Unwrap() error { return e.Err }
+
+// createConnection creates a new SMTP connection; every failure is an
+// *AccountError.
 func (p *SMTPPool) createConnection() (*smtp.Client, error) {
+	client, err := p.dial()
+	if err != nil {
+		return nil, &AccountError{Err: err}
+	}
+	return client, nil
+}
+
+// dial connects, upgrades to TLS when asked, and signs in.
+func (p *SMTPPool) dial() (*smtp.Client, error) {
 	addr := fmt.Sprintf("%s:%d", p.host, p.port)
 
 	var client *smtp.Client
@@ -278,7 +296,7 @@ func (p *SMTPPool) SendWithPool(from string, to []string, msg []byte) error {
 	// Set sender
 	if err := client.Mail(from); err != nil {
 		p.Put(client)
-		return fmt.Errorf("MAIL FROM failed: %w", err)
+		return &AccountError{Err: fmt.Errorf("MAIL FROM failed: %w", err)}
 	}
 
 	// Set recipients

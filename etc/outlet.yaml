@@ -85,3 +85,26 @@ SMTP:
   tlscert: "${SMTP_TLS_CERT}"
   tlskey: "${SMTP_TLS_KEY}"
   allowinsecureauth: "${SMTP_ALLOW_INSECURE_AUTH}"
+
+# Mailbox pool (off unless POOL_ENABLED=true): warmed mailboxes on pool-only
+# domains that a second deployment of this binary sends customers' outreach
+# from. The numbers are the proposed Phase 0 starting points.
+Pool:
+  Enabled: "${POOL_ENABLED}"
+  BounceDomain: "${POOL_BOUNCE_DOMAIN}"
+  RampStart: 5            # emails a mailbox may send on its first day
+  RampStep: 2             # more each day after
+  Ceiling: 30             # most a mailbox ever sends in a day
+  MinGapSeconds: 240      # at least this long between two sends from one mailbox
+  RestDays: 30            # a released mailbox rests this long before another tenant gets it
+  BouncePausePct: 3.0     # pause when hard bounces pass this share of the window
+  BounceWindow: 100       # ... of the mailbox's last this many sends
+  BounceMinSample: 20     # ... once it has at least this many sends
+  ComplaintPausePct: 0.1  # pause when complaints pass this share of the window
+  ComplaintWindow: 1000   # ... of the mailbox's last this many sends
+  ComplaintMinCount: 1    # ... once there are at least this many complaints
+  PolicyBlocksPerDay: 3   # pause after this many policy or reputation blocks in a day
+  ProviderFaultsToPause: 3 # pause after this many refused connections or sign-ins in a row
+  DomainPauseShare: 0.5   # pause a domain when this share of its mailboxes are paused
+  RepeatPauses: 2         # hold a tenant after this many list pauses ...
+  RepeatPauseDays: 30     # ... within this many days

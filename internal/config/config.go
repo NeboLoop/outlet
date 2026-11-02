@@ -34,6 +34,7 @@ type Config struct {
 		BatchSize   int     `json:",default=100"` // Emails per batch fetch
 	}
 	SMTP SMTPConfig
+	Pool PoolConfig
 	Encryption struct {
 		Key string // 32-byte hex-encoded key for AES-256 encryption
 	}
@@ -108,4 +109,49 @@ func (c SMTPConfig) GetPort() int {
 // IsAllowInsecureAuth returns true if insecure auth is allowed
 func (c SMTPConfig) IsAllowInsecureAuth() bool {
 	return strings.ToLower(c.AllowInsecureAuth) == "true" || c.AllowInsecureAuth == "1"
+}
+
+// PoolConfig configures the mailbox pool: warmed mailboxes on pool-only
+// domains that a second deployment of this binary sends customers'
+// outreach from. Every number lives in etc/outlet.yaml; Enabled and
+// BounceDomain come from the environment so only the pool deployment
+// turns it on.
+type PoolConfig struct {
+	Enabled      string `json:",optional"` // "true" turns the pool on (POOL_ENABLED); off, every pool route answers 503
+	BounceDomain string `json:",optional"` // VERP Return-Path host: sends go out as b+<send id>@BounceDomain (POOL_BOUNCE_DOMAIN)
+
+	// Ramp: a mailbox may send min(Ceiling, RampStart + RampStep*days since
+	// its warm start) emails a UTC day, at least MinGapSeconds apart.
+	RampStart     int
+	RampStep      int
+	Ceiling       int
+	MinGapSeconds int
+
+	// RestDays: a released mailbox goes to another tenant only after this.
+	RestDays int
+
+	// Health: a mailbox pauses when hard bounces pass BouncePausePct of its
+	// last BounceWindow sends (once it has BounceMinSample), complaints pass
+	// ComplaintPausePct of its last ComplaintWindow sends (once there are
+	// ComplaintMinCount), receiving servers block PolicyBlocksPerDay sends in
+	// a day, or its own SMTP server refuses the last ProviderFaultsToPause
+	// tries. A domain pauses when DomainPauseShare of its mailboxes are
+	// paused. RepeatPauses list or policy pauses in RepeatPauseDays hold the
+	// tenant until an admin clears it.
+	BouncePausePct        float64
+	BounceWindow          int
+	BounceMinSample       int
+	ComplaintPausePct     float64
+	ComplaintWindow       int
+	ComplaintMinCount     int
+	PolicyBlocksPerDay    int
+	ProviderFaultsToPause int
+	DomainPauseShare      float64
+	RepeatPauses          int
+	RepeatPauseDays       int
+}
+
+// IsEnabled reports whether the pool is on.
+func (c PoolConfig) IsEnabled() bool {
+	return strings.ToLower(c.Enabled) == "true" || c.Enabled == "1"
 }

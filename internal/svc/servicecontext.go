@@ -14,6 +14,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/services/crypto"
 	"github.com/outlet-sh/outlet/internal/services/email"
+	"github.com/outlet-sh/outlet/internal/services/mailpool"
 	"github.com/outlet-sh/outlet/internal/services/tracking"
 	"github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/websocket"
@@ -35,6 +36,7 @@ type ServiceContext struct {
 	Events            *events.Subject
 	WebhookDispatcher *webhook.Dispatcher
 	WebSocketHub      *websocket.Hub
+	MailPool          *mailpool.Service // answers 503 unless Pool.Enabled
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -138,5 +140,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Events:            eventSubject,
 		WebhookDispatcher: webhookDispatcher,
 		WebSocketHub:      wsHub,
+		MailPool:          mailpool.New(c.Pool, store, cryptoService, eventSubject),
 	}
 }

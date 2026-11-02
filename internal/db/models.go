@@ -180,6 +180,7 @@ type EmailBounce struct {
 	MessageID       sql.NullString `json:"message_id"`
 	RawNotification sql.NullString `json:"raw_notification"`
 	CreatedAt       sql.NullString `json:"created_at"`
+	PoolSendID      sql.NullString `json:"pool_send_id"`
 }
 
 type EmailCampaign struct {
@@ -236,6 +237,7 @@ type EmailComplaint struct {
 	MessageID       sql.NullString `json:"message_id"`
 	RawNotification sql.NullString `json:"raw_notification"`
 	CreatedAt       sql.NullString `json:"created_at"`
+	PoolSendID      sql.NullString `json:"pool_send_id"`
 }
 
 type EmailDesign struct {
@@ -497,6 +499,63 @@ type PlatformSetting struct {
 	IsSensitive    sql.NullInt64  `json:"is_sensitive"`
 	CreatedAt      sql.NullString `json:"created_at"`
 	UpdatedAt      sql.NullString `json:"updated_at"`
+}
+
+type PoolDomain struct {
+	ID           string         `json:"id"`
+	Domain       string         `json:"domain"`
+	Status       string         `json:"status"`
+	PausedReason sql.NullString `json:"paused_reason"`
+	CreatedAt    string         `json:"created_at"`
+}
+
+type PoolMailbox struct {
+	ID               string         `json:"id"`
+	DomainID         string         `json:"domain_id"`
+	Address          string         `json:"address"`
+	SmtpHost         string         `json:"smtp_host"`
+	SmtpPort         int64          `json:"smtp_port"`
+	SmtpUsername     string         `json:"smtp_username"`
+	SmtpPasswordEnc  []byte         `json:"smtp_password_enc"`
+	WarmStartedAt    string         `json:"warm_started_at"`
+	Status           string         `json:"status"`
+	PausedReason     sql.NullString `json:"paused_reason"`
+	PausedKind       sql.NullString `json:"paused_kind"`
+	HealthSince      string         `json:"health_since"`
+	TenantOrgID      sql.NullString `json:"tenant_org_id"`
+	Tenant           sql.NullString `json:"tenant"`
+	TenantAssignedAt sql.NullString `json:"tenant_assigned_at"`
+	TenantReleasedAt sql.NullString `json:"tenant_released_at"`
+	LastTenantOrgID  sql.NullString `json:"last_tenant_org_id"`
+	LastTenant       sql.NullString `json:"last_tenant"`
+	CreatedAt        string         `json:"created_at"`
+}
+
+type PoolPause struct {
+	ID          string         `json:"id"`
+	MailboxID   string         `json:"mailbox_id"`
+	TenantOrgID sql.NullString `json:"tenant_org_id"`
+	Tenant      sql.NullString `json:"tenant"`
+	Kind        string         `json:"kind"`
+	Reason      string         `json:"reason"`
+	CreatedAt   string         `json:"created_at"`
+	ClearedAt   sql.NullString `json:"cleared_at"`
+}
+
+type PoolSend struct {
+	ID             string         `json:"id"`
+	OrgID          string         `json:"org_id"`
+	MailboxID      string         `json:"mailbox_id"`
+	Tenant         string         `json:"tenant"`
+	IdempotencyKey string         `json:"idempotency_key"`
+	MessageID      string         `json:"message_id"`
+	ToEmail        string         `json:"to_email"`
+	CreatedAt      string         `json:"created_at"`
+	SentAt         sql.NullString `json:"sent_at"`
+	Status         string         `json:"status"`
+	FailureKind    sql.NullString `json:"failure_kind"`
+	SmtpCode       sql.NullInt64  `json:"smtp_code"`
+	SmtpResponse   sql.NullString `json:"smtp_response"`
 }
 
 type RuleTemplate struct {

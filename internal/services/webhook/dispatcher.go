@@ -71,6 +71,12 @@ func (d *Dispatcher) Start(ctx context.Context) error {
 		events.TopicEmailBounced,
 		events.TopicEmailOpened,
 		events.TopicEmailClicked,
+
+		// Mailbox pool events
+		events.TopicPoolMessageBounced,
+		events.TopicPoolMessageComplained,
+		events.TopicPoolMailboxPaused,
+		events.TopicPoolMailboxResumed,
 	}
 
 	for _, topic := range eventTopics {

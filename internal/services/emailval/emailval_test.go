@@ -2,6 +2,7 @@ package emailval
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 )
@@ -364,4 +365,22 @@ func BenchmarkValidate(b *testing.B) {
 			Validate(ctx, "user@thisdomain-does-not-exist-12345.com", opts)
 		}
 	})
+}
+
+// LookupMX replaces DNS, so a caller can check MX without the network.
+func TestValidateWithLookupMX(t *testing.T) {
+	lookup := func(_ context.Context, domain string) ([]*net.MX, error) {
+		if domain == "has-mx.test" {
+			return []*net.MX{{Host: "mx.has-mx.test", Pref: 10}}, nil
+		}
+		return nil, nil
+	}
+	res, err := Validate(context.Background(), "a@has-mx.test", &Options{LookupMX: lookup})
+	if err != nil || !res.Valid() || !res.HasMX {
+		t.Fatalf("has-mx.test: valid=%v hasMX=%v err=%v", res.Valid(), res.HasMX, err)
+	}
+	res, err = Validate(context.Background(), "a@no-mx.test", &Options{LookupMX: lookup})
+	if err != nil || res.Valid() || res.HasMX || res.FailedAt == nil || *res.FailedAt != LevelDomain {
+		t.Fatalf("no-mx.test: valid=%v hasMX=%v err=%v", res.Valid(), res.HasMX, err)
+	}
 }
