@@ -86,6 +86,12 @@ func SetupErrorHandler() {
 				httpStatus = http.StatusNotFound
 			case CodeInternalError:
 				httpStatus = http.StatusInternalServerError
+			default:
+				// Any other HTTP error status is answered as itself
+				// (409, 422, 429, 503 ...).
+				if e.Code >= 400 && e.Code < 600 {
+					httpStatus = e.Code
+				}
 			}
 			// Return ErrorResponse (not CodeError) to avoid error interface check
 			return httpStatus, ErrorResponse{Code: e.Code, Message: e.Message}

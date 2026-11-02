@@ -201,6 +201,15 @@ export interface CancelImportJobRequest {
 export interface CancelImportJobRequestParams {
 }
 
+export interface ClearPoolTenantHoldRequest {
+	org_id: string
+	tenant: string
+}
+
+export interface ClearPoolTenantHoldResponse {
+	cleared: number
+}
+
 export interface ConfirmEmailRequest {
 }
 export interface ConfirmEmailRequestParams {
@@ -375,6 +384,20 @@ export interface CreateOrgRequest {
 	from_name?: string
 	from_email?: string
 	reply_to?: string
+}
+
+export interface CreatePoolDomainRequest {
+	domain: string
+}
+
+export interface CreatePoolMailboxRequest {
+	domain_id: string
+	address: string
+	smtp_host: string
+	smtp_port: number
+	smtp_username: string
+	smtp_password: string // stored encrypted
+	warm_started_at?: string // RFC 3339 or YYYY-MM-DD; default now
 }
 
 export interface CreateSequenceRequest {
@@ -1141,6 +1164,14 @@ export interface ListMCPAPIKeysResponse {
 	total: number
 }
 
+export interface ListPoolDomainsResponse {
+	domains: Array<PoolDomainInfo>
+}
+
+export interface ListPoolMailboxesResponse {
+	mailboxes: Array<PoolMailboxInfo>
+}
+
 export interface ListSequenceEnrollmentsResponse {
 	enrollments: Array<SequenceEnrollmentInfo>
 }
@@ -1312,6 +1343,133 @@ export interface PlatformSettingInfo {
 	category: string
 	description?: string
 	is_sensitive: boolean
+}
+
+export interface PoolAssignRequest {
+	tenant: string
+	count: number
+}
+
+export interface PoolAssignResponse {
+	assigned: number
+	tenant: string
+	tenant_held: boolean
+	mailboxes: Array<PoolMailboxCapacity>
+}
+
+export interface PoolCapacityRequest {
+}
+export interface PoolCapacityRequestParams {
+	tenant: string
+}
+
+export interface PoolCapacityResponse {
+	tenant: string
+	tenant_held: boolean // repeat pauses hold the tenant until an admin clears it
+	mailboxes: Array<PoolMailboxCapacity>
+}
+
+export interface PoolDomainInfo {
+	id: string
+	domain: string
+	status: string // active, paused, retired
+	paused_reason?: string
+	created_at: string
+}
+
+export interface PoolMailboxCapacity {
+	id: string
+	address: string
+	status: string // active, paused, resting, retired (a paused domain shows as paused)
+	paused_reason?: string
+	pause_kind?: string // list, policy, provider, admin, domain
+	movable: boolean // paused for a provider fault: the tenant's queue may move to its other healthy mailboxes
+	remaining_today: number
+	next_allowed_at?: string // RFC 3339
+}
+
+export interface PoolMailboxInfo {
+	id: string
+	domain_id: string
+	address: string
+	smtp_host: string
+	smtp_port: number
+	smtp_username: string
+	warm_started_at: string
+	status: string // active, paused, resting, retired
+	paused_reason?: string
+	pause_kind?: string
+	tenant_org_id?: string
+	tenant?: string
+	tenant_assigned_at?: string
+	tenant_released_at?: string
+	created_at: string
+}
+
+export interface PoolReleaseRequest {
+	tenant: string
+}
+
+export interface PoolReleaseResponse {
+	released: number
+}
+
+export interface PoolReportRequest {
+	raw: string // the whole RFC 3464 DSN or RFC 5965 ARF message
+}
+
+export interface PoolReportResponse {
+	message_id: string
+	mailbox_id: string
+	tenant: string
+	email: string
+	kind: string // bounce, complaint, policy
+	hard: boolean
+}
+
+export interface PoolSendRequest {
+	tenant: string // the hub's account the mailbox belongs to
+	mailbox_id?: string // one of the tenant's mailboxes; default: the one that last wrote to this recipient, else the readiest
+	to: string
+	from_name?: string
+	subject: string
+	text: string // plain-text body
+	html?: string // optional HTML alternative
+	in_reply_to?: string
+	references?: string
+	headers?: { [key: string]: string } // threading headers only; Message-ID is always ours
+	list_unsubscribe_url: string // https: List-Unsubscribe + RFC 8058 one-click
+	list_unsubscribe_mailto?: string
+	idempotency_key: string // a replay answers the first result and sends nothing
+}
+
+export interface PoolSendResponse {
+	message_id: string // without angle brackets; the header is <message_id>
+	mailbox_id: string
+	mailbox_address: string
+	status: string // sent, failed, or sending (a first try still in flight)
+	failure_kind?: string // recipient (hard bounce), policy, provider (mailbox account fault), transient
+	smtp_code?: number
+	smtp_response?: string
+}
+
+export interface PoolVerifyRequest {
+	emails: Array<string> // 1 to 100
+}
+
+export interface PoolVerifyResponse {
+	results: Array<PoolVerifyResult>
+}
+
+export interface PoolVerifyResult {
+	email: string
+	syntax: boolean
+	mx: boolean
+	disposable: boolean
+	role: boolean // allowed, reported only
+	blocked: boolean // on the pool blocklist (hard bounce or complaint)
+	ok: boolean
+	reason?: string
 }
 
 export interface RefreshDomainIdentityRequest {
@@ -1527,6 +1685,13 @@ export interface SequenceStatsResponse {
 	unsubscribed: number
 	emails_sent: number
 	emails_pending: number
+}
+
+export interface SetPoolStatusRequest {
+	status: string // active (resume), paused, retired
+	reason?: string
+}
+export interface SetPoolStatusRequestParams {
 }
 
 export interface SetupStatusResponse {

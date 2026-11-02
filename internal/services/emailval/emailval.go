@@ -5,6 +5,7 @@ package emailval
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 )
 
@@ -39,6 +40,10 @@ type Options struct {
 
 	// SMTPDialer is an optional custom SMTP dialer (for testing or proxying).
 	SMTPDialer SMTPDialer
+
+	// LookupMX is an optional custom MX lookup (for testing or a custom
+	// resolver); nil uses DNS.
+	LookupMX func(ctx context.Context, domain string) ([]*net.MX, error)
 }
 
 // Result is a structured report of validation.
@@ -110,7 +115,14 @@ func Validate(ctx context.Context, email string, opts *Options) (*Result, error)
 	res.SyntaxOK = true
 
 	// 2) Domain MX check
-	hasMX, err := checkMX(ctx, domain)
+	var hasMX bool
+	if opts.LookupMX != nil {
+		var mx []*net.MX
+		mx, err = opts.LookupMX(ctx, domain)
+		hasMX = len(mx) > 0
+	} else {
+		hasMX, err = checkMX(ctx, domain)
+	}
 	if err != nil || !hasMX {
 		lvl := LevelDomain
 		res.FailedAt = &lvl

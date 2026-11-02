@@ -16,6 +16,11 @@ type Querier interface {
 	// ========== SUPPRESSION LIST ==========
 	AddToSuppressionList(ctx context.Context, arg AddToSuppressionListParams) (SuppressionList, error)
 	AddUserToOrganization(ctx context.Context, arg AddUserToOrganizationParams) error
+	AssignPoolMailbox(ctx context.Context, arg AssignPoolMailboxParams) (int64, error)
+	// AssignablePoolMailboxes lists free mailboxes this tenant may take: never
+	// paused or retired, on an active domain, and either never assigned,
+	// rested past the cutoff, or last held by this same tenant.
+	AssignablePoolMailboxes(ctx context.Context, arg AssignablePoolMailboxesParams) ([]PoolMailbox, error)
 	BlockContact(ctx context.Context, id string) error
 	// ========== BLOCK CONTACT BY EMAIL ==========
 	BlockContactByEmail(ctx context.Context, email string) error
@@ -38,6 +43,7 @@ type Querier interface {
 	// Delete sessions older than 30 days
 	CleanupOldMCPSessions(ctx context.Context) error
 	ClearSuppressionList(ctx context.Context, orgID string) error
+	ClearTenantPoolPauses(ctx context.Context, arg ClearTenantPoolPausesParams) (int64, error)
 	CompleteContactSequence(ctx context.Context, arg CompleteContactSequenceParams) error
 	ConfirmListSubscription(ctx context.Context, token sql.NullString) (ListSubscriber, error)
 	CountActiveSequencesForContact(ctx context.Context, contactID sql.NullString) (int64, error)
@@ -68,9 +74,15 @@ type Querier interface {
 	// or delete it from SES.
 	CountOtherBrandsWithDomain(ctx context.Context, arg CountOtherBrandsWithDomainParams) (int64, error)
 	CountPendingCampaignSends(ctx context.Context, campaignID string) (int64, error)
+	CountPoolDomainMailboxes(ctx context.Context, domainID string) (CountPoolDomainMailboxesRow, error)
+	// CountPoolMailboxAttemptsSince counts the sends that reached the mail
+	// provider (a refused connection or sign-in never did).
+	CountPoolMailboxAttemptsSince(ctx context.Context, arg CountPoolMailboxAttemptsSinceParams) (int64, error)
+	CountPoolPolicyBlocksSince(ctx context.Context, arg CountPoolPolicyBlocksSinceParams) (int64, error)
 	CountSentCampaignSends(ctx context.Context, campaignID string) (int64, error)
 	CountSuppressedEmails(ctx context.Context, orgID string) (int64, error)
 	CountTemplatesBySequence(ctx context.Context, sequenceID sql.NullString) (int64, error)
+	CountTenantPoolPausesSince(ctx context.Context, arg CountTenantPoolPausesSinceParams) (int64, error)
 	CountTransactionalEmails(ctx context.Context, orgID string) (int64, error)
 	CountTransactionalSends(ctx context.Context, templateID string) (int64, error)
 	CountUnconfirmedContactsOlderThan(ctx context.Context, arg CountUnconfirmedContactsOlderThanParams) (int64, error)
@@ -121,6 +133,12 @@ type Querier interface {
 	// Create a new rule
 	CreateOrgRule(ctx context.Context, arg CreateOrgRuleParams) (OrgRule, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
+	// Mailbox pool queries. Every time is passed in by the pool service (UTC
+	// "YYYY-MM-DD HH:MM:SS"), never datetime('now'), so the rules read one clock.
+	CreatePoolDomain(ctx context.Context, arg CreatePoolDomainParams) (PoolDomain, error)
+	CreatePoolMailbox(ctx context.Context, arg CreatePoolMailboxParams) (PoolMailbox, error)
+	CreatePoolPause(ctx context.Context, arg CreatePoolPauseParams) error
+	CreatePoolSend(ctx context.Context, arg CreatePoolSendParams) error
 	// Create a new rule template (platform admin only)
 	CreateRuleTemplate(ctx context.Context, arg CreateRuleTemplateParams) (RuleTemplate, error)
 	CreateSequence(ctx context.Context, arg CreateSequenceParams) (EmailSequence, error)
@@ -177,6 +195,7 @@ type Querier interface {
 	// the platform and the first-run setup would open to anyone.
 	DeleteUser(ctx context.Context, id string) (int64, error)
 	DeleteWebhook(ctx context.Context, arg DeleteWebhookParams) error
+	FinishPoolSend(ctx context.Context, arg FinishPoolSendParams) error
 	GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiveEntryRuleForTriggerParams) ([]GetActiveEntryRuleForTriggerRow, error)
 	GetActiveSequenceForContact(ctx context.Context, contactID sql.NullString) (GetActiveSequenceForContactRow, error)
 	// Only a list of the campaign's own brand gives recipients.
@@ -305,6 +324,11 @@ type Querier interface {
 	GetPlatformSettingValue(ctx context.Context, key string) (GetPlatformSettingValueRow, error)
 	GetPlatformSettingsByCategory(ctx context.Context, category string) ([]PlatformSetting, error)
 	GetPlatformSettingsValues(ctx context.Context, category string) ([]GetPlatformSettingsValuesRow, error)
+	GetPoolDomain(ctx context.Context, id string) (PoolDomain, error)
+	GetPoolMailbox(ctx context.Context, id string) (PoolMailbox, error)
+	GetPoolSend(ctx context.Context, id string) (PoolSend, error)
+	GetPoolSendByIdempotencyKey(ctx context.Context, arg GetPoolSendByIdempotencyKeyParams) (PoolSend, error)
+	GetPoolSendByMessageID(ctx context.Context, messageID string) (PoolSend, error)
 	GetQueuedEmailOrgID(ctx context.Context, id string) (string, error)
 	// Mail sent with the brand's API key (the SDK and SMTP) in the last 7 days.
 	GetRecentAPIKeySends(ctx context.Context, orgID string) (GetRecentAPIKeySendsRow, error)
@@ -365,6 +389,11 @@ type Querier interface {
 	// ========== COMBINED BLOCK CHECK (Enhanced) ==========
 	IsEmailFullyBlocked(ctx context.Context, arg IsEmailFullyBlockedParams) (int64, error)
 	IsEmailSuppressed(ctx context.Context, arg IsEmailSuppressedParams) (int64, error)
+	// IsPoolAddressBlocked: a hard bounce or a complaint blocks an address for
+	// the whole pool. Soft bounces do not.
+	IsPoolAddressBlocked(ctx context.Context, email string) (int64, error)
+	LastPoolMailboxAttemptAt(ctx context.Context, mailboxID string) (string, error)
+	LastPoolSendToRecipient(ctx context.Context, arg LastPoolSendToRecipientParams) (PoolSend, error)
 	ListActiveAgents(ctx context.Context) ([]ListActiveAgentsRow, error)
 	ListAllContactTags(ctx context.Context) ([]ListAllContactTagsRow, error)
 	ListAllSequences(ctx context.Context) ([]ListAllSequencesRow, error)
@@ -394,12 +423,16 @@ type Querier interface {
 	ListPendingDomainIdentities(ctx context.Context) ([]DomainIdentity, error)
 	ListPendingImportJobs(ctx context.Context) ([]ImportJob, error)
 	ListPlatformSettings(ctx context.Context) ([]PlatformSetting, error)
+	ListPoolDomains(ctx context.Context) ([]PoolDomain, error)
+	ListPoolMailboxes(ctx context.Context) ([]PoolMailbox, error)
+	ListPoolMailboxesByDomain(ctx context.Context, domainID string) ([]PoolMailbox, error)
 	ListRecentBounces(ctx context.Context, arg ListRecentBouncesParams) ([]EmailBounce, error)
 	ListRecentComplaints(ctx context.Context, arg ListRecentComplaintsParams) ([]EmailComplaint, error)
 	ListSequencesByList(ctx context.Context, listID sql.NullInt64) ([]ListSequencesByListRow, error)
 	ListSequencesByOrg(ctx context.Context, orgID sql.NullString) ([]ListSequencesByOrgRow, error)
 	ListSuppressedEmails(ctx context.Context, arg ListSuppressedEmailsParams) ([]SuppressionList, error)
 	ListTemplatesBySequence(ctx context.Context, sequenceID sql.NullString) ([]ListTemplatesBySequenceRow, error)
+	ListTenantPoolMailboxes(ctx context.Context, arg ListTenantPoolMailboxesParams) ([]PoolMailbox, error)
 	ListTransactionalEmails(ctx context.Context, orgID string) ([]TransactionalEmail, error)
 	ListTransactionalSends(ctx context.Context, arg ListTransactionalSendsParams) ([]TransactionalSend, error)
 	ListTransactionalSendsByOrg(ctx context.Context, arg ListTransactionalSendsByOrgParams) ([]ListTransactionalSendsByOrgRow, error)
@@ -419,10 +452,18 @@ type Querier interface {
 	MarkEmailFailed(ctx context.Context, arg MarkEmailFailedParams) error
 	MarkEmailSent(ctx context.Context, id string) error
 	MarkMCPOAuthCodeUsed(ctx context.Context, id string) error
+	MarkPoolSendPolicyBlocked(ctx context.Context, arg MarkPoolSendPolicyBlockedParams) error
 	PauseContactSequence(ctx context.Context, arg PauseContactSequenceParams) error
+	PausePoolDomain(ctx context.Context, arg PausePoolDomainParams) (int64, error)
+	PausePoolMailbox(ctx context.Context, arg PausePoolMailboxParams) (int64, error)
+	// PoolBounceWindow counts the mailbox's last sends since its health reset
+	// that reached the provider, and the hard bounces among them.
+	PoolBounceWindow(ctx context.Context, arg PoolBounceWindowParams) (PoolBounceWindowRow, error)
+	PoolComplaintWindow(ctx context.Context, arg PoolComplaintWindowParams) (PoolComplaintWindowRow, error)
 	QueueEmail(ctx context.Context, arg QueueEmailParams) (EmailQueue, error)
 	// Email tracking queries
 	QueueEmailWithTracking(ctx context.Context, arg QueueEmailWithTrackingParams) (EmailQueue, error)
+	RecentPoolSendFailureKinds(ctx context.Context, arg RecentPoolSendFailureKindsParams) ([]sql.NullString, error)
 	RecordCampaignClick(ctx context.Context, id string) error
 	RecordCampaignOpen(ctx context.Context, id string) error
 	RecordEmailClick(ctx context.Context, id string) error
@@ -430,12 +471,17 @@ type Querier interface {
 	RecordTransactionalClick(ctx context.Context, id string) error
 	RecordTransactionalOpen(ctx context.Context, id string) error
 	RegenerateAPIKey(ctx context.Context, arg RegenerateAPIKeyParams) (Organization, error)
+	ReleaseTenantPoolMailboxes(ctx context.Context, arg ReleaseTenantPoolMailboxesParams) (int64, error)
 	RemoveContactTag(ctx context.Context, arg RemoveContactTagParams) error
 	RemoveSubscriberFromList(ctx context.Context, arg RemoveSubscriberFromListParams) error
 	RemoveUserFromOrganization(ctx context.Context, arg RemoveUserFromOrganizationParams) error
 	ResetFailedLogins(ctx context.Context, id string) error
 	ResubscribeContact(ctx context.Context, id string) error
 	ResumeContactSequence(ctx context.Context, arg ResumeContactSequenceParams) error
+	ResumePoolDomain(ctx context.Context, id string) (int64, error)
+	ResumePoolMailbox(ctx context.Context, arg ResumePoolMailboxParams) (int64, error)
+	RetirePoolDomain(ctx context.Context, id string) (int64, error)
+	RetirePoolMailbox(ctx context.Context, id string) (int64, error)
 	// People revoke their own keys.
 	RevokeMCPAPIKey(ctx context.Context, arg RevokeMCPAPIKeyParams) (int64, error)
 	RevokeMCPOAuthToken(ctx context.Context, id string) error

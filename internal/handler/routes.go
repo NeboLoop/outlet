@@ -18,6 +18,7 @@ import (
 	adminimports "github.com/outlet-sh/outlet/internal/handler/admin/imports"
 	adminlists "github.com/outlet-sh/outlet/internal/handler/admin/lists"
 	adminorganizations "github.com/outlet-sh/outlet/internal/handler/admin/organizations"
+	adminpool "github.com/outlet-sh/outlet/internal/handler/admin/pool"
 	adminsequences "github.com/outlet-sh/outlet/internal/handler/admin/sequences"
 	adminsettings "github.com/outlet-sh/outlet/internal/handler/admin/settings"
 	adminsubscribers "github.com/outlet-sh/outlet/internal/handler/admin/subscribers"
@@ -30,6 +31,7 @@ import (
 	sdk "github.com/outlet-sh/outlet/internal/handler/sdk"
 	sdkcontacts "github.com/outlet-sh/outlet/internal/handler/sdk/contacts"
 	sdkemails "github.com/outlet-sh/outlet/internal/handler/sdk/emails"
+	sdkpool "github.com/outlet-sh/outlet/internal/handler/sdk/pool"
 	sdksequences "github.com/outlet-sh/outlet/internal/handler/sdk/sequences"
 	sdkstats "github.com/outlet-sh/outlet/internal/handler/sdk/stats"
 	sdktracking "github.com/outlet-sh/outlet/internal/handler/sdk/tracking"
@@ -556,6 +558,50 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			[]rest.Route{
 				{
 					Method:  http.MethodGet,
+					Path:    "/domains",
+					Handler: adminpool.ListPoolDomainsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/domains",
+					Handler: adminpool.CreatePoolDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/domains/:id/status",
+					Handler: adminpool.SetPoolDomainStatusHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/mailboxes",
+					Handler: adminpool.ListPoolMailboxesHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/mailboxes",
+					Handler: adminpool.CreatePoolMailboxHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/mailboxes/:id/status",
+					Handler: adminpool.SetPoolMailboxStatusHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/tenants/clear-hold",
+					Handler: adminpool.ClearPoolTenantHoldHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin/pool"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodGet,
 					Path:    "/email-queue",
 					Handler: adminsequences.ListEmailQueueHandler(serverCtx),
 				},
@@ -992,6 +1038,51 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			}...,
 		),
 		rest.WithPrefix("/sdk/v1/emails"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.APIKeyAuth},
+			[]rest.Route{
+				{
+					// Assign the tenant free mailboxes
+					Method:  http.MethodPost,
+					Path:    "/assign",
+					Handler: sdkpool.PoolAssignHandler(serverCtx),
+				},
+				{
+					// Take a bounce (RFC 3464 DSN) or complaint (RFC 5965 ARF) report
+					Method:  http.MethodPost,
+					Path:    "/bounces",
+					Handler: sdkpool.PoolReportHandler(serverCtx),
+				},
+				{
+					// The tenant's mailboxes with today's allowance left
+					Method:  http.MethodGet,
+					Path:    "/capacity",
+					Handler: sdkpool.PoolCapacityHandler(serverCtx),
+				},
+				{
+					// Release every mailbox of the tenant
+					Method:  http.MethodPost,
+					Path:    "/release",
+					Handler: sdkpool.PoolReleaseHandler(serverCtx),
+				},
+				{
+					// Send one email from the tenant's sticky pool mailbox
+					Method:  http.MethodPost,
+					Path:    "/send",
+					Handler: sdkpool.PoolSendHandler(serverCtx),
+				},
+				{
+					// Check addresses before their first email (no SMTP probing)
+					Method:  http.MethodPost,
+					Path:    "/verify",
+					Handler: sdkpool.PoolVerifyHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/sdk/v1/pool"),
 	)
 
 	server.AddRoutes(

@@ -9,6 +9,7 @@ import (
 	"mime/quotedprintable"
 	"net/textproto"
 	"strings"
+	"time"
 )
 
 // Attachment is a single file attached to an outbound email.
@@ -24,6 +25,10 @@ type sendOpts struct {
 	replyTo     string
 	textBody    string
 	headers     map[string]string
+	// listUnsubscribe is the List-Unsubscribe header value; with an https
+	// URL in it the message also carries RFC 8058 one-click.
+	listUnsubscribe string
+	oneClick        bool
 }
 
 // threadingHeaders are the only extra headers a sender may set: the ones a
@@ -61,10 +66,30 @@ func WithHeaders(h map[string]string) SendOption {
 	}
 }
 
+// WithListUnsubscribe sets List-Unsubscribe to the https URL and the
+// mailto address given (either may be empty); with an https URL it also
+// sets List-Unsubscribe-Post for RFC 8058 one-click unsubscribe. A value
+// with a line break or an angle bracket is ignored.
+func WithListUnsubscribe(httpsURL, mailto string) SendOption {
+	return func(o *sendOpts) {
+		var parts []string
+		httpsURL = strings.TrimSpace(httpsURL)
+		if strings.HasPrefix(httpsURL, "https://") && !strings.ContainsAny(httpsURL, "\r\n<>") {
+			parts = append(parts, "<"+httpsURL+">")
+			o.oneClick = true
+		}
+		mailto = strings.TrimPrefix(strings.TrimSpace(mailto), "mailto:")
+		if mailto != "" && !strings.ContainsAny(mailto, "\r\n<>") {
+			parts = append(parts, "<mailto:"+mailto+">")
+		}
+		o.listUnsubscribe = strings.Join(parts, ", ")
+	}
+}
+
 // needsRaw: anything the SES SendEmail API can't carry (attachments, a text
 // alternative, threading headers) is sent as a raw MIME message.
 func (o sendOpts) needsRaw() bool {
-	return len(o.attachments) > 0 || o.textBody != "" || len(o.headers) > 0
+	return len(o.attachments) > 0 || o.textBody != "" || len(o.headers) > 0 || o.listUnsubscribe != ""
 }
 
 // SendOption configures an email send (e.g. attachments) without changing the
@@ -85,6 +110,12 @@ func applyOpts(opts []SendOption) sendOpts {
 	return o
 }
 
+// BuildMessage builds the complete message an SMTP sender hands to DATA:
+// the same builder SES SendRawEmail and SMTP sends use.
+func BuildMessage(from, to, subject, htmlBody string, opts ...SendOption) ([]byte, error) {
+	return buildRawMessage(from, to, subject, htmlBody, applyOpts(opts))
+}
+
 // buildRawMessage builds a complete RFC 822 message suitable for both SES
 // SendRawEmail and SMTP: the HTML body (with a plain-text alternative when
 // one is given), base64 attachments, Reply-To and threading headers.
@@ -100,7 +131,23 @@ func buildRawMessage(from, to, subject, htmlBody string, o sendOpts) ([]byte, er
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
 
-	if o.textBody != "" {
+	if o.textBody != "" && htmlBody == "" {
+		// Plain text only.
+		w, err := mw.CreatePart(textproto.MIMEHeader{
+			"Content-Type":              {"text/plain; charset=UTF-8"},
+			"Content-Transfer-Encoding": {"quoted-printable"},
+		})
+		if err != nil {
+			return nil, err
+		}
+		qw := quotedprintable.NewWriter(w)
+		if _, err := qw.Write([]byte(o.textBody)); err != nil {
+			return nil, err
+		}
+		if err := qw.Close(); err != nil {
+			return nil, err
+		}
+	} else if o.textBody != "" {
 		alt := &bytes.Buffer{}
 		aw := multipart.NewWriter(alt)
 		for _, p := range []struct{ ct, content string }{
@@ -183,9 +230,16 @@ func buildRawMessage(from, to, subject, htmlBody string, o sendOpts) ([]byte, er
 		fmt.Fprintf(&msg, "Reply-To: %s\r\n", o.replyTo)
 	}
 	fmt.Fprintf(&msg, "Subject: %s\r\n", mime.QEncoding.Encode("UTF-8", subject))
+	fmt.Fprintf(&msg, "Date: %s\r\n", time.Now().UTC().Format(time.RFC1123Z))
 	for _, name := range []string{"Message-ID", "In-Reply-To", "References"} {
 		if v := o.headers[name]; v != "" {
 			fmt.Fprintf(&msg, "%s: %s\r\n", name, v)
+		}
+	}
+	if o.listUnsubscribe != "" {
+		fmt.Fprintf(&msg, "List-Unsubscribe: %s\r\n", o.listUnsubscribe)
+		if o.oneClick {
+			msg.WriteString("List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n")
 		}
 	}
 	msg.WriteString("MIME-Version: 1.0\r\n")

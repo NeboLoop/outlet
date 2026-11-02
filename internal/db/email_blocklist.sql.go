@@ -224,17 +224,18 @@ const createEmailBounce = `-- name: CreateEmailBounce :one
 
 INSERT INTO email_bounce (
     id, email, email_lower, bounce_type, bounce_subtype,
-    diagnostic_code, source_email, message_id, raw_notification, created_at
-) VALUES (?1, ?2, LOWER(?3), ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
+    diagnostic_code, source_email, message_id, raw_notification, pool_send_id, created_at
+) VALUES (?1, ?2, LOWER(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'))
 ON CONFLICT (email_lower) DO UPDATE
 SET bounce_type = EXCLUDED.bounce_type,
+    pool_send_id = EXCLUDED.pool_send_id,
     bounce_subtype = EXCLUDED.bounce_subtype,
     diagnostic_code = EXCLUDED.diagnostic_code,
     source_email = EXCLUDED.source_email,
     message_id = EXCLUDED.message_id,
     raw_notification = EXCLUDED.raw_notification,
     created_at = datetime('now')
-RETURNING id, email, email_lower, bounce_type, bounce_subtype, diagnostic_code, source_email, message_id, raw_notification, created_at
+RETURNING id, email, email_lower, bounce_type, bounce_subtype, diagnostic_code, source_email, message_id, raw_notification, created_at, pool_send_id
 `
 
 type CreateEmailBounceParams struct {
@@ -247,6 +248,7 @@ type CreateEmailBounceParams struct {
 	SourceEmail     sql.NullString `json:"source_email"`
 	MessageID       sql.NullString `json:"message_id"`
 	RawNotification sql.NullString `json:"raw_notification"`
+	PoolSendID      sql.NullString `json:"pool_send_id"`
 }
 
 // Email blocklist queries for bounce and complaint management
@@ -262,6 +264,7 @@ func (q *Queries) CreateEmailBounce(ctx context.Context, arg CreateEmailBouncePa
 		arg.SourceEmail,
 		arg.MessageID,
 		arg.RawNotification,
+		arg.PoolSendID,
 	)
 	var i EmailBounce
 	err := row.Scan(
@@ -275,6 +278,7 @@ func (q *Queries) CreateEmailBounce(ctx context.Context, arg CreateEmailBouncePa
 		&i.MessageID,
 		&i.RawNotification,
 		&i.CreatedAt,
+		&i.PoolSendID,
 	)
 	return i, err
 }
@@ -283,16 +287,17 @@ const createEmailComplaint = `-- name: CreateEmailComplaint :one
 
 INSERT INTO email_complaint (
     id, email, email_lower, complaint_type, feedback_id,
-    source_email, message_id, raw_notification, created_at
-) VALUES (?1, ?2, LOWER(?3), ?4, ?5, ?6, ?7, ?8, datetime('now'))
+    source_email, message_id, raw_notification, pool_send_id, created_at
+) VALUES (?1, ?2, LOWER(?3), ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
 ON CONFLICT (email_lower) DO UPDATE
 SET complaint_type = EXCLUDED.complaint_type,
+    pool_send_id = EXCLUDED.pool_send_id,
     feedback_id = EXCLUDED.feedback_id,
     source_email = EXCLUDED.source_email,
     message_id = EXCLUDED.message_id,
     raw_notification = EXCLUDED.raw_notification,
     created_at = datetime('now')
-RETURNING id, email, email_lower, complaint_type, feedback_id, source_email, message_id, raw_notification, created_at
+RETURNING id, email, email_lower, complaint_type, feedback_id, source_email, message_id, raw_notification, created_at, pool_send_id
 `
 
 type CreateEmailComplaintParams struct {
@@ -304,6 +309,7 @@ type CreateEmailComplaintParams struct {
 	SourceEmail     sql.NullString `json:"source_email"`
 	MessageID       sql.NullString `json:"message_id"`
 	RawNotification sql.NullString `json:"raw_notification"`
+	PoolSendID      sql.NullString `json:"pool_send_id"`
 }
 
 // ========== COMPLAINTS ==========
@@ -317,6 +323,7 @@ func (q *Queries) CreateEmailComplaint(ctx context.Context, arg CreateEmailCompl
 		arg.SourceEmail,
 		arg.MessageID,
 		arg.RawNotification,
+		arg.PoolSendID,
 	)
 	var i EmailComplaint
 	err := row.Scan(
@@ -329,6 +336,7 @@ func (q *Queries) CreateEmailComplaint(ctx context.Context, arg CreateEmailCompl
 		&i.MessageID,
 		&i.RawNotification,
 		&i.CreatedAt,
+		&i.PoolSendID,
 	)
 	return i, err
 }
@@ -497,7 +505,7 @@ func (q *Queries) GetBlockedDomain(ctx context.Context, arg GetBlockedDomainPara
 }
 
 const getEmailBounce = `-- name: GetEmailBounce :one
-SELECT id, email, email_lower, bounce_type, bounce_subtype, diagnostic_code, source_email, message_id, raw_notification, created_at FROM email_bounce
+SELECT id, email, email_lower, bounce_type, bounce_subtype, diagnostic_code, source_email, message_id, raw_notification, created_at, pool_send_id FROM email_bounce
 WHERE email_lower = LOWER(?1)
 `
 
@@ -515,12 +523,13 @@ func (q *Queries) GetEmailBounce(ctx context.Context, email string) (EmailBounce
 		&i.MessageID,
 		&i.RawNotification,
 		&i.CreatedAt,
+		&i.PoolSendID,
 	)
 	return i, err
 }
 
 const getEmailComplaint = `-- name: GetEmailComplaint :one
-SELECT id, email, email_lower, complaint_type, feedback_id, source_email, message_id, raw_notification, created_at FROM email_complaint
+SELECT id, email, email_lower, complaint_type, feedback_id, source_email, message_id, raw_notification, created_at, pool_send_id FROM email_complaint
 WHERE email_lower = LOWER(?1)
 `
 
@@ -537,6 +546,7 @@ func (q *Queries) GetEmailComplaint(ctx context.Context, email string) (EmailCom
 		&i.MessageID,
 		&i.RawNotification,
 		&i.CreatedAt,
+		&i.PoolSendID,
 	)
 	return i, err
 }
@@ -881,7 +891,7 @@ func (q *Queries) ListPendingImportJobs(ctx context.Context) ([]ImportJob, error
 }
 
 const listRecentBounces = `-- name: ListRecentBounces :many
-SELECT id, email, email_lower, bounce_type, bounce_subtype, diagnostic_code, source_email, message_id, raw_notification, created_at FROM email_bounce
+SELECT id, email, email_lower, bounce_type, bounce_subtype, diagnostic_code, source_email, message_id, raw_notification, created_at, pool_send_id FROM email_bounce
 ORDER BY created_at DESC
 LIMIT ?2 OFFSET ?1
 `
@@ -911,6 +921,7 @@ func (q *Queries) ListRecentBounces(ctx context.Context, arg ListRecentBouncesPa
 			&i.MessageID,
 			&i.RawNotification,
 			&i.CreatedAt,
+			&i.PoolSendID,
 		); err != nil {
 			return nil, err
 		}
@@ -926,7 +937,7 @@ func (q *Queries) ListRecentBounces(ctx context.Context, arg ListRecentBouncesPa
 }
 
 const listRecentComplaints = `-- name: ListRecentComplaints :many
-SELECT id, email, email_lower, complaint_type, feedback_id, source_email, message_id, raw_notification, created_at FROM email_complaint
+SELECT id, email, email_lower, complaint_type, feedback_id, source_email, message_id, raw_notification, created_at, pool_send_id FROM email_complaint
 ORDER BY created_at DESC
 LIMIT ?2 OFFSET ?1
 `
@@ -955,6 +966,7 @@ func (q *Queries) ListRecentComplaints(ctx context.Context, arg ListRecentCompla
 			&i.MessageID,
 			&i.RawNotification,
 			&i.CreatedAt,
+			&i.PoolSendID,
 		); err != nil {
 			return nil, err
 		}
