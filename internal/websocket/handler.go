@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
+	"github.com/outlet-sh/outlet/internal/utils"
 )
 
 var upgrader = websocket.Upgrader{
@@ -17,14 +18,21 @@ var upgrader = websocket.Upgrader{
 }
 
 // Handler creates a WebSocket handler for the given hub
-func Handler(hub *Hub) http.HandlerFunc {
+// Browsers cannot set headers on a WebSocket, so the admin access token comes
+// in the token query parameter. Connections without a valid token are refused.
+func Handler(hub *Hub, accessSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get client ID and user ID from query params
+		claims, err := utils.ValidateToken(r.URL.Query().Get("token"), accessSecret)
+		if err != nil || claims.UserID == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID := claims.UserID
+
 		clientID := r.URL.Query().Get("clientId")
 		if clientID == "" {
-			clientID = "anonymous_" + r.RemoteAddr
+			clientID = "client_" + r.RemoteAddr
 		}
-		userID := r.URL.Query().Get("userId")
 
 		// Upgrade connection to WebSocket
 		conn, err := upgrader.Upgrade(w, r, nil)

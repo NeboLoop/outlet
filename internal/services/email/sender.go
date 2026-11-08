@@ -125,7 +125,6 @@ func (s *Service) getGlobalSMTPConfig(ctx context.Context) (*SMTPConfig, error) 
 
 	config := &SMTPConfig{}
 	for _, setting := range settings {
-		// Use value_text for non-sensitive, value_encrypted needs decryption (handled at API layer)
 		value := ""
 		if setting.ValueText.Valid {
 			value = setting.ValueText.String
@@ -141,9 +140,16 @@ func (s *Service) getGlobalSMTPConfig(ctx context.Context) (*SMTPConfig, error) 
 		case "smtp_user":
 			config.User = value
 		case "smtp_password":
-			// Password should be in value_encrypted, but for simplicity use value_text if available
+			// Stored encrypted by the settings API
 			if setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "" {
-				config.Password = setting.ValueEncrypted.String
+				if s.cryptoSvc == nil {
+					return nil, fmt.Errorf("smtp_password is encrypted but no encryption key is configured")
+				}
+				decrypted, err := s.cryptoSvc.DecryptString([]byte(setting.ValueEncrypted.String))
+				if err != nil {
+					return nil, fmt.Errorf("decrypt smtp_password: %w", err)
+				}
+				config.Password = decrypted
 			} else {
 				config.Password = value
 			}

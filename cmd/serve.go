@@ -913,7 +913,7 @@ func registerWebSocketRoute(server *rest.Server, ctx *svc.ServiceContext) {
 	server.AddRoute(rest.Route{
 		Method:  http.MethodGet,
 		Path:    "/ws",
-		Handler: outletws.Handler(ctx.WebSocketHub),
+		Handler: outletws.Handler(ctx.WebSocketHub, ctx.Config.Auth.AccessSecret),
 	})
 	fmt.Println("WebSocket endpoint registered at /ws")
 }
