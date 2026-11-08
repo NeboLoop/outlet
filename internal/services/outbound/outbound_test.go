@@ -48,6 +48,7 @@ type mailServer struct {
 	sent      []sentMail
 	passwords map[string]string
 	imapUsers map[string]*imapmemserver.User
+	mem       *imapmemserver.Server
 	smtpPort  int
 	imapPort  int
 }
@@ -104,11 +105,9 @@ func startMailServer(t *testing.T, users map[string]string) *mailServer {
 	ms.smtpPort = sl.Addr().(*net.TCPAddr).Port
 
 	mem := imapmemserver.New()
+	ms.mem = mem
 	for u, p := range users {
-		user := imapmemserver.NewUser(u, p)
-		require.NoError(t, user.Create("INBOX", nil))
-		mem.AddUser(user)
-		ms.imapUsers[u] = user
+		ms.addUser(t, u, p)
 	}
 	is := imapserver.New(&imapserver.Options{
 		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
@@ -123,6 +122,18 @@ func startMailServer(t *testing.T, users map[string]string) *mailServer {
 	t.Cleanup(func() { is.Close() })
 	ms.imapPort = il.Addr().(*net.TCPAddr).Port
 	return ms
+}
+
+// addUser gives the server one more mailbox, for SMTP and IMAP.
+func (ms *mailServer) addUser(t *testing.T, user, password string) {
+	t.Helper()
+	ms.mu.Lock()
+	ms.passwords[user] = password
+	ms.mu.Unlock()
+	u := imapmemserver.NewUser(user, password)
+	require.NoError(t, u.Create("INBOX", nil))
+	ms.mem.AddUser(u)
+	ms.imapUsers[user] = u
 }
 
 type literal struct{ *bytes.Reader }

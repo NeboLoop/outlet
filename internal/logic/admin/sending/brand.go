@@ -37,7 +37,6 @@ func pathwayOut(p email.Pathway) types.SendingPathway {
 		SMTPHost: p.SMTPHost, SMTPPort: p.SMTPPort, SMTPUsername: p.SMTPUsername, SMTPPasswordSet: p.SMTPPasswordSet,
 		Limits: limitsOut(p.Limits), Domains: domainsOut(p.Domains), Mailboxes: int64(p.Mailboxes),
 		Warning: p.Warning, CreatedAt: p.CreatedAt,
-		MailboxService: p.MailboxService, MailboxServiceKeySet: p.MailboxServiceKeySet,
 	}
 }
 

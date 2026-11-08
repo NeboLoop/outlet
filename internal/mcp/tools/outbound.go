@@ -27,7 +27,7 @@ const outboundPrereq = "PREREQUISITE: select the brand first with brand(resource
 // outboundActions lists each outreach tool's actions; the gate has a rule for each.
 var outboundActions = map[string][]string{
 	"outreach_overview": {"get"},
-	"setup_sending":     {"settings", "dns_token", "add_domain", "check_domain", "add_mailboxes", "list", "set_limits", "mailbox_limit", "mailbox_service", "service_inventory", "connect_domain", "quote", "buy", "sync", "delete_mailbox"},
+	"setup_sending":     {"settings", "dns_token", "add_domain", "check_domain", "add_mailboxes", "list", "set_limits", "mailbox_limit", "connections", "add_connection", "update_connection", "remove_connection", "move_domain", "service_inventory", "connect_domain", "quote", "buy", "sync", "delete_mailbox"},
 	"add_prospects":     {"add"},
 	"draft_outreach":    {"create"},
 	"review_drafts":     {"list", "approve", "edit", "skip"},
@@ -86,7 +86,7 @@ func overviewRun(ctx context.Context, t *mcpctx.ToolContext, in OverviewInput) (
 // ---- setup_sending ----------------------------------------------------------
 
 type SetupSendingInput struct {
-	Action         string                  `json:"action" jsonschema:"required,One of: settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, mailbox_service, service_inventory, connect_domain, quote, buy, sync, delete_mailbox"`
+	Action         string                  `json:"action" jsonschema:"required,One of: settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync, delete_mailbox"`
 	MailingAddress string                  `json:"mailing_address,omitempty" jsonschema:"settings: the postal address every first email carries"`
 	OptOutLine     string                  `json:"opt_out_line,omitempty" jsonschema:"settings: the line that tells people how to stop the emails"`
 	Timezone       string                  `json:"timezone,omitempty" jsonschema:"settings: IANA time zone used when a prospect has none"`
@@ -100,14 +100,16 @@ type SetupSendingInput struct {
 	DKIMValue      string                  `json:"dkim_value,omitempty" jsonschema:"add_domain: the DKIM TXT value from the mail provider's admin console"`
 	DMARCReport    string                  `json:"dmarc_report,omitempty" jsonschema:"add_domain: address for DMARC reports (optional)"`
 	ClickTracking  bool                    `json:"click_tracking,omitempty" jsonschema:"add_domain: set up go.<domain> (a CNAME to this server) so campaigns can track clicks"`
-	DomainID       string                  `json:"domain_id,omitempty" jsonschema:"check_domain: which domain to recheck"`
+	DomainID       string                  `json:"domain_id,omitempty" jsonschema:"check_domain: which domain to recheck; move_domain: the outreach domain to move"`
 	Mailboxes      []outbound.MailboxInput `json:"mailboxes,omitempty" jsonschema:"add_mailboxes: up to 100 mailboxes; each must log in to SMTP and IMAP"`
-	PoolID         string                  `json:"pool_id,omitempty" jsonschema:"set_limits: the mailbox pool to change (default: the pool carrying outreach)"`
+	PoolID         string                  `json:"pool_id,omitempty" jsonschema:"set_limits: the mailbox pool to change; connections and add_connection: the pool (default: the pool carrying outreach)"`
 	Limits         *email.Limits           `json:"limits,omitempty" jsonschema:"set_limits: the pool's limits, all of them: daily_limit (per mailbox per day), warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate (0.03 is 3%), pause_min_bounces, pause_spam_blocks, pause_complaints. 0 turns one off"`
 	MailboxID      string                  `json:"mailbox_id,omitempty" jsonschema:"mailbox_limit: which mailbox"`
-	DailyLimit     *int64                  `json:"daily_limit,omitempty" jsonschema:"mailbox_limit: the mailbox's own daily limit; leave it out to use its pool's"`
-	Service        string                  `json:"service,omitempty" jsonschema:"mailbox_service: manual, maildoso, cheapinboxes or infraforge"`
-	APIKey         string                  `json:"api_key,omitempty" jsonschema:"mailbox_service: the service's API key (write-only; leave it out to keep the stored one)"`
+	DailyLimit     *int64                  `json:"daily_limit,omitempty" jsonschema:"mailbox_limit: the mailbox's own daily limit, leave it out to use its connection's or pool's; add_connection and update_connection: the daily limit of the connection's mailboxes unless one has its own (add: leave it out for the service's default, Maildoso 15; update: leave it out for the pool's)"`
+	ConnectionID   string                  `json:"connection_id,omitempty" jsonschema:"the mailbox service connection: update_connection, remove_connection, move_domain (where the domain goes), service_inventory, connect_domain, quote, buy, sync, delete_mailbox; add_domain: a manual connection (default: the pool's first manual one)"`
+	Service        string                  `json:"service,omitempty" jsonschema:"add_connection: manual, maildoso, cheapinboxes or infraforge"`
+	Name           string                  `json:"name,omitempty" jsonschema:"add_connection and update_connection: the connection's name, e.g. Maildoso main (default: the service's name)"`
+	APIKey         string                  `json:"api_key,omitempty" jsonschema:"add_connection and update_connection: the service's API key (write-only, tested before it is saved; update: leave it out to keep the stored one)"`
 	Kind           string                  `json:"kind,omitempty" jsonschema:"quote: domain (register a new one), connect (a domain the brand owns, where the service bills for it) or mailboxes"`
 	People         []providers.Person      `json:"people,omitempty" jsonschema:"quote with kind mailboxes: up to 100 mailboxes, each first_name, last_name and optional local (before the @; default first.last)"`
 	QuoteID        string                  `json:"quote_id,omitempty" jsonschema:"buy: the quote to buy"`
@@ -139,6 +141,7 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 		res, err := o.AddDomain(ctx, brand, outbound.DomainInput{
 			Domain: in.Domain, DNSHost: in.DNSHost, MailProvider: in.MailProvider, MXHosts: in.MXHosts,
 			SPFInclude: in.SPFInclude, DKIMSelector: in.DKIMSelector, DKIMValue: in.DKIMValue, DMARCReport: in.DMARCReport, ClickTracking: in.ClickTracking,
+			ConnectionID: in.ConnectionID,
 		})
 		if err != nil {
 			return nil, err
@@ -196,44 +199,68 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 	if out, handled, err := mailboxServiceRun(ctx, t, in); handled {
 		return out, err
 	}
-	return nil, mcpctx.NewValidationError("action must be settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, mailbox_service, service_inventory, connect_domain, quote, buy, sync or delete_mailbox", "action")
+	return nil, mcpctx.NewValidationError("action must be settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync or delete_mailbox", "action")
 }
 
-// mailboxServiceRun runs the actions on a pool's mailbox service.
+// mailboxServiceRun runs the actions on a pool's mailbox service
+// connections.
 func mailboxServiceRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSendingInput) (out any, handled bool, err error) {
-	switch in.Action {
-	case "mailbox_service", "service_inventory", "connect_domain", "quote", "buy", "sync", "delete_mailbox":
-	default:
-		return nil, false, nil
-	}
 	o, brand := t.Svc().Outbound, t.Brand(ctx)
-	pool, err := mailboxPool(ctx, t, in.PoolID)
-	if err != nil {
-		return nil, true, err
-	}
 	switch in.Action {
-	case "mailbox_service":
-		if in.Service == "" {
-			return nil, true, mcpctx.NewValidationError("service is required", "service")
+	case "connections":
+		poolID := ""
+		if in.PoolID != "" {
+			pool, err := mailboxPool(ctx, t, in.PoolID)
+			if err != nil {
+				return nil, true, err
+			}
+			poolID = pool.ID
 		}
-		st, err := o.SetMailboxService(ctx, brand, pool.ID, in.Service, in.APIKey)
+		list, err := o.ListConnections(ctx, brand, poolID)
 		if err != nil {
 			return nil, true, err
 		}
-		return map[string]any{"service": st, "next": "The pool's limits now follow the service's terms; change them with set_limits. Connect a domain with connect_domain, or quote one with quote(kind: domain)."}, true, nil
+		return map[string]any{"connections": list, "next": "Each connection's domains and mailboxes send together from the pool. Add one with add_connection; act on one with its connection_id."}, true, nil
+	case "add_connection":
+		if in.Service == "" {
+			return nil, true, mcpctx.NewValidationError("service is required: manual, maildoso, cheapinboxes or infraforge", "service")
+		}
+		c, err := o.AddConnection(ctx, brand, outbound.ConnectionInput{PoolID: in.PoolID, Service: in.Service, Name: in.Name, APIKey: in.APIKey, DailyLimit: in.DailyLimit})
+		if err != nil {
+			return nil, true, err
+		}
+		next := "Connect a domain with connect_domain, or quote one with quote(kind: domain), passing this connection_id."
+		if c.Service == providers.Manual {
+			next = "Add a domain with add_domain(connection_id), then its mailboxes with add_mailboxes."
+		}
+		return map[string]any{"connection": c, "next": next}, true, nil
+	case "update_connection":
+		c, err := o.UpdateConnection(ctx, brand, in.ConnectionID, outbound.ConnectionInput{Name: in.Name, APIKey: in.APIKey, DailyLimit: in.DailyLimit})
+		return c, true, err
+	case "remove_connection":
+		if err := o.RemoveConnection(ctx, brand, in.ConnectionID); err != nil {
+			return nil, true, err
+		}
+		return map[string]string{"result": "Connection removed. Nothing changed at the service."}, true, nil
+	case "move_domain":
+		if in.DomainID == "" {
+			return nil, true, mcpctx.NewValidationError("domain_id is required", "domain_id")
+		}
+		c, err := o.MoveDomainToConnection(ctx, brand, in.DomainID, in.ConnectionID)
+		return c, true, err
 	case "service_inventory":
-		out, err = o.MailboxServiceInventory(ctx, brand, pool.ID)
+		out, err = o.MailboxServiceInventory(ctx, brand, in.ConnectionID)
 	case "connect_domain":
 		if in.Domain == "" {
 			return nil, true, mcpctx.NewValidationError("domain is required", "domain")
 		}
-		out, err = o.ConnectServiceDomain(ctx, brand, pool.ID, in.Domain)
+		out, err = o.ConnectServiceDomain(ctx, brand, in.ConnectionID, in.Domain)
 	case "quote":
-		q, err := o.QuoteService(ctx, brand, pool.ID, outbound.QuoteInput{Kind: in.Kind, Domain: in.Domain, People: in.People})
+		q, err := o.QuoteService(ctx, brand, in.ConnectionID, outbound.QuoteInput{Kind: in.Kind, Domain: in.Domain, People: in.People})
 		if err != nil {
 			return nil, true, err
 		}
-		return map[string]any{"quote": q, "next": "Show the person the summary and price. Buying spends money: only on their yes, call setup_sending(action: buy, quote_id, confirm: true) before it expires."}, true, nil
+		return map[string]any{"quote": q, "next": "Show the person the summary and price. Buying spends money: only on their yes, call setup_sending(action: buy, connection_id, quote_id, confirm: true) before it expires."}, true, nil
 	case "buy":
 		if in.QuoteID == "" {
 			return nil, true, mcpctx.NewValidationError("quote_id is required: get a quote first", "quote_id")
@@ -241,9 +268,9 @@ func mailboxServiceRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSendi
 		if !in.Confirm {
 			return nil, true, mcpctx.NewValidationError("confirm=true is required: buying spends money. Show the person the quote first.", "confirm")
 		}
-		out, err = o.BuyService(ctx, brand, pool.ID, in.QuoteID, in.Confirm)
+		out, err = o.BuyService(ctx, brand, in.ConnectionID, in.QuoteID, in.Confirm)
 	case "sync":
-		out, err = o.SyncService(ctx, brand, pool.ID, in.Import)
+		out, err = o.SyncService(ctx, brand, in.ConnectionID, in.Import)
 	case "delete_mailbox":
 		if in.MailboxID == "" {
 			return nil, true, mcpctx.NewValidationError("mailbox_id is required", "mailbox_id")
@@ -251,10 +278,12 @@ func mailboxServiceRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSendi
 		if !in.Confirm {
 			return nil, true, mcpctx.NewValidationError("confirm=true is required: the service deletes the mailbox (Maildoso and Infraforge with its messages) or cancels it", "confirm")
 		}
-		if err := o.DeleteServiceMailbox(ctx, brand, pool.ID, in.MailboxID); err != nil {
+		if err := o.DeleteServiceMailbox(ctx, brand, in.ConnectionID, in.MailboxID); err != nil {
 			return nil, true, err
 		}
 		return map[string]string{"result": "Deleted at the mailbox service; it stays in the pool, paused."}, true, nil
+	default:
+		return nil, false, nil
 	}
 	return out, true, err
 }
@@ -490,14 +519,19 @@ var outboundTools = []outboundTool{
 			"- add_mailboxes: mailboxes [{email, from_name, signature, provider: google, password (an app password), daily_limit (optional, its own)} or custom smtp_/imap_ hosts]. Each must log in\n"+
 			"- list: the brand's mailbox pools with their limits (daily limit, warm-up, spacing, health pauses), and each mailbox with its own limit and today's sends\n"+
 			"- set_limits: limits (all of them), pool_id (default: the pool carrying outreach). Brand admins only\n"+
-			"- mailbox_limit: mailbox_id, daily_limit (leave it out to use the pool's). Brand admins only\n"+
-			"Mailbox services (Maildoso, CheapInboxes, Infraforge) fill a pool from a provider API key; each takes pool_id (default: the pool carrying outreach):\n"+
-			"- mailbox_service: service (manual|maildoso|cheapinboxes|infraforge), api_key. Sets the pool's limits to the service's terms (Maildoso: 15 a day, warm-up from 5). Brand admins only\n"+
+			"- mailbox_limit: mailbox_id, daily_limit (leave it out to use its connection's or the pool's). Brand admins only\n"+
+			"Connections: a pool holds any number of mailbox services side by side (several of one service too), each with its own API key, plus manual connections for mailboxes added by hand (Google Workspace, Microsoft 365). Each outreach domain belongs to one connection; the pool sends from all their mailboxes under its limits, one mailbox per prospect for the whole thread:\n"+
+			"- connections: pool_id (optional). Each connection with its service, key status, domains, mailbox count and daily limit\n"+
+			"- add_connection: service (manual|maildoso|cheapinboxes|infraforge), api_key (required for a service, tested first), name, pool_id, daily_limit (default: Maildoso 15, its terms; else the pool's). Brand admins only\n"+
+			"- update_connection: connection_id, name, api_key (leave it out to keep it), daily_limit (leave it out for the pool's). Brand admins only\n"+
+			"- remove_connection: connection_id. Refused while it holds domains: move them first. Brand admins only\n"+
+			"- move_domain: domain_id, connection_id. Moves an outreach domain and its mailboxes to another connection of the same pool. Brand admins only\n"+
+			"Each of these takes connection_id, a mailbox service connection:\n"+
 			"- service_inventory: the domains and mailboxes the brand has at the service\n"+
 			"- connect_domain: domain. Connects a domain the brand owns (free where the service allows) and returns the nameservers to set at its registrar. Brand admins only\n"+
 			"- quote: kind (domain|connect|mailboxes), domain, people [{first_name, last_name, local}]. Prices it, or says the service's API gives no price. Buys nothing\n"+
-			"- buy: quote_id, confirm: true. Spends money: only after the person has seen the quote and said yes. Bought mailboxes are imported after their logins are tested. Brand admins only\n"+
-			"- sync: import (optional). Lists mailboxes the service has that the pool doesn't, and the reverse; with import, imports the ready ones. Brand admins only\n"+
+			"- buy: quote_id, confirm: true. Spends money: only after the person has seen the quote and said yes, and only at the connection that gave the quote. Bought mailboxes are imported after their logins are tested. Brand admins only\n"+
+			"- sync: import (optional). Lists mailboxes the service has that the pool doesn't, and the connection's mailboxes the service lacks; with import, imports the ready ones. Brand admins only\n"+
 			"- delete_mailbox: mailbox_id, confirm: true. Deletes it at the service (CheapInboxes: cancels at the period's end) and pauses it in the pool. Brand admins only",
 		changesOnly(), setupSendingRun),
 	defineOutbound("add_prospects", "Add prospects",

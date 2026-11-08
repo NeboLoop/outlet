@@ -199,7 +199,11 @@ func (s *Service) sendFromPool(ctx context.Context, org db.Organization, p db.Se
 	}
 	var limitErr error
 	for _, mb := range candidates {
-		release, err := s.reserve(ctx, org, p, sender{id: mb.ID, label: mb.Email, start: parseStored(mb.WarmupStartedAt), override: mb.DailyLimit, next: mb.NextSendAt.String, mailbox: true})
+		override, err := s.MailboxLimit(ctx, mb)
+		if err != nil {
+			return err
+		}
+		release, err := s.reserve(ctx, org, p, sender{id: mb.ID, label: mb.Email, start: parseStored(mb.WarmupStartedAt), override: override, next: mb.NextSendAt.String, mailbox: true})
 		if errors.Is(err, ErrOverLimit) {
 			if limitErr == nil || RetryAt(err, time.Time{}).Before(RetryAt(limitErr, time.Time{})) {
 				limitErr = err

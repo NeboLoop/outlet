@@ -13,7 +13,7 @@
 	import { Plus, Pencil, Trash2, TriangleAlert } from '@lucide/svelte';
 	import { errorMessage } from '../../outbound/shared';
 	import { moveTargets } from './pathways';
-	import MailboxService from './MailboxService.svelte';
+	import MailboxConnections from './MailboxConnections.svelte';
 
 	const OUTREACH_WARNING =
 		'Amazon SES and most email platforms forbid cold email in their terms and can suspend the account.';
@@ -510,7 +510,7 @@
 						</div>
 					{/if}
 					{#if p.provider === 'mailboxes'}
-						<MailboxService pool={p} onchange={refresh} />
+						<MailboxConnections pool={p} onchange={refresh} />
 					{/if}
 				</section>
 			{/each}

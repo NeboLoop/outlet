@@ -36,7 +36,7 @@ type sender struct {
 	id       string
 	label    string
 	start    time.Time     // where the warm-up ramp starts
-	override sql.NullInt64 // a mailbox's own daily limit
+	override sql.NullInt64 // a mailbox's daily limit in place of the pool's (MailboxLimit)
 	next     string        // its next-send time as stored, for the retry estimate
 	mailbox  bool
 }

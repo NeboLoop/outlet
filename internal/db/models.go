@@ -181,6 +181,7 @@ type DomainIdentity struct {
 	TrackingHost       string         `json:"tracking_host"`
 	DnsCheck           string         `json:"dns_check"`
 	PathwayID          sql.NullString `json:"pathway_id"`
+	ConnectionID       sql.NullString `json:"connection_id"`
 }
 
 type EmailBounce struct {
@@ -461,19 +462,30 @@ type Mailbox struct {
 	ServiceRef      string         `json:"service_ref"`
 }
 
+type MailboxConnection struct {
+	ID         string        `json:"id"`
+	OrgID      string        `json:"org_id"`
+	PathwayID  string        `json:"pathway_id"`
+	Service    string        `json:"service"`
+	Name       string        `json:"name"`
+	ApiKeyEnc  []byte        `json:"api_key_enc"`
+	DailyLimit sql.NullInt64 `json:"daily_limit"`
+	CreatedAt  string        `json:"created_at"`
+}
+
 type MailboxServiceQuote struct {
-	ID         string         `json:"id"`
-	OrgID      string         `json:"org_id"`
-	PathwayID  string         `json:"pathway_id"`
-	Service    string         `json:"service"`
-	Kind       string         `json:"kind"`
-	Request    string         `json:"request"`
-	PriceCents sql.NullInt64  `json:"price_cents"`
-	Currency   string         `json:"currency"`
-	Summary    string         `json:"summary"`
-	ExpiresAt  string         `json:"expires_at"`
-	UsedAt     sql.NullString `json:"used_at"`
-	CreatedAt  string         `json:"created_at"`
+	ID           string         `json:"id"`
+	OrgID        string         `json:"org_id"`
+	ConnectionID string         `json:"connection_id"`
+	Service      string         `json:"service"`
+	Kind         string         `json:"kind"`
+	Request      string         `json:"request"`
+	PriceCents   sql.NullInt64  `json:"price_cents"`
+	Currency     string         `json:"currency"`
+	Summary      string         `json:"summary"`
+	ExpiresAt    string         `json:"expires_at"`
+	UsedAt       sql.NullString `json:"used_at"`
+	CreatedAt    string         `json:"created_at"`
 }
 
 type McpApiKey struct {
@@ -698,8 +710,6 @@ type SendingPathway struct {
 	PauseComplaints      int64          `json:"pause_complaints"`
 	NextSendAt           sql.NullString `json:"next_send_at"`
 	CreatedAt            string         `json:"created_at"`
-	MailboxService       string         `json:"mailbox_service"`
-	MailboxServiceKeyEnc []byte         `json:"mailbox_service_key_enc"`
 }
 
 type SequenceEntryRule struct {

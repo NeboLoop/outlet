@@ -28,11 +28,12 @@ type MailboxHealth struct {
 	SpamBlocks7d int64  `json:"spam_blocks_7d"`
 	Complaints7d int64  `json:"complaints_7d"`
 	LastError    string `json:"last_error,omitempty"`
-	PoolID       string `json:"pool_id,omitempty"`     // its mailbox pool (sending pathway)
-	DailyLimit   *int64 `json:"daily_limit,omitempty"` // its own daily limit; empty uses the pool's
-	Limited      bool   `json:"limited"`               // false: no daily limit applies, whatever allowed_today says
+	PoolID       string `json:"pool_id,omitempty"`       // its mailbox pool (sending pathway)
+	ConnectionID string `json:"connection_id,omitempty"` // the pool's connection its domain belongs to
+	DailyLimit   *int64 `json:"daily_limit,omitempty"`   // its own daily limit; empty uses its connection's, else the pool's
+	Limited      bool   `json:"limited"`                 // false: no daily limit applies, whatever allowed_today says
 	// LimitInUse is the daily limit it sends under: its own, else its
-	// pool's. 0 is no limit.
+	// connection's default, else its pool's. 0 is no limit.
 	LimitInUse int64 `json:"limit_in_use"`
 	// WarmingUp says the pool's warm-up still holds it below that limit:
 	// allowed_today is today's step of the ramp, which climbs to LimitInUse
@@ -96,11 +97,18 @@ func (s *Service) mailboxHealth(ctx context.Context, mb db.Mailbox, org db.Organ
 	}
 	now := s.now()
 	out.PoolID = p.ID
+	if d, err := s.db.GetDomainIdentity(ctx, mb.DomainID); err == nil {
+		out.ConnectionID = d.ConnectionID.String
+	}
+	override, err := s.mailer.MailboxLimit(ctx, mb)
+	if err != nil {
+		return out
+	}
 	out.SentToday, _ = s.mailer.SentSince(ctx, org, p.ID, mb.ID, now)
 	start := parseTS(mb.WarmupStartedAt)
-	out.AllowToday, out.Limited = email.Allowance(p, start, mb.DailyLimit, now)
-	out.LimitInUse = email.DailyLimitOf(p, mb.DailyLimit)
-	out.WarmingUp = email.WarmingUp(p, start, mb.DailyLimit, now)
+	out.AllowToday, out.Limited = email.Allowance(p, start, override, now)
+	out.LimitInUse = email.DailyLimitOf(p, override)
+	out.WarmingUp = email.WarmingUp(p, start, override, now)
 	out.Sent7d, out.Bounces7d, out.SpamBlocks7d, out.Complaints7d = h.Sent, h.Bounces, h.SpamBlocks, h.Complaints
 	return out
 }

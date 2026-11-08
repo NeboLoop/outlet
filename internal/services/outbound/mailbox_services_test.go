@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -38,6 +39,7 @@ type fakeService struct {
 	mu    sync.Mutex
 	calls []serviceCall
 	auth  string
+	also  []string // more accounts' keys the fake takes
 	route func(c serviceCall) (int, any)
 	srv   *httptest.Server
 }
@@ -50,7 +52,7 @@ func newFakeService(t *testing.T, auth string, route func(c serviceCall) (int, a
 		f.mu.Lock()
 		f.calls = append(f.calls, c)
 		f.mu.Unlock()
-		if c.Auth != f.auth {
+		if c.Auth != f.auth && !slices.Contains(f.also, c.Auth) {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"detail":"Authentication required"}`))
 			return
@@ -83,17 +85,16 @@ func (f *fakeService) called(method, path string) []serviceCall {
 	return out
 }
 
-// usePool points the service at the fake and gives the brand a mailbox pool
-// on it.
-func (h *harness) usePool(service string, f *fakeService, key string) db.SendingPathway {
-	pool, err := h.mailer.DomainPathway(h.ctx, h.org.ID, "outreach", "")
+// useConnection points the service at the fake and gives the brand's
+// mailbox pool (made if missing) a connection to it.
+func (h *harness) useConnection(service string, f *fakeService, key string) Connection {
+	if h.svc.serviceAPI == nil {
+		h.svc.serviceAPI = map[string]string{}
+	}
+	h.svc.serviceAPI[service] = f.srv.URL
+	c, err := h.svc.AddConnection(h.ctx, h.org, ConnectionInput{Service: service, APIKey: key})
 	require.NoError(h.t, err)
-	h.svc.serviceAPI = map[string]string{service: f.srv.URL}
-	_, err = h.svc.SetMailboxService(h.ctx, h.org, pool.ID, service, key)
-	require.NoError(h.t, err)
-	pool, err = h.mailer.GetPathway(h.ctx, h.org.ID, pool.ID)
-	require.NoError(h.t, err)
-	return pool
+	return c
 }
 
 // noKey fails if the API key shows up in anything the service returned.
@@ -172,68 +173,75 @@ func TestMaildoso(t *testing.T) {
 	})
 
 	// A wrong key is refused before it is saved.
-	pool, err := h.mailer.DomainPathway(ctx, h.org.ID, "outreach", "")
-	require.NoError(t, err)
 	h.svc.serviceAPI = map[string]string{providers.Maildoso: f.srv.URL}
-	_, err = h.svc.SetMailboxService(ctx, h.org, pool.ID, providers.Maildoso, "wrong-key")
+	_, err := h.svc.AddConnection(ctx, h.org, ConnectionInput{Service: providers.Maildoso, APIKey: "wrong-key"})
 	assert.ErrorContains(t, err, "API key was refused")
+	_, err = h.svc.AddConnection(ctx, h.org, ConnectionInput{Service: providers.Maildoso})
+	assert.ErrorContains(t, err, "Enter the Maildoso API key")
+	all, err := h.svc.ListConnections(ctx, h.org, "")
+	require.NoError(t, err)
+	assert.Empty(t, all, "nothing is saved without a working key")
 
-	// Picking Maildoso sets the pool's limits to its terms: 15 a day, warming
-	// up from 5. The brand can change them afterwards.
-	st, err := h.svc.SetMailboxService(ctx, h.org, pool.ID, providers.Maildoso, key)
+	// A Maildoso connection's mailboxes default to its terms, 15 a day; the
+	// pool keeps its own limits for its other connections.
+	conn, err := h.svc.AddConnection(ctx, h.org, ConnectionInput{Service: providers.Maildoso, APIKey: key})
 	require.NoError(t, err)
-	assert.Equal(t, int64(15), st.Limits.DailyLimit)
-	assert.Equal(t, int64(5), st.Limits.WarmupStart)
-	assert.Equal(t, int64(1), st.Limits.WarmupStep)
-	assert.Equal(t, email.DefaultLimits(email.ProviderMailboxes).MinGapSeconds, st.Limits.MinGapSeconds)
-	assert.True(t, st.KeySet)
-	pool, err = h.mailer.GetPathway(ctx, h.org.ID, pool.ID)
+	assert.Equal(t, "Maildoso", conn.Name)
+	require.NotNil(t, conn.DailyLimit)
+	assert.Equal(t, int64(15), *conn.DailyLimit)
+	assert.True(t, conn.KeySet)
+	pool, err := h.mailer.GetPathway(ctx, h.org.ID, conn.PoolID)
 	require.NoError(t, err)
-	assert.Equal(t, int64(15), pool.DailyLimit)
-	changed := email.LimitsOf(pool)
-	changed.DailyLimit = 12
-	_, err = h.mailer.UpdatePathway(ctx, h.org.ID, pool.ID, email.PathwayInput{Kinds: email.KindsOf(pool), Limits: &changed})
+	assert.Equal(t, email.DefaultLimits(email.ProviderMailboxes).DailyLimit, pool.DailyLimit)
+	// The brand can change the default; saving with no new key keeps the key.
+	conn, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{Name: "Maildoso main", DailyLimit: ptr(int64(12))})
 	require.NoError(t, err)
-	// Saving the same service again (no new key) keeps the brand's limits.
-	st, err = h.svc.SetMailboxService(ctx, h.org, pool.ID, providers.Maildoso, "")
+	assert.Equal(t, int64(12), *conn.DailyLimit)
+	assert.Equal(t, "Maildoso main", conn.Name)
+	assert.True(t, conn.KeySet)
+	_, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{APIKey: "wrong-key", DailyLimit: ptr(int64(15))})
+	assert.ErrorContains(t, err, "API key was refused")
+	conn, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{DailyLimit: ptr(int64(15))})
 	require.NoError(t, err)
-	assert.Equal(t, int64(12), st.Limits.DailyLimit)
 	views, err := h.mailer.ListPathways(ctx, h.org.ID)
 	require.NoError(t, err)
-	noKey(t, key, st, views)
+	all, err = h.svc.ListConnections(ctx, h.org, "")
+	require.NoError(t, err)
+	noKey(t, key, conn, views, all)
 
 	// Connect a domain the brand owns: Maildoso returns its nameservers and
 	// the domain joins the pool.
-	got, err := h.svc.ConnectServiceDomain(ctx, h.org, pool.ID, "getexample.com")
+	got, err := h.svc.ConnectServiceDomain(ctx, h.org, conn.ID, "getexample.com")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"ns1.maildoso.net", "ns2.maildoso.net"}, got.Connection.Nameservers)
 	assert.True(t, got.Check.OK(), "MX, SPF and DMARC are in DNS; DKIM is the service's own selector")
 	d, err := h.store.GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: got.DomainID, OrgID: h.org.ID})
 	require.NoError(t, err)
 	assert.Equal(t, pool.ID, d.PathwayID.String)
+	assert.Equal(t, conn.ID, d.ConnectionID.String)
 	assert.Equal(t, "provider", d.DnsHost)
-	_, err = h.svc.ConnectServiceDomain(ctx, h.org, pool.ID, "neboai.com")
+	_, err = h.svc.ConnectServiceDomain(ctx, h.org, conn.ID, "neboai.com")
 	assert.ErrorContains(t, err, "protected")
 
 	// Mailboxes: a quote first. Maildoso's API has no price.
-	q, err := h.svc.QuoteService(ctx, h.org, pool.ID, QuoteInput{Kind: providers.KindMailboxes, Domain: "getexample.com", People: samPat})
+	q, err := h.svc.QuoteService(ctx, h.org, conn.ID, QuoteInput{Kind: providers.KindMailboxes, Domain: "getexample.com", People: samPat})
 	require.NoError(t, err)
 	assert.False(t, q.PriceKnown)
 	assert.Nil(t, q.PriceCents)
 	assert.Equal(t, 2, q.Mailboxes)
-	_, err = h.svc.QuoteService(ctx, h.org, pool.ID, QuoteInput{Kind: providers.KindConnect, Domain: "other.com"})
+	_, err = h.svc.QuoteService(ctx, h.org, conn.ID, QuoteInput{Kind: providers.KindConnect, Domain: "other.com"})
 	assert.ErrorContains(t, err, "free at Maildoso")
 
 	// Nothing reaches the buy endpoint without confirm and a valid quote.
-	_, err = h.svc.BuyService(ctx, h.org, pool.ID, q.ID, false)
+	_, err = h.svc.BuyService(ctx, h.org, conn.ID, q.ID, false)
 	assert.ErrorContains(t, err, "confirm")
-	_, err = h.svc.BuyService(ctx, h.org, pool.ID, "no-such-quote", true)
+	_, err = h.svc.BuyService(ctx, h.org, conn.ID, "no-such-quote", true)
 	assert.ErrorContains(t, err, "no such quote")
 	assert.Empty(t, f.called("POST", "/v1/user/accounts"))
 
 	// Confirmed: Maildoso creates them and each is imported after logging in
 	// to SMTP and IMAP.
-	res, err := h.svc.BuyService(ctx, h.org, pool.ID, q.ID, true)
+	res, err := h.svc.BuyService(ctx, h.org, conn.ID, q.ID, true)
 	require.NoError(t, err)
 	require.Len(t, res.Imported, 2)
 	for _, r := range res.Imported {
@@ -248,7 +256,7 @@ func TestMaildoso(t *testing.T) {
 	noKey(t, key, q, res)
 
 	// A quote buys once.
-	_, err = h.svc.BuyService(ctx, h.org, pool.ID, q.ID, true)
+	_, err = h.svc.BuyService(ctx, h.org, conn.ID, q.ID, true)
 	assert.ErrorContains(t, err, "expired or was already used")
 	assert.Len(t, f.called("POST", "/v1/user/accounts"), 1)
 
@@ -256,7 +264,7 @@ func TestMaildoso(t *testing.T) {
 	mu.Lock()
 	accounts = append(accounts, account(200, "lee@getexample.com", "Lee", "active"))
 	mu.Unlock()
-	sync, err := h.svc.SyncService(ctx, h.org, pool.ID, false)
+	sync, err := h.svc.SyncService(ctx, h.org, conn.ID, false)
 	require.NoError(t, err)
 	require.Len(t, sync.OnlyAtService, 1)
 	assert.Equal(t, "lee@getexample.com", sync.OnlyAtService[0].Email)
@@ -264,7 +272,7 @@ func TestMaildoso(t *testing.T) {
 	assert.Empty(t, sync.Imported)
 	noKey(t, key, sync)
 	// Importing tests lee's logins like any mailbox; the harness has no lee.
-	sync, err = h.svc.SyncService(ctx, h.org, pool.ID, true)
+	sync, err = h.svc.SyncService(ctx, h.org, conn.ID, true)
 	require.NoError(t, err)
 	require.Len(t, sync.Imported, 1)
 	assert.Contains(t, sync.Imported[0].Error, "SMTP login failed")
@@ -272,7 +280,7 @@ func TestMaildoso(t *testing.T) {
 	assert.ErrorIs(t, err, sql.ErrNoRows)
 
 	// Delete sam at Maildoso: it stays in the pool, paused for good.
-	require.NoError(t, h.svc.DeleteServiceMailbox(ctx, h.org, pool.ID, sam.ID))
+	require.NoError(t, h.svc.DeleteServiceMailbox(ctx, h.org, conn.ID, sam.ID))
 	del := f.called("DELETE", "/v1/user/accounts")
 	require.Len(t, del, 1)
 	assert.JSONEq(t, `[100]`, del[0].Body)
@@ -281,7 +289,7 @@ func TestMaildoso(t *testing.T) {
 	assert.Equal(t, "paused", sam.Status)
 	assert.Contains(t, sam.PausedReason, "Deleted: at Maildoso")
 	assert.ErrorContains(t, h.svc.Pause(ctx, h.org, "mailbox", sam.ID, true), "deleted")
-	sync, err = h.svc.SyncService(ctx, h.org, pool.ID, false)
+	sync, err = h.svc.SyncService(ctx, h.org, conn.ID, false)
 	require.NoError(t, err)
 	require.Len(t, sync.OnlyInPool, 1)
 	assert.Equal(t, "sam@getexample.com", sync.OnlyInPool[0].Email)
@@ -292,10 +300,11 @@ func TestMaildoso(t *testing.T) {
 	}
 }
 
-// A quote expires, and one from another service no longer buys.
-func TestQuotesExpireAndFollowTheService(t *testing.T) {
+// A quote buys only at the connection that gave it, even another account
+// of the same service, and only until it expires.
+func TestQuotesExpireAndStayWithTheirConnection(t *testing.T) {
 	h := newHarness(t)
-	const key = "md-pat-secret-0002"
+	const key, key2 = "md-pat-secret-0002", "md-pat-secret-0022"
 	f := newFakeService(t, "Bearer "+key, func(c serviceCall) (int, any) {
 		switch c.Method + " " + c.Path {
 		case "GET /v1/user/domains":
@@ -305,29 +314,35 @@ func TestQuotesExpireAndFollowTheService(t *testing.T) {
 		}
 		return 0, nil
 	})
-	pool := h.usePool(providers.Maildoso, f, key)
-	q, err := h.svc.QuoteService(h.ctx, h.org, pool.ID, QuoteInput{Kind: providers.KindDomain, Domain: "freshexample.com"})
-	require.NoError(t, err)
-	assert.False(t, q.PriceKnown)
-	assert.Contains(t, q.Summary, "no price")
-
-	h.advance(31 * time.Minute)
-	_, err = h.svc.BuyService(h.ctx, h.org, pool.ID, q.ID, true)
-	assert.ErrorContains(t, err, "expired")
-
-	h.advance(-31 * time.Minute)
+	f.also = []string{"Bearer " + key2}
 	ci := newFakeService(t, "Bearer ci_live_x", func(c serviceCall) (int, any) {
 		if c.Method+" "+c.Path == "GET /v1/domains" {
 			return 200, map[string]any{"domains": []any{}, "pagination": map[string]int{"total": 0}}
 		}
 		return 0, nil
 	})
-	h.svc.serviceAPI[providers.CheapInboxes] = ci.srv.URL
-	_, err = h.svc.SetMailboxService(h.ctx, h.org, pool.ID, providers.CheapInboxes, "ci_live_x")
+	a := h.useConnection(providers.Maildoso, f, key)
+	b := h.useConnection(providers.Maildoso, f, key2)
+	c := h.useConnection(providers.CheapInboxes, ci, "ci_live_x")
+	assert.Equal(t, a.PoolID, b.PoolID)
+	assert.Equal(t, a.PoolID, c.PoolID, "every connection is in the brand's one pool")
+
+	q, err := h.svc.QuoteService(h.ctx, h.org, a.ID, QuoteInput{Kind: providers.KindDomain, Domain: "freshexample.com"})
 	require.NoError(t, err)
-	_, err = h.svc.BuyService(h.ctx, h.org, pool.ID, q.ID, true)
-	assert.ErrorContains(t, err, "now uses CheapInboxes")
+	assert.False(t, q.PriceKnown)
+	assert.Contains(t, q.Summary, "no price")
+
+	for _, other := range []Connection{b, c} {
+		_, err = h.svc.BuyService(h.ctx, h.org, other.ID, q.ID, true)
+		assert.ErrorContains(t, err, "no such quote for "+other.Name)
+	}
 	assert.Empty(t, f.called("POST", "/v1/user/domains"), "Maildoso's buy endpoint was never called")
+	assert.Empty(t, ci.called("POST", "/v1/orders/checkout"))
+
+	h.advance(31 * time.Minute)
+	_, err = h.svc.BuyService(h.ctx, h.org, a.ID, q.ID, true)
+	assert.ErrorContains(t, err, "expired")
+	assert.Empty(t, f.called("POST", "/v1/user/domains"))
 }
 
 func TestCheapInboxes(t *testing.T) {
@@ -405,27 +420,27 @@ func TestCheapInboxes(t *testing.T) {
 		}
 		return 0, nil
 	})
-	pool := h.usePool(providers.CheapInboxes, f, key)
-	assert.Equal(t, int64(30), pool.DailyLimit, "CheapInboxes keeps the pool's normal limits")
+	conn := h.useConnection(providers.CheapInboxes, f, key)
+	assert.Nil(t, conn.DailyLimit, "CheapInboxes' mailboxes keep the pool's limits")
 
 	// Connect stages the import; nothing is charged.
-	got, err := h.svc.ConnectServiceDomain(ctx, h.org, pool.ID, "getexample.com")
+	got, err := h.svc.ConnectServiceDomain(ctx, h.org, conn.ID, "getexample.com")
 	require.NoError(t, err)
 	assert.Equal(t, "staged", got.Connection.Status)
 	assert.Contains(t, got.Connection.Note, "first mailboxes")
 
 	// The quote is CheapInboxes' own price for the order.
-	q, err := h.svc.QuoteService(ctx, h.org, pool.ID, QuoteInput{Kind: providers.KindMailboxes, Domain: "getexample.com", People: samPat})
+	q, err := h.svc.QuoteService(ctx, h.org, conn.ID, QuoteInput{Kind: providers.KindMailboxes, Domain: "getexample.com", People: samPat})
 	require.NoError(t, err)
 	require.True(t, q.PriceKnown)
 	assert.Equal(t, int64(700), *q.PriceCents)
 	assert.Contains(t, q.Summary, "$7.00 today")
-	_, err = h.svc.BuyService(ctx, h.org, pool.ID, q.ID, false)
+	_, err = h.svc.BuyService(ctx, h.org, conn.ID, q.ID, false)
 	assert.Error(t, err)
 	assert.Empty(t, f.called("POST", "/v1/orders/checkout"), "no checkout without confirm")
 
 	// Checkout charges the card; the mailboxes are still being made.
-	res, err := h.svc.BuyService(ctx, h.org, pool.ID, q.ID, true)
+	res, err := h.svc.BuyService(ctx, h.org, conn.ID, q.ID, true)
 	require.NoError(t, err)
 	co := f.called("POST", "/v1/orders/checkout")
 	require.Len(t, co, 1)
@@ -444,7 +459,7 @@ func TestCheapInboxes(t *testing.T) {
 	creds["mb-sam"] = map[string]any{"email": "sam@getexample.com", "password": "pw-sam", "app_password": "", "imap_host": "127.0.0.1", "imap_port": h.mail.imapPort, "smtp_host": "127.0.0.1", "smtp_port": h.mail.smtpPort}
 	creds["mb-pat"] = map[string]any{"email": "pat@getexample.com", "password": "pw-pat", "app_password": "", "imap_host": "127.0.0.1", "imap_port": h.mail.imapPort, "smtp_host": "127.0.0.1", "smtp_port": h.mail.smtpPort}
 	mu.Unlock()
-	sync, err := h.svc.SyncService(ctx, h.org, pool.ID, true)
+	sync, err := h.svc.SyncService(ctx, h.org, conn.ID, true)
 	require.NoError(t, err)
 	require.Len(t, sync.Imported, 2)
 	for _, r := range sync.Imported {
@@ -456,7 +471,7 @@ func TestCheapInboxes(t *testing.T) {
 	assert.Equal(t, "mb-pat", pat.ServiceRef)
 
 	// Delete cancels at the end of the billing period.
-	require.NoError(t, h.svc.DeleteServiceMailbox(ctx, h.org, pool.ID, pat.ID))
+	require.NoError(t, h.svc.DeleteServiceMailbox(ctx, h.org, conn.ID, pat.ID))
 	assert.Len(t, f.called("POST", "/v1/mailboxes/mb-pat/cancel"), 1)
 	noKey(t, key, got, q, res, sync)
 }
@@ -542,31 +557,31 @@ func TestInfraforge(t *testing.T) {
 		}
 		return 0, nil
 	})
-	pool := h.usePool(providers.Infraforge, f, key)
-	assert.Equal(t, int64(30), pool.DailyLimit)
+	conn := h.useConnection(providers.Infraforge, f, key)
+	assert.Nil(t, conn.DailyLimit)
 
 	// Infraforge invoices connecting a domain, so it is a confirmed buy.
-	_, err := h.svc.ConnectServiceDomain(ctx, h.org, pool.ID, "getexample.com")
+	_, err := h.svc.ConnectServiceDomain(ctx, h.org, conn.ID, "getexample.com")
 	assert.ErrorContains(t, err, "bills for connecting")
-	q, err := h.svc.QuoteService(ctx, h.org, pool.ID, QuoteInput{Kind: providers.KindConnect, Domain: "getexample.com"})
+	q, err := h.svc.QuoteService(ctx, h.org, conn.ID, QuoteInput{Kind: providers.KindConnect, Domain: "getexample.com"})
 	require.NoError(t, err)
 	assert.False(t, q.PriceKnown)
 	assert.Contains(t, q.Summary, "ns1.premiumdns.zone")
 	assert.Empty(t, f.called("POST", "/domains/transfer"))
-	res, err := h.svc.BuyService(ctx, h.org, pool.ID, q.ID, true)
+	res, err := h.svc.BuyService(ctx, h.org, conn.ID, q.ID, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"ns1.premiumdns.zone", "ns2.premiumdns.zone"}, res.Connection.Nameservers)
 	assert.NotEmpty(t, res.DomainID)
 
 	// Registering a domain needs registrant details Outlet doesn't hold.
-	_, err = h.svc.QuoteService(ctx, h.org, pool.ID, QuoteInput{Kind: providers.KindDomain, Domain: "freshexample.com"})
+	_, err = h.svc.QuoteService(ctx, h.org, conn.ID, QuoteInput{Kind: providers.KindDomain, Domain: "freshexample.com"})
 	assert.ErrorContains(t, err, "registrant")
 
 	// Mailboxes by name, then imported with the credentials Infraforge gives.
-	q, err = h.svc.QuoteService(ctx, h.org, pool.ID, QuoteInput{Kind: providers.KindMailboxes, Domain: "getexample.com", People: samPat})
+	q, err = h.svc.QuoteService(ctx, h.org, conn.ID, QuoteInput{Kind: providers.KindMailboxes, Domain: "getexample.com", People: samPat})
 	require.NoError(t, err)
 	assert.Empty(t, f.called("POST", "/mailboxes"))
-	res, err = h.svc.BuyService(ctx, h.org, pool.ID, q.ID, true)
+	res, err = h.svc.BuyService(ctx, h.org, conn.ID, q.ID, true)
 	require.NoError(t, err)
 	require.Len(t, res.Imported, 2)
 	for _, r := range res.Imported {
@@ -576,14 +591,14 @@ func TestInfraforge(t *testing.T) {
 	require.Len(t, buy, 1)
 	assert.Contains(t, buy[0].Body, `"email":"sam@getexample.com"`)
 
-	sync, err := h.svc.SyncService(ctx, h.org, pool.ID, false)
+	sync, err := h.svc.SyncService(ctx, h.org, conn.ID, false)
 	require.NoError(t, err)
 	assert.Empty(t, sync.OnlyAtService)
 	assert.Empty(t, sync.OnlyInPool)
 
 	sam, err := h.store.GetMailboxByEmail(ctx, "sam@getexample.com")
 	require.NoError(t, err)
-	require.NoError(t, h.svc.DeleteServiceMailbox(ctx, h.org, pool.ID, sam.ID))
+	require.NoError(t, h.svc.DeleteServiceMailbox(ctx, h.org, conn.ID, sam.ID))
 	assert.Len(t, f.called("DELETE", "/mailboxes/mbx_sam"), 1)
 
 	// The key goes in the Authorization header as is.
