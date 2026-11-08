@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { getCurrentUser, isAuthenticated, logout } from '$lib/auth';
 	import AuthGuard from '$lib/components/admin/AuthGuard.svelte';
+	import HelpLink from '$lib/components/ui/HelpLink.svelte';
 	import { listOrganizations, createOrganization, type OrgInfo } from '$lib/api';
 	import { Modal, Input, Button, Alert } from '$lib/components/ui';
 	import { ChevronDown, Check, Plus, Settings } from '@lucide/svelte';
@@ -107,6 +108,7 @@
 				</div>
 
 				<div class="flex items-center space-x-4">
+					<HelpLink />
 					<!-- Brand Switcher -->
 					<div class="brand-switcher relative">
 						<button

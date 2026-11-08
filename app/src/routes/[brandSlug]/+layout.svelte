@@ -5,6 +5,7 @@
 	import AuthGuard from '$lib/components/admin/AuthGuard.svelte';
 	import { getOrganizationBySlug, listOrganizations, createOrganization, type OrgInfo } from '$lib/api';
 	import { Modal, Input, Button, Alert } from '$lib/components/ui';
+	import HelpLink from '$lib/components/ui/HelpLink.svelte';
 	import { getCurrentUser, logout } from '$lib/auth';
 	import { Search, X, Menu, ChevronDown, Building2, Check, Plus } from '@lucide/svelte';
 
@@ -213,32 +214,35 @@
 						</div>
 					{/if}
 				</div>
-				<div class="user-menu-container relative">
-					<button
-						onclick={(e) => { e.stopPropagation(); showBrandSwitcher = false; showUserMenu = !showUserMenu; }}
-						class="flex items-center gap-2 p-1 rounded-lg transition-colors hover:bg-base-100"
-					>
-						<div class="flex items-center justify-center h-8 w-8 rounded-full text-sm font-medium text-white bg-primary">
-							{(user?.name || user?.email || 'U')[0].toUpperCase()}
-						</div>
-					</button>
-					{#if showUserMenu}
-						<div class="absolute right-0 top-full mt-2 w-56 rounded-lg shadow-lg py-1 z-50 bg-white border border-base-200">
-							<div class="px-4 py-3 border-b border-border">
-								<p class="text-sm font-medium text-text truncate">{user?.email}</p>
+				<div class="flex items-center gap-1">
+					<HelpLink label="" />
+					<div class="user-menu-container relative">
+						<button
+							onclick={(e) => { e.stopPropagation(); showBrandSwitcher = false; showUserMenu = !showUserMenu; }}
+							class="flex items-center gap-2 p-1 rounded-lg transition-colors hover:bg-base-100"
+						>
+							<div class="flex items-center justify-center h-8 w-8 rounded-full text-sm font-medium text-white bg-primary">
+								{(user?.name || user?.email || 'U')[0].toUpperCase()}
 							</div>
-							<a href="/{data.brandSlug}/settings" class="block px-4 py-2 text-sm transition-colors text-base-700 hover:bg-base-100 hover:text-base-900" onclick={() => showUserMenu = false}>
-								Settings
-							</a>
-							<div class="border-t border-border my-1"></div>
-							<button onclick={switchOrg} class="block px-4 py-2 text-sm transition-colors text-base-700 hover:bg-base-100 hover:text-base-900 w-full text-left">
-								Switch Brand
-							</button>
-							<button onclick={handleLogout} class="block px-4 py-2 text-sm transition-colors text-base-700 hover:bg-base-100 hover:text-base-900 w-full text-left">
-								Sign out
-							</button>
-						</div>
-					{/if}
+						</button>
+						{#if showUserMenu}
+							<div class="absolute right-0 top-full mt-2 w-56 rounded-lg shadow-lg py-1 z-50 bg-white border border-base-200">
+								<div class="px-4 py-3 border-b border-border">
+									<p class="text-sm font-medium text-text truncate">{user?.email}</p>
+								</div>
+								<a href="/{data.brandSlug}/settings" class="block px-4 py-2 text-sm transition-colors text-base-700 hover:bg-base-100 hover:text-base-900" onclick={() => showUserMenu = false}>
+									Settings
+								</a>
+								<div class="border-t border-border my-1"></div>
+								<button onclick={switchOrg} class="block px-4 py-2 text-sm transition-colors text-base-700 hover:bg-base-100 hover:text-base-900 w-full text-left">
+									Switch Brand
+								</button>
+								<button onclick={handleLogout} class="block px-4 py-2 text-sm transition-colors text-base-700 hover:bg-base-100 hover:text-base-900 w-full text-left">
+									Sign out
+								</button>
+							</div>
+						{/if}
+					</div>
 				</div>
 			</div>
 
@@ -261,6 +265,7 @@
 				<!-- Top Bar (Desktop) -->
 				<header class="h-16 px-6 items-center justify-end border-b border-base-200 sticky top-0 z-20 bg-white hidden md:flex">
 					<div class="flex items-center gap-4">
+						<HelpLink />
 						<!-- Brand Switcher -->
 						<div class="brand-switcher relative">
 							<button
