@@ -1184,6 +1184,16 @@ export interface ListMCPAPIKeysResponse {
 	total: number
 }
 
+export interface ListOrgPeopleRequest {
+}
+export interface ListOrgPeopleRequestParams {
+}
+
+export interface ListOrgPeopleResponse {
+	members: Array<OrgMember>
+	invitations: Array<OrgPendingInvitation> // not yet accepted
+}
+
 export interface ListSequenceEnrollmentsResponse {
 	enrollments: Array<SequenceEnrollmentInfo>
 }
@@ -1579,6 +1589,22 @@ export interface OrgInfo {
 export interface OrgListResponse {
 	organizations: Array<OrgInfo>
 	total: number
+}
+
+export interface OrgMember {
+	user_id: string
+	name: string
+	email: string
+	role: string // admin or member
+	joined_at: string
+}
+
+export interface OrgPendingInvitation {
+	email: string
+	role: string // admin or member
+	expires_at: string
+	expired: boolean // the link no longer works; invite again
+	created_at: string
 }
 
 export interface OrgStats {
@@ -2723,7 +2749,8 @@ export interface ValidateBatchRequest {
 }
 
 export interface ValidateBatchResponse {
-	results: Array<ValidationResult>
+	job: ValidationJobInfo // status completed when every address is checked
+	results: Array<ValidationResult> // one per address, in address order; status pending until checked
 }
 
 export interface ValidateEmailRequest {

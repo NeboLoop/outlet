@@ -107,10 +107,10 @@ const createTransactionalSend = `-- name: CreateTransactionalSend :one
 
 INSERT INTO transactional_sends (
     id, template_id, org_id, to_email, to_name, contact_id,
-    status, tracking_token, context_data, created_at
+    status, tracking_token, context_data, subject, created_at
 )
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
-RETURNING id, template_id, org_id, to_email, to_name, contact_id, status, sent_at, delivered_at, tracking_token, opened_at, clicked_at, context_data, error_message, created_at
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'))
+RETURNING id, template_id, org_id, to_email, to_name, contact_id, status, sent_at, delivered_at, tracking_token, opened_at, clicked_at, context_data, error_message, created_at, subject
 `
 
 type CreateTransactionalSendParams struct {
@@ -123,9 +123,11 @@ type CreateTransactionalSendParams struct {
 	Status        sql.NullString `json:"status"`
 	TrackingToken sql.NullString `json:"tracking_token"`
 	ContextData   sql.NullString `json:"context_data"`
+	Subject       sql.NullString `json:"subject"`
 }
 
 // Sends (Logging)
+// subject is the subject the person gets, its merge tags filled.
 func (q *Queries) CreateTransactionalSend(ctx context.Context, arg CreateTransactionalSendParams) (TransactionalSend, error) {
 	row := q.db.QueryRowContext(ctx, createTransactionalSend,
 		arg.ID,
@@ -137,6 +139,7 @@ func (q *Queries) CreateTransactionalSend(ctx context.Context, arg CreateTransac
 		arg.Status,
 		arg.TrackingToken,
 		arg.ContextData,
+		arg.Subject,
 	)
 	var i TransactionalSend
 	err := row.Scan(
@@ -155,6 +158,7 @@ func (q *Queries) CreateTransactionalSend(ctx context.Context, arg CreateTransac
 		&i.ContextData,
 		&i.ErrorMessage,
 		&i.CreatedAt,
+		&i.Subject,
 	)
 	return i, err
 }
@@ -260,7 +264,7 @@ func (q *Queries) GetTransactionalEmailBySlug(ctx context.Context, arg GetTransa
 }
 
 const getTransactionalSend = `-- name: GetTransactionalSend :one
-SELECT id, template_id, org_id, to_email, to_name, contact_id, status, sent_at, delivered_at, tracking_token, opened_at, clicked_at, context_data, error_message, created_at FROM transactional_sends
+SELECT id, template_id, org_id, to_email, to_name, contact_id, status, sent_at, delivered_at, tracking_token, opened_at, clicked_at, context_data, error_message, created_at, subject FROM transactional_sends
 WHERE id = ?1
 `
 
@@ -283,12 +287,13 @@ func (q *Queries) GetTransactionalSend(ctx context.Context, id string) (Transact
 		&i.ContextData,
 		&i.ErrorMessage,
 		&i.CreatedAt,
+		&i.Subject,
 	)
 	return i, err
 }
 
 const getTransactionalSendByTracking = `-- name: GetTransactionalSendByTracking :one
-SELECT id, template_id, org_id, to_email, to_name, contact_id, status, sent_at, delivered_at, tracking_token, opened_at, clicked_at, context_data, error_message, created_at FROM transactional_sends
+SELECT id, template_id, org_id, to_email, to_name, contact_id, status, sent_at, delivered_at, tracking_token, opened_at, clicked_at, context_data, error_message, created_at, subject FROM transactional_sends
 WHERE tracking_token = ?1
 `
 
@@ -311,12 +316,13 @@ func (q *Queries) GetTransactionalSendByTracking(ctx context.Context, trackingTo
 		&i.ContextData,
 		&i.ErrorMessage,
 		&i.CreatedAt,
+		&i.Subject,
 	)
 	return i, err
 }
 
 const getTransactionalSendByTrackingAndOrg = `-- name: GetTransactionalSendByTrackingAndOrg :one
-SELECT ts.id, ts.template_id, ts.org_id, ts.to_email, ts.to_name, ts.contact_id, ts.status, ts.sent_at, ts.delivered_at, ts.tracking_token, ts.opened_at, ts.clicked_at, ts.context_data, ts.error_message, ts.created_at, te.subject
+SELECT ts.id, ts.template_id, ts.org_id, ts.to_email, ts.to_name, ts.contact_id, ts.status, ts.sent_at, ts.delivered_at, ts.tracking_token, ts.opened_at, ts.clicked_at, ts.context_data, ts.error_message, ts.created_at, ts.subject, COALESCE(ts.subject, te.subject) AS sent_subject
 FROM transactional_sends ts
 JOIN transactional_emails te ON ts.template_id = te.id
 WHERE ts.tracking_token = ?1 AND ts.org_id = ?2
@@ -343,9 +349,12 @@ type GetTransactionalSendByTrackingAndOrgRow struct {
 	ContextData   sql.NullString `json:"context_data"`
 	ErrorMessage  sql.NullString `json:"error_message"`
 	CreatedAt     sql.NullString `json:"created_at"`
-	Subject       string         `json:"subject"`
+	Subject       sql.NullString `json:"subject"`
+	SentSubject   string         `json:"sent_subject"`
 }
 
+// sent_subject is the subject the person got; sends from before it was kept
+// fall back to the template's.
 func (q *Queries) GetTransactionalSendByTrackingAndOrg(ctx context.Context, arg GetTransactionalSendByTrackingAndOrgParams) (GetTransactionalSendByTrackingAndOrgRow, error) {
 	row := q.db.QueryRowContext(ctx, getTransactionalSendByTrackingAndOrg, arg.TrackingToken, arg.OrgID)
 	var i GetTransactionalSendByTrackingAndOrgRow
@@ -366,6 +375,7 @@ func (q *Queries) GetTransactionalSendByTrackingAndOrg(ctx context.Context, arg 
 		&i.ErrorMessage,
 		&i.CreatedAt,
 		&i.Subject,
+		&i.SentSubject,
 	)
 	return i, err
 }
@@ -454,7 +464,7 @@ func (q *Queries) ListTransactionalEmails(ctx context.Context, orgID string) ([]
 }
 
 const listTransactionalSends = `-- name: ListTransactionalSends :many
-SELECT id, template_id, org_id, to_email, to_name, contact_id, status, sent_at, delivered_at, tracking_token, opened_at, clicked_at, context_data, error_message, created_at FROM transactional_sends
+SELECT id, template_id, org_id, to_email, to_name, contact_id, status, sent_at, delivered_at, tracking_token, opened_at, clicked_at, context_data, error_message, created_at, subject FROM transactional_sends
 WHERE template_id = ?1
 ORDER BY created_at DESC
 LIMIT ?3 OFFSET ?2
@@ -491,6 +501,7 @@ func (q *Queries) ListTransactionalSends(ctx context.Context, arg ListTransactio
 			&i.ContextData,
 			&i.ErrorMessage,
 			&i.CreatedAt,
+			&i.Subject,
 		); err != nil {
 			return nil, err
 		}
@@ -506,7 +517,7 @@ func (q *Queries) ListTransactionalSends(ctx context.Context, arg ListTransactio
 }
 
 const listTransactionalSendsByOrg = `-- name: ListTransactionalSendsByOrg :many
-SELECT ts.id, ts.template_id, ts.org_id, ts.to_email, ts.to_name, ts.contact_id, ts.status, ts.sent_at, ts.delivered_at, ts.tracking_token, ts.opened_at, ts.clicked_at, ts.context_data, ts.error_message, ts.created_at, te.name as template_name, te.slug as template_slug
+SELECT ts.id, ts.template_id, ts.org_id, ts.to_email, ts.to_name, ts.contact_id, ts.status, ts.sent_at, ts.delivered_at, ts.tracking_token, ts.opened_at, ts.clicked_at, ts.context_data, ts.error_message, ts.created_at, ts.subject, te.name as template_name, te.slug as template_slug
 FROM transactional_sends ts
 JOIN transactional_emails te ON ts.template_id = te.id
 WHERE ts.org_id = ?1
@@ -536,6 +547,7 @@ type ListTransactionalSendsByOrgRow struct {
 	ContextData   sql.NullString `json:"context_data"`
 	ErrorMessage  sql.NullString `json:"error_message"`
 	CreatedAt     sql.NullString `json:"created_at"`
+	Subject       sql.NullString `json:"subject"`
 	TemplateName  string         `json:"template_name"`
 	TemplateSlug  string         `json:"template_slug"`
 }
@@ -565,6 +577,7 @@ func (q *Queries) ListTransactionalSendsByOrg(ctx context.Context, arg ListTrans
 			&i.ContextData,
 			&i.ErrorMessage,
 			&i.CreatedAt,
+			&i.Subject,
 			&i.TemplateName,
 			&i.TemplateSlug,
 		); err != nil {

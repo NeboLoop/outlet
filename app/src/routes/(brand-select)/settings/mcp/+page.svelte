@@ -89,7 +89,7 @@
 			{ name: 'transactional(action: stats)', desc: 'Get template statistics' }
 		],
 		'Email Designs': [
-			{ name: 'design(action: create)', desc: 'Create email design template' },
+			{ name: 'design(action: create)', desc: 'Create an email design' },
 			{ name: 'design(action: list)', desc: 'List all designs' },
 			{ name: 'design(action: get)', desc: 'Get design details' },
 			{ name: 'design(action: update)', desc: 'Update design' },

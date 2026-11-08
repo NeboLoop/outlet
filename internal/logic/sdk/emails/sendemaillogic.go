@@ -261,6 +261,7 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 		Status:        sql.NullString{String: "pending", Valid: true},
 		TrackingToken: sql.NullString{String: trackingToken, Valid: true},
 		ContextData:   contextData,
+		Subject:       sql.NullString{String: message.Subject, Valid: true},
 	})
 	if err != nil {
 		l.Errorf("Failed to create send record: %v", err)

@@ -79,6 +79,27 @@ type (
 		ExpiresAt string `json:"expires_at"` // when the invitation stops working
 		EmailSent bool   `json:"email_sent"` // whether the invitation email went out; if not, invite again
 	}
+	ListOrgPeopleRequest {
+		Id string `path:"id"` // brand ID
+	}
+	OrgMember {
+		UserId   string `json:"user_id"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Role     string `json:"role"` // admin or member
+		JoinedAt string `json:"joined_at"`
+	}
+	OrgPendingInvitation {
+		Email     string `json:"email"`
+		Role      string `json:"role"` // admin or member
+		ExpiresAt string `json:"expires_at"`
+		Expired   bool   `json:"expired"` // the link no longer works; invite again
+		CreatedAt string `json:"created_at"`
+	}
+	ListOrgPeopleResponse {
+		Members     []OrgMember            `json:"members"`
+		Invitations []OrgPendingInvitation `json:"invitations"` // not yet accepted
+	}
 	RefreshTokenRequest {
 		RefreshToken string `json:"refresh_token"`
 	}
@@ -1536,7 +1557,8 @@ type (
 		Emails []string `json:"emails"` // max 100
 	}
 	ValidateBatchResponse {
-		Results []ValidationResult `json:"results"`
+		Job     ValidationJobInfo  `json:"job"` // status completed when every address is checked
+		Results []ValidationResult `json:"results"` // one per address, in address order; status pending until checked
 	}
 	ValidationJobInfo {
 		Id          string `json:"id"`
@@ -2956,6 +2978,10 @@ service outlet {
 	@doc "Invite a person to a brand. Outlet is invite-only: the invitation decides the brand and role."
 	@handler CreateInvitation
 	post /organizations/:id/invitations (CreateInvitationRequest) returns (CreateInvitationResponse)
+
+	@doc "A brand's people: its members with their roles, and invitations not yet accepted with when they expire (brand admins)"
+	@handler ListOrgPeople
+	get /organizations/:id/people (ListOrgPeopleRequest) returns (ListOrgPeopleResponse)
 }
 
 // Platform Settings (Super Admin only)
@@ -3292,6 +3318,9 @@ service outlet {
 	post / (ValidateEmailRequest) returns (ValidationResult)
 }
 
+// A batch is accepted at once as a validation job; the validation worker
+// checks its addresses in the background. Fetch the job and its results with
+// its ID until its status is completed.
 @server (
 	group:      sdk/validation
 	prefix:     /sdk/v1/validate
@@ -3299,7 +3328,10 @@ service outlet {
 )
 service outlet {
 	@handler ValidateBatch
-	post /batch (ValidateBatchRequest) returns (ValidateBatchResponse)
+	post /batch (ValidateBatchRequest) returns (ValidationJobInfo)
+
+	@handler GetValidateBatch
+	get /batch/:id (ValidationJobIdRequest) returns (ValidateBatchResponse)
 }
 
 // Signal Network hub (only served when SignalNet.Hub is true; 404 otherwise)

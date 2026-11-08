@@ -107,7 +107,7 @@
 			editIsActive = template.is_active;
 		} catch (err) {
 			console.error('Failed to load template:', err);
-			error = 'Failed to load template';
+			error = 'Failed to load design';
 		} finally {
 			loading = false;
 		}
@@ -132,7 +132,7 @@
 			setTimeout(() => { saved = false; }, 2000);
 		} catch (err: any) {
 			console.error('Failed to save template:', err);
-			error = err.message || 'Failed to save template';
+			error = err.message || 'Failed to save design';
 		} finally {
 			saving = false;
 		}
@@ -152,7 +152,7 @@
 			await deleteEmailDesign({}, templateId);
 			goto(`${basePath}/templates`);
 		} catch (err: any) {
-			error = err.message || 'Failed to delete template';
+			error = err.message || 'Failed to delete design';
 		} finally {
 			deleting = false;
 		}
@@ -184,7 +184,7 @@
 </script>
 
 <svelte:head>
-	<title>{template?.name || 'Template'} | Outlet</title>
+	<title>{template?.name || 'Design'} | Outlet</title>
 </svelte:head>
 
 {#if loading}
@@ -193,10 +193,10 @@
 	</div>
 {:else if !template}
 	<div class="p-6">
-		<Alert type="error" title="Template not found">
-			<p>The requested template could not be found.</p>
+		<Alert type="error" title="Design not found">
+			<p>The requested design could not be found.</p>
 			<Button type="primary" class="mt-3" onclick={() => goto(`${basePath}/templates`)}>
-				Back to Templates
+				Back to Designs
 			</Button>
 		</Alert>
 	</div>
@@ -219,7 +219,7 @@
 							<input
 								type="text"
 								bind:value={editName}
-								placeholder="Template Name"
+								placeholder="Design Name"
 								class="text-lg font-semibold text-base-content bg-transparent border-none focus:outline-none focus:ring-0 placeholder:text-base-content/40 w-64"
 							/>
 							<Badge variant={getCategoryVariant(editCategory)} size="sm">
@@ -231,7 +231,7 @@
 								<Badge variant="default" size="sm">Inactive</Badge>
 							{/if}
 						</div>
-						<p class="text-xs text-base-content/50">Email Template</p>
+						<p class="text-xs text-base-content/50">Email Design</p>
 					</div>
 				</div>
 				<div class="flex items-center gap-3">
@@ -321,7 +321,7 @@
 							</p>
 							<Button type="danger" size="sm" onclick={() => showDeleteConfirm = true}>
 								<Trash2 class="mr-2 h-4 w-4" />
-								Delete Template
+								Delete Design
 							</Button>
 						</div>
 					</div>
@@ -332,7 +332,7 @@
 					<div class="flex-1 min-h-0">
 						<EmailEditor
 							bind:value={editHtmlBody}
-							placeholder="Start designing your email template..."
+							placeholder="Start building your email design..."
 							showVariableInserts={false}
 							onInsertVariable={(fn) => insertVariable = fn}
 							class="h-full"
@@ -382,7 +382,7 @@
 
 <AlertDialog
 	bind:open={showDeleteConfirm}
-	title="Delete Template"
+	title="Delete Design"
 	description={`Are you sure you want to delete "${template?.name}"? This action cannot be undone.`}
 	actionLabel={deleting ? 'Deleting...' : 'Delete'}
 	actionType="danger"

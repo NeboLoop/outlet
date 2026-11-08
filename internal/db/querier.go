@@ -209,6 +209,7 @@ type Querier interface {
 	// Templates
 	CreateTransactionalEmail(ctx context.Context, arg CreateTransactionalEmailParams) (TransactionalEmail, error)
 	// Sends (Logging)
+	// subject is the subject the person gets, its merge tags filled.
 	CreateTransactionalSend(ctx context.Context, arg CreateTransactionalSendParams) (TransactionalSend, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	// ========== VALIDATION JOBS ==========
@@ -488,6 +489,8 @@ type Querier interface {
 	GetTransactionalEmailBySlug(ctx context.Context, arg GetTransactionalEmailBySlugParams) (TransactionalEmail, error)
 	GetTransactionalSend(ctx context.Context, id string) (TransactionalSend, error)
 	GetTransactionalSendByTracking(ctx context.Context, trackingToken sql.NullString) (TransactionalSend, error)
+	// sent_subject is the subject the person got; sends from before it was kept
+	// fall back to the template's.
 	GetTransactionalSendByTrackingAndOrg(ctx context.Context, arg GetTransactionalSendByTrackingAndOrgParams) (GetTransactionalSendByTrackingAndOrgRow, error)
 	GetTransactionalSendByTrackingToken(ctx context.Context, token sql.NullString) (GetTransactionalSendByTrackingTokenRow, error)
 	GetTransactionalSendEvent(ctx context.Context, id string) (GetTransactionalSendEventRow, error)
@@ -597,6 +600,9 @@ type Querier interface {
 	// Sending domains awaiting SES verification; outreach domains never touch SES.
 	ListPendingDomainIdentities(ctx context.Context) ([]DomainIdentity, error)
 	ListPendingImportJobs(ctx context.Context) ([]ImportJob, error)
+	// A brand's invitations not yet accepted, newest first, with whether each
+	// has expired.
+	ListPendingOrgInvitations(ctx context.Context, orgID string) ([]ListPendingOrgInvitationsRow, error)
 	ListPlatformSettings(ctx context.Context) ([]PlatformSetting, error)
 	ListPoolMailboxes(ctx context.Context, pathwayID sql.NullString) ([]Mailbox, error)
 	ListProcessingValidationJobs(ctx context.Context) ([]ValidationJob, error)
@@ -641,9 +647,11 @@ type Querier interface {
 	ManuallyVerifyContact(ctx context.Context, id string) error
 	MarkAuthTokenUsed(ctx context.Context, id string) error
 	MarkCampaignSendFailed(ctx context.Context, arg MarkCampaignSendFailedParams) error
-	MarkCampaignSendSent(ctx context.Context, id string) error
+	// subject is the subject the person got, its merge tags filled.
+	MarkCampaignSendSent(ctx context.Context, arg MarkCampaignSendSentParams) error
 	MarkEmailFailed(ctx context.Context, arg MarkEmailFailedParams) error
-	MarkEmailSent(ctx context.Context, id string) error
+	// subject is the subject the person got, its merge tags filled.
+	MarkEmailSent(ctx context.Context, arg MarkEmailSentParams) error
 	MarkMCPOAuthCodeUsed(ctx context.Context, id string) error
 	MarkOutreachSent(ctx context.Context, arg MarkOutreachSentParams) error
 	MeterNetworkInstance(ctx context.Context, arg MeterNetworkInstanceParams) error

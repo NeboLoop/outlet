@@ -3,7 +3,7 @@ package validation
 import (
 	"context"
 	"fmt"
-	"sync"
+	"time"
 
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/middleware"
@@ -29,7 +29,10 @@ func NewValidateBatchLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Val
 	}
 }
 
-func (l *ValidateBatchLogic) ValidateBatch(req *types.ValidateBatchRequest) (resp *types.ValidateBatchResponse, err error) {
+// ValidateBatch accepts up to MaxBatchEmails addresses at once as a
+// validation job, which the validation worker checks in the background (each
+// check can take its probe's 20 seconds). The job's ID fetches its results.
+func (l *ValidateBatchLogic) ValidateBatch(req *types.ValidateBatchRequest) (resp *types.ValidationJobInfo, err error) {
 	orgID, ok := l.ctx.Value(middleware.OrgIDKey).(string)
 	if !ok || orgID == "" {
 		return nil, errorx.NewUnauthorizedError("invalid API key")
@@ -41,31 +44,9 @@ func (l *ValidateBatchLogic) ValidateBatch(req *types.ValidateBatchRequest) (res
 	if len(emails) > validationsvc.MaxBatchEmails {
 		return nil, errorx.NewBadRequestError(fmt.Sprintf("at most %d emails per batch", validationsvc.MaxBatchEmails))
 	}
-
-	// Check up to 10 addresses at a time; results keep request order.
-	results := make([]types.ValidationResult, len(emails))
-	errs := make([]error, len(emails))
-	sem := make(chan struct{}, 10)
-	var wg sync.WaitGroup
-	for i, email := range emails {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-			res, err := l.svcCtx.Validation.Validate(l.ctx, orgID, email, "api")
-			if err != nil {
-				errs[i] = err
-				return
-			}
-			results[i] = *res
-		}()
+	job, err := l.svcCtx.Validation.CreateJob(l.ctx, orgID, "API batch "+time.Now().UTC().Format("2006-01-02 15:04:05"), "", emails)
+	if err != nil {
+		return nil, err
 	}
-	wg.Wait()
-	for _, err := range errs {
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &types.ValidateBatchResponse{Results: results}, nil
+	return l.svcCtx.Validation.StartJob(l.ctx, orgID, job.Id)
 }

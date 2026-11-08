@@ -162,21 +162,23 @@ func (s *Store) UnsubscribeFromList(ctx context.Context, arg UnsubscribeFromList
 	return nil
 }
 
-// MarkEmailSent records a queued email as sent and publishes email.sent.
-func (s *Store) MarkEmailSent(ctx context.Context, id string) error {
-	if err := s.Queries.MarkEmailSent(ctx, id); err != nil {
+// MarkEmailSent records a queued email as sent, with the subject the person
+// got, and publishes email.sent.
+func (s *Store) MarkEmailSent(ctx context.Context, arg MarkEmailSentParams) error {
+	if err := s.Queries.MarkEmailSent(ctx, arg); err != nil {
 		return err
 	}
-	PublishEmail(ctx, s.Queries, s.events, events.TopicEmailSent, FromQueue, id, "")
+	PublishEmail(ctx, s.Queries, s.events, events.TopicEmailSent, FromQueue, arg.ID, "")
 	return nil
 }
 
-// MarkCampaignSendSent records a campaign send as sent and publishes email.sent.
-func (s *Store) MarkCampaignSendSent(ctx context.Context, id string) error {
-	if err := s.Queries.MarkCampaignSendSent(ctx, id); err != nil {
+// MarkCampaignSendSent records a campaign send as sent, with the subject the
+// person got, and publishes email.sent.
+func (s *Store) MarkCampaignSendSent(ctx context.Context, arg MarkCampaignSendSentParams) error {
+	if err := s.Queries.MarkCampaignSendSent(ctx, arg); err != nil {
 		return err
 	}
-	PublishEmail(ctx, s.Queries, s.events, events.TopicEmailSent, FromCampaign, id, "")
+	PublishEmail(ctx, s.Queries, s.events, events.TopicEmailSent, FromCampaign, arg.ID, "")
 	return nil
 }
 

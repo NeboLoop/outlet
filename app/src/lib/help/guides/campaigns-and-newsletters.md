@@ -14,7 +14,7 @@ Campaigns are **marketing** mail. They go only to people who joined your lists, 
 6. **Recipients**: tick one or more lists. Outlet shows "Total: N recipients".
 7. **Exclude Lists** (optional): tick lists whose members should not get this email, such as existing customers for a sign-up offer.
 8. **Sender (optional)**: **From Name**, **From Email** and **Reply-To Email**. Leave them blank to use the brand's defaults.
-9. **Template**: "None" sends your content as it is. Pick a design to wrap your content in it. See [Designs](/help/designs).
+9. **Design**: "None" sends your content as it is. Pick a design to wrap your content in it. See [Designs](/help/designs).
 10. **Tracking**: **Track opens** and **Track clicks** are on by default.
 11. Press **Save as Draft**.
 

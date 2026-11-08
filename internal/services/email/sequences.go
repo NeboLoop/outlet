@@ -410,7 +410,7 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 		}
 
 		// Mark as sent
-		err = s.db.MarkEmailSent(ctx, email.ID)
+		err = s.db.MarkEmailSent(ctx, db.MarkEmailSentParams{ID: email.ID, Subject: sql.NullString{String: subject, Valid: true}})
 		if err != nil {
 			logx.Errorf("Failed to mark email %s as sent: %v", email.ID, err)
 			continue

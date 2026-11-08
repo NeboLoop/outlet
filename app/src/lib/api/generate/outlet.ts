@@ -651,6 +651,14 @@ export function createInvitation(params: components.CreateInvitationRequestParam
 }
 
 /**
+ * @description "A brand's people: its members with their roles, and invitations not yet accepted with when they expire (brand admins)"
+ * @param params
+ */
+export function listOrgPeople(params: components.ListOrgPeopleRequestParams, id: string) {
+	return webapi.get<components.ListOrgPeopleResponse>(`/api/admin/organizations/${id}/people`, params)
+}
+
+/**
  * @description 
  * @param params
  */
@@ -1987,7 +1995,15 @@ export function validateEmail(req: components.ValidateEmailRequest) {
  * @param req
  */
 export function validateBatch(req: components.ValidateBatchRequest) {
-	return webapi.post<components.ValidateBatchResponse>(`/sdk/v1/validate/batch`, req)
+	return webapi.post<components.ValidationJobInfo>(`/sdk/v1/validate/batch`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getValidateBatch(params: components.ValidationJobIdRequestParams, id: string) {
+	return webapi.get<components.ValidateBatchResponse>(`/sdk/v1/validate/batch/${id}`, params)
 }
 
 /**

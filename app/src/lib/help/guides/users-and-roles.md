@@ -24,6 +24,10 @@ Brand admins do this.
 
 Outlet emails an invitation. It works once and expires; the page shows the date. If you see "Invitation email did not go out", the brand's sending isn't working yet: check **Settings**, **Sending**, then invite again.
 
+## See who's in a brand
+
+The same **People** page lists the brand's **Members**, each with their role, and its **Pending invitations**: the ones nobody has accepted yet, with the date each expires. An expired one is marked **Expired**. **Resend** emails a fresh link to that person, with the same role, and the old link stops working.
+
 ## Add a user to Outlet
 
 Super admins do this.

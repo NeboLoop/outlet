@@ -118,6 +118,15 @@ RETURNING *;
 DELETE FROM org_invitations
 WHERE org_id = sqlc.arg(org_id) AND email = sqlc.arg(email) COLLATE NOCASE AND accepted_at IS NULL;
 
+-- name: ListPendingOrgInvitations :many
+-- A brand's invitations not yet accepted, newest first, with whether each
+-- has expired.
+SELECT email, COALESCE(role, 'member') AS role, expires_at, COALESCE(created_at, '') AS created_at,
+       CAST(datetime(expires_at) <= datetime('now') AS INTEGER) AS expired
+FROM org_invitations
+WHERE org_id = sqlc.arg(org_id) AND accepted_at IS NULL
+ORDER BY created_at DESC, email;
+
 -- name: GetOrgInvitationByToken :one
 SELECT i.id, i.org_id, i.email, COALESCE(i.role, 'member') AS role, i.accepted_at,
        CAST(datetime(i.expires_at) <= datetime('now') AS INTEGER) AS expired,

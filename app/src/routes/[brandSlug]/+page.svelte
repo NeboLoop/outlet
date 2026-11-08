@@ -359,8 +359,8 @@
 						<Mail class="h-4 w-4 text-amber-600" />
 					</div>
 					<div>
-						<p class="text-sm font-medium text-text">Templates</p>
-						<p class="text-xs text-text-muted">Email designs</p>
+						<p class="text-sm font-medium text-text">Designs</p>
+						<p class="text-xs text-text-muted">Reusable email layouts</p>
 					</div>
 				</a>
 			</div>

@@ -10,6 +10,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/db/migrations"
+	"github.com/outlet-sh/outlet/internal/services/gdpr"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -44,9 +45,9 @@ func TestExportContactData_ReturnsTheExport(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "json", got.Format)
 	assert.Equal(t, "gdpr-export-ann-id.json", got.Filename)
-	var export ContactExport
+	var export gdpr.Data
 	require.NoError(t, json.Unmarshal([]byte(got.Data), &export))
-	assert.Equal(t, "ann@example.com", export.Profile["email"])
+	assert.Equal(t, "ann@example.com", export.Contact.Email)
 	assert.Equal(t, []string{"vip"}, export.Tags)
 
 	_, err = NewExportContactDataLogic(ctx, &svc.ServiceContext{DB: store}).ExportContactData(&types.GDPRExportRequest{ContactId: "nobody"})

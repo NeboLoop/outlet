@@ -1099,6 +1099,15 @@ type ListMCPAPIKeysResponse struct {
 	Total int             `json:"total"`
 }
 
+type ListOrgPeopleRequest struct {
+	Id string `path:"id"` // brand ID
+}
+
+type ListOrgPeopleResponse struct {
+	Members     []OrgMember            `json:"members"`
+	Invitations []OrgPendingInvitation `json:"invitations"` // not yet accepted
+}
+
 type ListSequenceEnrollmentsResponse struct {
 	Enrollments []SequenceEnrollmentInfo `json:"enrollments"`
 }
@@ -1475,6 +1484,22 @@ type OrgInfo struct {
 type OrgListResponse struct {
 	Organizations []OrgInfo `json:"organizations"`
 	Total         int       `json:"total"`
+}
+
+type OrgMember struct {
+	UserId   string `json:"user_id"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Role     string `json:"role"` // admin or member
+	JoinedAt string `json:"joined_at"`
+}
+
+type OrgPendingInvitation struct {
+	Email     string `json:"email"`
+	Role      string `json:"role"` // admin or member
+	ExpiresAt string `json:"expires_at"`
+	Expired   bool   `json:"expired"` // the link no longer works; invite again
+	CreatedAt string `json:"created_at"`
 }
 
 type OrgStats struct {
@@ -2570,7 +2595,8 @@ type ValidateBatchRequest struct {
 }
 
 type ValidateBatchResponse struct {
-	Results []ValidationResult `json:"results"`
+	Job     ValidationJobInfo  `json:"job"`     // status completed when every address is checked
+	Results []ValidationResult `json:"results"` // one per address, in address order; status pending until checked
 }
 
 type ValidateEmailRequest struct {

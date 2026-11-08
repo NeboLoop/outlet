@@ -92,6 +92,7 @@ type CampaignSend struct {
 	ClaimToken     sql.NullString `json:"claim_token"`
 	ClaimedAt      sql.NullString `json:"claimed_at"`
 	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	Subject        sql.NullString `json:"subject"`
 	SendAfter      sql.NullString `json:"send_after"`
 }
 
@@ -794,6 +795,7 @@ type TransactionalSend struct {
 	ContextData   sql.NullString `json:"context_data"`
 	ErrorMessage  sql.NullString `json:"error_message"`
 	CreatedAt     sql.NullString `json:"created_at"`
+	Subject       sql.NullString `json:"subject"`
 }
 
 type User struct {

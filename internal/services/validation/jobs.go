@@ -19,7 +19,7 @@ import (
 
 // Request limits.
 const (
-	MaxBatchEmails = 100   // addresses per synchronous batch call
+	MaxBatchEmails = 100   // addresses per SDK batch call (a job checked in the background)
 	MaxJobEmails   = 10000 // addresses per job create/append call
 )
 
@@ -180,6 +180,35 @@ func (s *Service) JobInfo(ctx context.Context, job db.ValidationJob) (types.Vali
 		}
 	}
 	return info, nil
+}
+
+// Results returns a page of a job's results, in address order, with how many
+// there are; status, when set, keeps only results with it. Addresses not yet
+// checked have status pending.
+func (s *Service) Results(ctx context.Context, orgID, jobID, status string, limit, offset int) ([]types.ValidationResult, int, error) {
+	if _, err := s.job(ctx, orgID, jobID); err != nil {
+		return nil, 0, err
+	}
+	id := sql.NullString{String: jobID, Valid: true}
+	rows, err := s.store.ListValidationResults(ctx, db.ListValidationResultsParams{
+		JobID:        id,
+		OrgID:        orgID,
+		FilterStatus: status,
+		PageSize:     int64(limit),
+		PageOffset:   int64(offset),
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountValidationResults(ctx, db.CountValidationResultsParams{JobID: id, OrgID: orgID, FilterStatus: status})
+	if err != nil {
+		return nil, 0, err
+	}
+	results := make([]types.ValidationResult, 0, len(rows))
+	for _, row := range rows {
+		results = append(results, ToType(row))
+	}
+	return results, int(total), nil
 }
 
 func (s *Service) job(ctx context.Context, orgID, jobID string) (db.ValidationJob, error) {
