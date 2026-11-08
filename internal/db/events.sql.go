@@ -10,6 +10,76 @@ import (
 	"database/sql"
 )
 
+const getBrandEmailStats = `-- name: GetBrandEmailStats :one
+WITH sent AS (
+    SELECT eq.opened_at, eq.clicked_at
+    FROM email_queue eq
+    JOIN contacts c ON c.id = eq.contact_id
+    WHERE c.org_id = ?3
+      AND eq.sent_at >= ?1 AND eq.sent_at <= ?2
+    UNION ALL
+    SELECT cs.opened_at, cs.clicked_at
+    FROM campaign_sends cs
+    JOIN email_campaigns ec ON ec.id = cs.campaign_id
+    WHERE ec.org_id = ?3
+      AND cs.sent_at >= ?1 AND cs.sent_at <= ?2
+    UNION ALL
+    SELECT ts.opened_at, ts.clicked_at
+    FROM transactional_sends ts
+    WHERE ts.org_id = ?3
+      AND ts.sent_at >= ?1 AND ts.sent_at <= ?2
+)
+SELECT
+    (SELECT COUNT(*) FROM sent) AS sent_count,
+    (SELECT COUNT(opened_at) FROM sent) AS opened_count,
+    (SELECT COUNT(clicked_at) FROM sent) AS clicked_count,
+    (SELECT COUNT(*) FROM email_bounce b
+     WHERE b.created_at >= ?1 AND b.created_at <= ?2
+       AND EXISTS (SELECT 1 FROM contacts c WHERE c.org_id = ?3 AND LOWER(c.email) = b.email_lower)) AS bounced_count,
+    (SELECT COUNT(*) FROM email_complaint m
+     WHERE m.created_at >= ?1 AND m.created_at <= ?2
+       AND EXISTS (SELECT 1 FROM contacts c WHERE c.org_id = ?3 AND LOWER(c.email) = m.email_lower)) AS complaint_count,
+    (SELECT COUNT(*) FROM contacts c
+     WHERE c.org_id = ?3
+       AND ((c.unsubscribed_at >= ?1 AND c.unsubscribed_at <= ?2)
+            OR EXISTS (SELECT 1 FROM list_subscribers ls
+                       WHERE ls.contact_id = c.id
+                         AND ls.unsubscribed_at >= ?1 AND ls.unsubscribed_at <= ?2))) AS unsubscribed_count
+`
+
+type GetBrandEmailStatsParams struct {
+	StartDate sql.NullString `json:"start_date"`
+	EndDate   sql.NullString `json:"end_date"`
+	OrgID     sql.NullString `json:"org_id"`
+}
+
+type GetBrandEmailStatsRow struct {
+	SentCount         int64 `json:"sent_count"`
+	OpenedCount       int64 `json:"opened_count"`
+	ClickedCount      int64 `json:"clicked_count"`
+	BouncedCount      int64 `json:"bounced_count"`
+	ComplaintCount    int64 `json:"complaint_count"`
+	UnsubscribedCount int64 `json:"unsubscribed_count"`
+}
+
+// What a brand's email did in a date range: every kind it sent (campaign
+// sends, queued sequence and outreach email, transactional sends), with
+// opens and clicks, and the brand's contacts who bounced, complained or
+// unsubscribed. Dates are UTC 'YYYY-MM-DD HH:MM:SS', as stored.
+func (q *Queries) GetBrandEmailStats(ctx context.Context, arg GetBrandEmailStatsParams) (GetBrandEmailStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, getBrandEmailStats, arg.StartDate, arg.EndDate, arg.OrgID)
+	var i GetBrandEmailStatsRow
+	err := row.Scan(
+		&i.SentCount,
+		&i.OpenedCount,
+		&i.ClickedCount,
+		&i.BouncedCount,
+		&i.ComplaintCount,
+		&i.UnsubscribedCount,
+	)
+	return i, err
+}
+
 const getCampaignSendEvent = `-- name: GetCampaignSendEvent :one
 SELECT cs.id, ec.org_id, cs.contact_id, c.email, ec.subject, cs.campaign_id,
     COALESCE(cs.list_id, 0) AS list_id

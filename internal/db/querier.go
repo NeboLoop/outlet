@@ -62,14 +62,12 @@ type Querier interface {
 	CountAutomationLog(ctx context.Context, arg CountAutomationLogParams) (int64, error)
 	CountBackups(ctx context.Context) (int64, error)
 	CountBlockedDomains(ctx context.Context, orgID string) (int64, error)
-	CountBouncesInDateRange(ctx context.Context, arg CountBouncesInDateRangeParams) (int64, error)
 	// A brand's transactional and campaign mail sends only from its sending
 	// domains, never from an outreach domain.
 	CountBrandDomain(ctx context.Context, arg CountBrandDomainParams) (int64, error)
 	CountCampaignSendsByStatus(ctx context.Context, arg CountCampaignSendsByStatusParams) (int64, error)
 	CountCampaigns(ctx context.Context, orgID string) (int64, error)
 	CountCampaignsByStatus(ctx context.Context, arg CountCampaignsByStatusParams) (int64, error)
-	CountComplaintsInDateRange(ctx context.Context, arg CountComplaintsInDateRangeParams) (int64, error)
 	CountContacts(ctx context.Context) (int64, error)
 	CountContactsByOrg(ctx context.Context, orgID sql.NullString) (int64, error)
 	CountContactsByStatus(ctx context.Context, status sql.NullString) (int64, error)
@@ -244,6 +242,11 @@ type Querier interface {
 	GetBackupsByType(ctx context.Context, arg GetBackupsByTypeParams) ([]BackupHistory, error)
 	GetBackupsInProgress(ctx context.Context) ([]BackupHistory, error)
 	GetBlockedDomain(ctx context.Context, arg GetBlockedDomainParams) (BlockedDomain, error)
+	// What a brand's email did in a date range: every kind it sent (campaign
+	// sends, queued sequence and outreach email, transactional sends), with
+	// opens and clicks, and the brand's contacts who bounced, complained or
+	// unsubscribed. Dates are UTC 'YYYY-MM-DD HH:MM:SS', as stored.
+	GetBrandEmailStats(ctx context.Context, arg GetBrandEmailStatsParams) (GetBrandEmailStatsRow, error)
 	GetCampaign(ctx context.Context, arg GetCampaignParams) (EmailCampaign, error)
 	// Campaign Scheduler Queries
 	GetCampaignByID(ctx context.Context, id string) (EmailCampaign, error)
@@ -304,7 +307,6 @@ type Querier interface {
 	GetEmailReply(ctx context.Context, arg GetEmailReplyParams) (EmailReply, error)
 	GetEmailStatsForSequence(ctx context.Context, sequenceID sql.NullString) (GetEmailStatsForSequenceRow, error)
 	GetEmailStatsForTemplate(ctx context.Context, templateID sql.NullString) (GetEmailStatsForTemplateRow, error)
-	GetEmailStatsInDateRange(ctx context.Context, arg GetEmailStatsInDateRangeParams) (GetEmailStatsInDateRangeRow, error)
 	// Get enabled rules for a specific entity (e.g., email_list, product)
 	GetEntityRules(ctx context.Context, arg GetEntityRulesParams) ([]OrgRule, error)
 	GetEntryRule(ctx context.Context, id string) (SequenceEntryRule, error)

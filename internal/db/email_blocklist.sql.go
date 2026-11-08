@@ -142,40 +142,6 @@ func (q *Queries) CountBlockedDomains(ctx context.Context, orgID string) (int64,
 	return count, err
 }
 
-const countBouncesInDateRange = `-- name: CountBouncesInDateRange :one
-SELECT COUNT(*) FROM email_bounce
-WHERE created_at >= ?1 AND created_at <= ?2
-`
-
-type CountBouncesInDateRangeParams struct {
-	StartDate sql.NullString `json:"start_date"`
-	EndDate   sql.NullString `json:"end_date"`
-}
-
-func (q *Queries) CountBouncesInDateRange(ctx context.Context, arg CountBouncesInDateRangeParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countBouncesInDateRange, arg.StartDate, arg.EndDate)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countComplaintsInDateRange = `-- name: CountComplaintsInDateRange :one
-SELECT COUNT(*) FROM email_complaint
-WHERE created_at >= ?1 AND created_at <= ?2
-`
-
-type CountComplaintsInDateRangeParams struct {
-	StartDate sql.NullString `json:"start_date"`
-	EndDate   sql.NullString `json:"end_date"`
-}
-
-func (q *Queries) CountComplaintsInDateRange(ctx context.Context, arg CountComplaintsInDateRangeParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countComplaintsInDateRange, arg.StartDate, arg.EndDate)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countSuppressedEmails = `-- name: CountSuppressedEmails :one
 SELECT COUNT(*) FROM suppression_list WHERE org_id = ?1
 `

@@ -34,10 +34,6 @@ SELECT * FROM email_bounce
 ORDER BY created_at DESC
 LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
 
--- name: CountBouncesInDateRange :one
-SELECT COUNT(*) FROM email_bounce
-WHERE created_at >= sqlc.arg(start_date) AND created_at <= sqlc.arg(end_date);
-
 -- ========== COMPLAINTS ==========
 
 -- name: CreateEmailComplaint :one
@@ -69,10 +65,6 @@ DELETE FROM email_complaint WHERE email_lower = LOWER(sqlc.arg(email));
 SELECT * FROM email_complaint
 ORDER BY created_at DESC
 LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
-
--- name: CountComplaintsInDateRange :one
-SELECT COUNT(*) FROM email_complaint
-WHERE created_at >= sqlc.arg(start_date) AND created_at <= sqlc.arg(end_date);
 
 -- ========== COMBINED CHECK ==========
 

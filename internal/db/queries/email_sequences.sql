@@ -244,16 +244,6 @@ FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 WHERE et.sequence_id = sqlc.arg(sequence_id);
 
--- name: GetEmailStatsInDateRange :one
-SELECT
-    SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent_count,
-    SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened_count,
-    SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked_count,
-    COALESCE(SUM(open_count), 0) as total_opens,
-    COALESCE(SUM(click_count), 0) as total_clicks
-FROM email_queue
-WHERE sent_at >= sqlc.arg(start_date) AND sent_at <= sqlc.arg(end_date);
-
 -- name: GetEmailStatsForTemplate :one
 SELECT
     SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent_count,

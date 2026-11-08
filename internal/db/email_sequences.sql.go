@@ -746,43 +746,6 @@ func (q *Queries) GetEmailStatsForTemplate(ctx context.Context, templateID sql.N
 	return i, err
 }
 
-const getEmailStatsInDateRange = `-- name: GetEmailStatsInDateRange :one
-SELECT
-    SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent_count,
-    SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened_count,
-    SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked_count,
-    COALESCE(SUM(open_count), 0) as total_opens,
-    COALESCE(SUM(click_count), 0) as total_clicks
-FROM email_queue
-WHERE sent_at >= ?1 AND sent_at <= ?2
-`
-
-type GetEmailStatsInDateRangeParams struct {
-	StartDate sql.NullString `json:"start_date"`
-	EndDate   sql.NullString `json:"end_date"`
-}
-
-type GetEmailStatsInDateRangeRow struct {
-	SentCount    sql.NullFloat64 `json:"sent_count"`
-	OpenedCount  sql.NullFloat64 `json:"opened_count"`
-	ClickedCount sql.NullFloat64 `json:"clicked_count"`
-	TotalOpens   interface{}     `json:"total_opens"`
-	TotalClicks  interface{}     `json:"total_clicks"`
-}
-
-func (q *Queries) GetEmailStatsInDateRange(ctx context.Context, arg GetEmailStatsInDateRangeParams) (GetEmailStatsInDateRangeRow, error) {
-	row := q.db.QueryRowContext(ctx, getEmailStatsInDateRange, arg.StartDate, arg.EndDate)
-	var i GetEmailStatsInDateRangeRow
-	err := row.Scan(
-		&i.SentCount,
-		&i.OpenedCount,
-		&i.ClickedCount,
-		&i.TotalOpens,
-		&i.TotalClicks,
-	)
-	return i, err
-}
-
 const getNextTemplate = `-- name: GetNextTemplate :one
 SELECT id, sequence_id, position, delay_hours, subject, html_body, plain_text, is_active, is_transactional, design_id, created_at
 FROM email_templates

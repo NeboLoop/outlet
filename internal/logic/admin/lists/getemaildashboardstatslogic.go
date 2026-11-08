@@ -7,6 +7,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -27,82 +28,53 @@ func NewGetEmailDashboardStatsLogic(ctx context.Context, svcCtx *svc.ServiceCont
 	}
 }
 
+// GetEmailDashboardStats reports what the brand's email did from req.From to
+// req.To (whole UTC days, YYYY-MM-DD; the last 30 days by default).
 func (l *GetEmailDashboardStatsLogic) GetEmailDashboardStats(req *types.EmailDashboardStatsRequest) (resp *types.EmailDashboardStatsResponse, err error) {
-	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
+	if err != nil {
 		return nil, err
 	}
 
-	var fromTime, toTime time.Time
-
+	now := time.Now().UTC()
+	fromTime := now.AddDate(0, 0, -30)
+	toTime := now
 	if req.From != "" {
-		fromTime, err = time.Parse("2006-01-02", req.From)
-		if err != nil {
-			fromTime = time.Now().AddDate(0, 0, -30)
+		if fromTime, err = time.Parse(time.DateOnly, req.From); err != nil {
+			return nil, errorx.NewBadRequestError("from is a date: YYYY-MM-DD")
 		}
-	} else {
-		fromTime = time.Now().AddDate(0, 0, -30)
 	}
-
 	if req.To != "" {
-		toTime, err = time.Parse("2006-01-02", req.To)
-		if err != nil {
-			toTime = time.Now()
+		if toTime, err = time.Parse(time.DateOnly, req.To); err != nil {
+			return nil, errorx.NewBadRequestError("to is a date: YYYY-MM-DD")
 		}
 		toTime = toTime.Add(24*time.Hour - time.Second)
-	} else {
-		toTime = time.Now()
 	}
 
-	fromStr := fromTime.Format(time.RFC3339)
-	toStr := toTime.Format(time.RFC3339)
-
-	var totalSent, totalOpened, totalClicked int64
-
-	stats, err := l.svcCtx.DB.GetEmailStatsInDateRange(l.ctx, db.GetEmailStatsInDateRangeParams{
-		StartDate: sql.NullString{String: fromStr, Valid: true},
-		EndDate:   sql.NullString{String: toStr, Valid: true},
+	// Stored times are UTC text, 'YYYY-MM-DD HH:MM:SS'
+	stats, err := l.svcCtx.DB.GetBrandEmailStats(l.ctx, db.GetBrandEmailStatsParams{
+		OrgID:     sql.NullString{String: orgID, Valid: true},
+		StartDate: sql.NullString{String: fromTime.Format(time.DateTime), Valid: true},
+		EndDate:   sql.NullString{String: toTime.Format(time.DateTime), Valid: true},
 	})
 	if err != nil {
 		l.Errorf("Failed to get email stats: %v", err)
-	} else {
-		totalSent = int64(stats.SentCount.Float64)
-		totalOpened = int64(stats.OpenedCount.Float64)
-		totalClicked = int64(stats.ClickedCount.Float64)
+		return nil, errorx.NewInternalError("Couldn't load the email stats.")
 	}
-
-	bounceCount, err := l.svcCtx.DB.CountBouncesInDateRange(l.ctx, db.CountBouncesInDateRangeParams{
-		StartDate: sql.NullString{String: fromStr, Valid: true},
-		EndDate:   sql.NullString{String: toStr, Valid: true},
-	})
-	if err != nil {
-		l.Errorf("Failed to count bounces: %v", err)
-		bounceCount = 0
-	}
-
-	complaintCount, err := l.svcCtx.DB.CountComplaintsInDateRange(l.ctx, db.CountComplaintsInDateRangeParams{
-		StartDate: sql.NullString{String: fromStr, Valid: true},
-		EndDate:   sql.NullString{String: toStr, Valid: true},
-	})
-	if err != nil {
-		l.Errorf("Failed to count complaints: %v", err)
-		complaintCount = 0
-	}
-
-	unsubscribedCount := int64(0)
 
 	var openRate, clickRate float64
-	if totalSent > 0 {
-		openRate = float64(totalOpened) / float64(totalSent)
-		clickRate = float64(totalClicked) / float64(totalSent)
+	if stats.SentCount > 0 {
+		openRate = float64(stats.OpenedCount) / float64(stats.SentCount)
+		clickRate = float64(stats.ClickedCount) / float64(stats.SentCount)
 	}
 
 	return &types.EmailDashboardStatsResponse{
-		TotalSent:         int(totalSent),
-		TotalOpened:       int(totalOpened),
-		TotalClicked:      int(totalClicked),
-		TotalBounced:      int(bounceCount),
-		TotalComplaints:   int(complaintCount),
-		TotalUnsubscribed: int(unsubscribedCount),
+		TotalSent:         int(stats.SentCount),
+		TotalOpened:       int(stats.OpenedCount),
+		TotalClicked:      int(stats.ClickedCount),
+		TotalBounced:      int(stats.BouncedCount),
+		TotalComplaints:   int(stats.ComplaintCount),
+		TotalUnsubscribed: int(stats.UnsubscribedCount),
 		OpenRate:          openRate,
 		ClickRate:         clickRate,
 	}, nil
