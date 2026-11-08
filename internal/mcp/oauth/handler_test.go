@@ -40,4 +40,11 @@ func TestPagesEscapeInput(t *testing.T) {
 	if strings.Contains(rr.Body.String(), "<script>alert(1)") {
 		t.Error("success page renders unescaped input")
 	}
+
+	// The redirect keeps its query string: a client reads code and state.
+	rr = httptest.NewRecorder()
+	h.renderSuccessPage(rr, "https://claude.ai/api/mcp/auth_callback?code=c1&state=s1", "Claude")
+	if !strings.Contains(rr.Body.String(), `window.location.href = "https://claude.ai/api/mcp/auth_callback?code=c1\u0026state=s1";`) {
+		t.Errorf("success page redirect is mangled:\n%s", rr.Body.String())
+	}
 }

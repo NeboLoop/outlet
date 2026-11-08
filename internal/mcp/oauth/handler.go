@@ -606,13 +606,22 @@ func (h *Handler) renderSuccessPage(w http.ResponseWriter, redirectURL, clientNa
     </div>
     <script>
         setTimeout(function() {
-            window.location.href = %q;
+            window.location.href = %s;
         }, 1500);
     </script>
 </body>
-</html>`, html.EscapeString(clientName), html.EscapeString(redirectURL))
+</html>`, html.EscapeString(clientName), jsString(redirectURL))
 
 	w.Write([]byte(page))
+}
+
+// jsString quotes s for a script: JSON escapes <, > and & as \u sequences,
+// so it can't close the script tag, and JavaScript reads them back as the
+// same characters. HTML escaping is wrong here: inside a script &amp; stays
+// &amp;, which broke every redirect's query string.
+func jsString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 // renderLoginPage renders the OAuth login page
