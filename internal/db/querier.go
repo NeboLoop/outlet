@@ -23,6 +23,7 @@ type Querier interface {
 	// Used when subscribing with multiple field values at once
 	BulkCreateCustomFieldValues(ctx context.Context, arg BulkCreateCustomFieldValuesParams) error
 	BulkInsertBlockedDomains(ctx context.Context, arg BulkInsertBlockedDomainsParams) error
+	CampaignSendRefusedSince(ctx context.Context, id string) (sql.NullString, error)
 	CancelAllContactSequences(ctx context.Context, arg CancelAllContactSequencesParams) error
 	CancelContactSequence(ctx context.Context, arg CancelContactSequenceParams) error
 	CancelEmail(ctx context.Context, id string) error
@@ -224,8 +225,10 @@ type Querier interface {
 	// A send that failed for now (a pathway limit, a 4xx, a dropped connection)
 	// waits, unclaimed and pending, to be claimed again after send_after. A sent
 	// or failed send is final and never goes back.
+	// refused_at is set for a refusal (not a limit hold): the first one is kept.
 	DeferCampaignSend(ctx context.Context, arg DeferCampaignSendParams) error
 	// A sequence email held back by a pathway limit waits, unclaimed and still pending.
+	// refused_at is set for a refusal (not a limit hold): the first one is kept.
 	DeferQueuedEmail(ctx context.Context, arg DeferQueuedEmailParams) error
 	DeleteAuthTokensByUser(ctx context.Context, arg DeleteAuthTokensByUserParams) error
 	DeleteBackup(ctx context.Context, id string) error
@@ -664,6 +667,7 @@ type Querier interface {
 	QueueEmailWithTracking(ctx context.Context, arg QueueEmailWithTrackingParams) (EmailQueue, error)
 	// ---- the outreach queue (email_queue rows of kind 'outreach') -----------------
 	QueueOutreachEmail(ctx context.Context, arg QueueOutreachEmailParams) (EmailQueue, error)
+	QueuedEmailRefusedSince(ctx context.Context, id string) (sql.NullString, error)
 	RecordCampaignClick(ctx context.Context, id string) error
 	RecordCampaignOpen(ctx context.Context, id string) error
 	RecordEmailClick(ctx context.Context, id string) error

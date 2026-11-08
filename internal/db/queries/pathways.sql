@@ -136,9 +136,20 @@ WHERE pathway_id = sqlc.arg(pathway_id) AND sender_id = sqlc.arg(sender_id) AND 
 -- A send that failed for now (a pathway limit, a 4xx, a dropped connection)
 -- waits, unclaimed and pending, to be claimed again after send_after. A sent
 -- or failed send is final and never goes back.
-UPDATE campaign_sends SET claim_token = NULL, claimed_at = NULL, send_after = ?
-WHERE id = ? AND status = 'pending';
+-- refused_at is set for a refusal (not a limit hold): the first one is kept.
+UPDATE campaign_sends SET claim_token = NULL, claimed_at = NULL, send_after = sqlc.arg(send_after),
+    first_refused_at = COALESCE(first_refused_at, sqlc.narg(refused_at))
+WHERE id = sqlc.arg(id) AND status = 'pending';
+
+-- name: CampaignSendRefusedSince :one
+SELECT first_refused_at FROM campaign_sends WHERE id = ?;
 
 -- name: DeferQueuedEmail :exec
 -- A sequence email held back by a pathway limit waits, unclaimed and still pending.
-UPDATE email_queue SET claim_token = NULL, claimed_at = NULL, scheduled_for = ? WHERE id = ? AND status = 'pending';
+-- refused_at is set for a refusal (not a limit hold): the first one is kept.
+UPDATE email_queue SET claim_token = NULL, claimed_at = NULL, scheduled_for = sqlc.arg(scheduled_for),
+    first_refused_at = COALESCE(first_refused_at, sqlc.narg(refused_at))
+WHERE id = sqlc.arg(id) AND status = 'pending';
+
+-- name: QueuedEmailRefusedSince :one
+SELECT first_refused_at FROM email_queue WHERE id = ?;

@@ -512,14 +512,23 @@ func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow
 // deferCampaignSend leaves a campaign send held back by a temporary failure
 // (its pathway's limit, a 4xx, a dropped connection, SES throttling) pending
 // and unclaimed, to go again at RetryAt, or in 15 minutes. It is the one way
-// a campaign send is tried again; a send that failed for good is marked
-// failed and never retried. It reports whether it deferred.
+// a campaign send is tried again; a send that failed for good, or that the
+// mail server kept refusing for GiveUpAfter, is marked failed and never
+// retried. It reports whether it deferred.
 func deferCampaignSend(ctx context.Context, store *db.Store, id string, err error) bool {
 	if err == nil || !email.IsTemporary(err) {
 		return false
 	}
-	at := email.RetryAt(err, time.Now().Add(15*time.Minute))
-	if derr := store.DeferCampaignSend(ctx, db.DeferCampaignSendParams{SendAfter: sql.NullString{String: at.UTC().Format(time.DateTime), Valid: true}, ID: id}); derr != nil {
+	now := time.Now()
+	refused := email.RefusedAt(err, now)
+	if refused.Valid {
+		if since, _ := store.CampaignSendRefusedSince(ctx, id); email.GaveUp(since, now) {
+			logx.Infof("Send %s: refused for %s, giving up: %v", id, email.GiveUpAfter, err)
+			return false
+		}
+	}
+	at := email.RetryAt(err, now.Add(15*time.Minute))
+	if derr := store.DeferCampaignSend(ctx, db.DeferCampaignSendParams{SendAfter: sql.NullString{String: at.UTC().Format(time.DateTime), Valid: true}, RefusedAt: refused, ID: id}); derr != nil {
 		logx.Errorf("Failed to defer send %s: %v", id, derr)
 	}
 	return true

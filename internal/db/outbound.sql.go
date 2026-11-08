@@ -628,7 +628,7 @@ func (q *Queries) GetOutreachDomain(ctx context.Context, arg GetOutreachDomainPa
 }
 
 const getOutreachEmail = `-- name: GetOutreachEmail :one
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, c.name AS to_name, c.org_id AS org_id,
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.email AS to_email, c.name AS to_name, c.org_id AS org_id,
        COALESCE(et.position, 0) AS position, et.sequence_id AS sequence_id
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
@@ -642,33 +642,34 @@ type GetOutreachEmailParams struct {
 }
 
 type GetOutreachEmailRow struct {
-	ID            string         `json:"id"`
-	ContactID     sql.NullString `json:"contact_id"`
-	TemplateID    sql.NullString `json:"template_id"`
-	ScheduledFor  string         `json:"scheduled_for"`
-	SentAt        sql.NullString `json:"sent_at"`
-	Status        sql.NullString `json:"status"`
-	ErrorMessage  sql.NullString `json:"error_message"`
-	CreatedAt     sql.NullString `json:"created_at"`
-	TrackingToken sql.NullString `json:"tracking_token"`
-	OpenedAt      sql.NullString `json:"opened_at"`
-	OpenCount     int64          `json:"open_count"`
-	ClickedAt     sql.NullString `json:"clicked_at"`
-	ClickCount    int64          `json:"click_count"`
-	Kind          string         `json:"kind"`
-	MailboxID     sql.NullString `json:"mailbox_id"`
-	Subject       sql.NullString `json:"subject"`
-	Body          sql.NullString `json:"body"`
-	MessageID     sql.NullString `json:"message_id"`
-	InReplyTo     sql.NullString `json:"in_reply_to"`
-	Refs          sql.NullString `json:"refs"`
-	ClaimToken    sql.NullString `json:"claim_token"`
-	ClaimedAt     sql.NullString `json:"claimed_at"`
-	ToEmail       string         `json:"to_email"`
-	ToName        string         `json:"to_name"`
-	OrgID         sql.NullString `json:"org_id"`
-	Position      int64          `json:"position"`
-	SequenceID    sql.NullString `json:"sequence_id"`
+	ID             string         `json:"id"`
+	ContactID      sql.NullString `json:"contact_id"`
+	TemplateID     sql.NullString `json:"template_id"`
+	ScheduledFor   string         `json:"scheduled_for"`
+	SentAt         sql.NullString `json:"sent_at"`
+	Status         sql.NullString `json:"status"`
+	ErrorMessage   sql.NullString `json:"error_message"`
+	CreatedAt      sql.NullString `json:"created_at"`
+	TrackingToken  sql.NullString `json:"tracking_token"`
+	OpenedAt       sql.NullString `json:"opened_at"`
+	OpenCount      int64          `json:"open_count"`
+	ClickedAt      sql.NullString `json:"clicked_at"`
+	ClickCount     int64          `json:"click_count"`
+	Kind           string         `json:"kind"`
+	MailboxID      sql.NullString `json:"mailbox_id"`
+	Subject        sql.NullString `json:"subject"`
+	Body           sql.NullString `json:"body"`
+	MessageID      sql.NullString `json:"message_id"`
+	InReplyTo      sql.NullString `json:"in_reply_to"`
+	Refs           sql.NullString `json:"refs"`
+	ClaimToken     sql.NullString `json:"claim_token"`
+	ClaimedAt      sql.NullString `json:"claimed_at"`
+	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	ToEmail        string         `json:"to_email"`
+	ToName         string         `json:"to_name"`
+	OrgID          sql.NullString `json:"org_id"`
+	Position       int64          `json:"position"`
+	SequenceID     sql.NullString `json:"sequence_id"`
 }
 
 // One outreach email of a brand, with its person and sequence.
@@ -698,6 +699,7 @@ func (q *Queries) GetOutreachEmail(ctx context.Context, arg GetOutreachEmailPara
 		&i.Refs,
 		&i.ClaimToken,
 		&i.ClaimedAt,
+		&i.FirstRefusedAt,
 		&i.ToEmail,
 		&i.ToName,
 		&i.OrgID,
@@ -708,7 +710,7 @@ func (q *Queries) GetOutreachEmail(ctx context.Context, arg GetOutreachEmailPara
 }
 
 const getOutreachEmailByMessageID = `-- name: GetOutreachEmailByMessageID :one
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.org_id AS org_id, et.sequence_id AS sequence_id
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.org_id AS org_id, et.sequence_id AS sequence_id
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
 LEFT JOIN email_templates et ON et.id = eq.template_id
@@ -716,30 +718,31 @@ WHERE eq.message_id = ? AND eq.kind = 'outreach' LIMIT 1
 `
 
 type GetOutreachEmailByMessageIDRow struct {
-	ID            string         `json:"id"`
-	ContactID     sql.NullString `json:"contact_id"`
-	TemplateID    sql.NullString `json:"template_id"`
-	ScheduledFor  string         `json:"scheduled_for"`
-	SentAt        sql.NullString `json:"sent_at"`
-	Status        sql.NullString `json:"status"`
-	ErrorMessage  sql.NullString `json:"error_message"`
-	CreatedAt     sql.NullString `json:"created_at"`
-	TrackingToken sql.NullString `json:"tracking_token"`
-	OpenedAt      sql.NullString `json:"opened_at"`
-	OpenCount     int64          `json:"open_count"`
-	ClickedAt     sql.NullString `json:"clicked_at"`
-	ClickCount    int64          `json:"click_count"`
-	Kind          string         `json:"kind"`
-	MailboxID     sql.NullString `json:"mailbox_id"`
-	Subject       sql.NullString `json:"subject"`
-	Body          sql.NullString `json:"body"`
-	MessageID     sql.NullString `json:"message_id"`
-	InReplyTo     sql.NullString `json:"in_reply_to"`
-	Refs          sql.NullString `json:"refs"`
-	ClaimToken    sql.NullString `json:"claim_token"`
-	ClaimedAt     sql.NullString `json:"claimed_at"`
-	OrgID         sql.NullString `json:"org_id"`
-	SequenceID    sql.NullString `json:"sequence_id"`
+	ID             string         `json:"id"`
+	ContactID      sql.NullString `json:"contact_id"`
+	TemplateID     sql.NullString `json:"template_id"`
+	ScheduledFor   string         `json:"scheduled_for"`
+	SentAt         sql.NullString `json:"sent_at"`
+	Status         sql.NullString `json:"status"`
+	ErrorMessage   sql.NullString `json:"error_message"`
+	CreatedAt      sql.NullString `json:"created_at"`
+	TrackingToken  sql.NullString `json:"tracking_token"`
+	OpenedAt       sql.NullString `json:"opened_at"`
+	OpenCount      int64          `json:"open_count"`
+	ClickedAt      sql.NullString `json:"clicked_at"`
+	ClickCount     int64          `json:"click_count"`
+	Kind           string         `json:"kind"`
+	MailboxID      sql.NullString `json:"mailbox_id"`
+	Subject        sql.NullString `json:"subject"`
+	Body           sql.NullString `json:"body"`
+	MessageID      sql.NullString `json:"message_id"`
+	InReplyTo      sql.NullString `json:"in_reply_to"`
+	Refs           sql.NullString `json:"refs"`
+	ClaimToken     sql.NullString `json:"claim_token"`
+	ClaimedAt      sql.NullString `json:"claimed_at"`
+	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	OrgID          sql.NullString `json:"org_id"`
+	SequenceID     sql.NullString `json:"sequence_id"`
 }
 
 func (q *Queries) GetOutreachEmailByMessageID(ctx context.Context, messageID sql.NullString) (GetOutreachEmailByMessageIDRow, error) {
@@ -768,6 +771,7 @@ func (q *Queries) GetOutreachEmailByMessageID(ctx context.Context, messageID sql
 		&i.Refs,
 		&i.ClaimToken,
 		&i.ClaimedAt,
+		&i.FirstRefusedAt,
 		&i.OrgID,
 		&i.SequenceID,
 	)
@@ -1321,7 +1325,7 @@ func (q *Queries) ListOutreachDomains(ctx context.Context, orgID string) ([]Doma
 }
 
 const listOutreachEmails = `-- name: ListOutreachEmails :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email,
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email,
        CAST(COALESCE(es.id, '') AS TEXT) AS campaign_id, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
@@ -1340,34 +1344,35 @@ type ListOutreachEmailsParams struct {
 }
 
 type ListOutreachEmailsRow struct {
-	ID            string         `json:"id"`
-	ContactID     sql.NullString `json:"contact_id"`
-	TemplateID    sql.NullString `json:"template_id"`
-	ScheduledFor  string         `json:"scheduled_for"`
-	SentAt        sql.NullString `json:"sent_at"`
-	Status        sql.NullString `json:"status"`
-	ErrorMessage  sql.NullString `json:"error_message"`
-	CreatedAt     sql.NullString `json:"created_at"`
-	TrackingToken sql.NullString `json:"tracking_token"`
-	OpenedAt      sql.NullString `json:"opened_at"`
-	OpenCount     int64          `json:"open_count"`
-	ClickedAt     sql.NullString `json:"clicked_at"`
-	ClickCount    int64          `json:"click_count"`
-	Kind          string         `json:"kind"`
-	MailboxID     sql.NullString `json:"mailbox_id"`
-	Subject       sql.NullString `json:"subject"`
-	Body          sql.NullString `json:"body"`
-	MessageID     sql.NullString `json:"message_id"`
-	InReplyTo     sql.NullString `json:"in_reply_to"`
-	Refs          sql.NullString `json:"refs"`
-	ClaimToken    sql.NullString `json:"claim_token"`
-	ClaimedAt     sql.NullString `json:"claimed_at"`
-	ToEmail       string         `json:"to_email"`
-	ToName        string         `json:"to_name"`
-	Position      int64          `json:"position"`
-	FromEmail     string         `json:"from_email"`
-	CampaignID    string         `json:"campaign_id"`
-	CampaignName  string         `json:"campaign_name"`
+	ID             string         `json:"id"`
+	ContactID      sql.NullString `json:"contact_id"`
+	TemplateID     sql.NullString `json:"template_id"`
+	ScheduledFor   string         `json:"scheduled_for"`
+	SentAt         sql.NullString `json:"sent_at"`
+	Status         sql.NullString `json:"status"`
+	ErrorMessage   sql.NullString `json:"error_message"`
+	CreatedAt      sql.NullString `json:"created_at"`
+	TrackingToken  sql.NullString `json:"tracking_token"`
+	OpenedAt       sql.NullString `json:"opened_at"`
+	OpenCount      int64          `json:"open_count"`
+	ClickedAt      sql.NullString `json:"clicked_at"`
+	ClickCount     int64          `json:"click_count"`
+	Kind           string         `json:"kind"`
+	MailboxID      sql.NullString `json:"mailbox_id"`
+	Subject        sql.NullString `json:"subject"`
+	Body           sql.NullString `json:"body"`
+	MessageID      sql.NullString `json:"message_id"`
+	InReplyTo      sql.NullString `json:"in_reply_to"`
+	Refs           sql.NullString `json:"refs"`
+	ClaimToken     sql.NullString `json:"claim_token"`
+	ClaimedAt      sql.NullString `json:"claimed_at"`
+	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	ToEmail        string         `json:"to_email"`
+	ToName         string         `json:"to_name"`
+	Position       int64          `json:"position"`
+	FromEmail      string         `json:"from_email"`
+	CampaignID     string         `json:"campaign_id"`
+	CampaignName   string         `json:"campaign_name"`
 }
 
 // A brand's outreach emails with one status, oldest first, with the
@@ -1404,6 +1409,7 @@ func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmails
 			&i.Refs,
 			&i.ClaimToken,
 			&i.ClaimedAt,
+			&i.FirstRefusedAt,
 			&i.ToEmail,
 			&i.ToName,
 			&i.Position,
@@ -1425,7 +1431,7 @@ func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmails
 }
 
 const listOutreachEmailsForSequence = `-- name: ListOutreachEmailsForSequence :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, m.email AS from_email, et.position
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.email AS to_email, m.email AS from_email, et.position
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
@@ -1435,31 +1441,32 @@ ORDER BY eq.created_at
 `
 
 type ListOutreachEmailsForSequenceRow struct {
-	ID            string         `json:"id"`
-	ContactID     sql.NullString `json:"contact_id"`
-	TemplateID    sql.NullString `json:"template_id"`
-	ScheduledFor  string         `json:"scheduled_for"`
-	SentAt        sql.NullString `json:"sent_at"`
-	Status        sql.NullString `json:"status"`
-	ErrorMessage  sql.NullString `json:"error_message"`
-	CreatedAt     sql.NullString `json:"created_at"`
-	TrackingToken sql.NullString `json:"tracking_token"`
-	OpenedAt      sql.NullString `json:"opened_at"`
-	OpenCount     int64          `json:"open_count"`
-	ClickedAt     sql.NullString `json:"clicked_at"`
-	ClickCount    int64          `json:"click_count"`
-	Kind          string         `json:"kind"`
-	MailboxID     sql.NullString `json:"mailbox_id"`
-	Subject       sql.NullString `json:"subject"`
-	Body          sql.NullString `json:"body"`
-	MessageID     sql.NullString `json:"message_id"`
-	InReplyTo     sql.NullString `json:"in_reply_to"`
-	Refs          sql.NullString `json:"refs"`
-	ClaimToken    sql.NullString `json:"claim_token"`
-	ClaimedAt     sql.NullString `json:"claimed_at"`
-	ToEmail       string         `json:"to_email"`
-	FromEmail     string         `json:"from_email"`
-	Position      int64          `json:"position"`
+	ID             string         `json:"id"`
+	ContactID      sql.NullString `json:"contact_id"`
+	TemplateID     sql.NullString `json:"template_id"`
+	ScheduledFor   string         `json:"scheduled_for"`
+	SentAt         sql.NullString `json:"sent_at"`
+	Status         sql.NullString `json:"status"`
+	ErrorMessage   sql.NullString `json:"error_message"`
+	CreatedAt      sql.NullString `json:"created_at"`
+	TrackingToken  sql.NullString `json:"tracking_token"`
+	OpenedAt       sql.NullString `json:"opened_at"`
+	OpenCount      int64          `json:"open_count"`
+	ClickedAt      sql.NullString `json:"clicked_at"`
+	ClickCount     int64          `json:"click_count"`
+	Kind           string         `json:"kind"`
+	MailboxID      sql.NullString `json:"mailbox_id"`
+	Subject        sql.NullString `json:"subject"`
+	Body           sql.NullString `json:"body"`
+	MessageID      sql.NullString `json:"message_id"`
+	InReplyTo      sql.NullString `json:"in_reply_to"`
+	Refs           sql.NullString `json:"refs"`
+	ClaimToken     sql.NullString `json:"claim_token"`
+	ClaimedAt      sql.NullString `json:"claimed_at"`
+	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	ToEmail        string         `json:"to_email"`
+	FromEmail      string         `json:"from_email"`
+	Position       int64          `json:"position"`
 }
 
 func (q *Queries) ListOutreachEmailsForSequence(ctx context.Context, sequenceID sql.NullString) ([]ListOutreachEmailsForSequenceRow, error) {
@@ -1494,6 +1501,7 @@ func (q *Queries) ListOutreachEmailsForSequence(ctx context.Context, sequenceID 
 			&i.Refs,
 			&i.ClaimToken,
 			&i.ClaimedAt,
+			&i.FirstRefusedAt,
 			&i.ToEmail,
 			&i.FromEmail,
 			&i.Position,
@@ -1610,7 +1618,7 @@ func (q *Queries) ListOutreachSequences(ctx context.Context, orgID sql.NullStrin
 }
 
 const listOutreachThread = `-- name: ListOutreachThread :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at FROM email_queue eq
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 WHERE eq.contact_id = ? AND et.sequence_id = ? AND eq.kind = 'outreach' AND eq.status = 'sent'
 ORDER BY eq.sent_at
@@ -1654,6 +1662,7 @@ func (q *Queries) ListOutreachThread(ctx context.Context, arg ListOutreachThread
 			&i.Refs,
 			&i.ClaimToken,
 			&i.ClaimedAt,
+			&i.FirstRefusedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1873,7 +1882,7 @@ func (q *Queries) ListSequenceSteps(ctx context.Context, sequenceID sql.NullStri
 }
 
 const listStuckOutreach = `-- name: ListStuckOutreach :many
-SELECT id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at FROM email_queue WHERE kind = 'outreach' AND status = 'sending' AND claimed_at < ?
+SELECT id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at, first_refused_at FROM email_queue WHERE kind = 'outreach' AND status = 'sending' AND claimed_at < ?
 `
 
 // Rows left in sending by a crash. Nobody knows whether they went, so they
@@ -1910,6 +1919,7 @@ func (q *Queries) ListStuckOutreach(ctx context.Context, claimedAt sql.NullStrin
 			&i.Refs,
 			&i.ClaimToken,
 			&i.ClaimedAt,
+			&i.FirstRefusedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1984,7 +1994,7 @@ func (q *Queries) MarkOutreachSent(ctx context.Context, arg MarkOutreachSentPara
 }
 
 const nextOutreachForMailbox = `-- name: NextOutreachForMailbox :one
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, c.org_id AS org_id, COALESCE(et.position, 0) AS position, et.sequence_id AS sequence_id
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.email AS to_email, c.org_id AS org_id, COALESCE(et.position, 0) AS position, et.sequence_id AS sequence_id
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
 LEFT JOIN email_templates et ON et.id = eq.template_id
@@ -2003,32 +2013,33 @@ type NextOutreachForMailboxParams struct {
 }
 
 type NextOutreachForMailboxRow struct {
-	ID            string         `json:"id"`
-	ContactID     sql.NullString `json:"contact_id"`
-	TemplateID    sql.NullString `json:"template_id"`
-	ScheduledFor  string         `json:"scheduled_for"`
-	SentAt        sql.NullString `json:"sent_at"`
-	Status        sql.NullString `json:"status"`
-	ErrorMessage  sql.NullString `json:"error_message"`
-	CreatedAt     sql.NullString `json:"created_at"`
-	TrackingToken sql.NullString `json:"tracking_token"`
-	OpenedAt      sql.NullString `json:"opened_at"`
-	OpenCount     int64          `json:"open_count"`
-	ClickedAt     sql.NullString `json:"clicked_at"`
-	ClickCount    int64          `json:"click_count"`
-	Kind          string         `json:"kind"`
-	MailboxID     sql.NullString `json:"mailbox_id"`
-	Subject       sql.NullString `json:"subject"`
-	Body          sql.NullString `json:"body"`
-	MessageID     sql.NullString `json:"message_id"`
-	InReplyTo     sql.NullString `json:"in_reply_to"`
-	Refs          sql.NullString `json:"refs"`
-	ClaimToken    sql.NullString `json:"claim_token"`
-	ClaimedAt     sql.NullString `json:"claimed_at"`
-	ToEmail       string         `json:"to_email"`
-	OrgID         sql.NullString `json:"org_id"`
-	Position      int64          `json:"position"`
-	SequenceID    sql.NullString `json:"sequence_id"`
+	ID             string         `json:"id"`
+	ContactID      sql.NullString `json:"contact_id"`
+	TemplateID     sql.NullString `json:"template_id"`
+	ScheduledFor   string         `json:"scheduled_for"`
+	SentAt         sql.NullString `json:"sent_at"`
+	Status         sql.NullString `json:"status"`
+	ErrorMessage   sql.NullString `json:"error_message"`
+	CreatedAt      sql.NullString `json:"created_at"`
+	TrackingToken  sql.NullString `json:"tracking_token"`
+	OpenedAt       sql.NullString `json:"opened_at"`
+	OpenCount      int64          `json:"open_count"`
+	ClickedAt      sql.NullString `json:"clicked_at"`
+	ClickCount     int64          `json:"click_count"`
+	Kind           string         `json:"kind"`
+	MailboxID      sql.NullString `json:"mailbox_id"`
+	Subject        sql.NullString `json:"subject"`
+	Body           sql.NullString `json:"body"`
+	MessageID      sql.NullString `json:"message_id"`
+	InReplyTo      sql.NullString `json:"in_reply_to"`
+	Refs           sql.NullString `json:"refs"`
+	ClaimToken     sql.NullString `json:"claim_token"`
+	ClaimedAt      sql.NullString `json:"claimed_at"`
+	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	ToEmail        string         `json:"to_email"`
+	OrgID          sql.NullString `json:"org_id"`
+	Position       int64          `json:"position"`
+	SequenceID     sql.NullString `json:"sequence_id"`
 }
 
 // The oldest approved outreach email due on this mailbox, whose person is
@@ -2059,6 +2070,7 @@ func (q *Queries) NextOutreachForMailbox(ctx context.Context, arg NextOutreachFo
 		&i.Refs,
 		&i.ClaimToken,
 		&i.ClaimedAt,
+		&i.FirstRefusedAt,
 		&i.ToEmail,
 		&i.OrgID,
 		&i.Position,
@@ -2274,7 +2286,7 @@ INSERT INTO email_queue (
     id, contact_id, template_id, scheduled_for, status, tracking_token,
     kind, mailbox_id, subject, body, message_id, in_reply_to, refs
 ) VALUES (?, ?, ?, ?, ?, ?, 'outreach', ?, ?, ?, ?, ?, ?)
-RETURNING id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at
+RETURNING id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at, first_refused_at
 `
 
 type QueueOutreachEmailParams struct {
@@ -2332,6 +2344,7 @@ func (q *Queries) QueueOutreachEmail(ctx context.Context, arg QueueOutreachEmail
 		&i.Refs,
 		&i.ClaimToken,
 		&i.ClaimedAt,
+		&i.FirstRefusedAt,
 	)
 	return i, err
 }

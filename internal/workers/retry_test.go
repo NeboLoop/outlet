@@ -24,7 +24,8 @@ import (
 )
 
 // relay is an SMTP server that answers by recipient: temp@ gets a 451 on
-// its first attempt and is accepted after, perm@ always gets a 550, anyone
+// its first attempt and is accepted after, stuck@ always gets a 451, perm@
+// always gets a 550, anyone
 // else is accepted. It counts every attempt and every accepted message.
 type relay struct {
 	mu       sync.Mutex
@@ -62,7 +63,7 @@ func (s *relaySession) Data(r io.Reader) error {
 	switch {
 	case s.rcpt == "perm@x.example":
 		return &gosmtp.SMTPError{Code: 550, EnhancedCode: gosmtp.EnhancedCode{5, 1, 1}, Message: "No such user"}
-	case s.rcpt == "temp@x.example" && s.k.attempts[s.rcpt] == 1:
+	case s.rcpt == "stuck@x.example", s.rcpt == "temp@x.example" && s.k.attempts[s.rcpt] == 1:
 		return &gosmtp.SMTPError{Code: 451, EnhancedCode: gosmtp.EnhancedCode{4, 3, 0}, Message: "Try again later"}
 	}
 	s.k.accepted[s.rcpt]++
@@ -99,7 +100,8 @@ func newRetryHarness(t *testing.T) (*db.Store, *email.Service, *relay) {
 		`INSERT INTO domain_identities (id, org_id, domain) VALUES ('d-a', 'org-a', 'a.example')`,
 		`INSERT INTO contacts (id, org_id, name, email) VALUES
 			('c-temp', 'org-a', 'T', 'temp@x.example'), ('c-perm', 'org-a', 'P', 'perm@x.example'),
-			('c-sent', 'org-a', 'S', 'sent@x.example'), ('c-failed', 'org-a', 'F', 'failed@x.example')`,
+			('c-sent', 'org-a', 'S', 'sent@x.example'), ('c-failed', 'org-a', 'F', 'failed@x.example'),
+			('c-stuck', 'org-a', 'K', 'stuck@x.example')`,
 	} {
 		_, err := conn.Exec(q)
 		require.NoError(t, err)
@@ -131,6 +133,9 @@ func TestCampaignSends_RetryTemporaryFailuresOnce(t *testing.T) {
 		`INSERT INTO campaign_sends (id, campaign_id, contact_id, status) VALUES
 			('s-temp', 'camp', 'c-temp', 'pending'), ('s-perm', 'camp', 'c-perm', 'pending'),
 			('s-sent', 'camp', 'c-sent', 'sent'), ('s-failed', 'camp', 'c-failed', 'failed')`,
+		// Refused for six days: the next refusal gives up.
+		`INSERT INTO campaign_sends (id, campaign_id, contact_id, status, first_refused_at) VALUES
+			('s-stuck', 'camp', 'c-stuck', 'pending', '` + time.Now().Add(-6*24*time.Hour).UTC().Format(time.RFC3339) + `')`,
 	} {
 		_, err := store.GetDB().Exec(q)
 		require.NoError(t, err)
@@ -154,6 +159,13 @@ func TestCampaignSends_RetryTemporaryFailuresOnce(t *testing.T) {
 	assert.Equal(t, "pending", status(t, store, "campaign_sends", "s-temp"))
 	assert.False(t, claim.Valid, "unclaimed, so a worker takes it again")
 	assert.Greater(t, sendAfter, time.Now().UTC().Format(time.DateTime), "it waits before trying again")
+	var refused sql.NullString
+	require.NoError(t, store.GetDB().QueryRow(`SELECT first_refused_at FROM campaign_sends WHERE id = 's-temp'`).Scan(&refused))
+	assert.True(t, refused.Valid, "its first refusal is recorded")
+	require.Eventually(t, func() bool { return status(t, store, "campaign_sends", "s-stuck") == "failed" }, 5*time.Second, 10*time.Millisecond)
+	a, _ := k.counts("stuck@x.example")
+	assert.Equal(t, 1, a, "refused for over five days: given up after one more try")
+
 	a, ok := k.counts("temp@x.example")
 	assert.Equal(t, 1, a, "not tried again before it is due")
 	assert.Zero(t, ok)
@@ -188,6 +200,9 @@ func TestSequenceEmails_RetryTemporaryFailuresOnce(t *testing.T) {
 			('q-perm', 'c-perm', 't1', '2000-01-01T00:00:00Z', 'tok2', 'pending'),
 			('q-sent', 'c-sent', 't1', '2000-01-01T00:00:00Z', 'tok3', 'sent'),
 			('q-failed', 'c-failed', 't1', '2000-01-01T00:00:00Z', 'tok4', 'failed')`,
+		// Refused for six days: the next refusal gives up.
+		`INSERT INTO email_queue (id, contact_id, template_id, scheduled_for, tracking_token, status, first_refused_at) VALUES
+			('q-stuck', 'c-stuck', 't1', '2000-01-01T00:00:00Z', 'tok5', 'pending', '` + time.Now().Add(-6*24*time.Hour).UTC().Format(time.RFC3339) + `')`,
 	} {
 		_, err := store.GetDB().Exec(q)
 		require.NoError(t, err)
@@ -210,6 +225,13 @@ func TestSequenceEmails_RetryTemporaryFailuresOnce(t *testing.T) {
 	assert.Equal(t, "pending", status(t, store, "email_queue", "q-temp"))
 	assert.False(t, claim.Valid, "unclaimed, so a worker takes it again")
 	assert.Greater(t, scheduled, time.Now().UTC().Format(time.RFC3339), "it waits before trying again")
+	var refused sql.NullString
+	require.NoError(t, store.GetDB().QueryRow(`SELECT first_refused_at FROM email_queue WHERE id = 'q-temp'`).Scan(&refused))
+	assert.True(t, refused.Valid, "its first refusal is recorded")
+	require.Eventually(t, func() bool { return status(t, store, "email_queue", "q-stuck") == "failed" }, 5*time.Second, 10*time.Millisecond)
+	a, _ := k.counts("stuck@x.example")
+	assert.Equal(t, 1, a, "refused for over five days: given up after one more try")
+
 	a, ok := k.counts("temp@x.example")
 	assert.Equal(t, 1, a, "not tried again before it is due")
 	assert.Zero(t, ok)

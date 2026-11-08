@@ -72,26 +72,27 @@ type CampaignClick struct {
 }
 
 type CampaignSend struct {
-	ID            string         `json:"id"`
-	CampaignID    string         `json:"campaign_id"`
-	ContactID     string         `json:"contact_id"`
-	ListID        sql.NullInt64  `json:"list_id"`
-	Status        sql.NullString `json:"status"`
-	SentAt        sql.NullString `json:"sent_at"`
-	DeliveredAt   sql.NullString `json:"delivered_at"`
-	TrackingToken sql.NullString `json:"tracking_token"`
-	OpenedAt      sql.NullString `json:"opened_at"`
-	OpenCount     sql.NullInt64  `json:"open_count"`
-	ClickedAt     sql.NullString `json:"clicked_at"`
-	ClickCount    sql.NullInt64  `json:"click_count"`
-	ErrorMessage  sql.NullString `json:"error_message"`
-	BounceType    sql.NullString `json:"bounce_type"`
-	CreatedAt     sql.NullString `json:"created_at"`
-	RetryCount    sql.NullInt64  `json:"retry_count"`
-	FailedAt      sql.NullString `json:"failed_at"`
-	ClaimToken    sql.NullString `json:"claim_token"`
-	ClaimedAt     sql.NullString `json:"claimed_at"`
-	SendAfter     sql.NullString `json:"send_after"`
+	ID             string         `json:"id"`
+	CampaignID     string         `json:"campaign_id"`
+	ContactID      string         `json:"contact_id"`
+	ListID         sql.NullInt64  `json:"list_id"`
+	Status         sql.NullString `json:"status"`
+	SentAt         sql.NullString `json:"sent_at"`
+	DeliveredAt    sql.NullString `json:"delivered_at"`
+	TrackingToken  sql.NullString `json:"tracking_token"`
+	OpenedAt       sql.NullString `json:"opened_at"`
+	OpenCount      sql.NullInt64  `json:"open_count"`
+	ClickedAt      sql.NullString `json:"clicked_at"`
+	ClickCount     sql.NullInt64  `json:"click_count"`
+	ErrorMessage   sql.NullString `json:"error_message"`
+	BounceType     sql.NullString `json:"bounce_type"`
+	CreatedAt      sql.NullString `json:"created_at"`
+	RetryCount     sql.NullInt64  `json:"retry_count"`
+	FailedAt       sql.NullString `json:"failed_at"`
+	ClaimToken     sql.NullString `json:"claim_token"`
+	ClaimedAt      sql.NullString `json:"claimed_at"`
+	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	SendAfter      sql.NullString `json:"send_after"`
 }
 
 type Contact struct {
@@ -297,28 +298,29 @@ type EmailList struct {
 }
 
 type EmailQueue struct {
-	ID            string         `json:"id"`
-	ContactID     sql.NullString `json:"contact_id"`
-	TemplateID    sql.NullString `json:"template_id"`
-	ScheduledFor  string         `json:"scheduled_for"`
-	SentAt        sql.NullString `json:"sent_at"`
-	Status        sql.NullString `json:"status"`
-	ErrorMessage  sql.NullString `json:"error_message"`
-	CreatedAt     sql.NullString `json:"created_at"`
-	TrackingToken sql.NullString `json:"tracking_token"`
-	OpenedAt      sql.NullString `json:"opened_at"`
-	OpenCount     int64          `json:"open_count"`
-	ClickedAt     sql.NullString `json:"clicked_at"`
-	ClickCount    int64          `json:"click_count"`
-	Kind          string         `json:"kind"`
-	MailboxID     sql.NullString `json:"mailbox_id"`
-	Subject       sql.NullString `json:"subject"`
-	Body          sql.NullString `json:"body"`
-	MessageID     sql.NullString `json:"message_id"`
-	InReplyTo     sql.NullString `json:"in_reply_to"`
-	Refs          sql.NullString `json:"refs"`
-	ClaimToken    sql.NullString `json:"claim_token"`
-	ClaimedAt     sql.NullString `json:"claimed_at"`
+	ID             string         `json:"id"`
+	ContactID      sql.NullString `json:"contact_id"`
+	TemplateID     sql.NullString `json:"template_id"`
+	ScheduledFor   string         `json:"scheduled_for"`
+	SentAt         sql.NullString `json:"sent_at"`
+	Status         sql.NullString `json:"status"`
+	ErrorMessage   sql.NullString `json:"error_message"`
+	CreatedAt      sql.NullString `json:"created_at"`
+	TrackingToken  sql.NullString `json:"tracking_token"`
+	OpenedAt       sql.NullString `json:"opened_at"`
+	OpenCount      int64          `json:"open_count"`
+	ClickedAt      sql.NullString `json:"clicked_at"`
+	ClickCount     int64          `json:"click_count"`
+	Kind           string         `json:"kind"`
+	MailboxID      sql.NullString `json:"mailbox_id"`
+	Subject        sql.NullString `json:"subject"`
+	Body           sql.NullString `json:"body"`
+	MessageID      sql.NullString `json:"message_id"`
+	InReplyTo      sql.NullString `json:"in_reply_to"`
+	Refs           sql.NullString `json:"refs"`
+	ClaimToken     sql.NullString `json:"claim_token"`
+	ClaimedAt      sql.NullString `json:"claimed_at"`
+	FirstRefusedAt sql.NullString `json:"first_refused_at"`
 }
 
 type EmailReply struct {

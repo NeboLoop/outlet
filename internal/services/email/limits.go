@@ -104,3 +104,26 @@ func (s *Service) reserve(ctx context.Context, org db.Organization, p db.Sending
 	}
 	return release, nil
 }
+
+// GiveUpAfter is how long Outlet keeps trying a send the mail server refuses
+// for now, as a mail server does before it bounces.
+const GiveUpAfter = 5 * 24 * time.Hour
+
+// RefusedAt is now when err is a refusal for now (a 4xx, a dropped
+// connection, throttling), to record as a send's first refusal. A limit hold
+// (a daily limit, warm-up, a paused pool) carries a RetryAt and is not a
+// refusal: it waits as long as it must.
+func RefusedAt(err error, now time.Time) sql.NullString {
+	var d *DeliveryError
+	if !errors.As(err, &d) || !d.Temporary || !d.RetryAt.IsZero() {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: now.UTC().Format(time.RFC3339), Valid: true}
+}
+
+// GaveUp reports whether a send first refused at since has been refused for
+// longer than GiveUpAfter.
+func GaveUp(since sql.NullString, now time.Time) bool {
+	t, err := time.Parse(time.RFC3339, since.String)
+	return since.Valid && err == nil && now.Sub(t) > GiveUpAfter
+}

@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const campaignSendRefusedSince = `-- name: CampaignSendRefusedSince :one
+SELECT first_refused_at FROM campaign_sends WHERE id = ?
+`
+
+func (q *Queries) CampaignSendRefusedSince(ctx context.Context, id string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, campaignSendRefusedSince, id)
+	var first_refused_at sql.NullString
+	err := row.Scan(&first_refused_at)
+	return first_refused_at, err
+}
+
 const carryDomainSendCounts = `-- name: CarryDomainSendCounts :exec
 INSERT INTO send_counts (pathway_id, sender_id, day, n)
 SELECT ?1, sc.sender_id, sc.day, sc.n FROM send_counts sc
@@ -184,12 +195,14 @@ func (q *Queries) CreateSendingPathway(ctx context.Context, arg CreateSendingPat
 
 const deferCampaignSend = `-- name: DeferCampaignSend :exec
 
-UPDATE campaign_sends SET claim_token = NULL, claimed_at = NULL, send_after = ?
-WHERE id = ? AND status = 'pending'
+UPDATE campaign_sends SET claim_token = NULL, claimed_at = NULL, send_after = ?1,
+    first_refused_at = COALESCE(first_refused_at, ?2)
+WHERE id = ?3 AND status = 'pending'
 `
 
 type DeferCampaignSendParams struct {
 	SendAfter sql.NullString `json:"send_after"`
+	RefusedAt sql.NullString `json:"refused_at"`
 	ID        string         `json:"id"`
 }
 
@@ -197,23 +210,28 @@ type DeferCampaignSendParams struct {
 // A send that failed for now (a pathway limit, a 4xx, a dropped connection)
 // waits, unclaimed and pending, to be claimed again after send_after. A sent
 // or failed send is final and never goes back.
+// refused_at is set for a refusal (not a limit hold): the first one is kept.
 func (q *Queries) DeferCampaignSend(ctx context.Context, arg DeferCampaignSendParams) error {
-	_, err := q.db.ExecContext(ctx, deferCampaignSend, arg.SendAfter, arg.ID)
+	_, err := q.db.ExecContext(ctx, deferCampaignSend, arg.SendAfter, arg.RefusedAt, arg.ID)
 	return err
 }
 
 const deferQueuedEmail = `-- name: DeferQueuedEmail :exec
-UPDATE email_queue SET claim_token = NULL, claimed_at = NULL, scheduled_for = ? WHERE id = ? AND status = 'pending'
+UPDATE email_queue SET claim_token = NULL, claimed_at = NULL, scheduled_for = ?1,
+    first_refused_at = COALESCE(first_refused_at, ?2)
+WHERE id = ?3 AND status = 'pending'
 `
 
 type DeferQueuedEmailParams struct {
-	ScheduledFor string `json:"scheduled_for"`
-	ID           string `json:"id"`
+	ScheduledFor string         `json:"scheduled_for"`
+	RefusedAt    sql.NullString `json:"refused_at"`
+	ID           string         `json:"id"`
 }
 
 // A sequence email held back by a pathway limit waits, unclaimed and still pending.
+// refused_at is set for a refusal (not a limit hold): the first one is kept.
 func (q *Queries) DeferQueuedEmail(ctx context.Context, arg DeferQueuedEmailParams) error {
-	_, err := q.db.ExecContext(ctx, deferQueuedEmail, arg.ScheduledFor, arg.ID)
+	_, err := q.db.ExecContext(ctx, deferQueuedEmail, arg.ScheduledFor, arg.RefusedAt, arg.ID)
 	return err
 }
 
@@ -612,6 +630,17 @@ func (q *Queries) ListSendingPathways(ctx context.Context, orgID string) ([]Send
 		return nil, err
 	}
 	return items, nil
+}
+
+const queuedEmailRefusedSince = `-- name: QueuedEmailRefusedSince :one
+SELECT first_refused_at FROM email_queue WHERE id = ?
+`
+
+func (q *Queries) QueuedEmailRefusedSince(ctx context.Context, id string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, queuedEmailRefusedSince, id)
+	var first_refused_at sql.NullString
+	err := row.Scan(&first_refused_at)
+	return first_refused_at, err
 }
 
 const refundSendCount = `-- name: RefundSendCount :exec

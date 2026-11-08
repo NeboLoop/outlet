@@ -476,13 +476,22 @@ func (s *SequenceService) builtinLayout(templateType string, isTransactional boo
 
 // deferIfTemporary puts a sequence email back in the queue, unclaimed and
 // pending, when its send failed only for now (its pathway's limit, a
-// mailbox's 4xx), to go again when the limit lifts. It reports whether it did.
+// mailbox's 4xx), to go again when the limit lifts. A send the mail server
+// keeps refusing is given up after GiveUpAfter. It reports whether it did.
 func (s *SequenceService) deferIfTemporary(ctx context.Context, email db.GetPendingEmailsRow, err error) bool {
 	if err == nil || !IsTemporary(err) {
 		return false
 	}
-	at := RetryAt(err, s.now().Add(15*time.Minute))
-	if derr := s.db.DeferQueuedEmail(ctx, db.DeferQueuedEmailParams{ScheduledFor: at.UTC().Format(time.RFC3339), ID: email.ID}); derr != nil {
+	now := s.now()
+	refused := RefusedAt(err, now)
+	if refused.Valid {
+		if since, _ := s.db.QueuedEmailRefusedSince(ctx, email.ID); GaveUp(since, now) {
+			logx.Infof("Email %s to %s: refused for %s, giving up: %v", email.ID, email.Email, GiveUpAfter, err)
+			return false
+		}
+	}
+	at := RetryAt(err, now.Add(15*time.Minute))
+	if derr := s.db.DeferQueuedEmail(ctx, db.DeferQueuedEmailParams{ScheduledFor: at.UTC().Format(time.RFC3339), RefusedAt: refused, ID: email.ID}); derr != nil {
 		logx.Errorf("Failed to defer email %s: %v", email.ID, derr)
 	}
 	logx.Infof("Email %s to %s waits until %s: %v", email.ID, email.Email, at.UTC().Format(time.RFC3339), err)
