@@ -33,12 +33,12 @@ func RetryAt(err error, fallback time.Time) time.Time {
 
 // sender is who sends within a pathway: a mailbox of a pool, or the pathway.
 type sender struct {
-	id       string
-	label    string
-	start    time.Time     // where the warm-up ramp starts
-	limits   SenderLimits // PathwayLimits, or a pool mailbox's MailboxLimits
-	next     string        // its next-send time as stored, for the retry estimate
-	mailbox  bool
+	id      string
+	label   string
+	start   time.Time    // where the warm-up ramp starts
+	limits  SenderLimits // PathwayLimits, or a pool mailbox's MailboxLimits
+	next    string       // its next-send time as stored, for the retry estimate
+	mailbox bool
 }
 
 // reserve takes one send for a sender, or refuses with ErrOverLimit: the
