@@ -125,12 +125,6 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 			}
 		}
 
-		for key, value := range req.Variables {
-			placeholder := "{{" + key + "}}"
-			subject = strings.ReplaceAll(subject, placeholder, value)
-			htmlBody = strings.ReplaceAll(htmlBody, placeholder, value)
-			plainText = strings.ReplaceAll(plainText, placeholder, value)
-		}
 	} else {
 		if req.Subject == "" {
 			return fail("Subject is required when not using a template")
@@ -163,6 +157,19 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 	}
 
 	trackingToken := generateTrackingToken()
+
+	// A template's variables fill its merge tags through the one merge-tag
+	// implementation, fallbacks included, and the send's tracking token fills
+	// {{unsubscribe_url}} and {{web_version_url}} (a design's footer has them).
+	if req.TemplateSlug != "" {
+		tags := email.MergeContext{
+			BaseURL: svcCtx.Config.App.BaseURL, Name: req.Variables["name"], Email: firstNonEmpty(req.Variables["email"], req.To),
+			TrackingToken: trackingToken, CustomFields: req.Variables,
+		}
+		message.Subject = email.FillMergeTags(message.Subject, tags, false)
+		message.HTML = email.FillMergeTags(message.HTML, tags, false)
+		message.Text = email.FillMergeTags(message.Text, tags, false)
+	}
 
 	var contextData sql.NullString
 	if len(req.Meta) > 0 || len(req.Tags) > 0 {

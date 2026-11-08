@@ -3147,16 +3147,26 @@ service outlet {
 	post /confirm (TrackConfirmRequest) returns (TrackConfirmResponse)
 }
 
-// Admin Email Validation
+// Admin Email Validation. A single check waits on DNS and an SMTP probe,
+// which the validation service bounds at 20 seconds: its route has the time
+// to finish.
+@server (
+	group:      admin/validation
+	prefix:     /api/admin/validation
+	middleware: Auth
+	timeout:    30s
+)
+service outlet {
+	@handler AdminValidateEmail
+	post /check (ValidateEmailRequest) returns (ValidationResult)
+}
+
 @server (
 	group:      admin/validation
 	prefix:     /api/admin/validation
 	middleware: Auth
 )
 service outlet {
-	@handler AdminValidateEmail
-	post /check (ValidateEmailRequest) returns (ValidationResult)
-
 	@handler CreateValidationJob
 	post /jobs (CreateValidationJobRequest) returns (ValidationJobInfo)
 
@@ -3185,16 +3195,25 @@ service outlet {
 	get /usage (ValidationUsageRequest) returns (ValidationUsageResponse)
 }
 
-// SDK Email Validation
+// SDK Email Validation. A single check has the time its probe takes (see
+// the admin check).
+@server (
+	group:      sdk/validation
+	prefix:     /sdk/v1/validate
+	middleware: APIKeyAuth
+	timeout:    30s
+)
+service outlet {
+	@handler ValidateEmail
+	post / (ValidateEmailRequest) returns (ValidationResult)
+}
+
 @server (
 	group:      sdk/validation
 	prefix:     /sdk/v1/validate
 	middleware: APIKeyAuth
 )
 service outlet {
-	@handler ValidateEmail
-	post / (ValidateEmailRequest) returns (ValidationResult)
-
 	@handler ValidateBatch
 	post /batch (ValidateBatchRequest) returns (ValidateBatchResponse)
 }

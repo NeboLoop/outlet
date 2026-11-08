@@ -594,7 +594,7 @@ type TemplateContext struct {
 // processTemplateVariables replaces placeholders in email content
 // processTemplateVariables fills merge tags; escapeHTML is true for HTML bodies
 func (s *SequenceService) processTemplateVariables(content string, ctx TemplateContext, escapeHTML bool) string {
-	return fillMergeTags(content, mergeContext{
+	return FillMergeTags(content, MergeContext{
 		BaseURL:           s.baseURL,
 		Name:              ctx.Name,
 		Email:             ctx.Email,

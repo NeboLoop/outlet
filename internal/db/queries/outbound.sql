@@ -355,6 +355,11 @@ FROM email_queue eq JOIN email_templates et ON et.id = eq.template_id
 WHERE et.sequence_id = ? AND eq.kind = 'outreach' AND eq.status = 'sent'
 GROUP BY et.position;
 
+-- name: CountOutreachDraftsInSequence :one
+-- Emails of one outreach sequence written and waiting for approval.
+SELECT COUNT(*) FROM email_queue eq JOIN email_templates et ON et.id = eq.template_id
+WHERE et.sequence_id = ? AND eq.kind = 'outreach' AND eq.status = 'draft';
+
 -- name: OutreachPeopleEngaged :one
 SELECT COUNT(DISTINCT CASE WHEN eq.open_count > 0 THEN eq.contact_id END) AS opened,
        COUNT(DISTINCT CASE WHEN eq.click_count > 0 THEN eq.contact_id END) AS clicked
@@ -411,3 +416,17 @@ WHERE el.org_id = ? GROUP BY ls.status;
 
 -- name: GetOutreachSequenceBySlug :one
 SELECT * FROM email_sequences WHERE org_id = ? AND slug = ? AND sequence_type = 'outreach';
+
+-- name: ListVerifyingProspects :many
+-- Prospects added but not yet verified, oldest first, across brands.
+SELECT ls.id, ls.contact_id, c.org_id, c.email
+FROM list_subscribers ls
+JOIN contacts c ON c.id = ls.contact_id
+WHERE ls.status = 'verifying'
+ORDER BY ls.subscribed_at
+LIMIT sqlc.arg(limit_count);
+
+-- name: SetVerifiedProspectStatus :exec
+-- A verified prospect becomes 'prospect' (passed) or 'held' (failed).
+UPDATE list_subscribers SET status = sqlc.arg(status)
+WHERE id = sqlc.arg(id) AND status = 'verifying';

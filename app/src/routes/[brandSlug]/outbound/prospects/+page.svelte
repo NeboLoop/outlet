@@ -28,6 +28,7 @@
 	const PAGE_SIZE = 50;
 	const STATUSES = [
 		{ value: '', label: 'Any status' },
+		{ value: 'verifying', label: 'Verifying' },
 		{ value: 'prospect', label: 'Prospect' },
 		{ value: 'held', label: 'Held' }
 	];
@@ -60,8 +61,7 @@
 	let results = $state<OutboundProspectResult[]>([]);
 
 	const resultVariant: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
-		added: 'success',
-		held: 'warning',
+		verifying: 'success',
 		duplicate: 'default',
 		suppressed: 'default',
 		refused: 'error'

@@ -43,7 +43,7 @@ type CampaignEmail struct {
 // enabled (never on the unsubscribe link), and sets the one-click
 // List-Unsubscribe headers.
 func (s *Service) CampaignMessage(c CampaignEmail) Message {
-	tags := mergeContext{BaseURL: s.baseURL, Name: c.Name, Email: c.To, TrackingToken: c.TrackingToken}
+	tags := MergeContext{BaseURL: s.baseURL, Name: c.Name, Email: c.To, TrackingToken: c.TrackingToken}
 	m := Message{
 		OrgID:     c.OrgID,
 		Kind:      KindMarketing,
@@ -51,12 +51,12 @@ func (s *Service) CampaignMessage(c CampaignEmail) Message {
 		FromEmail: c.FromEmail,
 		ReplyTo:   c.ReplyTo,
 		To:        c.To,
-		Subject:   fillMergeTags(c.Subject, tags, false),
+		Subject:   FillMergeTags(c.Subject, tags, false),
 	}
 	if c.Text != "" {
-		m.Text = fillMergeTags(ApplyDesign(c.DesignText, c.Text), tags, false)
+		m.Text = FillMergeTags(ApplyDesign(c.DesignText, c.Text), tags, false)
 	}
-	htmlBody := fillMergeTags(ApplyDesign(c.DesignHTML, c.HTML), tags, true)
+	htmlBody := FillMergeTags(ApplyDesign(c.DesignHTML, c.HTML), tags, true)
 	if c.TrackingToken == "" {
 		m.HTML = htmlBody
 		return m

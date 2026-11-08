@@ -183,7 +183,7 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 			res.Previews = append(res.Previews, Preview{ProspectID: c.ID, To: c.Email, From: mb.Email, Subject: w.Subject, Body: w.Body, SendsAfter: ts(w.SendAfter)})
 		}
 		res.Enrolled = len(res.Previews)
-		res.Next = "Dry run: nothing saved. Call again without dry_run to create the campaign."
+		res.Next = "Preview only: nothing is saved. Create the campaign (without dry_run) to save it and draft its emails."
 		return res, nil
 	}
 	if len(ready) == 0 {
