@@ -16,30 +16,66 @@ func unsubscribeURL(baseURL, trackingToken string) string {
 	return fmt.Sprintf("%s/u/%s", strings.TrimRight(baseURL, "/"), trackingToken)
 }
 
-// PrepareCampaignEmail personalizes a campaign's subject and body for one
-// recipient and makes sure the body carries a working unsubscribe link: the
-// {{unsubscribe_url}} merge tag is filled in, and when the body has no link to
-// the unsubscribe page a footer link is added. It returns the subject, the body,
-// and the send options that add the one-click List-Unsubscribe headers.
-func (s *Service) PrepareCampaignEmail(subject, htmlBody, name, toEmail, trackingToken string) (string, string, []SendOption) {
-	subject = strings.ReplaceAll(subject, "{{.Name}}", name)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{.Name}}", name)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{.Email}}", toEmail)
+// CampaignEmail is one campaign send to one recipient.
+type CampaignEmail struct {
+	OrgID         string
+	FromName      string
+	FromEmail     string
+	ReplyTo       string
+	To            string
+	Name          string
+	Subject       string
+	HTML          string
+	TrackingToken string
+	TrackOpens    bool
+	TrackClicks   bool
+}
 
-	if trackingToken == "" {
-		return subject, htmlBody, nil
+// CampaignMessage builds the Message for a campaign send, the same way for the
+// first attempt and every retry. It personalizes the subject and body, fills
+// {{unsubscribe_url}}, adds a footer unsubscribe link when the body has none,
+// adds open and click tracking when enabled (never on the unsubscribe link),
+// and sets the one-click List-Unsubscribe headers.
+func (s *Service) CampaignMessage(c CampaignEmail) Message {
+	subject := strings.ReplaceAll(c.Subject, "{{.Name}}", c.Name)
+	htmlBody := strings.ReplaceAll(c.HTML, "{{.Name}}", c.Name)
+	htmlBody = strings.ReplaceAll(htmlBody, "{{.Email}}", c.To)
+
+	m := Message{
+		OrgID:     c.OrgID,
+		FromName:  c.FromName,
+		FromEmail: c.FromEmail,
+		ReplyTo:   c.ReplyTo,
+		To:        c.To,
+		Subject:   subject,
+	}
+	if c.TrackingToken == "" {
+		m.HTML = htmlBody
+		return m
 	}
 
-	unsubscribeURL := s.UnsubscribeURL(trackingToken)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{unsubscribe_url}}", unsubscribeURL)
-	if !strings.Contains(htmlBody, unsubscribeURL) {
-		footer := fmt.Sprintf(`<p style="text-align:center;font-size:12px;color:#6b7280;margin-top:30px;"><a href="%s" style="color:#6b7280;">Unsubscribe</a></p>`, unsubscribeURL)
-		if i := strings.LastIndex(strings.ToLower(htmlBody), "</body>"); i >= 0 {
-			htmlBody = htmlBody[:i] + footer + htmlBody[i:]
-		} else {
-			htmlBody += footer
-		}
+	link := s.UnsubscribeURL(c.TrackingToken)
+	htmlBody = strings.ReplaceAll(htmlBody, "{{unsubscribe_url}}", link)
+	if !strings.Contains(htmlBody, link) {
+		footer := fmt.Sprintf(`<p style="text-align:center;font-size:12px;color:#6b7280;margin-top:30px;"><a href="%s" style="color:#6b7280;">Unsubscribe</a></p>`, link)
+		htmlBody = insertBeforeBodyEnd(htmlBody, footer)
+	}
+	if c.TrackOpens {
+		pixel := fmt.Sprintf(`<img src="%s" width="1" height="1" alt="" style="display:none" />`, s.GetTrackingPixelURL(c.TrackingToken))
+		htmlBody = insertBeforeBodyEnd(htmlBody, pixel)
+	}
+	if c.TrackClicks {
+		htmlBody = s.RewriteLinksForTracking(htmlBody, c.TrackingToken)
 	}
 
-	return subject, htmlBody, []SendOption{WithListUnsubscribe(unsubscribeURL)}
+	m.HTML = htmlBody
+	m.ListUnsubscribe = link
+	return m
+}
+
+func insertBeforeBodyEnd(htmlBody, fragment string) string {
+	if i := strings.LastIndex(strings.ToLower(htmlBody), "</body>"); i >= 0 {
+		return htmlBody[:i] + fragment + htmlBody[i:]
+	}
+	return htmlBody + fragment
 }

@@ -227,7 +227,7 @@ INSERT INTO email_bounce (
     diagnostic_code, source_email, message_id, raw_notification, created_at
 ) VALUES (?1, LOWER(?2), ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))
 ON CONFLICT (email_lower) DO UPDATE
-SET bounce_type = EXCLUDED.bounce_type,
+SET bounce_type = CASE WHEN email_bounce.bounce_type = 'Permanent' THEN 'Permanent' ELSE EXCLUDED.bounce_type END,
     bounce_subtype = EXCLUDED.bounce_subtype,
     diagnostic_code = EXCLUDED.diagnostic_code,
     source_email = EXCLUDED.source_email,
@@ -250,6 +250,7 @@ type CreateEmailBounceParams struct {
 
 // Email blocklist queries for bounce and complaint management
 // ========== BOUNCES ==========
+// A permanent bounce stays permanent; a later transient one must not unblock it
 func (q *Queries) CreateEmailBounce(ctx context.Context, arg CreateEmailBounceParams) (EmailBounce, error) {
 	row := q.db.QueryRowContext(ctx, createEmailBounce,
 		arg.Email,
@@ -730,6 +731,32 @@ func (q *Queries) IsEmailSuppressed(ctx context.Context, arg IsEmailSuppressedPa
 	var found int64
 	err := row.Scan(&found)
 	return found, err
+}
+
+const isSendBlocked = `-- name: IsSendBlocked :one
+
+SELECT CAST((
+    (SELECT COUNT(*) FROM email_bounce b WHERE b.email_lower = LOWER(?1) AND b.bounce_type = 'Permanent') +
+    (SELECT COUNT(*) FROM email_complaint c WHERE c.email_lower = LOWER(?1)) +
+    (SELECT COUNT(*) FROM suppression_list sl WHERE sl.org_id = ?2 AND sl.email_lower = LOWER(?1)) +
+    (SELECT COUNT(*) FROM blocked_domains bd WHERE bd.org_id = ?2 AND bd.domain = LOWER(?3))
+) > 0 AS INTEGER) AS blocked
+`
+
+type IsSendBlockedParams struct {
+	Email  string `json:"email"`
+	OrgID  string `json:"org_id"`
+	Domain string `json:"domain"`
+}
+
+// ========== SEND GATE ==========
+// Every send checks this first: a permanent bounce or a complaint anywhere, or
+// the brand's own suppression list or blocked domains. Transient bounces do not block.
+func (q *Queries) IsSendBlocked(ctx context.Context, arg IsSendBlockedParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, isSendBlocked, arg.Email, arg.OrgID, arg.Domain)
+	var blocked int64
+	err := row.Scan(&blocked)
+	return blocked, err
 }
 
 const listBlockedDomains = `-- name: ListBlockedDomains :many

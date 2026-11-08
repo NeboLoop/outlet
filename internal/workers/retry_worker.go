@@ -189,35 +189,21 @@ func (w *RetryWorker) retrySend(send db.GetFailedCampaignSendsForRetryRow) {
 	}
 }
 
-// sendEmail sends the email for a retry
+// sendEmail sends the email for a retry, built exactly like the first attempt
 func (w *RetryWorker) sendEmail(send db.GetFailedCampaignSendsForRetryRow) error {
-	fromName := ""
-	if send.FromName.Valid {
-		fromName = send.FromName.String
-	}
-	fromEmail := ""
-	if send.FromEmail.Valid {
-		fromEmail = send.FromEmail.String
-	}
-	replyTo := ""
-	if send.ReplyTo.Valid {
-		replyTo = send.ReplyTo.String
-	}
-
-	// Personalize and add the unsubscribe link and one-click headers, as on the
-	// first attempt
-	subject, htmlBody, sendOpts := w.emailService.PrepareCampaignEmail(
-		send.Subject, send.HtmlBody, send.Name, send.Email, send.TrackingToken.String)
-
-	return w.emailService.SendCampaignEmail(
-		send.Email,
-		subject,
-		htmlBody,
-		fromName,
-		fromEmail,
-		replyTo,
-		sendOpts...,
-	)
+	return w.emailService.Send(w.ctx, w.emailService.CampaignMessage(email.CampaignEmail{
+		OrgID:         send.OrgID,
+		FromName:      send.FromName.String,
+		FromEmail:     send.FromEmail.String,
+		ReplyTo:       send.ReplyTo.String,
+		To:            send.Email,
+		Name:          send.Name,
+		Subject:       send.Subject,
+		HTML:          send.HtmlBody,
+		TrackingToken: send.TrackingToken.String,
+		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
+		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
+	}))
 }
 
 // markPermanentlyFailed marks a send as permanently failed

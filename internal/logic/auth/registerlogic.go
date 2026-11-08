@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	emailsvc "github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -128,12 +129,11 @@ func (l *RegisterLogic) Register(req *types.RegisterRequest) (resp *types.Regist
 <p>Best regards,<br>The Outlet Team</p>
 </body>
 </html>`, name, verifyURL)
-				err := l.svcCtx.EmailService.SendEmail(
-					context.Background(),
-					email,
-					subject,
-					body,
-				)
+				err := l.svcCtx.EmailService.Send(context.Background(), emailsvc.Message{
+					To:      email,
+					Subject: subject,
+					HTML:    body,
+				})
 				if err != nil {
 					l.Errorf("Error sending verification email: %v", err)
 				}

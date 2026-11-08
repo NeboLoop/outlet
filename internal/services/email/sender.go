@@ -3,8 +3,6 @@ package email
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/smtp"
 	"strconv"
 	"time"
 
@@ -209,53 +207,6 @@ func (s *Service) PoolStats() (pooled, created int) {
 	return 0, 0
 }
 
-// sendEmail sends an HTML email via AWS SES (preferred) or SMTP (fallback)
-// Loads config from platform_settings database
-func (s *Service) sendEmail(to, subject, htmlBody string, opts ...SendOption) error {
-	ctx := context.Background()
-	o := applyOpts(opts)
-
-	// Try AWS SES first (preferred for high-volume sending)
-	sesConfig, err := s.getSESConfig(ctx)
-	if err == nil && s.hasSESConfig(sesConfig) {
-		return sendViaSES(ctx, sesConfig, to, subject, htmlBody, o)
-	}
-
-	// Fall back to SMTP if SES not configured
-	smtpConfig, err := s.getGlobalSMTPConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get email config: %w", err)
-	}
-
-	if smtpConfig.Host == "" || smtpConfig.User == "" || smtpConfig.Password == "" {
-		// Neither SES nor SMTP configured
-		return fmt.Errorf("email not configured - set AWS SES credentials or SMTP settings in platform settings")
-	}
-
-	// Build email message for SMTP
-	message, err := rawMessage{
-		From:    fmt.Sprintf("%s <%s>", smtpConfig.FromName, smtpConfig.FromAddress),
-		To:      to,
-		ReplyTo: smtpConfig.ReplyTo,
-		Subject: subject,
-		HTML:    htmlBody,
-		opts:    o,
-	}.build()
-	if err != nil {
-		return fmt.Errorf("build message: %w", err)
-	}
-
-	// SMTP auth
-	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
-
-	addr := net.JoinHostPort(smtpConfig.Host, strconv.Itoa(smtpConfig.Port))
-	err = smtp.SendMail(addr, auth, smtpConfig.FromAddress, []string{to}, message)
-	if err != nil {
-		return fmt.Errorf("failed to send email via SMTP: %w", err)
-	}
-
-	return nil
-}
 
 // SendConfirmationEmail sends a meeting confirmation email to the lead
 func (s *Service) SendConfirmationEmail(ctx context.Context, toEmail, toName string, meetingTime time.Time, meetURL, timezone string) error {
@@ -331,7 +282,7 @@ func (s *Service) SendConfirmationEmail(ctx context.Context, toEmail, toName str
 		getMeetLinkHTML(meetURL),
 		contactEmail)
 
-	return s.sendEmail(toEmail, subject, body)
+	return s.Send(ctx, Message{To: toEmail, Subject: subject, HTML: body})
 }
 
 // SendAgentNotificationEmail sends a notification to the sales agent
@@ -383,7 +334,7 @@ func (s *Service) SendAgentNotificationEmail(ctx context.Context, agentEmail, at
 		getMeetLinkHTML(meetURL),
 		getNotesHTML(notes))
 
-	return s.sendEmail(agentEmail, subject, body)
+	return s.Send(ctx, Message{To: agentEmail, Subject: subject, HTML: body})
 }
 
 func getMeetLinkHTML(meetURL string) string {
@@ -407,133 +358,8 @@ func getStringOrDefault(value, defaultValue string) string {
 	return value
 }
 
-// SendEmail sends an HTML email to a single recipient
-func (s *Service) SendEmail(ctx context.Context, to, subject, htmlBody string) error {
-	return s.sendEmail(to, subject, htmlBody)
-}
 
-// SendEmailFrom sends an HTML email with a custom from address
-// Uses AWS SES (preferred) or falls back to SMTP
-func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, subject, htmlBody string, opts ...SendOption) error {
-	o := applyOpts(opts)
 
-	// Try AWS SES first (preferred for high-volume sending)
-	sesConfig, err := s.getSESConfig(ctx)
-	if err == nil && s.hasSESConfig(sesConfig) {
-		// Override from address if provided
-		if fromEmail != "" {
-			sesConfig.FromAddress = fromEmail
-		}
-		if fromName != "" {
-			sesConfig.FromName = fromName
-		}
-		return sendViaSES(ctx, sesConfig, to, subject, htmlBody, o)
-	}
-
-	// Fall back to SMTP
-	smtpConfig, err := s.getGlobalSMTPConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get email config: %w", err)
-	}
-
-	if smtpConfig.Host == "" || smtpConfig.User == "" || smtpConfig.Password == "" {
-		return fmt.Errorf("email not configured - set AWS SES credentials or SMTP settings in platform settings")
-	}
-
-	// Use provided from or fall back to defaults
-	from := fromEmail
-	name := fromName
-	if from == "" {
-		from = smtpConfig.FromAddress
-	}
-	if name == "" {
-		name = smtpConfig.FromName
-	}
-
-	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
-	addr := net.JoinHostPort(smtpConfig.Host, strconv.Itoa(smtpConfig.Port))
-
-	message, err := rawMessage{
-		From:    fmt.Sprintf("%s <%s>", name, from),
-		To:      to,
-		ReplyTo: smtpConfig.ReplyTo,
-		Subject: subject,
-		HTML:    htmlBody,
-		opts:    o,
-	}.build()
-	if err != nil {
-		return fmt.Errorf("build message: %w", err)
-	}
-
-	return smtp.SendMail(addr, auth, from, []string{to}, message)
-}
-
-// SendCampaignEmail sends a campaign email with custom from/reply-to
-// Uses AWS SES (preferred), SMTP connection pooling, or standard SMTP as fallback
-func (s *Service) SendCampaignEmail(to, subject, htmlBody, fromName, fromEmail, replyTo string, opts ...SendOption) error {
-	ctx := context.Background()
-	o := applyOpts(opts)
-
-	// Try AWS SES first (preferred for high-volume sending)
-	sesConfig, err := s.getSESConfig(ctx)
-	if err == nil && s.hasSESConfig(sesConfig) {
-		// Override from address if provided
-		if fromEmail != "" {
-			sesConfig.FromAddress = fromEmail
-		}
-		if fromName != "" {
-			sesConfig.FromName = fromName
-		}
-		if replyTo != "" {
-			sesConfig.ReplyTo = replyTo
-		}
-		return sendViaSES(ctx, sesConfig, to, subject, htmlBody, o)
-	}
-
-	// Fall back to SMTP
-	smtpConfig, err := s.getGlobalSMTPConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get email config: %w", err)
-	}
-
-	if smtpConfig.Host == "" || smtpConfig.User == "" || smtpConfig.Password == "" {
-		return fmt.Errorf("email not configured - set AWS SES credentials or SMTP settings in platform settings")
-	}
-
-	// Use provided or fall back to defaults
-	if fromEmail == "" {
-		fromEmail = smtpConfig.FromAddress
-	}
-	if fromName == "" {
-		fromName = smtpConfig.FromName
-	}
-	if replyTo == "" {
-		replyTo = smtpConfig.ReplyTo
-	}
-
-	message, err := rawMessage{
-		From:    fmt.Sprintf("%s <%s>", fromName, fromEmail),
-		To:      to,
-		ReplyTo: replyTo,
-		Subject: subject,
-		HTML:    htmlBody,
-		opts:    o,
-	}.build()
-	if err != nil {
-		return fmt.Errorf("build message: %w", err)
-	}
-
-	// Use pooled SMTP connection if available
-	if s.poolEnabled && s.pool != nil {
-		return s.pool.SendWithPool(fromEmail, []string{to}, message)
-	}
-
-	// Fallback to standard SMTP sending
-	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
-	addr := net.JoinHostPort(smtpConfig.Host, strconv.Itoa(smtpConfig.Port))
-
-	return smtp.SendMail(addr, auth, fromEmail, []string{to}, message)
-}
 
 // GetTrackingPixelURL returns the URL for a tracking pixel
 func (s *Service) GetTrackingPixelURL(trackingToken string) string {

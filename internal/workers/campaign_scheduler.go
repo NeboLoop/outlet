@@ -452,36 +452,19 @@ func (s *CampaignScheduler) sendWorker(id int) {
 
 // sendCampaignEmail sends a single campaign email
 func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow) error {
-	// Personalize and add the unsubscribe link and one-click headers
-	subject, htmlBody, sendOpts := s.emailService.PrepareCampaignEmail(
-		send.Subject, send.HtmlBody, send.Name, send.Email, send.TrackingToken.String)
-
-	// Add tracking pixel if enabled
-	if send.TrackOpens.Valid && send.TrackOpens.Int64 == 1 && send.TrackingToken.Valid {
-		trackingPixel := `<img src="` + s.emailService.GetTrackingPixelURL(send.TrackingToken.String) + `" width="1" height="1" style="display:none" />`
-		htmlBody = strings.Replace(htmlBody, "</body>", trackingPixel+"</body>", 1)
-	}
-
-	// Rewrite links for click tracking if enabled
-	if send.TrackClicks.Valid && send.TrackClicks.Int64 == 1 && send.TrackingToken.Valid {
-		htmlBody = s.emailService.RewriteLinksForTracking(htmlBody, send.TrackingToken.String)
-	}
-
-	// Build from address (may be sql.NullString)
-	fromName := ""
-	if send.FromName.Valid {
-		fromName = send.FromName.String
-	}
-	fromEmail := ""
-	if send.FromEmail.Valid {
-		fromEmail = send.FromEmail.String
-	}
-	replyTo := ""
-	if send.ReplyTo.Valid {
-		replyTo = send.ReplyTo.String
-	}
-
-	return s.emailService.SendCampaignEmail(send.Email, subject, htmlBody, fromName, fromEmail, replyTo, sendOpts...)
+	return s.emailService.Send(s.ctx, s.emailService.CampaignMessage(email.CampaignEmail{
+		OrgID:         send.OrgID,
+		FromName:      send.FromName.String,
+		FromEmail:     send.FromEmail.String,
+		ReplyTo:       send.ReplyTo.String,
+		To:            send.Email,
+		Name:          send.Name,
+		Subject:       send.Subject,
+		HTML:          send.HtmlBody,
+		TrackingToken: send.TrackingToken.String,
+		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
+		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
+	}))
 }
 
 // markSendSent marks a campaign send as sent

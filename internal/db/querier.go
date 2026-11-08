@@ -99,6 +99,7 @@ type Querier interface {
 	CreateDomainIdentity(ctx context.Context, arg CreateDomainIdentityParams) (DomainIdentity, error)
 	// Email blocklist queries for bounce and complaint management
 	// ========== BOUNCES ==========
+	// A permanent bounce stays permanent; a later transient one must not unblock it
 	CreateEmailBounce(ctx context.Context, arg CreateEmailBounceParams) (EmailBounce, error)
 	CreateEmailClick(ctx context.Context, arg CreateEmailClickParams) (EmailClick, error)
 	// ========== COMPLAINTS ==========
@@ -364,6 +365,8 @@ type Querier interface {
 	// Queues one address in a job; duplicates within the job are skipped.
 	InsertValidationJobEmail(ctx context.Context, arg InsertValidationJobEmailParams) (int64, error)
 	IsDomainBlocked(ctx context.Context, arg IsDomainBlockedParams) (int64, error)
+	// A brand may not send from a domain another brand has added as its identity.
+	IsDomainClaimedByOtherOrg(ctx context.Context, arg IsDomainClaimedByOtherOrgParams) (int64, error)
 	// ========== COMBINED CHECK ==========
 	IsEmailBlocked(ctx context.Context, arg IsEmailBlockedParams) (int64, error)
 	IsEmailBounced(ctx context.Context, email string) (int64, error)
@@ -374,6 +377,10 @@ type Querier interface {
 	// itself are ignored so a validation verdict never feeds back into the next one.
 	IsEmailGloballySuppressed(ctx context.Context, email string) (int64, error)
 	IsEmailSuppressed(ctx context.Context, arg IsEmailSuppressedParams) (int64, error)
+	// ========== SEND GATE ==========
+	// Every send checks this first: a permanent bounce or a complaint anywhere, or
+	// the brand's own suppression list or blocked domains. Transient bounces do not block.
+	IsSendBlocked(ctx context.Context, arg IsSendBlockedParams) (int64, error)
 	ListActiveAgents(ctx context.Context) ([]ListActiveAgentsRow, error)
 	ListActiveListSubscriberEmails(ctx context.Context, listID int64) ([]string, error)
 	ListAllContactTags(ctx context.Context) ([]ListAllContactTagsRow, error)

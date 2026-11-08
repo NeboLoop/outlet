@@ -751,10 +751,12 @@ func (q *Queries) GetNextTemplate(ctx context.Context, arg GetNextTemplateParams
 const getPendingEmails = `-- name: GetPendingEmails :many
 SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.status, eq.tracking_token,
        et.subject, et.html_body, et.template_type, et.is_transactional,
-       c.email, c.name
+       c.email, c.name,
+       CAST(COALESCE(es.org_id, c.org_id, '') AS TEXT) AS org_id
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
+LEFT JOIN email_sequences es ON es.id = et.sequence_id
 WHERE eq.status = 'pending' AND eq.scheduled_for <= ?1 AND c.unsubscribed_at IS NULL
 ORDER BY eq.scheduled_for
 LIMIT ?2
@@ -778,6 +780,7 @@ type GetPendingEmailsRow struct {
 	IsTransactional sql.NullInt64  `json:"is_transactional"`
 	Email           string         `json:"email"`
 	Name            string         `json:"name"`
+	OrgID           string         `json:"org_id"`
 }
 
 func (q *Queries) GetPendingEmails(ctx context.Context, arg GetPendingEmailsParams) ([]GetPendingEmailsRow, error) {
@@ -802,6 +805,7 @@ func (q *Queries) GetPendingEmails(ctx context.Context, arg GetPendingEmailsPara
 			&i.IsTransactional,
 			&i.Email,
 			&i.Name,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}

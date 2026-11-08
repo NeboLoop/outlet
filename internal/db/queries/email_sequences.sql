@@ -95,10 +95,12 @@ RETURNING *;
 -- name: GetPendingEmails :many
 SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.status, eq.tracking_token,
        et.subject, et.html_body, et.template_type, et.is_transactional,
-       c.email, c.name
+       c.email, c.name,
+       CAST(COALESCE(es.org_id, c.org_id, '') AS TEXT) AS org_id
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
+LEFT JOIN email_sequences es ON es.id = et.sequence_id
 WHERE eq.status = 'pending' AND eq.scheduled_for <= sqlc.arg(scheduled_before) AND c.unsubscribed_at IS NULL
 ORDER BY eq.scheduled_for
 LIMIT sqlc.arg(limit_count);

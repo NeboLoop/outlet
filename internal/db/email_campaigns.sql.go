@@ -595,7 +595,8 @@ const getFailedCampaignSendsForRetry = `-- name: GetFailedCampaignSendsForRetry 
 
 SELECT cs.id, cs.campaign_id, cs.contact_id, cs.tracking_token, cs.retry_count, cs.failed_at,
        c.email, c.name,
-       ec.subject, ec.html_body, ec.from_name, ec.from_email, ec.reply_to
+       ec.org_id, ec.subject, ec.html_body, ec.from_name, ec.from_email, ec.reply_to,
+       ec.track_opens, ec.track_clicks
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
@@ -613,11 +614,14 @@ type GetFailedCampaignSendsForRetryRow struct {
 	FailedAt      sql.NullString `json:"failed_at"`
 	Email         string         `json:"email"`
 	Name          string         `json:"name"`
+	OrgID         string         `json:"org_id"`
 	Subject       string         `json:"subject"`
 	HtmlBody      string         `json:"html_body"`
 	FromName      sql.NullString `json:"from_name"`
 	FromEmail     sql.NullString `json:"from_email"`
 	ReplyTo       sql.NullString `json:"reply_to"`
+	TrackOpens    sql.NullInt64  `json:"track_opens"`
+	TrackClicks   sql.NullInt64  `json:"track_clicks"`
 }
 
 // Retry Worker Queries
@@ -639,11 +643,14 @@ func (q *Queries) GetFailedCampaignSendsForRetry(ctx context.Context, limitCount
 			&i.FailedAt,
 			&i.Email,
 			&i.Name,
+			&i.OrgID,
 			&i.Subject,
 			&i.HtmlBody,
 			&i.FromName,
 			&i.FromEmail,
 			&i.ReplyTo,
+			&i.TrackOpens,
+			&i.TrackClicks,
 		); err != nil {
 			return nil, err
 		}

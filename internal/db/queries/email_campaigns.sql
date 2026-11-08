@@ -247,7 +247,8 @@ WHERE campaign_id = sqlc.arg(campaign_id) AND status = 'sent';
 -- name: GetFailedCampaignSendsForRetry :many
 SELECT cs.id, cs.campaign_id, cs.contact_id, cs.tracking_token, cs.retry_count, cs.failed_at,
        c.email, c.name,
-       ec.subject, ec.html_body, ec.from_name, ec.from_email, ec.reply_to
+       ec.org_id, ec.subject, ec.html_body, ec.from_name, ec.from_email, ec.reply_to,
+       ec.track_opens, ec.track_clicks
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id

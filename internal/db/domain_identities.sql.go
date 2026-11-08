@@ -143,6 +143,25 @@ func (q *Queries) GetDomainIdentityByDomain(ctx context.Context, arg GetDomainId
 	return i, err
 }
 
+const isDomainClaimedByOtherOrg = `-- name: IsDomainClaimedByOtherOrg :one
+SELECT CAST(COUNT(*) > 0 AS INTEGER) AS claimed
+FROM domain_identities
+WHERE domain = LOWER(?1) AND org_id != ?2
+`
+
+type IsDomainClaimedByOtherOrgParams struct {
+	Domain string `json:"domain"`
+	OrgID  string `json:"org_id"`
+}
+
+// A brand may not send from a domain another brand has added as its identity.
+func (q *Queries) IsDomainClaimedByOtherOrg(ctx context.Context, arg IsDomainClaimedByOtherOrgParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, isDomainClaimedByOtherOrg, arg.Domain, arg.OrgID)
+	var claimed int64
+	err := row.Scan(&claimed)
+	return claimed, err
+}
+
 const listDomainIdentitiesByOrg = `-- name: ListDomainIdentitiesByOrg :many
 SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at FROM domain_identities
 WHERE org_id = ?

@@ -146,7 +146,12 @@ func (s *SequenceService) SendConfirmationEmail(ctx context.Context, contactID s
 	// Also, confirmation templates use template_type='confirmation' which uses raw HTML from DB
 
 	// Send the email directly (not queued)
-	err = s.sender.sendEmail(contact.Email, subject, htmlBody)
+	err = s.sender.Send(ctx, Message{
+		OrgID:   sequence.OrgID.String,
+		To:      contact.Email,
+		Subject: subject,
+		HTML:    htmlBody,
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to send confirmation email: %w", err)
 	}
@@ -384,7 +389,7 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 		}
 
 		// Send the email
-		err = s.sender.sendEmail(email.Email, subject, htmlBody, s.marketingSendOptions(isTransactional, email.TrackingToken.String)...)
+		err = s.sender.Send(ctx, s.sequenceMessage(email, subject, htmlBody))
 		if err != nil {
 			logx.Errorf("Failed to send email %s to %s: %v", email.ID, email.Email, err)
 			_ = s.db.MarkEmailFailed(ctx, db.MarkEmailFailedParams{
@@ -494,13 +499,16 @@ func (s *SequenceService) processTemplateVariables(content string, ctx TemplateC
 	return content
 }
 
-// marketingSendOptions returns the one-click List-Unsubscribe headers for a
-// marketing email. Transactional mail and sends without a tracking token get none.
-func (s *SequenceService) marketingSendOptions(isTransactional bool, trackingToken string) []SendOption {
-	if isTransactional || trackingToken == "" {
-		return nil
+// sequenceMessage addresses a queued sequence email from its brand. Marketing
+// steps carry the one-click List-Unsubscribe headers; transactional steps and
+// sends without a tracking token do not.
+func (s *SequenceService) sequenceMessage(email db.GetPendingEmailsRow, subject, htmlBody string) Message {
+	m := Message{OrgID: email.OrgID, To: email.Email, Subject: subject, HTML: htmlBody}
+	isTransactional := email.IsTransactional.Valid && email.IsTransactional.Int64 == 1
+	if !isTransactional && email.TrackingToken.String != "" {
+		m.ListUnsubscribe = unsubscribeURL(s.baseURL, email.TrackingToken.String)
 	}
-	return []SendOption{WithListUnsubscribe(unsubscribeURL(s.baseURL, trackingToken))}
+	return m
 }
 
 // wrapWithSimpleTemplate wraps email content with a simple template (just footer)

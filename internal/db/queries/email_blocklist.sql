@@ -8,7 +8,8 @@ INSERT INTO email_bounce (
     diagnostic_code, source_email, message_id, raw_notification, created_at
 ) VALUES (sqlc.arg(email), LOWER(sqlc.arg(email_for_lower)), sqlc.arg(bounce_type), sqlc.arg(bounce_subtype), sqlc.arg(diagnostic_code), sqlc.arg(source_email), sqlc.arg(message_id), sqlc.arg(raw_notification), datetime('now'))
 ON CONFLICT (email_lower) DO UPDATE
-SET bounce_type = EXCLUDED.bounce_type,
+-- A permanent bounce stays permanent; a later transient one must not unblock it
+SET bounce_type = CASE WHEN email_bounce.bounce_type = 'Permanent' THEN 'Permanent' ELSE EXCLUDED.bounce_type END,
     bounce_subtype = EXCLUDED.bounce_subtype,
     diagnostic_code = EXCLUDED.diagnostic_code,
     source_email = EXCLUDED.source_email,
@@ -245,3 +246,15 @@ INSERT INTO blocked_domains (id, org_id, domain)
 VALUES (sqlc.arg(id), sqlc.arg(org_id), LOWER(sqlc.arg(domain)))
 ON CONFLICT (org_id, domain) DO NOTHING
 RETURNING *;
+
+-- ========== SEND GATE ==========
+
+-- name: IsSendBlocked :one
+-- Every send checks this first: a permanent bounce or a complaint anywhere, or
+-- the brand's own suppression list or blocked domains. Transient bounces do not block.
+SELECT CAST((
+    (SELECT COUNT(*) FROM email_bounce b WHERE b.email_lower = LOWER(sqlc.arg(email)) AND b.bounce_type = 'Permanent') +
+    (SELECT COUNT(*) FROM email_complaint c WHERE c.email_lower = LOWER(sqlc.arg(email))) +
+    (SELECT COUNT(*) FROM suppression_list sl WHERE sl.org_id = sqlc.arg(org_id) AND sl.email_lower = LOWER(sqlc.arg(email))) +
+    (SELECT COUNT(*) FROM blocked_domains bd WHERE bd.org_id = sqlc.arg(org_id) AND bd.domain = LOWER(sqlc.arg(domain)))
+) > 0 AS INTEGER) AS blocked;

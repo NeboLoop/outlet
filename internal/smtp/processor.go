@@ -8,7 +8,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"html"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -17,8 +19,10 @@ import (
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 
+	gosmtp "github.com/emersion/go-smtp"
 	"github.com/google/uuid"
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -75,18 +79,57 @@ func (p *EmailProcessor) Process(r io.Reader) (string, error) {
 		return "", fmt.Errorf("failed to extract body: %w", err)
 	}
 
-	// Generate tracking token
-	trackingToken := p.generateTrackingToken()
-
-	// Send to each recipient
-	for _, recipient := range p.recipients {
-		if err := p.sendToRecipient(recipient, subject, htmlBody, plainText, headers, trackingToken); err != nil {
-			logx.Errorf("SMTP: Failed to send to %s: %v", recipient, err)
-			// Continue with other recipients
-		}
+	// From and Reply-To come from the message headers, as any mail client sets
+	// them. The brand's own From address wins when it has one; the email
+	// service refuses a domain that belongs to another brand.
+	var fromName, fromEmail, replyTo string
+	if addr, err := mail.ParseAddress(msg.Header.Get("From")); err == nil {
+		fromName, fromEmail = addr.Name, addr.Address
+	}
+	if addr, err := mail.ParseAddress(msg.Header.Get("Reply-To")); err == nil {
+		replyTo = addr.Address
+	}
+	if orgSettings, err := p.svcCtx.DB.GetOrgEmailSettings(context.Background(), p.org.ID); err == nil && orgSettings.FromEmail.String != "" {
+		fromName, fromEmail = "", ""
 	}
 
-	return trackingToken, nil
+	// Each recipient gets its own send record and tracking token
+	var messageIDs []string
+	var failed []string
+	permanent := true
+	for _, recipient := range p.recipients {
+		message := email.Message{
+			OrgID:     p.org.ID,
+			FromName:  fromName,
+			FromEmail: fromEmail,
+			ReplyTo:   replyTo,
+			To:        recipient,
+			Subject:   subject,
+			HTML:      htmlBody,
+			Text:      plainText,
+		}
+		id, err := p.sendToRecipient(message, headers)
+		if err != nil {
+			logx.Errorf("SMTP: Failed to send to %s: %v", recipient, err)
+			failed = append(failed, recipient)
+			if !errors.Is(err, email.ErrSuppressed) && !errors.Is(err, email.ErrInvalidMessage) {
+				permanent = false
+			}
+			continue
+		}
+		messageIDs = append(messageIDs, id)
+	}
+
+	// SMTP answers DATA once for the whole message. When every recipient
+	// failed, say so, so the client retries or bounces instead of believing
+	// the mail went out. Partial failures are recorded per send.
+	if len(messageIDs) == 0 {
+		if permanent {
+			return "", &gosmtp.SMTPError{Code: 554, EnhancedCode: gosmtp.EnhancedCode{5, 1, 1}, Message: "No recipient could be sent to: " + strings.Join(failed, ", ")}
+		}
+		return "", &gosmtp.SMTPError{Code: 451, EnhancedCode: gosmtp.EnhancedCode{4, 3, 0}, Message: "Temporary failure sending the message, try again later"}
+	}
+	return strings.Join(messageIDs, ","), nil
 }
 
 // extractBody extracts HTML and plain text body from the email.
@@ -100,7 +143,7 @@ func (p *EmailProcessor) extractBody(msg *mail.Message) (htmlBody, plainText str
 
 	// If we only have plain text, wrap it in basic HTML
 	if htmlBody == "" && plainText != "" {
-		htmlBody = "<pre>" + plainText + "</pre>"
+		htmlBody = "<pre>" + html.EscapeString(plainText) + "</pre>"
 	}
 
 	return htmlBody, plainText, nil
@@ -183,9 +226,11 @@ func (w *whitespaceStripper) Read(p []byte) (int, error) {
 	return len(out), err
 }
 
-// sendToRecipient sends the email to a single recipient
-func (p *EmailProcessor) sendToRecipient(recipient, subject, htmlBody, plainText string, headers *OutletHeaders, trackingToken string) error {
+// sendToRecipient records and sends the email to one recipient, returning its
+// tracking token.
+func (p *EmailProcessor) sendToRecipient(message email.Message, headers *OutletHeaders) (string, error) {
 	ctx := context.Background()
+	trackingToken := p.generateTrackingToken()
 
 	// Prepare context data (meta + tags)
 	var contextData sql.NullString
@@ -204,15 +249,14 @@ func (p *EmailProcessor) sendToRecipient(recipient, subject, htmlBody, plainText
 	// Get or create adhoc template for tracking
 	templateID, err := p.getOrCreateAdhocTemplate()
 	if err != nil {
-		return fmt.Errorf("failed to get adhoc template: %w", err)
+		return "", fmt.Errorf("failed to get adhoc template: %w", err)
 	}
 
-	// Create transactional send record
 	send, err := p.svcCtx.DB.CreateTransactionalSend(ctx, db.CreateTransactionalSendParams{
 		ID:            uuid.New().String(),
 		TemplateID:    templateID,
 		OrgID:         p.org.ID,
-		ToEmail:       recipient,
+		ToEmail:       message.To,
 		ToName:        sql.NullString{},
 		ContactID:     sql.NullString{},
 		Status:        sql.NullString{String: "pending", Valid: true},
@@ -220,42 +264,26 @@ func (p *EmailProcessor) sendToRecipient(recipient, subject, htmlBody, plainText
 		ContextData:   contextData,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create send record: %w", err)
+		return "", fmt.Errorf("failed to create send record: %w", err)
 	}
 
-	// Get org email settings
-	orgSettings, _ := p.svcCtx.DB.GetOrgEmailSettings(ctx, p.org.ID)
-	fromEmail := p.from
-	fromName := ""
-	if orgSettings.FromEmail.Valid && orgSettings.FromEmail.String != "" {
-		fromEmail = orgSettings.FromEmail.String
-	}
-	if orgSettings.FromName.Valid {
-		fromName = orgSettings.FromName.String
-	}
-
-	// Send the email
-	sendErr := p.svcCtx.EmailService.SendEmailFrom(ctx, fromEmail, fromName, recipient, subject, htmlBody)
-
-	if sendErr != nil {
-		// Update status to failed
+	if sendErr := p.svcCtx.EmailService.Send(ctx, message); sendErr != nil {
 		_ = p.svcCtx.DB.UpdateTransactionalSendStatus(ctx, db.UpdateTransactionalSendStatusParams{
 			ID:           send.ID,
 			Status:       sql.NullString{String: "failed", Valid: true},
 			ErrorMessage: sql.NullString{String: sendErr.Error(), Valid: true},
 		})
-		return fmt.Errorf("failed to send: %w", sendErr)
+		return "", fmt.Errorf("failed to send: %w", sendErr)
 	}
 
-	// Update status to sent
 	_ = p.svcCtx.DB.UpdateTransactionalSendStatus(ctx, db.UpdateTransactionalSendStatusParams{
 		ID:           send.ID,
 		Status:       sql.NullString{String: "sent", Valid: true},
 		ErrorMessage: sql.NullString{},
 	})
 
-	logx.Infof("SMTP: Email sent to=%s subject=%q org=%s msgId=%s", recipient, subject, p.org.Slug, trackingToken)
-	return nil
+	logx.Infof("SMTP: Email sent to=%s subject=%q org=%s msgId=%s", message.To, message.Subject, p.org.Slug, trackingToken)
+	return trackingToken, nil
 }
 
 // getOrCreateAdhocTemplate gets or creates the _smtp_adhoc template for SMTP sends

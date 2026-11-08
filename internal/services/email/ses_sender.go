@@ -21,60 +21,6 @@ type SESConfig struct {
 	ReplyTo     string
 }
 
-// SendEmailViaSES sends an email using the AWS SES API directly
-// This is the preferred method when AWS credentials are configured
-func SendEmailViaSES(ctx context.Context, sesConfig *SESConfig, to, subject, htmlBody, textBody string) error {
-	client, err := newSESClient(ctx, sesConfig)
-	if err != nil {
-		return err
-	}
-
-	// Build the from address
-	from := sesConfig.FromAddress
-	if sesConfig.FromName != "" {
-		from = fmt.Sprintf("%s <%s>", sesConfig.FromName, sesConfig.FromAddress)
-	}
-
-	// Build reply-to addresses
-	var replyToAddresses []string
-	if sesConfig.ReplyTo != "" {
-		replyToAddresses = []string{sesConfig.ReplyTo}
-	}
-
-	input := &ses.SendEmailInput{
-		Destination: &types.Destination{
-			ToAddresses: []string{to},
-		},
-		Message: &types.Message{
-			Body: &types.Body{
-				Html: &types.Content{
-					Charset: aws.String("UTF-8"),
-					Data:    aws.String(htmlBody),
-				},
-			},
-			Subject: &types.Content{
-				Charset: aws.String("UTF-8"),
-				Data:    aws.String(subject),
-			},
-		},
-		Source:           aws.String(from),
-		ReplyToAddresses: replyToAddresses,
-	}
-
-	if textBody != "" {
-		input.Message.Body.Text = &types.Content{
-			Charset: aws.String("UTF-8"),
-			Data:    aws.String(textBody),
-		}
-	}
-
-	_, err = client.SendEmail(ctx, input)
-	if err != nil {
-		return fmt.Errorf("SES SendEmail failed: %w", err)
-	}
-
-	return nil
-}
 
 // newSESClient builds an SES client from the config, using static credentials
 // when provided and otherwise the default AWS credential chain.
@@ -100,45 +46,21 @@ func newSESClient(ctx context.Context, sesConfig *SESConfig) (*ses.Client, error
 	return ses.NewFromConfig(cfg), nil
 }
 
-// SendRawEmailViaSES sends a pre-built raw MIME message (used for attachments
-// via multipart/mixed) through SES SendRawEmail.
-func SendRawEmailViaSES(ctx context.Context, sesConfig *SESConfig, raw []byte) error {
+// SendRawEmailViaSES sends a complete RFC 5322 message through SES
+// SendRawEmail. Destinations is set explicitly, so SES delivers to the one
+// intended recipient and never to addresses parsed from the message headers.
+func SendRawEmailViaSES(ctx context.Context, sesConfig *SESConfig, source, to string, raw []byte) error {
 	client, err := newSESClient(ctx, sesConfig)
 	if err != nil {
 		return err
 	}
 	input := &ses.SendRawEmailInput{
-		RawMessage: &types.RawMessage{Data: raw},
-	}
-	if sesConfig.FromAddress != "" {
-		input.Source = aws.String(sesConfig.FromAddress)
+		RawMessage:   &types.RawMessage{Data: raw},
+		Source:       aws.String(source),
+		Destinations: []string{to},
 	}
 	if _, err := client.SendRawEmail(ctx, input); err != nil {
 		return fmt.Errorf("SES SendRawEmail failed: %w", err)
 	}
 	return nil
-}
-
-// sendViaSES sends through SES, using SendRawEmail when the message carries
-// attachments or extra headers that the body-only SendEmail call cannot.
-func sendViaSES(ctx context.Context, sesConfig *SESConfig, to, subject, htmlBody string, o sendOpts) error {
-	if !o.needsRawMessage() {
-		return SendEmailViaSES(ctx, sesConfig, to, subject, htmlBody, o.text)
-	}
-	from := sesConfig.FromAddress
-	if sesConfig.FromName != "" {
-		from = fmt.Sprintf("%s <%s>", sesConfig.FromName, sesConfig.FromAddress)
-	}
-	raw, err := rawMessage{
-		From:    from,
-		To:      to,
-		ReplyTo: sesConfig.ReplyTo,
-		Subject: subject,
-		HTML:    htmlBody,
-		opts:    o,
-	}.build()
-	if err != nil {
-		return fmt.Errorf("build message: %w", err)
-	}
-	return SendRawEmailViaSES(ctx, sesConfig, raw)
 }

@@ -243,9 +243,12 @@ func processBounce(ctx context.Context, svcCtx *svc.ServiceContext, orgID string
 			})
 		}
 
-		// Also block the contact in our contacts table
-		if err := svcCtx.DB.BlockContactByEmail(ctx, recipient.EmailAddress); err != nil {
-			fmt.Printf("[SES Webhook] Failed to block contact %s: %v\n", recipient.EmailAddress, err)
+		// Only a permanent bounce blocks the contact; transient ones (full
+		// mailbox, greylisting) are recorded but the address stays sendable
+		if notif.Bounce.BounceType == "Permanent" {
+			if err := svcCtx.DB.BlockContactByEmail(ctx, recipient.EmailAddress); err != nil {
+				fmt.Printf("[SES Webhook] Failed to block contact %s: %v\n", recipient.EmailAddress, err)
+			}
 		}
 	}
 }

@@ -67,3 +67,9 @@ SELECT * FROM domain_identities
 WHERE verification_status IN ('pending', 'Pending', 'not_started')
    OR dkim_status IN ('pending', 'Pending', 'not_started')
 ORDER BY created_at ASC;
+
+-- name: IsDomainClaimedByOtherOrg :one
+-- A brand may not send from a domain another brand has added as its identity.
+SELECT CAST(COUNT(*) > 0 AS INTEGER) AS claimed
+FROM domain_identities
+WHERE domain = LOWER(sqlc.arg(domain)) AND org_id != sqlc.arg(org_id);

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"html"
 	"html/template"
 	"log"
 	"net/http"
@@ -488,7 +489,7 @@ func (h *Handler) sendConfirmationEmail(ctx context.Context, list db.GetListByPu
 
 	htmlBody := `
 		<p>Hi` + conditionalName(toName) + `,</p>
-		<p>Please confirm your subscription to <strong>` + list.Name + `</strong> by clicking the link below:</p>
+		<p>Please confirm your subscription to <strong>` + html.EscapeString(list.Name) + `</strong> by clicking the link below:</p>
 		<p><a href="` + confirmURL + `">Confirm Subscription</a></p>
 		<p>If you didn't request this, you can safely ignore this email.</p>
 	`
@@ -507,7 +508,14 @@ func (h *Handler) sendConfirmationEmail(ctx context.Context, list db.GetListByPu
 		fromName = list.FromName.String
 	}
 
-	return h.emailService.SendEmailFrom(ctx, fromEmail, fromName, toEmail, subject, htmlBody)
+	return h.emailService.Send(ctx, email.Message{
+		OrgID:     list.OrgID,
+		FromName:  fromName,
+		FromEmail: fromEmail,
+		To:        toEmail,
+		Subject:   subject,
+		HTML:      htmlBody,
+	})
 }
 
 func conditionalName(name string) string {
