@@ -56,6 +56,10 @@ type Querier interface {
 	ClaimPendingEmails(ctx context.Context, arg ClaimPendingEmailsParams) error
 	// Leases due pending rows of a job for 10 minutes so a crash mid-batch only delays them.
 	ClaimPendingValidations(ctx context.Context, arg ClaimPendingValidationsParams) ([]EmailValidation, error)
+	// Claims a delivery for one try: a waiting one that is due, or one whose
+	// earlier claim lapsed. With force, a waiting or finished one is claimed
+	// whenever (Send again); one in flight never is.
+	ClaimWebhookDelivery(ctx context.Context, arg ClaimWebhookDeliveryParams) (WebhookDelivery, error)
 	CleanupExpiredMCPOAuthCodes(ctx context.Context) error
 	CleanupExpiredMCPOAuthTokens(ctx context.Context) error
 	// Delete sessions older than 30 days
@@ -125,6 +129,8 @@ type Querier interface {
 	CountValidationResults(ctx context.Context, arg CountValidationResultsParams) (int64, error)
 	// Checks completed in [from_time, until_time), grouped by source.
 	CountValidationUsageBySource(ctx context.Context, arg CountValidationUsageBySourceParams) ([]CountValidationUsageBySourceRow, error)
+	// Deliveries of a webhook still waiting for a try.
+	CountWebhookBacklog(ctx context.Context, webhookID string) (int64, error)
 	CountWebhookLogs(ctx context.Context, webhookID string) (int64, error)
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
 	CreateBackupRecord(ctx context.Context, arg CreateBackupRecordParams) (BackupHistory, error)
@@ -203,6 +209,11 @@ type Querier interface {
 	// ========== VALIDATION JOBS ==========
 	CreateValidationJob(ctx context.Context, arg CreateValidationJobParams) (ValidationJob, error)
 	CreateWebhook(ctx context.Context, arg CreateWebhookParams) (Webhook, error)
+	// Deliveries: one event for one webhook, tried until it succeeds or runs out
+	// of tries (internal/services/webhook).
+	// A new delivery starts claimed by the try that follows at once; the claim
+	// lapses at claim_until if that try never finishes.
+	CreateWebhookDelivery(ctx context.Context, arg CreateWebhookDeliveryParams) (WebhookDelivery, error)
 	CreateWebhookLog(ctx context.Context, arg CreateWebhookLogParams) (WebhookLog, error)
 	DeactivateMCPOAuthClient(ctx context.Context, id string) error
 	// ---- deferring held-back sends ---------------------------------------------------
@@ -231,6 +242,8 @@ type Querier interface {
 	DeleteEntryRule(ctx context.Context, id string) error
 	DeleteEntryRulesBySequence(ctx context.Context, sequenceID string) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
+	// Finished deliveries older than the cutoff go, with their tries.
+	DeleteFinishedWebhookDeliveries(ctx context.Context, before string) error
 	DeleteFromSuppressionList(ctx context.Context, arg DeleteFromSuppressionListParams) error
 	DeleteImportJob(ctx context.Context, arg DeleteImportJobParams) error
 	DeleteInactiveContacts(ctx context.Context, arg DeleteInactiveContactsParams) (int64, error)
@@ -258,6 +271,7 @@ type Querier interface {
 	DeleteWebhook(ctx context.Context, arg DeleteWebhookParams) error
 	EditOutreachEmail(ctx context.Context, arg EditOutreachEmailParams) (int64, error)
 	EnsureSendCount(ctx context.Context, arg EnsureSendCountParams) error
+	FinishWebhookDeliveryAttempt(ctx context.Context, arg FinishWebhookDeliveryAttemptParams) error
 	// A pool's oldest manual connection: where a domain added by hand goes.
 	FirstManualConnection(ctx context.Context, pathwayID string) (MailboxConnection, error)
 	// The active rules waiting on this trigger and source, for sequences of the
@@ -479,6 +493,7 @@ type Querier interface {
 	GetValidationJob(ctx context.Context, arg GetValidationJobParams) (ValidationJob, error)
 	GetWebhook(ctx context.Context, arg GetWebhookParams) (Webhook, error)
 	GetWebhookByID(ctx context.Context, id string) (Webhook, error)
+	GetWebhookDelivery(ctx context.Context, arg GetWebhookDeliveryParams) (WebhookDelivery, error)
 	GlobalUnsubscribeByOrgAndEmail(ctx context.Context, arg GlobalUnsubscribeByOrgAndEmailParams) error
 	HasContactTag(ctx context.Context, arg HasContactTagParams) (int64, error)
 	// ========== INSTANCE-WIDE SIGNALS (all orgs on this instance) ==========
@@ -535,9 +550,12 @@ type Querier interface {
 	ListContacts(ctx context.Context, arg ListContactsParams) ([]Contact, error)
 	ListContactsByOrg(ctx context.Context, arg ListContactsByOrgParams) ([]Contact, error)
 	ListCustomFieldValuesBySubscriber(ctx context.Context, subscriberID string) ([]ListCustomFieldValuesBySubscriberRow, error)
+	ListCustomFieldValuesForSubscribers(ctx context.Context, subscriberIds []string) ([]ListCustomFieldValuesForSubscribersRow, error)
 	ListCustomFieldsByList(ctx context.Context, listID int64) ([]CustomField, error)
 	// The brand's sending domains (SES). Outreach domains are listed by outbound.
 	ListDomainIdentitiesByOrg(ctx context.Context, orgID string) ([]DomainIdentity, error)
+	// Deliveries due for a try, oldest first, for active webhooks only.
+	ListDueWebhookDeliveries(ctx context.Context, arg ListDueWebhookDeliveriesParams) ([]ListDueWebhookDeliveriesRow, error)
 	ListEmailDesigns(ctx context.Context, orgID string) ([]EmailDesign, error)
 	ListEmailDesignsByCategory(ctx context.Context, arg ListEmailDesignsByCategoryParams) ([]EmailDesign, error)
 	ListEmailLists(ctx context.Context, orgID string) ([]EmailList, error)
@@ -548,6 +566,9 @@ type Querier interface {
 	ListEntryRulesBySequence(ctx context.Context, sequenceID string) ([]ListEntryRulesBySequenceRow, error)
 	ListImportJobs(ctx context.Context, arg ListImportJobsParams) ([]ImportJob, error)
 	ListListSubscribers(ctx context.Context, arg ListListSubscribersParams) ([]ListListSubscribersRow, error)
+	// One page of a list's export, in the order subscribers joined the list,
+	// after the subscriber that ended the page before (empty keys to start).
+	ListListSubscribersForExport(ctx context.Context, arg ListListSubscribersForExportParams) ([]ListListSubscribersForExportRow, error)
 	ListMCPAPIKeysByUser(ctx context.Context, userID string) ([]McpApiKey, error)
 	ListMCPOAuthClients(ctx context.Context) ([]McpOauthClient, error)
 	// The brand's connections, oldest first.
@@ -596,7 +617,11 @@ type Querier interface {
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
 	ListValidationJobs(ctx context.Context, arg ListValidationJobsParams) ([]ValidationJob, error)
 	ListValidationResults(ctx context.Context, arg ListValidationResultsParams) ([]EmailValidation, error)
+	ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeliveriesParams) ([]WebhookDelivery, error)
 	ListWebhookLogs(ctx context.Context, arg ListWebhookLogsParams) ([]WebhookLog, error)
+	// For each webhook of a brand with deliveries waiting: how many, and when
+	// the next try is.
+	ListWebhookRetrySummaries(ctx context.Context, orgID string) ([]ListWebhookRetrySummariesRow, error)
 	ListWebhooks(ctx context.Context, orgID string) ([]Webhook, error)
 	// =====================================================
 	// Automation Log

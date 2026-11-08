@@ -65,6 +65,51 @@ function getCurrentOrgId(): string | null {
     return localStorage.getItem('currentOrgId');
 }
 
+/**
+ * The headers that sign a request in: the token and the chosen brand.
+ */
+function authHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const token = getAuthToken();
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    const orgId = getCurrentOrgId();
+    if (orgId) {
+        headers['X-Org-Id'] = orgId;
+    }
+    return headers;
+}
+
+/**
+ * download fetches a file from an API route that streams one (not JSON),
+ * signed in like every request, and saves it under the name the server
+ * gives, or fallbackName.
+ */
+export async function download(url: string, fallbackName: string): Promise<void> {
+    const response = await fetch(url, { method: 'GET', credentials: 'include', headers: authHeaders() });
+    if (!response.ok) {
+        let message = `Download failed with status ${response.status}`;
+        try {
+            const result = JSON.parse(await response.text());
+            message = result?.error || result?.message || message;
+        } catch {
+            // not JSON: keep the status message
+        }
+        throw new Error(message);
+    }
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const name = /filename="([^"]+)"/.exec(disposition)?.[1] || fallbackName;
+    const href = URL.createObjectURL(await response.blob());
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+}
+
 export async function request({
     method,
     url,
@@ -78,18 +123,9 @@ export async function request({
     const hasBody = upperMethod !== 'GET' && upperMethod !== 'HEAD';
 
     const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...authHeaders()
     };
-
-    const token = getAuthToken();
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const orgId = getCurrentOrgId();
-    if (orgId) {
-        headers['X-Org-Id'] = orgId;
-    }
 
     const response = await fetch(url, {
         method: upperMethod,

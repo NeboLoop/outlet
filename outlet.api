@@ -1243,6 +1243,9 @@ type (
 		DeliveriesFailed  int    `json:"deliveries_failed"`
 		LastDeliveryAt    string `json:"last_delivery_at,omitempty"`
 		LastStatus        int    `json:"last_status,omitempty"` // HTTP status code
+		// Retries (admin list): deliveries waiting for another try, and when the next one is
+		WaitingDeliveries int    `json:"waiting_deliveries,omitempty"`
+		NextRetryAt       string `json:"next_retry_at,omitempty"`
 	}
 	ListWebhooksResponse {
 		Webhooks []WebhookInfo `json:"webhooks"`
@@ -1284,6 +1287,35 @@ type (
 	}
 	ListWebhookLogsResponse {
 		Logs []WebhookLogInfo `json:"logs"`
+	}
+	// One event for one webhook, tried until it succeeds or runs out of tries
+	WebhookDeliveryInfo {
+		Id             string `json:"id"`
+		Event          string `json:"event"`
+		Status         string `json:"status"` // pending (waiting to retry), sending, succeeded, failed
+		Attempts       int    `json:"attempts"`
+		MaxAttempts    int    `json:"max_attempts"`
+		LastStatusCode int    `json:"last_status_code,omitempty"` // HTTP status of the last try
+		LastError      string `json:"last_error,omitempty"`
+		NextRetryAt    string `json:"next_retry_at,omitempty"` // when pending
+		CreatedAt      string `json:"created_at"`
+		UpdatedAt      string `json:"updated_at"`
+	}
+	ListWebhookDeliveriesRequest {
+		Id    string `path:"id"`
+		Limit int    `form:"limit,optional"` // default 50, max 200
+	}
+	ListWebhookDeliveriesResponse {
+		Deliveries []WebhookDeliveryInfo `json:"deliveries"`
+	}
+	ResendWebhookDeliveryRequest {
+		Id         string `path:"id"`
+		DeliveryId string `path:"delivery_id"`
+	}
+	ResendWebhookDeliveryResponse {
+		Delivery WebhookDeliveryInfo `json:"delivery"`
+		Success  bool                `json:"success"`
+		Error    string              `json:"error,optional"`
 	}
 	// ========== SDK Stats Types ==========
 	GetStatsOverviewRequest {
@@ -2516,6 +2548,14 @@ service outlet {
 
 	@handler AdminListWebhookLogs
 	get /:id/logs (ListWebhookLogsRequest) returns (ListWebhookLogsResponse)
+
+	@doc "A webhook's deliveries, newest first: status, tries and next retry"
+	@handler AdminListWebhookDeliveries
+	get /:id/deliveries (ListWebhookDeliveriesRequest) returns (ListWebhookDeliveriesResponse)
+
+	@doc "Send a delivery again now, signed the same way"
+	@handler AdminResendWebhookDelivery
+	post /:id/deliveries/:delivery_id/resend (ResendWebhookDeliveryRequest) returns (ResendWebhookDeliveryResponse)
 }
 
 // Admin Users

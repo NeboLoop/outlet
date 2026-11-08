@@ -71,7 +71,7 @@ func TestEveryEventReachesAWebhook(t *testing.T) {
 	t.Cleanup(func() { events.Complete(bus) })
 	store := db.NewStore(conn)
 	store.SetEvents(bus)
-	d := NewDispatcher(store.Queries, bus)
+	d := NewDispatcher(store.Queries, bus, DefaultRetryConfig())
 	require.NoError(t, d.Start(ctx))
 	t.Cleanup(d.Stop)
 

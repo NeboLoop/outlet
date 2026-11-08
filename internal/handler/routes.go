@@ -1134,6 +1134,18 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: adminwebhooks.AdminDeleteWebhookHandler(serverCtx),
 				},
 				{
+					// A webhook's deliveries, newest first: status, tries and next retry
+					Method:  http.MethodGet,
+					Path:    "/:id/deliveries",
+					Handler: adminwebhooks.AdminListWebhookDeliveriesHandler(serverCtx),
+				},
+				{
+					// Send a delivery again now, signed the same way
+					Method:  http.MethodPost,
+					Path:    "/:id/deliveries/:delivery_id/resend",
+					Handler: adminwebhooks.AdminResendWebhookDeliveryHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodGet,
 					Path:    "/:id/logs",
 					Handler: adminwebhooks.AdminListWebhookLogsHandler(serverCtx),

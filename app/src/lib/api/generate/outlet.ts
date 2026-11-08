@@ -1412,6 +1412,22 @@ export function adminDeleteWebhook(params: components.DeleteWebhookRequestParams
 }
 
 /**
+ * @description "A webhook's deliveries, newest first: status, tries and next retry"
+ * @param params
+ */
+export function adminListWebhookDeliveries(params: components.ListWebhookDeliveriesRequestParams, id: string) {
+	return webapi.get<components.ListWebhookDeliveriesResponse>(`/api/admin/webhooks/${id}/deliveries`, params)
+}
+
+/**
+ * @description "Send a delivery again now, signed the same way"
+ * @param params
+ */
+export function adminResendWebhookDelivery(params: components.ResendWebhookDeliveryRequestParams, id: string, delivery_id: string) {
+	return webapi.post<components.ResendWebhookDeliveryResponse>(`/api/admin/webhooks/${id}/deliveries/${delivery_id}/resend`, params)
+}
+
+/**
  * @description 
  * @param params
  */

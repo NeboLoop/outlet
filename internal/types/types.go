@@ -1178,6 +1178,15 @@ type ListValidationResultsResponse struct {
 	Limit   int                `json:"limit"`
 }
 
+type ListWebhookDeliveriesRequest struct {
+	Id    string `path:"id"`
+	Limit int    `form:"limit,optional"` // default 50, max 200
+}
+
+type ListWebhookDeliveriesResponse struct {
+	Deliveries []WebhookDeliveryInfo `json:"deliveries"`
+}
+
 type ListWebhookLogsRequest struct {
 	Id    string `path:"id"`
 	Limit int    `form:"limit,optional"`
@@ -1911,6 +1920,17 @@ type RemoveSubscriberRequest struct {
 	SubscriberId string `path:"subscriberId"`
 }
 
+type ResendWebhookDeliveryRequest struct {
+	Id         string `path:"id"`
+	DeliveryId string `path:"delivery_id"`
+}
+
+type ResendWebhookDeliveryResponse struct {
+	Delivery WebhookDeliveryInfo `json:"delivery"`
+	Success  bool                `json:"success"`
+	Error    string              `json:"error,optional"`
+}
+
 type ResetPasswordRequest struct {
 	Token           string `json:"token"`
 	NewPassword     string `json:"new_password"`
@@ -2630,6 +2650,19 @@ type VersionInfo struct {
 	Arch      string `json:"arch"`
 }
 
+type WebhookDeliveryInfo struct {
+	Id             string `json:"id"`
+	Event          string `json:"event"`
+	Status         string `json:"status"` // pending (waiting to retry), sending, succeeded, failed
+	Attempts       int    `json:"attempts"`
+	MaxAttempts    int    `json:"max_attempts"`
+	LastStatusCode int    `json:"last_status_code,omitempty"` // HTTP status of the last try
+	LastError      string `json:"last_error,omitempty"`
+	NextRetryAt    string `json:"next_retry_at,omitempty"` // when pending
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
 type WebhookInfo struct {
 	Id                string   `json:"id"`
 	Url               string   `json:"url"`
@@ -2641,6 +2674,8 @@ type WebhookInfo struct {
 	DeliveriesFailed  int      `json:"deliveries_failed"`
 	LastDeliveryAt    string   `json:"last_delivery_at,omitempty"`
 	LastStatus        int      `json:"last_status,omitempty"` // HTTP status code
+	WaitingDeliveries int      `json:"waiting_deliveries,omitempty"`
+	NextRetryAt       string   `json:"next_retry_at,omitempty"`
 }
 
 type WebhookLogInfo struct {

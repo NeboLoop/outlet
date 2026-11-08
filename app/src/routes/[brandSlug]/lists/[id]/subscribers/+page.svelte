@@ -10,6 +10,7 @@
 		addListSubscriber,
 		importListSubscribers,
 		getImportJob,
+		exportListSubscribers,
 		type ImportJobInfo,
 		type ListSubscriberInfo,
 		type SequenceInfo,
@@ -38,6 +39,7 @@
 		Shield,
 		UserPlus,
 		Upload,
+		Download,
 		X
 	} from '@lucide/svelte';
 	import { getListContext } from '../listContext';
@@ -75,6 +77,21 @@
 	let addName = $state('');
 	let adding = $state(false);
 	let notice = $state('');
+
+	// CSV export: the server streams every subscriber of the list
+	let exporting = $state(false);
+
+	async function handleExport() {
+		exporting = true;
+		error = '';
+		try {
+			await exportListSubscribers(listId);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to export subscribers';
+		} finally {
+			exporting = false;
+		}
+	}
 
 	// CSV import: the file goes to an import job the server runs
 	let importInput = $state<HTMLInputElement | null>(null);
@@ -264,6 +281,10 @@
 	<Button type="secondary" size="sm" onclick={() => importInput?.click()} disabled={importing}>
 		<Upload class="mr-2 h-4 w-4" />
 		Import CSV
+	</Button>
+	<Button type="secondary" size="sm" onclick={handleExport} disabled={exporting}>
+		<Download class="mr-2 h-4 w-4" />
+		{exporting ? 'Exporting...' : 'Export CSV'}
 	</Button>
 	<Button type="primary" size="sm" onclick={openAddModal}>
 		<UserPlus class="mr-2 h-4 w-4" />

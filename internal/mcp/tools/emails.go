@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
 	"github.com/outlet-sh/outlet/internal/services/email"
+	"github.com/outlet-sh/outlet/internal/services/listexport"
 	"github.com/outlet-sh/outlet/internal/utils"
 
 	"github.com/google/uuid"
@@ -62,7 +64,7 @@ func sameBrand(ctx context.Context, toolCtx *mcpctx.ToolContext, rec access.Reco
 
 // emailActions defines valid actions for each email resource.
 var emailActions = map[string][]string{
-	"list":       {"create", "list", "get", "update", "delete", "stats", "subscribers", "subscribe", "unsubscribe"},
+	"list":       {"create", "list", "get", "update", "delete", "stats", "subscribers", "subscribe", "unsubscribe", "export"},
 	"sequence":   {"create", "list", "get", "update", "delete", "stats"},
 	"template":   {"create", "list", "get", "update", "delete"},
 	"enrollment": {"enroll", "unenroll", "pause", "resume", "list"},
@@ -102,7 +104,8 @@ type EmailInput struct {
 	// Pagination fields for list.subscribers
 	Page     int    `json:"page,omitempty" jsonschema:"Page number (default: 1)"`
 	PageSize int    `json:"page_size,omitempty" jsonschema:"Items per page (default: 20, max: 100)"`
-	Status   string `json:"status,omitempty" jsonschema:"Filter by status: active, pending, unsubscribed (list.subscribers, queue.list)"`
+	Status   string `json:"status,omitempty" jsonschema:"Filter by status: active, pending, unsubscribed (list.subscribers, list.export, queue.list)"`
+	Cursor   string `json:"cursor,omitempty" jsonschema:"Where to continue an export: the next_cursor of the previous list.export call"`
 
 	// Contact/Subscribe fields
 	Email     string `json:"email,omitempty" jsonschema:"Email address (list.subscribe, list.unsubscribe)"`
@@ -143,6 +146,7 @@ LIST RESOURCE:
 - list.subscribers: List subscribers (requires: id, optional: page, page_size, status)
 - list.subscribe: Subscribe contact to list (requires: id, email)
 - list.unsubscribe: Unsubscribe contact from list (requires: id, email)
+- list.export: Export subscribers as CSV: email, name, status, dates and custom fields (requires: id, optional: status, page_size up to 5000 rows (default 1000), cursor from the previous call's next_cursor)
 
 SEQUENCE RESOURCE:
 - sequence.create: Create a sequence (requires: name, list_id)
@@ -179,6 +183,7 @@ QUEUE RESOURCE:
 Examples:
   email(resource: list, action: create, name: "Newsletter")
   email(resource: list, action: subscribe, id: "1", email: "user@example.com")
+  email(resource: list, action: export, id: "1", status: "active")
   email(resource: sequence, action: create, name: "Welcome Series", list_id: "1")
   email(resource: enrollment, action: enroll, sequence_id: "uuid", contact_id: "uuid")
   email(resource: enrollment, action: list, contact_id: "uuid")
@@ -332,8 +337,51 @@ func handleList(ctx context.Context, toolCtx *mcpctx.ToolContext, input EmailInp
 		return handleListSubscribe(ctx, toolCtx, input)
 	case "unsubscribe":
 		return handleListUnsubscribe(ctx, toolCtx, input)
+	case "export":
+		return handleListExport(ctx, toolCtx, input)
 	}
 	return nil, nil, nil
+}
+
+// ListExportOutput defines output for list.export.
+type ListExportOutput struct {
+	ListID     string `json:"list_id"`
+	CSV        string `json:"csv"`
+	Rows       int    `json:"rows"`
+	NextCursor string `json:"next_cursor,omitempty"` // more rows follow: pass it as cursor
+}
+
+func handleListExport(ctx context.Context, toolCtx *mcpctx.ToolContext, input EmailInput) (*mcp.CallToolResult, any, error) {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(input.ID) == "" {
+		return nil, nil, mcpctx.NewValidationError("id is required", "id")
+	}
+	listID, err := strconv.ParseInt(input.ID, 10, 64)
+	if err != nil {
+		return nil, nil, mcpctx.NewValidationError("id must be a valid ID", "id")
+	}
+	if err := sameBrand(ctx, toolCtx, access.List, input.ID, "list"); err != nil {
+		return nil, nil, err
+	}
+
+	limit := input.PageSize
+	if limit <= 0 {
+		limit = 1000
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+	var buf bytes.Buffer
+	res, err := listexport.Write(ctx, toolCtx.DB(), &buf, listID, listexport.Options{Status: input.Status, Limit: limit, After: input.Cursor})
+	if errors.Is(err, listexport.ErrBadCursor) {
+		return nil, nil, mcpctx.NewValidationError("cursor must be the next_cursor of a list.export call", "cursor")
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to export list: %w", err)
+	}
+	return nil, ListExportOutput{ListID: input.ID, CSV: buf.String(), Rows: res.Rows, NextCursor: res.Next}, nil
 }
 
 func handleListCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input EmailInput) (*mcp.CallToolResult, any, error) {
