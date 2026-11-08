@@ -2,22 +2,31 @@
 // one edit here, not a hunt through every guide. A guide writes
 // {{label.name}} and the help renderer puts the value in its place.
 //
-// The mailbox service labels follow the mailbox service screen (the brand's
-// service connections). Check them against that screen whenever it changes.
+// These follow the mailbox pool's connections on Settings, Sending
+// (MailboxConnections.svelte and MailboxConnection.svelte). Check them
+// against that screen whenever it changes.
 export const helpLabels: Record<string, string> = {
 	// Where a brand's mailbox service connections are managed
 	connectionsScreen: 'Settings, Sending',
-	connectionsHeading: 'Mailbox services',
-	addConnection: 'Add mailbox service',
+	connectionsHeading: 'Connections',
+	addConnection: 'Add connection',
 	connectionService: 'Service',
+	connectionName: 'Name (optional)',
 	connectionApiKey: 'API key',
-	saveConnection: 'Save',
-	manualService: 'By hand (SMTP and IMAP logins)',
+	addConnectionSave: 'Add',
+	manualService: 'By hand (Google Workspace, Microsoft 365, any SMTP and IMAP)',
+	manualServiceShort: 'By hand',
 
-	// Per connection
+	// Per connection, under Manage
+	manage: 'Manage',
+	connectionLimit: 'Daily limit per mailbox',
+	saveConnection: 'Save',
+	removeConnection: 'Remove',
+	moveTo: 'Move to...',
+	move: 'Move',
 	connectDomainSection: 'Connect a domain you own',
 	connectDomain: 'Connect',
-	buySection: 'Buy',
+	buySection: 'Buy at',
 	buyKindMailboxes: 'Mailboxes on a domain',
 	buyKindDomain: 'A new domain',
 	buyKindConnect: 'Connect a domain I own (Infraforge)',

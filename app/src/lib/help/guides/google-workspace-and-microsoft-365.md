@@ -13,7 +13,8 @@ You can use mailboxes you already pay for, at Google Workspace or Microsoft 365,
 1. Use a separate **outreach domain**, never your main business domain. Outlet refuses the brand's own sending domain.
 2. Add the outreach domain to Google Workspace or Microsoft 365 as a domain of its own (Google calls it a secondary domain).
 3. Create one mailbox per real person, with that person's name.
-4. Add the domain in Outlet first: **Outbound**, **Setup**, **Domains**, **Add domain**. Pick **Mail provider** "Google Workspace" for Google. For Microsoft 365, pick "Other" and use the MX host and SPF include from Microsoft's domain setup page. A mailbox can only be added on one of these domains.
+4. In Outlet, open {{label.connectionsScreen}}, find the pool that carries **Outreach**, and under **{{label.connectionsHeading}}** press **{{label.addConnection}}**. Pick **{{label.connectionService}}** "{{label.manualService}}", give it a **{{label.connectionName}}** such as "Google Workspace", and press **{{label.addConnectionSave}}**. No API key is needed. Skip this if the pool already has a hand-added connection.
+5. Add the domain in Outlet: **Outbound**, **Setup**, **Domains**, **Add domain**. Pick **Mail provider** "Google Workspace" for Google. For Microsoft 365, pick "Other" and use the MX host and SPF include from Microsoft's domain setup page. A mailbox can only be added on one of these domains. New domains join the pool's first hand-added connection; to put one on another connection, use **{{label.moveTo}}** and **{{label.move}}** under that connection's **{{label.manage}}**.
 
 ## Google Workspace
 

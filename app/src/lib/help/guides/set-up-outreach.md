@@ -72,9 +72,9 @@ What these records are is explained in [Your sending domain and DNS explained](/
 
 Each mailbox is a real inbox with a real person's name, on one of your outreach domains.
 
-**From a mailbox service.** Create the mailboxes in {{label.connectionsScreen}} (see [Connect a mailbox service](/help/connect-a-mailbox-service)). Outlet tests each login and adds it for you.
+**From a mailbox service.** In {{label.connectionsScreen}}, press **{{label.manage}}** on the service's connection and buy mailboxes, or press **{{label.syncImport}}** (see [Connect a mailbox service](/help/connect-a-mailbox-service)). Outlet tests each login and adds it for you.
 
-**By hand**, for Google Workspace, Microsoft 365 or any mailbox with SMTP and IMAP:
+**By hand**, for Google Workspace, Microsoft 365 or any mailbox with SMTP and IMAP. If the pool has no connection yet, first add one with **{{label.connectionService}}** "{{label.manualServiceShort}}" in {{label.connectionsScreen}} (see [Run several mailbox services together](/help/several-mailbox-services)). Then:
 
 1. On **Setup**, under **Mailboxes**, press **Add mailbox**.
 2. **Email**: it must be on one of your outreach domains.
@@ -82,7 +82,7 @@ Each mailbox is a real inbox with a real person's name, on one of your outreach 
 4. **Signature (optional)**.
 5. **Provider**: "Google Workspace", or "Custom (SMTP and IMAP)" for others.
 6. **App password** (Google) or **Password** (custom).
-7. **Own daily limit (optional)**: leave it empty to use the pool's limit.
+7. **Own daily limit (optional)**: leave it empty to use its connection's or the pool's limit.
 8. Press **Add mailbox**. The button reads "Checking the login..." while Outlet signs in to send and to read replies. It saves only when both work.
 
 Details for Google and Microsoft are in [Add Google Workspace or Microsoft 365 mailboxes by hand](/help/google-workspace-and-microsoft-365).

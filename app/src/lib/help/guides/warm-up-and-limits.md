@@ -18,7 +18,7 @@ Google, Microsoft and other mail providers judge every sender. A new mailbox tha
 
 So a new mailbox sends at most 5 on its first day, 7 on the second, 9 on the third, and reaches 30 a day after about two weeks. The warm-up counts from the day the mailbox was connected.
 
-**Maildoso mailboxes** follow Maildoso's terms instead: 15 a day, warming up from 5, adding 1 a day. Choosing Maildoso sets those limits. See [Connect a mailbox service](/help/connect-a-mailbox-service).
+**Maildoso mailboxes** follow Maildoso's terms instead: a Maildoso connection starts at 15 a day per mailbox, and its mailboxes warm up under the pool's warm-up, from 5. See [Connect a mailbox service](/help/connect-a-mailbox-service).
 
 **Amazon SES, SMTP relays and the platform pathway** have no daily limit, warm-up or spacing by default; those services limit sending on their side.
 
@@ -29,7 +29,17 @@ So a new mailbox sends at most 5 on its first day, 7 on the second, 9 on the thi
 3. Under **Limits per sender**, change **Emails a day**, **Warm-up first day**, **Warm-up added each day**, **Seconds between sends, at least** or **Seconds between sends, at most**. A 0 turns a limit off.
 4. Press **Save**.
 
-Only the brand's admin can change limits. Changing a pathway's mailbox service resets its limits to that service's defaults.
+Only the brand's admin can change limits.
+
+## Give a connection its own daily limit
+
+Each mailbox service connection can have a daily limit for its mailboxes, for example to follow that service's terms.
+
+1. Open {{label.connectionsScreen}} and, on the pool's **{{label.connectionsHeading}}**, press **{{label.manage}}** on the connection.
+2. Type a number under **{{label.connectionLimit}}**, or leave it empty to use the pool's.
+3. Press **{{label.saveConnection}}**.
+
+A Maildoso connection starts at 15. See [Run several mailbox services together](/help/several-mailbox-services).
 
 ## Give one mailbox its own daily limit
 
@@ -37,7 +47,7 @@ Only the brand's admin can change limits. Changing a pathway's mailbox service r
 2. Under **Mailboxes**, find the mailbox and type a number under **Own daily limit**.
 3. Press **Save**. You see "Daily limit saved".
 
-Clear the number and press **Save** to go back to the pool's limit ("The mailbox uses its pool's daily limit"). The warm-up still applies: a mailbox's own limit is the top it climbs to.
+Clear the number and press **Save** to go back to the shared limit ("The mailbox uses its pool's daily limit"). The most specific limit wins: the mailbox's own, then its connection's, then the pool's. The warm-up still applies: the limit is the top a mailbox climbs to.
 
 The **Overview** tab shows each mailbox's limit in words, such as "Warming up: 9 today, climbing to 30 a day (the pool's)".
 
