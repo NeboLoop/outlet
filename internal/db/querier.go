@@ -506,7 +506,8 @@ type Querier interface {
 	ListEmailDesignsByCategory(ctx context.Context, arg ListEmailDesignsByCategoryParams) ([]EmailDesign, error)
 	ListEmailLists(ctx context.Context, orgID string) ([]EmailList, error)
 	ListEmailQueueByOrg(ctx context.Context, arg ListEmailQueueByOrgParams) ([]ListEmailQueueByOrgRow, error)
-	ListEmailReplies(ctx context.Context, arg ListEmailRepliesParams) ([]EmailReply, error)
+	// Replies with the name of the campaign each answers.
+	ListEmailReplies(ctx context.Context, arg ListEmailRepliesParams) ([]ListEmailRepliesRow, error)
 	ListEntryRulesByList(ctx context.Context, sourceID string) ([]ListEntryRulesByListRow, error)
 	ListEntryRulesBySequence(ctx context.Context, sequenceID string) ([]ListEntryRulesBySequenceRow, error)
 	ListImportJobs(ctx context.Context, arg ListImportJobsParams) ([]ImportJob, error)
@@ -517,7 +518,8 @@ type Querier interface {
 	ListNetworkInstances(ctx context.Context) ([]NetworkInstance, error)
 	ListOrganizations(ctx context.Context) ([]Organization, error)
 	ListOutreachDomains(ctx context.Context, orgID string) ([]DomainIdentity, error)
-	// A brand's outreach emails with one status, oldest first.
+	// A brand's outreach emails with one status, oldest first, with the
+	// campaign and step each belongs to.
 	ListOutreachEmails(ctx context.Context, arg ListOutreachEmailsParams) ([]ListOutreachEmailsRow, error)
 	ListOutreachEmailsForSequence(ctx context.Context, sequenceID sql.NullString) ([]ListOutreachEmailsForSequenceRow, error)
 	ListOutreachLists(ctx context.Context, orgID string) ([]EmailList, error)

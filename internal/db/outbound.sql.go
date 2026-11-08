@@ -1124,7 +1124,10 @@ func (q *Queries) ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity,
 }
 
 const listEmailReplies = `-- name: ListEmailReplies :many
-SELECT id, org_id, mailbox_id, contact_id, queue_id, sequence_id, from_email, subject, body, message_id, in_reply_to, refs, classification, handled, received_at FROM email_replies WHERE org_id = ? AND handled = ? ORDER BY received_at DESC LIMIT ?
+SELECT r.id, r.org_id, r.mailbox_id, r.contact_id, r.queue_id, r.sequence_id, r.from_email, r.subject, r.body, r.message_id, r.in_reply_to, r.refs, r.classification, r.handled, r.received_at, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
+FROM email_replies r
+LEFT JOIN email_sequences es ON es.id = r.sequence_id
+WHERE r.org_id = ? AND r.handled = ? ORDER BY r.received_at DESC LIMIT ?
 `
 
 type ListEmailRepliesParams struct {
@@ -1133,15 +1136,35 @@ type ListEmailRepliesParams struct {
 	Limit   int64  `json:"limit"`
 }
 
-func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesParams) ([]EmailReply, error) {
+type ListEmailRepliesRow struct {
+	ID             string         `json:"id"`
+	OrgID          string         `json:"org_id"`
+	MailboxID      string         `json:"mailbox_id"`
+	ContactID      sql.NullString `json:"contact_id"`
+	QueueID        sql.NullString `json:"queue_id"`
+	SequenceID     sql.NullString `json:"sequence_id"`
+	FromEmail      string         `json:"from_email"`
+	Subject        string         `json:"subject"`
+	Body           string         `json:"body"`
+	MessageID      string         `json:"message_id"`
+	InReplyTo      string         `json:"in_reply_to"`
+	Refs           string         `json:"refs"`
+	Classification string         `json:"classification"`
+	Handled        int64          `json:"handled"`
+	ReceivedAt     string         `json:"received_at"`
+	CampaignName   string         `json:"campaign_name"`
+}
+
+// Replies with the name of the campaign each answers.
+func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesParams) ([]ListEmailRepliesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listEmailReplies, arg.OrgID, arg.Handled, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []EmailReply
+	var items []ListEmailRepliesRow
 	for rows.Next() {
-		var i EmailReply
+		var i ListEmailRepliesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrgID,
@@ -1158,6 +1181,7 @@ func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesPara
 			&i.Classification,
 			&i.Handled,
 			&i.ReceivedAt,
+			&i.CampaignName,
 		); err != nil {
 			return nil, err
 		}
@@ -1271,11 +1295,13 @@ func (q *Queries) ListOutreachDomains(ctx context.Context, orgID string) ([]Doma
 }
 
 const listOutreachEmails = `-- name: ListOutreachEmails :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email,
+       CAST(COALESCE(es.id, '') AS TEXT) AS campaign_id, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
 JOIN mailboxes m ON m.id = eq.mailbox_id
 LEFT JOIN email_templates et ON et.id = eq.template_id
+LEFT JOIN email_sequences es ON es.id = et.sequence_id
 WHERE c.org_id = ?1 AND eq.kind = 'outreach' AND eq.status = ?2
 ORDER BY eq.scheduled_for
 LIMIT ?3
@@ -1314,9 +1340,12 @@ type ListOutreachEmailsRow struct {
 	ToName        string         `json:"to_name"`
 	Position      int64          `json:"position"`
 	FromEmail     string         `json:"from_email"`
+	CampaignID    string         `json:"campaign_id"`
+	CampaignName  string         `json:"campaign_name"`
 }
 
-// A brand's outreach emails with one status, oldest first.
+// A brand's outreach emails with one status, oldest first, with the
+// campaign and step each belongs to.
 func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmailsParams) ([]ListOutreachEmailsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listOutreachEmails, arg.OrgID, arg.Status, arg.LimitCount)
 	if err != nil {
@@ -1353,6 +1382,8 @@ func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmails
 			&i.ToName,
 			&i.Position,
 			&i.FromEmail,
+			&i.CampaignID,
+			&i.CampaignName,
 		); err != nil {
 			return nil, err
 		}
@@ -1368,7 +1399,7 @@ func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmails
 }
 
 const listOutreachEmailsForSequence = `-- name: ListOutreachEmailsForSequence :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, m.email AS from_email
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, m.email AS from_email, et.position
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
@@ -1402,6 +1433,7 @@ type ListOutreachEmailsForSequenceRow struct {
 	ClaimedAt     sql.NullString `json:"claimed_at"`
 	ToEmail       string         `json:"to_email"`
 	FromEmail     string         `json:"from_email"`
+	Position      int64          `json:"position"`
 }
 
 func (q *Queries) ListOutreachEmailsForSequence(ctx context.Context, sequenceID sql.NullString) ([]ListOutreachEmailsForSequenceRow, error) {
@@ -1438,6 +1470,7 @@ func (q *Queries) ListOutreachEmailsForSequence(ctx context.Context, sequenceID 
 			&i.ClaimedAt,
 			&i.ToEmail,
 			&i.FromEmail,
+			&i.Position,
 		); err != nil {
 			return nil, err
 		}

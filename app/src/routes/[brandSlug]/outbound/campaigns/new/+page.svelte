@@ -329,7 +329,7 @@
 				</Alert>
 			{/if}
 			<div class="space-y-3">
-				{#each preview.drafts || [] as d}
+				{#each preview.previews || [] as d}
 					<div class="rounded-lg border border-border p-4">
 						<p class="text-xs text-text-muted">
 							From {d.from} to {d.to}{#if d.sends_after}, sends after {formatDate(d.sends_after, 'datetime')}{/if}

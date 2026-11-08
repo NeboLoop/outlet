@@ -1453,7 +1453,8 @@ export interface OutboundCampaignRequest {
 export interface OutboundCampaignResponse {
 	campaign_id?: string
 	enrolled: number
-	drafts?: Array<OutboundDraft>
+	drafts?: Array<OutboundDraft> // the saved drafts
+	previews?: Array<OutboundPreview> // dry_run: the first emails, not saved
 	skipped?: { [key: string]: string }
 	next: string
 }
@@ -1549,7 +1550,10 @@ export interface OutboundDomainResponse {
 }
 
 export interface OutboundDraft {
-	message_id?: string
+	message_id: string // what approve, skip and edit take
+	campaign_id: string
+	campaign_name: string
+	step: number
 	prospect_id: string
 	to: string
 	from: string
@@ -1682,6 +1686,15 @@ export interface OutboundPauseRequest {
 	resume?: boolean
 }
 
+export interface OutboundPreview {
+	prospect_id: string
+	to: string
+	from: string
+	subject: string
+	body: string
+	sends_after?: string
+}
+
 export interface OutboundProspectInfo {
 	id: string
 	email: string
@@ -1734,6 +1747,7 @@ export interface OutboundReplyInfo {
 	mailbox_id: string
 	contact_id: string
 	sequence_id: string
+	campaign_name: string // the campaign it answers
 	from_email: string
 	subject: string
 	body: string

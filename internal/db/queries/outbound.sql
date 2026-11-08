@@ -227,12 +227,15 @@ LEFT JOIN email_templates et ON et.id = eq.template_id
 WHERE eq.message_id = ? AND eq.kind = 'outreach' LIMIT 1;
 
 -- name: ListOutreachEmails :many
--- A brand's outreach emails with one status, oldest first.
-SELECT eq.*, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email
+-- A brand's outreach emails with one status, oldest first, with the
+-- campaign and step each belongs to.
+SELECT eq.*, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email,
+       CAST(COALESCE(es.id, '') AS TEXT) AS campaign_id, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
 JOIN mailboxes m ON m.id = eq.mailbox_id
 LEFT JOIN email_templates et ON et.id = eq.template_id
+LEFT JOIN email_sequences es ON es.id = et.sequence_id
 WHERE c.org_id = sqlc.arg(org_id) AND eq.kind = 'outreach' AND eq.status = sqlc.arg(status)
 ORDER BY eq.scheduled_for
 LIMIT sqlc.arg(limit_count);
@@ -319,7 +322,11 @@ RETURNING *;
 SELECT * FROM email_replies WHERE id = ? AND org_id = ?;
 
 -- name: ListEmailReplies :many
-SELECT * FROM email_replies WHERE org_id = ? AND handled = ? ORDER BY received_at DESC LIMIT ?;
+-- Replies with the name of the campaign each answers.
+SELECT r.*, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
+FROM email_replies r
+LEFT JOIN email_sequences es ON es.id = r.sequence_id
+WHERE r.org_id = ? AND r.handled = ? ORDER BY r.received_at DESC LIMIT ?;
 
 -- name: SetEmailReplyClassification :exec
 UPDATE email_replies SET classification = ?, handled = ? WHERE id = ? AND org_id = ?;
@@ -389,7 +396,7 @@ SET open_count = open_count + 1, opened_at = COALESCE(opened_at, sqlc.arg(at))
 WHERE tracking_token = sqlc.arg(token) AND kind = 'outreach' AND status = 'sent' AND sent_at <= sqlc.arg(counted_after);
 
 -- name: ListOutreachEmailsForSequence :many
-SELECT eq.*, c.email AS to_email, m.email AS from_email
+SELECT eq.*, c.email AS to_email, m.email AS from_email, et.position
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id

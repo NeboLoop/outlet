@@ -377,6 +377,8 @@ func TestOutreachEndToEnd(t *testing.T) {
 	dry, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "Creators", Steps: threeSteps, ProspectIDs: ids, DryRun: true})
 	require.NoError(t, err)
 	assert.Equal(t, 2, dry.Enrolled)
+	assert.Len(t, dry.Previews, 2)
+	assert.Empty(t, dry.Drafts, "nothing is saved, so there is no draft to approve")
 	assert.Contains(t, dry.Skipped[got["cal@example.org"].ID], "recent_video", "a missing tag skips, never sends a blank")
 	assert.Contains(t, dry.Skipped[got["risky@example.org"].ID], "held")
 	camps, _ := h.store.ListOutreachSequences(ctx, sql.NullString{String: h.org.ID, Valid: true})
@@ -395,6 +397,10 @@ func TestOutreachEndToEnd(t *testing.T) {
 	var draftIDs []string
 	for _, d := range camp.Drafts {
 		draftIDs = append(draftIDs, d.MessageID)
+		assert.NotEmpty(t, d.MessageID)
+		assert.Equal(t, camp.CampaignID, d.CampaignID)
+		assert.Equal(t, "Creators", d.CampaignName)
+		assert.EqualValues(t, 1, d.Step)
 		assert.NotContains(t, d.Body, "{{")
 		assert.Contains(t, d.Body, "123 Main St")
 	}
@@ -439,6 +445,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 	require.Len(t, replies, 1)
 	assert.Equal(t, "needs_review", replies[0].Classification)
 	assert.Equal(t, "Sounds fun, tell me more!", replies[0].Body)
+	assert.Equal(t, "Creators", replies[0].CampaignName, "a reply says the campaign it answers")
 	assert.Equal(t, "replied", h.state(got["ava@example.org"].ID, camp.CampaignID).StoppedReason)
 	assert.Equal(t, "bounced", h.state(got["ben@example.org"].ID, camp.CampaignID).StoppedReason)
 	assert.True(t, h.svc.suppressed(ctx, h.org.ID, "ben@example.org"), "a bounce goes on the suppression list")
@@ -692,6 +699,11 @@ func TestOperations(t *testing.T) {
 	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: threeSteps, ProspectIDs: []string{got["ivy@example.org"].ID}})
 	require.NoError(t, err)
 	draft := camp.Drafts[0].MessageID
+	waiting, err := h.svc.ListDrafts(ctx, h.org, 10)
+	require.NoError(t, err)
+	require.Len(t, waiting, 1)
+	assert.Equal(t, Draft{MessageID: draft, CampaignID: camp.CampaignID, CampaignName: "C", Step: 1, Preview: camp.Drafts[0].Preview}, waiting[0],
+		"a waiting draft says its campaign and step")
 
 	o, err := h.svc.Overview(ctx, h.org)
 	require.NoError(t, err)

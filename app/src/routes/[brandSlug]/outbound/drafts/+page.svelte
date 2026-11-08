@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { formatDate } from '$lib/dates';
+	import { page } from '$app/stores';
 	import { listOutboundDrafts, reviewOutboundDrafts, editOutboundDraft, type OutboundDraft } from '$lib/api';
 	import { Button, Alert, LoadingSpinner, EmptyState, Input, Textarea, Checkbox } from '$lib/components/ui';
 	import { FileText } from '@lucide/svelte';
@@ -17,7 +18,8 @@
 	let editSubject = $state('');
 	let editBody = $state('');
 
-	let ids = $derived(drafts.map((d) => d.message_id || '').filter((id) => id !== ''));
+	let base = $derived(`/${$page.params.brandSlug}/outbound`);
+	let ids = $derived(drafts.map((d) => d.message_id));
 	let allSelected = $derived(ids.length > 0 && selected.length === ids.length);
 
 	$effect(() => {
@@ -57,7 +59,7 @@
 	}
 
 	function startEdit(d: OutboundDraft) {
-		editing = d.message_id || '';
+		editing = d.message_id;
 		editSubject = d.subject;
 		editBody = d.body;
 	}
@@ -131,18 +133,19 @@
 	</div>
 
 	<div class="space-y-3">
-		{#each drafts as d (d.message_id || d.prospect_id)}
-			{@const id = d.message_id || ''}
+		{#each drafts as d (d.message_id)}
+			{@const id = d.message_id}
 			<div class="rounded-lg border border-border p-4">
 				<div class="flex items-start gap-3">
-					{#if id}
-						<Checkbox checked={selected.includes(id)} onchange={(on) => toggle(id, on)} size="sm" />
-					{/if}
+					<Checkbox checked={selected.includes(id)} onchange={(on) => toggle(id, on)} size="sm" />
 					<div class="flex-1 min-w-0">
+						<p class="text-xs text-text-muted">
+							<a href="{base}/campaigns/{d.campaign_id}" class="link link-primary">{d.campaign_name}</a>, step {d.step}
+						</p>
 						<p class="text-xs text-text-muted">
 							To {d.to} from {d.from}{#if d.sends_after}, sends after {formatDate(d.sends_after, 'datetime')}{/if}
 						</p>
-						{#if editing === id && id}
+						{#if editing === id}
 							<div class="mt-2 space-y-3">
 								<div>
 									<label for="draft-subject-{id}" class="form-label">Subject</label>
@@ -163,7 +166,7 @@
 						{/if}
 					</div>
 				</div>
-				{#if id && editing !== id}
+				{#if editing !== id}
 					<div class="flex justify-end gap-2 mt-3">
 						<Button type="ghost" size="sm" onclick={() => startEdit(d)} disabled={busy}>Edit</Button>
 						<Button type="secondary" size="sm" onclick={() => review('skip', [id])} disabled={busy}>Skip</Button>

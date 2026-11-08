@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { formatDate } from '$lib/dates';
+	import { page } from '$app/stores';
 	import {
 		listOutboundReplies,
 		answerOutboundReply,
@@ -11,6 +12,7 @@
 	import { MessageSquare, ChevronDown } from '@lucide/svelte';
 	import { CLASSIFICATIONS, classificationLabel, errorMessage } from '../shared';
 
+	let base = $derived(`/${$page.params.brandSlug}/outbound`);
 	let handled = $state(false);
 	let loading = $state(true);
 	let error = $state('');
@@ -121,7 +123,10 @@
 					<div class="min-w-0">
 						<p class="font-medium text-text">{r.from_email}</p>
 						<p class="text-sm text-text">{r.subject}</p>
-						<p class="text-xs text-text-muted">{formatDate(r.received_at, 'datetime')}</p>
+						<p class="text-xs text-text-muted">
+							{formatDate(r.received_at, 'datetime')}{#if r.campaign_name}, to
+								<a href="{base}/campaigns/{r.sequence_id}" class="link link-primary">{r.campaign_name}</a>{/if}
+						</p>
 					</div>
 					<Badge variant={badgeVariant[r.classification] || 'default'} size="sm">
 						{classificationLabel(r.classification)}

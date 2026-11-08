@@ -1357,7 +1357,8 @@ type OutboundCampaignRequest struct {
 type OutboundCampaignResponse struct {
 	CampaignId string            `json:"campaign_id,optional"`
 	Enrolled   int               `json:"enrolled"`
-	Drafts     []OutboundDraft   `json:"drafts,optional"`
+	Drafts     []OutboundDraft   `json:"drafts,optional"`   // the saved drafts
+	Previews   []OutboundPreview `json:"previews,optional"` // dry_run: the first emails, not saved
 	Skipped    map[string]string `json:"skipped,optional"`
 	Next       string            `json:"next"`
 }
@@ -1452,13 +1453,16 @@ type OutboundDomainResponse struct {
 }
 
 type OutboundDraft struct {
-	MessageId  string `json:"message_id,optional"`
-	ProspectId string `json:"prospect_id"`
-	To         string `json:"to"`
-	From       string `json:"from"`
-	Subject    string `json:"subject"`
-	Body       string `json:"body"`
-	SendsAfter string `json:"sends_after,optional"`
+	MessageId    string `json:"message_id"` // what approve, skip and edit take
+	CampaignId   string `json:"campaign_id"`
+	CampaignName string `json:"campaign_name"`
+	Step         int64  `json:"step"`
+	ProspectId   string `json:"prospect_id"`
+	To           string `json:"to"`
+	From         string `json:"from"`
+	Subject      string `json:"subject"`
+	Body         string `json:"body"`
+	SendsAfter   string `json:"sends_after,optional"`
 }
 
 type OutboundDraftList struct {
@@ -1575,6 +1579,15 @@ type OutboundPauseRequest struct {
 	Resume bool   `json:"resume,optional"`
 }
 
+type OutboundPreview struct {
+	ProspectId string `json:"prospect_id"`
+	To         string `json:"to"`
+	From       string `json:"from"`
+	Subject    string `json:"subject"`
+	Body       string `json:"body"`
+	SendsAfter string `json:"sends_after,optional"`
+}
+
 type OutboundProspectInfo struct {
 	Id               string                       `json:"id"`
 	Email            string                       `json:"email"`
@@ -1627,6 +1640,7 @@ type OutboundReplyInfo struct {
 	MailboxId      string `json:"mailbox_id"`
 	ContactId      string `json:"contact_id"`
 	SequenceId     string `json:"sequence_id"`
+	CampaignName   string `json:"campaign_name"` // the campaign it answers
 	FromEmail      string `json:"from_email"`
 	Subject        string `json:"subject"`
 	Body           string `json:"body"`

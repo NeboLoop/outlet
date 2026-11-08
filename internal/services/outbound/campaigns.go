@@ -41,9 +41,8 @@ type CampaignInput struct {
 	DryRun          bool        `json:"dry_run,omitempty"`
 }
 
-// Draft is one written outreach email, for a person to read.
-type Draft struct {
-	MessageID  string `json:"message_id,omitempty"`
+// Preview is one written outreach email, for a person to read.
+type Preview struct {
 	ProspectID string `json:"prospect_id"`
 	To         string `json:"to"`
 	From       string `json:"from"`
@@ -52,11 +51,23 @@ type Draft struct {
 	SendsAfter string `json:"sends_after,omitempty"`
 }
 
-// CampaignResult reports what draft_outreach did.
+// Draft is a saved outreach email waiting for approval: its id (which
+// approve, skip and edit take), and the campaign and step it belongs to.
+type Draft struct {
+	MessageID    string `json:"message_id"`
+	CampaignID   string `json:"campaign_id"`
+	CampaignName string `json:"campaign_name"`
+	Step         int64  `json:"step"`
+	Preview
+}
+
+// CampaignResult reports what draft_outreach did: the saved drafts, or with
+// dry_run the previews of the first emails.
 type CampaignResult struct {
 	CampaignID string            `json:"campaign_id,omitempty"`
 	Enrolled   int               `json:"enrolled"`
 	Drafts     []Draft           `json:"drafts,omitempty"`
+	Previews   []Preview         `json:"previews,omitempty"`
 	Skipped    map[string]string `json:"skipped,omitempty"` // prospect id → why
 	Next       string            `json:"next"`
 }
@@ -169,9 +180,9 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 				continue
 			}
 			load[mb.ID]++
-			res.Drafts = append(res.Drafts, Draft{ProspectID: c.ID, To: c.Email, From: mb.Email, Subject: w.Subject, Body: w.Body, SendsAfter: ts(w.SendAfter)})
+			res.Previews = append(res.Previews, Preview{ProspectID: c.ID, To: c.Email, From: mb.Email, Subject: w.Subject, Body: w.Body, SendsAfter: ts(w.SendAfter)})
 		}
-		res.Enrolled = len(res.Drafts)
+		res.Enrolled = len(res.Previews)
 		res.Next = "Dry run: nothing saved. Call again without dry_run to create the campaign."
 		return res, nil
 	}
@@ -220,7 +231,8 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 	}
 	if rows, err := s.db.ListOutreachEmailsForSequence(ctx, sql.NullString{String: created.ID, Valid: true}); err == nil {
 		for _, r := range rows {
-			res.Drafts = append(res.Drafts, Draft{MessageID: r.ID, ProspectID: r.ContactID.String, To: r.ToEmail, From: r.FromEmail, Subject: r.Subject.String, Body: r.Body.String, SendsAfter: r.ScheduledFor})
+			res.Drafts = append(res.Drafts, Draft{MessageID: r.ID, CampaignID: created.ID, CampaignName: created.Name, Step: r.Position,
+				Preview: Preview{ProspectID: r.ContactID.String, To: r.ToEmail, From: r.FromEmail, Subject: r.Subject.String, Body: r.Body.String, SendsAfter: r.ScheduledFor}})
 		}
 	}
 	if in.ApprovalMode == "automatic" {

@@ -186,7 +186,8 @@ func (s *Service) ListDrafts(ctx context.Context, org db.Organization, limit int
 	}
 	out := make([]Draft, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, Draft{MessageID: r.ID, ProspectID: r.ContactID.String, To: r.ToEmail, From: r.FromEmail, Subject: r.Subject.String, Body: r.Body.String, SendsAfter: r.ScheduledFor})
+		out = append(out, Draft{MessageID: r.ID, CampaignID: r.CampaignID, CampaignName: r.CampaignName, Step: r.Position,
+			Preview: Preview{ProspectID: r.ContactID.String, To: r.ToEmail, From: r.FromEmail, Subject: r.Subject.String, Body: r.Body.String, SendsAfter: r.ScheduledFor}})
 	}
 	return out, nil
 }
@@ -251,8 +252,9 @@ func (s *Service) EditDraft(ctx context.Context, org db.Organization, id, subjec
 	return err
 }
 
-// ListReplies returns replies, unhandled ones by default.
-func (s *Service) ListReplies(ctx context.Context, org db.Organization, handled bool, limit int) ([]db.EmailReply, error) {
+// ListReplies returns replies, unhandled ones by default, each with the name
+// of the campaign it answers.
+func (s *Service) ListReplies(ctx context.Context, org db.Organization, handled bool, limit int) ([]db.ListEmailRepliesRow, error) {
 	if limit <= 0 || limit > maxBatch {
 		limit = 25
 	}
