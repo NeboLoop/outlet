@@ -271,6 +271,7 @@ type Querier interface {
 	GetCampaignLinkStats(ctx context.Context, campaignID string) ([]GetCampaignLinkStatsRow, error)
 	GetCampaignSend(ctx context.Context, id string) (CampaignSend, error)
 	GetCampaignSendByTracking(ctx context.Context, trackingToken sql.NullString) (CampaignSend, error)
+	// The send with all CampaignMessage needs to build it, design included.
 	GetCampaignSendByTrackingToken(ctx context.Context, token sql.NullString) (GetCampaignSendByTrackingTokenRow, error)
 	GetCampaignSendEvent(ctx context.Context, id string) (GetCampaignSendEventRow, error)
 	GetConfirmationTemplate(ctx context.Context, sequenceID sql.NullString) (GetConfirmationTemplateRow, error)

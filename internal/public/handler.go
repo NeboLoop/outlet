@@ -468,8 +468,26 @@ func (h *Handler) HandleWebView(w http.ResponseWriter, r *http.Request) {
 	// Try campaign sends first
 	campaignSend, err := h.svcCtx.DB.GetCampaignSendByTrackingToken(r.Context(), sql.NullString{String: token, Valid: true})
 	if err == nil {
-		subject = campaignSend.Subject
-		htmlBody = campaignSend.HtmlBody
+		// The campaign as its recipient got it: built by CampaignMessage, the
+		// one way a campaign send is built, design and merge tags included.
+		m := h.emailService.CampaignMessage(email.CampaignEmail{
+			OrgID:         campaignSend.OrgID,
+			FromName:      campaignSend.FromName.String,
+			FromEmail:     campaignSend.FromEmail.String,
+			ReplyTo:       campaignSend.ReplyTo.String,
+			To:            campaignSend.Email,
+			Name:          campaignSend.Name,
+			Subject:       campaignSend.Subject,
+			HTML:          campaignSend.HtmlBody,
+			Text:          campaignSend.PlainText.String,
+			DesignHTML:    campaignSend.DesignHtml,
+			DesignText:    campaignSend.DesignText,
+			TrackingToken: campaignSend.TrackingToken.String,
+			TrackOpens:    campaignSend.TrackOpens.Valid && campaignSend.TrackOpens.Int64 == 1,
+			TrackClicks:   campaignSend.TrackClicks.Valid && campaignSend.TrackClicks.Int64 == 1,
+		})
+		subject = m.Subject
+		htmlBody = m.HTML
 		orgName = campaignSend.OrgName.String
 	} else {
 		// Try email queue (sequences)
@@ -494,7 +512,10 @@ func (h *Handler) HandleWebView(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]interface{}{
 		"Subject":  subject,
-		"HTMLBody": template.HTML(htmlBody), // Safe to render as HTML
+		// The email is a whole document (a design brings its own <head> and
+		// styles), so the page shows it in a sandboxed frame of its own; its
+		// links open in a new tab.
+		"EmailDoc": `<base target="_blank">` + htmlBody,
 		"OrgName":  orgName,
 	}
 

@@ -110,6 +110,7 @@ WHERE eq.tracking_token = sqlc.arg(token)
 LIMIT 1;
 
 -- name: GetCampaignSendByTrackingToken :one
+-- The send with all CampaignMessage needs to build it, design included.
 SELECT
     cs.id,
     cs.campaign_id,
@@ -118,14 +119,24 @@ SELECT
     cs.status,
     c.email,
     c.name,
+    ec.org_id,
     ec.subject,
     ec.html_body,
+    ec.plain_text,
+    ec.from_name,
+    ec.from_email,
+    ec.reply_to,
+    ec.track_opens,
+    ec.track_clicks,
+    CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html,
+    CAST(COALESCE(d.plain_text, '') AS TEXT) AS design_text,
     el.name as list_name,
     el.unsubscribe_redirect_url,
     o.name as org_name
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
+LEFT JOIN email_designs d ON d.id = ec.design_id AND d.org_id = ec.org_id
 LEFT JOIN email_lists el ON el.id = cs.list_id
 LEFT JOIN organizations o ON o.id = ec.org_id
 WHERE cs.tracking_token = sqlc.arg(token)
