@@ -1306,6 +1306,50 @@ export interface MCPAPIKeyInfo {
 	created_at: string
 }
 
+export interface MailboxConnection {
+	id: string
+	pool_id: string
+	service: string // manual, maildoso, cheapinboxes, infraforge
+	name: string
+	key_set: boolean
+	daily_limit?: number // its mailboxes' daily limit unless one has its own; empty: the pool's
+	warmup_start?: number // its mailboxes' warm-up, first day's allowance; empty: the pool's
+	warmup_step?: number // added each day until the daily limit; empty: the pool's
+	domains: Array<MailboxConnectionDomain>
+	mailboxes: number
+	created_at: string
+}
+
+export interface MailboxConnectionDomain {
+	id: string
+	domain: string
+}
+
+export interface MailboxConnectionIDRequest {
+}
+export interface MailboxConnectionIDRequestParams {
+}
+
+export interface MailboxConnectionList {
+	connections: Array<MailboxConnection>
+}
+
+export interface MailboxConnectionListRequest {
+}
+export interface MailboxConnectionListRequestParams {
+	pool_id?: string // one pool's; empty: every pool's
+}
+
+export interface MailboxConnectionRequest {
+	pool_id?: string // empty: the pool carrying outreach (made if the brand has none)
+	service: string // manual, maildoso, cheapinboxes, infraforge
+	name?: string // empty: the service's name
+	api_key?: string // required for a service; tried before it is saved
+	daily_limit?: number // the three limits all empty: the service's terms (Maildoso 15 a day, warming up from 5 by 1), else the pool's
+	warmup_start?: number
+	warmup_step?: number
+}
+
 export interface MailboxDailyLimitRequest {
 	daily_limit?: number // empty: use the pool's
 }
@@ -1386,11 +1430,6 @@ export interface MailboxServicePoolMailbox {
 	email: string
 }
 
-export interface MailboxServicePoolRequest {
-}
-export interface MailboxServicePoolRequestParams {
-}
-
 export interface MailboxServiceQuote {
 	id: string
 	service: string
@@ -1410,20 +1449,6 @@ export interface MailboxServiceQuoteRequest {
 	people?: Array<MailboxServicePerson> // for mailboxes
 }
 export interface MailboxServiceQuoteRequestParams {
-}
-
-export interface MailboxServiceRequest {
-	service: string // manual, maildoso, cheapinboxes, infraforge
-	api_key?: string // empty keeps the stored key
-}
-export interface MailboxServiceRequestParams {
-}
-
-export interface MailboxServiceStatus {
-	pool_id: string
-	service: string
-	key_set: boolean
-	limits: SendingLimits // picking a service sets them to its terms
 }
 
 export interface MailboxServiceSyncRequest {
@@ -1446,6 +1471,12 @@ export interface MarkContactReadRequestParams {
 
 export interface MarkContactReadResponse {
 	success: boolean
+}
+
+export interface MoveDomainConnectionRequest {
+	connection_id: string // another connection of the domain's pool
+}
+export interface MoveDomainConnectionRequestParams {
 }
 
 export interface MoveDomainRequest {
@@ -1676,6 +1707,7 @@ export interface OutboundDomainRequest {
 	dmarc_report?: string
 	click_tracking?: boolean
 	pathway_id?: string // the mailbox pool it joins; empty: the brand's pool
+	connection_id?: string // the pool's manual connection it joins; empty: the pool's first manual one
 }
 
 export interface OutboundDomainResponse {
@@ -1772,9 +1804,10 @@ export interface OutboundMailboxHealth {
 	complaints_7d: number
 	last_error?: string
 	pool_id?: string // its mailbox pool (sending pathway)
-	daily_limit?: number // its own daily limit; empty uses the pool's
+	connection_id?: string // the pool's connection its domain belongs to
+	daily_limit?: number // its own daily limit; empty uses its connection's, else the pool's (warm-up: its connection's, else the pool's)
 	limited: boolean // false: no daily limit applies
-	limit_in_use: number // the daily limit it sends under: its own, else its pool's; 0: none
+	limit_in_use: number // the daily limit it sends under: its own, else its connection's, else its pool's; 0: none
 	warming_up: boolean // the warm-up holds it below limit_in_use; allowed_today is today's step
 	domain: string
 }
@@ -2133,8 +2166,6 @@ export interface SendingPathway {
 	mailboxes: number
 	warning?: string // set when outreach rides a provider other than mailboxes
 	created_at: string
-	mailbox_service?: string // a mailbox pool's: manual, maildoso, cheapinboxes, infraforge
-	mailbox_service_key_set: boolean
 }
 
 export interface SendingPathwayDomain {
@@ -2523,6 +2554,16 @@ export interface UpdateListRequest {
 	unsubscribe_scope?: string
 }
 export interface UpdateListRequestParams {
+}
+
+export interface UpdateMailboxConnectionRequest {
+	name?: string // empty keeps it
+	api_key?: string // empty keeps the stored key
+	daily_limit?: number // set as given; empty: the pool's
+	warmup_start?: number // set as given; empty: the pool's
+	warmup_step?: number // set as given; empty: the pool's
+}
+export interface UpdateMailboxConnectionRequestParams {
 }
 
 export interface UpdateOrgEmailConfigRequest {

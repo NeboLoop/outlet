@@ -24,7 +24,7 @@ func NewSdkGetMailboxServiceInventoryLogic(ctx context.Context, svcCtx *svc.Serv
 	}
 }
 
-func (l *SdkGetMailboxServiceInventoryLogic) SdkGetMailboxServiceInventory(req *types.MailboxServicePoolRequest) (resp *types.MailboxServiceInventory, err error) {
+func (l *SdkGetMailboxServiceInventoryLogic) SdkGetMailboxServiceInventory(req *types.MailboxConnectionIDRequest) (resp *types.MailboxServiceInventory, err error) {
 	org, err := brand(l.ctx, l.svcCtx)
 	if err != nil {
 		return nil, err

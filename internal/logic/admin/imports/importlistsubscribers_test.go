@@ -92,6 +92,9 @@ func TestAddAndImportSubscribers(t *testing.T) {
 	subs, err := store.ListListSubscribers(ctx, db.ListListSubscribersParams{ListID: 1, PageSize: 10})
 	require.NoError(t, err)
 	assert.Len(t, subs, 2, "ann and cy")
-	_, err = os.Stat(workers.ImportFile(s.UploadDir, job.Id))
-	assert.True(t, os.IsNotExist(err), "the CSV is removed once imported")
+	// The worker removes the CSV just after it marks the job completed.
+	assert.Eventually(t, func() bool {
+		_, err := os.Stat(workers.ImportFile(s.UploadDir, job.Id))
+		return os.IsNotExist(err)
+	}, 5*time.Second, 10*time.Millisecond, "the CSV is removed once imported")
 }

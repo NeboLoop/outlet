@@ -60,6 +60,9 @@ type Querier interface {
 	CleanupExpiredMCPOAuthTokens(ctx context.Context) error
 	// Delete sessions older than 30 days
 	CleanupOldMCPSessions(ctx context.Context) error
+	// A domain's mailboxes after it moves to another connection: the old
+	// service's ids mean nothing there; a sync links them again.
+	ClearDomainMailboxServiceRefs(ctx context.Context, domainID string) error
 	ClearSuppressionList(ctx context.Context, orgID string) error
 	CompleteContactSequence(ctx context.Context, arg CompleteContactSequenceParams) error
 	CompleteValidationJob(ctx context.Context, id string) error
@@ -170,6 +173,9 @@ type Querier interface {
 	CreateMCPOAuthToken(ctx context.Context, arg CreateMCPOAuthTokenParams) (McpOauthToken, error)
 	// ---- mailboxes ----------------------------------------------------------------
 	CreateMailbox(ctx context.Context, arg CreateMailboxParams) (Mailbox, error)
+	// A mailbox pool's connections to mailbox services, their quotes, and the
+	// services' ids for the mailboxes.
+	CreateMailboxConnection(ctx context.Context, arg CreateMailboxConnectionParams) (MailboxConnection, error)
 	CreateMailboxServiceQuote(ctx context.Context, arg CreateMailboxServiceQuoteParams) (MailboxServiceQuote, error)
 	CreateNetworkInstance(ctx context.Context, arg CreateNetworkInstanceParams) (NetworkInstance, error)
 	CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitationParams) (OrgInvitation, error)
@@ -230,6 +236,7 @@ type Querier interface {
 	DeleteInactiveContacts(ctx context.Context, arg DeleteInactiveContactsParams) (int64, error)
 	DeleteMCPAPIKey(ctx context.Context, id string) error
 	DeleteMCPSession(ctx context.Context, sessionID string) error
+	DeleteMailboxConnection(ctx context.Context, arg DeleteMailboxConnectionParams) (int64, error)
 	DeleteOldBackups(ctx context.Context, daysAgo sql.NullString) error
 	// Delete a rule
 	DeleteOrgRule(ctx context.Context, arg DeleteOrgRuleParams) error
@@ -251,6 +258,8 @@ type Querier interface {
 	DeleteWebhook(ctx context.Context, arg DeleteWebhookParams) error
 	EditOutreachEmail(ctx context.Context, arg EditOutreachEmailParams) (int64, error)
 	EnsureSendCount(ctx context.Context, arg EnsureSendCountParams) error
+	// A pool's oldest manual connection: where a domain added by hand goes.
+	FirstManualConnection(ctx context.Context, pathwayID string) (MailboxConnection, error)
 	// The active rules waiting on this trigger and source, for sequences of the
 	// contact's own brand only, highest priority first.
 	GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiveEntryRuleForTriggerParams) ([]GetActiveEntryRuleForTriggerRow, error)
@@ -369,6 +378,9 @@ type Querier interface {
 	GetMCPSession(ctx context.Context, sessionID string) (McpSession, error)
 	GetMailbox(ctx context.Context, arg GetMailboxParams) (Mailbox, error)
 	GetMailboxByEmail(ctx context.Context, email string) (Mailbox, error)
+	GetMailboxConnection(ctx context.Context, arg GetMailboxConnectionParams) (MailboxConnection, error)
+	// The limits of a mailbox's connection; each NULL uses its pool's.
+	GetMailboxConnectionLimits(ctx context.Context, id string) (GetMailboxConnectionLimitsRow, error)
 	// The mailbox pool a mailbox belongs to: its domain's pathway.
 	GetMailboxPathway(ctx context.Context, id string) (SendingPathway, error)
 	GetMailboxServiceQuote(ctx context.Context, arg GetMailboxServiceQuoteParams) (MailboxServiceQuote, error)
@@ -517,6 +529,8 @@ type Querier interface {
 	ListCampaignSends(ctx context.Context, arg ListCampaignSendsParams) ([]ListCampaignSendsRow, error)
 	ListCampaigns(ctx context.Context, arg ListCampaignsParams) ([]EmailCampaign, error)
 	ListCampaignsByStatus(ctx context.Context, arg ListCampaignsByStatusParams) ([]EmailCampaign, error)
+	ListConnectionDomains(ctx context.Context, connectionID sql.NullString) ([]DomainIdentity, error)
+	ListConnectionMailboxes(ctx context.Context, connectionID sql.NullString) ([]Mailbox, error)
 	ListContactSequenceStatesWithDetails(ctx context.Context, arg ListContactSequenceStatesWithDetailsParams) ([]ListContactSequenceStatesWithDetailsRow, error)
 	ListContacts(ctx context.Context, arg ListContactsParams) ([]Contact, error)
 	ListContactsByOrg(ctx context.Context, arg ListContactsByOrgParams) ([]Contact, error)
@@ -536,6 +550,8 @@ type Querier interface {
 	ListListSubscribers(ctx context.Context, arg ListListSubscribersParams) ([]ListListSubscribersRow, error)
 	ListMCPAPIKeysByUser(ctx context.Context, userID string) ([]McpApiKey, error)
 	ListMCPOAuthClients(ctx context.Context) ([]McpOauthClient, error)
+	// The brand's connections, oldest first.
+	ListMailboxConnections(ctx context.Context, orgID string) ([]MailboxConnection, error)
 	ListMailboxes(ctx context.Context, orgID string) ([]Mailbox, error)
 	ListNetworkInstances(ctx context.Context) ([]NetworkInstance, error)
 	ListOrganizations(ctx context.Context) ([]Organization, error)
@@ -662,6 +678,7 @@ type Querier interface {
 	ScheduleCampaign(ctx context.Context, arg ScheduleCampaignParams) (EmailCampaign, error)
 	SetCampaignRecipientsCount(ctx context.Context, arg SetCampaignRecipientsCountParams) error
 	SetContactVerificationToken(ctx context.Context, arg SetContactVerificationTokenParams) error
+	SetDomainConnection(ctx context.Context, arg SetDomainConnectionParams) (int64, error)
 	// Moves a domain to another of the brand's pathways; an outreach domain's
 	// mailboxes go with it (a mailbox belongs to its domain's pool).
 	SetDomainPathway(ctx context.Context, arg SetDomainPathwayParams) (int64, error)
@@ -689,9 +706,6 @@ type Querier interface {
 	SetOutreachSchedule(ctx context.Context, arg SetOutreachScheduleParams) error
 	SetOutreachSequenceOptions(ctx context.Context, arg SetOutreachSequenceOptionsParams) error
 	SetPathwayKinds(ctx context.Context, arg SetPathwayKindsParams) error
-	// A mailbox pool's mailbox service, its quotes, and the service's ids for
-	// the pool's mailboxes.
-	SetPathwayMailboxService(ctx context.Context, arg SetPathwayMailboxServiceParams) error
 	SetSendingPathwayAWSKeys(ctx context.Context, arg SetSendingPathwayAWSKeysParams) error
 	SetSendingPathwaySMTPPassword(ctx context.Context, arg SetSendingPathwaySMTPPasswordParams) error
 	SetSequenceActive(ctx context.Context, arg SetSequenceActiveParams) error
@@ -743,6 +757,7 @@ type Querier interface {
 	UpdateListPublicPageSettings(ctx context.Context, arg UpdateListPublicPageSettingsParams) error
 	UpdateMCPAPIKeyLastUsed(ctx context.Context, id string) error
 	UpdateMCPOAuthClient(ctx context.Context, arg UpdateMCPOAuthClientParams) (McpOauthClient, error)
+	UpdateMailboxConnection(ctx context.Context, arg UpdateMailboxConnectionParams) error
 	UpdateOrgAppUrl(ctx context.Context, arg UpdateOrgAppUrlParams) (Organization, error)
 	UpdateOrgEmailSettings(ctx context.Context, arg UpdateOrgEmailSettingsParams) (Organization, error)
 	UpdateOrgMaxContacts(ctx context.Context, arg UpdateOrgMaxContactsParams) (Organization, error)

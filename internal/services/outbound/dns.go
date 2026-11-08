@@ -15,6 +15,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/services/email"
+	"github.com/outlet-sh/outlet/internal/services/outbound/providers"
 
 	"github.com/google/uuid"
 )
@@ -143,9 +144,13 @@ type DomainInput struct {
 	// PathwayID is the mailbox pool the domain joins; empty picks the
 	// brand's pool (made on its first outreach domain).
 	PathwayID string `json:"pathway_id,omitempty"`
+	// ConnectionID is the manual connection of that pool the domain joins;
+	// empty picks the pool's first manual connection (made when it has
+	// none). A mailbox service's domains join through connect or a buy.
+	ConnectionID string `json:"connection_id,omitempty"`
 
 	trackingTarget string // this server's host, filled by AddDomain
-	serviceDNS     bool   // the pool's mailbox service runs the domain's DNS and writes its records
+	serviceDNS     bool   // the connection's mailbox service runs the domain's DNS and writes its records
 }
 
 // DNSRecord is one record outbound wants on a domain.
@@ -243,13 +248,14 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 	case err == nil && (d.OrgID != org.ID || d.Purpose != "outreach"):
 		return DomainResult{}, refuse("%s is already in use (another brand's, or this brand's sending domain); outreach needs a domain of its own.", in.Domain)
 	case err != nil:
-		pool, perr := s.mailer.DomainPathway(ctx, org.ID, "outreach", in.PathwayID)
-		if perr != nil {
-			return DomainResult{}, perr
+		conn, cerr := s.domainConnection(ctx, org, in)
+		if cerr != nil {
+			return DomainResult{}, cerr
 		}
 		d, err = s.db.CreateOutreachDomain(ctx, db.CreateOutreachDomainParams{
 			ID: uuid.NewString(), OrgID: org.ID, Domain: in.Domain, DnsHost: in.DNSHost, DkimSelector: in.DKIMSelector,
-			TrackingHost: trackingHost, PathwayID: sql.NullString{String: pool.ID, Valid: true},
+			TrackingHost: trackingHost, PathwayID: sql.NullString{String: conn.PathwayID, Valid: true},
+			ConnectionID: sql.NullString{String: conn.ID, Valid: true},
 		})
 		if err != nil {
 			return DomainResult{Domain: d}, err
@@ -275,6 +281,28 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 		res.Domain, err = s.db.GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: d.ID, OrgID: org.ID})
 	}
 	return res, err
+}
+
+// domainConnection is the connection a new outreach domain joins: the one
+// named, else the first manual connection of the pool named (or picked).
+func (s *Service) domainConnection(ctx context.Context, org db.Organization, in DomainInput) (db.MailboxConnection, error) {
+	if in.ConnectionID == "" {
+		pool, err := s.mailer.DomainPathway(ctx, org.ID, "outreach", in.PathwayID)
+		if err != nil {
+			return db.MailboxConnection{}, err
+		}
+		return email.ManualConnection(ctx, s.db.Queries, org.ID, pool.ID)
+	}
+	c, err := s.connection(ctx, org.ID, in.ConnectionID)
+	switch {
+	case err != nil:
+		return c, err
+	case in.PathwayID != "" && in.PathwayID != c.PathwayID:
+		return c, refuse("%s is a connection of another mailbox pool.", c.Name)
+	case !in.serviceDNS && c.Service != providers.Manual:
+		return c, refuse("%s gets its domains from %s: connect the domain there, or quote and buy it.", c.Name, providers.Label(c.Service))
+	}
+	return c, nil
 }
 
 // storeRecords keeps a domain's wanted records in its dns_records column, in

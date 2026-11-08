@@ -10,30 +10,90 @@ import (
 	"database/sql"
 )
 
+const clearDomainMailboxServiceRefs = `-- name: ClearDomainMailboxServiceRefs :exec
+UPDATE mailboxes SET service_ref = '' WHERE domain_id = ?
+`
+
+// A domain's mailboxes after it moves to another connection: the old
+// service's ids mean nothing there; a sync links them again.
+func (q *Queries) ClearDomainMailboxServiceRefs(ctx context.Context, domainID string) error {
+	_, err := q.db.ExecContext(ctx, clearDomainMailboxServiceRefs, domainID)
+	return err
+}
+
+const createMailboxConnection = `-- name: CreateMailboxConnection :one
+
+INSERT INTO mailbox_connections (id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step, created_at
+`
+
+type CreateMailboxConnectionParams struct {
+	ID          string        `json:"id"`
+	OrgID       string        `json:"org_id"`
+	PathwayID   string        `json:"pathway_id"`
+	Service     string        `json:"service"`
+	Name        string        `json:"name"`
+	ApiKeyEnc   []byte        `json:"api_key_enc"`
+	DailyLimit  sql.NullInt64 `json:"daily_limit"`
+	WarmupStart sql.NullInt64 `json:"warmup_start"`
+	WarmupStep  sql.NullInt64 `json:"warmup_step"`
+}
+
+// A mailbox pool's connections to mailbox services, their quotes, and the
+// services' ids for the mailboxes.
+func (q *Queries) CreateMailboxConnection(ctx context.Context, arg CreateMailboxConnectionParams) (MailboxConnection, error) {
+	row := q.db.QueryRowContext(ctx, createMailboxConnection,
+		arg.ID,
+		arg.OrgID,
+		arg.PathwayID,
+		arg.Service,
+		arg.Name,
+		arg.ApiKeyEnc,
+		arg.DailyLimit,
+		arg.WarmupStart,
+		arg.WarmupStep,
+	)
+	var i MailboxConnection
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.PathwayID,
+		&i.Service,
+		&i.Name,
+		&i.ApiKeyEnc,
+		&i.DailyLimit,
+		&i.WarmupStart,
+		&i.WarmupStep,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createMailboxServiceQuote = `-- name: CreateMailboxServiceQuote :one
-INSERT INTO mailbox_service_quotes (id, org_id, pathway_id, service, kind, request, price_cents, currency, summary, expires_at)
+INSERT INTO mailbox_service_quotes (id, org_id, connection_id, service, kind, request, price_cents, currency, summary, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, pathway_id, service, kind, request, price_cents, currency, summary, expires_at, used_at, created_at
+RETURNING id, org_id, connection_id, service, kind, request, price_cents, currency, summary, expires_at, used_at, created_at
 `
 
 type CreateMailboxServiceQuoteParams struct {
-	ID         string        `json:"id"`
-	OrgID      string        `json:"org_id"`
-	PathwayID  string        `json:"pathway_id"`
-	Service    string        `json:"service"`
-	Kind       string        `json:"kind"`
-	Request    string        `json:"request"`
-	PriceCents sql.NullInt64 `json:"price_cents"`
-	Currency   string        `json:"currency"`
-	Summary    string        `json:"summary"`
-	ExpiresAt  string        `json:"expires_at"`
+	ID           string        `json:"id"`
+	OrgID        string        `json:"org_id"`
+	ConnectionID string        `json:"connection_id"`
+	Service      string        `json:"service"`
+	Kind         string        `json:"kind"`
+	Request      string        `json:"request"`
+	PriceCents   sql.NullInt64 `json:"price_cents"`
+	Currency     string        `json:"currency"`
+	Summary      string        `json:"summary"`
+	ExpiresAt    string        `json:"expires_at"`
 }
 
 func (q *Queries) CreateMailboxServiceQuote(ctx context.Context, arg CreateMailboxServiceQuoteParams) (MailboxServiceQuote, error) {
 	row := q.db.QueryRowContext(ctx, createMailboxServiceQuote,
 		arg.ID,
 		arg.OrgID,
-		arg.PathwayID,
+		arg.ConnectionID,
 		arg.Service,
 		arg.Kind,
 		arg.Request,
@@ -46,7 +106,7 @@ func (q *Queries) CreateMailboxServiceQuote(ctx context.Context, arg CreateMailb
 	err := row.Scan(
 		&i.ID,
 		&i.OrgID,
-		&i.PathwayID,
+		&i.ConnectionID,
 		&i.Service,
 		&i.Kind,
 		&i.Request,
@@ -60,8 +120,96 @@ func (q *Queries) CreateMailboxServiceQuote(ctx context.Context, arg CreateMailb
 	return i, err
 }
 
+const deleteMailboxConnection = `-- name: DeleteMailboxConnection :execrows
+DELETE FROM mailbox_connections WHERE id = ? AND org_id = ?
+`
+
+type DeleteMailboxConnectionParams struct {
+	ID    string `json:"id"`
+	OrgID string `json:"org_id"`
+}
+
+func (q *Queries) DeleteMailboxConnection(ctx context.Context, arg DeleteMailboxConnectionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteMailboxConnection, arg.ID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const firstManualConnection = `-- name: FirstManualConnection :one
+SELECT id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step, created_at FROM mailbox_connections WHERE pathway_id = ? AND service = 'manual' ORDER BY created_at, id LIMIT 1
+`
+
+// A pool's oldest manual connection: where a domain added by hand goes.
+func (q *Queries) FirstManualConnection(ctx context.Context, pathwayID string) (MailboxConnection, error) {
+	row := q.db.QueryRowContext(ctx, firstManualConnection, pathwayID)
+	var i MailboxConnection
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.PathwayID,
+		&i.Service,
+		&i.Name,
+		&i.ApiKeyEnc,
+		&i.DailyLimit,
+		&i.WarmupStart,
+		&i.WarmupStep,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getMailboxConnection = `-- name: GetMailboxConnection :one
+SELECT id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step, created_at FROM mailbox_connections WHERE id = ? AND org_id = ?
+`
+
+type GetMailboxConnectionParams struct {
+	ID    string `json:"id"`
+	OrgID string `json:"org_id"`
+}
+
+func (q *Queries) GetMailboxConnection(ctx context.Context, arg GetMailboxConnectionParams) (MailboxConnection, error) {
+	row := q.db.QueryRowContext(ctx, getMailboxConnection, arg.ID, arg.OrgID)
+	var i MailboxConnection
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.PathwayID,
+		&i.Service,
+		&i.Name,
+		&i.ApiKeyEnc,
+		&i.DailyLimit,
+		&i.WarmupStart,
+		&i.WarmupStep,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getMailboxConnectionLimits = `-- name: GetMailboxConnectionLimits :one
+SELECT c.daily_limit, c.warmup_start, c.warmup_step FROM mailbox_connections c
+JOIN domain_identities d ON d.connection_id = c.id
+JOIN mailboxes m ON m.domain_id = d.id
+WHERE m.id = ?
+`
+
+type GetMailboxConnectionLimitsRow struct {
+	DailyLimit  sql.NullInt64 `json:"daily_limit"`
+	WarmupStart sql.NullInt64 `json:"warmup_start"`
+	WarmupStep  sql.NullInt64 `json:"warmup_step"`
+}
+
+// The limits of a mailbox's connection; each NULL uses its pool's.
+func (q *Queries) GetMailboxConnectionLimits(ctx context.Context, id string) (GetMailboxConnectionLimitsRow, error) {
+	row := q.db.QueryRowContext(ctx, getMailboxConnectionLimits, id)
+	var i GetMailboxConnectionLimitsRow
+	err := row.Scan(&i.DailyLimit, &i.WarmupStart, &i.WarmupStep)
+	return i, err
+}
+
 const getMailboxServiceQuote = `-- name: GetMailboxServiceQuote :one
-SELECT id, org_id, pathway_id, service, kind, request, price_cents, currency, summary, expires_at, used_at, created_at FROM mailbox_service_quotes WHERE id = ? AND org_id = ?
+SELECT id, org_id, connection_id, service, kind, request, price_cents, currency, summary, expires_at, used_at, created_at FROM mailbox_service_quotes WHERE id = ? AND org_id = ?
 `
 
 type GetMailboxServiceQuoteParams struct {
@@ -75,7 +223,7 @@ func (q *Queries) GetMailboxServiceQuote(ctx context.Context, arg GetMailboxServ
 	err := row.Scan(
 		&i.ID,
 		&i.OrgID,
-		&i.PathwayID,
+		&i.ConnectionID,
 		&i.Service,
 		&i.Kind,
 		&i.Request,
@@ -87,6 +235,166 @@ func (q *Queries) GetMailboxServiceQuote(ctx context.Context, arg GetMailboxServ
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listConnectionDomains = `-- name: ListConnectionDomains :many
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id, connection_id FROM domain_identities WHERE connection_id = ? ORDER BY domain
+`
+
+func (q *Queries) ListConnectionDomains(ctx context.Context, connectionID sql.NullString) ([]DomainIdentity, error) {
+	rows, err := q.db.QueryContext(ctx, listConnectionDomains, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DomainIdentity
+	for rows.Next() {
+		var i DomainIdentity
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Domain,
+			&i.VerificationStatus,
+			&i.DkimStatus,
+			&i.VerificationToken,
+			&i.DkimTokens,
+			&i.DnsRecords,
+			&i.MailFromDomain,
+			&i.MailFromStatus,
+			&i.LastCheckedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Purpose,
+			&i.DnsHost,
+			&i.DkimSelector,
+			&i.TrackingHost,
+			&i.DnsCheck,
+			&i.PathwayID,
+			&i.ConnectionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listConnectionMailboxes = `-- name: ListConnectionMailboxes :many
+SELECT m.id, m.org_id, m.domain_id, m.email, m.from_name, m.signature, m.smtp_host, m.smtp_port, m.smtp_username, m.smtp_password_enc, m.imap_host, m.imap_port, m.imap_username, m.imap_password_enc, m.status, m.paused_reason, m.warmup_started_at, m.next_send_at, m.imap_uid_validity, m.imap_last_uid, m.last_error, m.created_at, m.daily_limit, m.service_ref FROM mailboxes m
+JOIN domain_identities d ON d.id = m.domain_id
+WHERE d.connection_id = ? ORDER BY m.email
+`
+
+func (q *Queries) ListConnectionMailboxes(ctx context.Context, connectionID sql.NullString) ([]Mailbox, error) {
+	rows, err := q.db.QueryContext(ctx, listConnectionMailboxes, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Mailbox
+	for rows.Next() {
+		var i Mailbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.DomainID,
+			&i.Email,
+			&i.FromName,
+			&i.Signature,
+			&i.SmtpHost,
+			&i.SmtpPort,
+			&i.SmtpUsername,
+			&i.SmtpPasswordEnc,
+			&i.ImapHost,
+			&i.ImapPort,
+			&i.ImapUsername,
+			&i.ImapPasswordEnc,
+			&i.Status,
+			&i.PausedReason,
+			&i.WarmupStartedAt,
+			&i.NextSendAt,
+			&i.ImapUidValidity,
+			&i.ImapLastUid,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.DailyLimit,
+			&i.ServiceRef,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMailboxConnections = `-- name: ListMailboxConnections :many
+SELECT id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step, created_at FROM mailbox_connections WHERE org_id = ? ORDER BY created_at, id
+`
+
+// The brand's connections, oldest first.
+func (q *Queries) ListMailboxConnections(ctx context.Context, orgID string) ([]MailboxConnection, error) {
+	rows, err := q.db.QueryContext(ctx, listMailboxConnections, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MailboxConnection
+	for rows.Next() {
+		var i MailboxConnection
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.PathwayID,
+			&i.Service,
+			&i.Name,
+			&i.ApiKeyEnc,
+			&i.DailyLimit,
+			&i.WarmupStart,
+			&i.WarmupStep,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setDomainConnection = `-- name: SetDomainConnection :execrows
+UPDATE domain_identities SET connection_id = ?, updated_at = datetime('now')
+WHERE id = ? AND org_id = ? AND purpose = 'outreach'
+`
+
+type SetDomainConnectionParams struct {
+	ConnectionID sql.NullString `json:"connection_id"`
+	ID           string         `json:"id"`
+	OrgID        string         `json:"org_id"`
+}
+
+func (q *Queries) SetDomainConnection(ctx context.Context, arg SetDomainConnectionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setDomainConnection, arg.ConnectionID, arg.ID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setMailboxServiceRef = `-- name: SetMailboxServiceRef :exec
@@ -104,25 +412,28 @@ func (q *Queries) SetMailboxServiceRef(ctx context.Context, arg SetMailboxServic
 	return err
 }
 
-const setPathwayMailboxService = `-- name: SetPathwayMailboxService :exec
-
-UPDATE sending_pathways SET mailbox_service = ?, mailbox_service_key_enc = ?
-WHERE id = ? AND org_id = ? AND provider = 'mailboxes'
+const updateMailboxConnection = `-- name: UpdateMailboxConnection :exec
+UPDATE mailbox_connections SET name = ?, api_key_enc = ?, daily_limit = ?, warmup_start = ?, warmup_step = ?
+WHERE id = ? AND org_id = ?
 `
 
-type SetPathwayMailboxServiceParams struct {
-	MailboxService       string `json:"mailbox_service"`
-	MailboxServiceKeyEnc []byte `json:"mailbox_service_key_enc"`
-	ID                   string `json:"id"`
-	OrgID                string `json:"org_id"`
+type UpdateMailboxConnectionParams struct {
+	Name        string        `json:"name"`
+	ApiKeyEnc   []byte        `json:"api_key_enc"`
+	DailyLimit  sql.NullInt64 `json:"daily_limit"`
+	WarmupStart sql.NullInt64 `json:"warmup_start"`
+	WarmupStep  sql.NullInt64 `json:"warmup_step"`
+	ID          string        `json:"id"`
+	OrgID       string        `json:"org_id"`
 }
 
-// A mailbox pool's mailbox service, its quotes, and the service's ids for
-// the pool's mailboxes.
-func (q *Queries) SetPathwayMailboxService(ctx context.Context, arg SetPathwayMailboxServiceParams) error {
-	_, err := q.db.ExecContext(ctx, setPathwayMailboxService,
-		arg.MailboxService,
-		arg.MailboxServiceKeyEnc,
+func (q *Queries) UpdateMailboxConnection(ctx context.Context, arg UpdateMailboxConnectionParams) error {
+	_, err := q.db.ExecContext(ctx, updateMailboxConnection,
+		arg.Name,
+		arg.ApiKeyEnc,
+		arg.DailyLimit,
+		arg.WarmupStart,
+		arg.WarmupStep,
 		arg.ID,
 		arg.OrgID,
 	)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
+	"github.com/outlet-sh/outlet/internal/services/outbound/providers"
 
 	"github.com/google/uuid"
 )
@@ -108,43 +109,48 @@ func (l Limits) validate() error {
 	return nil
 }
 
-// DailyLimitOf is a sender's daily limit: the mailbox's own when it has
-// one, else its pathway's. 0 is no limit.
-func DailyLimitOf(p db.SendingPathway, override sql.NullInt64) int64 {
-	if override.Valid {
-		return override.Int64
-	}
-	return p.DailyLimit
+// SenderLimits are the limits one sender sends under: its daily limit (0
+// is none) and its warm-up ramp, the first day's allowance (0 is no
+// warm-up) and the daily step.
+type SenderLimits struct {
+	DailyLimit  int64
+	WarmupStart int64
+	WarmupStep  int64
+}
+
+// PathwayLimits are the limits a pathway's own senders send under: the
+// pathway itself, or a pool mailbox with no limits of its own or its
+// connection's.
+func PathwayLimits(p db.SendingPathway) SenderLimits {
+	return SenderLimits{DailyLimit: p.DailyLimit, WarmupStart: p.WarmupStart, WarmupStep: p.WarmupStep}
 }
 
 // Allowance is how many emails one sender may send on the day of now: the
-// warm-up ramp from the sender's start, up to the daily limit (the
-// mailbox's own when it has one). limited is false when nothing caps it.
-func Allowance(p db.SendingPathway, start time.Time, override sql.NullInt64, now time.Time) (n int64, limited bool) {
-	limit := DailyLimitOf(p, override)
-	if p.WarmupStart <= 0 {
-		return limit, limit > 0
+// warm-up ramp from the sender's start, up to the daily limit. limited is
+// false when nothing caps it.
+func Allowance(l SenderLimits, start time.Time, now time.Time) (n int64, limited bool) {
+	if l.WarmupStart <= 0 {
+		return l.DailyLimit, l.DailyLimit > 0
 	}
 	days := int64(now.Sub(start).Hours() / 24)
 	if days < 0 {
 		days = 0
 	}
-	ramp := p.WarmupStart + p.WarmupStep*days
-	if limit > 0 {
-		return min(limit, ramp), true
+	ramp := l.WarmupStart + l.WarmupStep*days
+	if l.DailyLimit > 0 {
+		return min(l.DailyLimit, ramp), true
 	}
 	return ramp, true
 }
 
 // WarmingUp says whether the warm-up ramp still holds a sender below its
 // daily limit on the day of now. With no daily limit the ramp never ends.
-func WarmingUp(p db.SendingPathway, start time.Time, override sql.NullInt64, now time.Time) bool {
-	if p.WarmupStart <= 0 {
+func WarmingUp(l SenderLimits, start time.Time, now time.Time) bool {
+	if l.WarmupStart <= 0 {
 		return false
 	}
-	limit := DailyLimitOf(p, override)
-	allow, _ := Allowance(p, start, override, now)
-	return limit == 0 || allow < limit
+	allow, _ := Allowance(l, start, now)
+	return l.DailyLimit == 0 || allow < l.DailyLimit
 }
 
 // Health is one sender's last 7 days.
@@ -213,11 +219,6 @@ type Pathway struct {
 	Mailboxes       int             `json:"mailboxes"`
 	Warning         string   `json:"warning,omitempty"`
 	CreatedAt       string   `json:"created_at"`
-
-	// A mailbox pool's mailbox service (manual, maildoso, cheapinboxes,
-	// infraforge), and whether its API key is set.
-	MailboxService       string `json:"mailbox_service,omitempty"`
-	MailboxServiceKeySet bool   `json:"mailbox_service_key_set"`
 }
 
 // PathwayDomain is one domain a pathway holds: a sending domain, or an
@@ -266,7 +267,6 @@ func (s *Service) view(ctx context.Context, p db.SendingPathway) (Pathway, error
 			return out, err
 		}
 		out.Mailboxes = len(mbs)
-		out.MailboxService, out.MailboxServiceKeySet = p.MailboxService, len(p.MailboxServiceKeyEnc) > 0
 	}
 	return out, nil
 }
@@ -506,7 +506,9 @@ func (s *Service) DeletePathway(ctx context.Context, orgID, id string) error {
 // The domain's purpose decides where it fits: an outreach domain only in a
 // mailbox pool, a sending domain only in a platform, ses or smtp pathway.
 // An outreach domain's mailboxes go with it, with today's sends counted in
-// their new pool.
+// their new pool. An outreach domain added by hand joins the new pool's
+// manual connection; one from a mailbox service stays with its connection,
+// in its pool.
 func (s *Service) MoveDomain(ctx context.Context, orgID, domainID, pathwayID string) (db.SendingPathway, error) {
 	d, err := s.db.GetDomainIdentity(ctx, domainID)
 	if err != nil || d.OrgID != orgID {
@@ -519,9 +521,27 @@ func (s *Service) MoveDomain(ctx context.Context, orgID, domainID, pathwayID str
 	if d.PathwayID.String == to.ID {
 		return to, nil
 	}
+	if d.Purpose == "outreach" && d.ConnectionID.Valid {
+		c, err := s.db.GetMailboxConnection(ctx, db.GetMailboxConnectionParams{ID: d.ConnectionID.String, OrgID: orgID})
+		if err != nil {
+			return to, err
+		}
+		if c.Service != providers.Manual {
+			return to, errorx.NewBadRequestError(fmt.Sprintf("%s comes from the %s connection %q of its pool, so it stays in that pool. Move it to another connection there instead.", d.Domain, providers.Label(c.Service), c.Name))
+		}
+	}
 	err = s.db.ExecTx(ctx, func(q *db.Queries) error {
 		if _, err := q.SetDomainPathway(ctx, db.SetDomainPathwayParams{PathwayID: sql.NullString{String: to.ID, Valid: true}, ID: d.ID, OrgID: orgID}); err != nil {
 			return err
+		}
+		if d.Purpose == "outreach" {
+			c, err := ManualConnection(ctx, q, orgID, to.ID)
+			if err != nil {
+				return err
+			}
+			if _, err := q.SetDomainConnection(ctx, db.SetDomainConnectionParams{ConnectionID: sql.NullString{String: c.ID, Valid: true}, ID: d.ID, OrgID: orgID}); err != nil {
+				return err
+			}
 		}
 		if !d.PathwayID.Valid {
 			return nil
@@ -532,6 +552,47 @@ func (s *Service) MoveDomain(ctx context.Context, orgID, domainID, pathwayID str
 		return q.DeleteDomainSendCounts(ctx, db.DeleteDomainSendCountsParams{PathwayID: d.PathwayID.String, DomainID: d.ID})
 	})
 	return to, err
+}
+
+// ManualConnectionName names the manual connection a pool gets on its first
+// domain added by hand.
+const ManualConnectionName = "Added by hand"
+
+// ManualConnection is a mailbox pool's oldest manual connection, made when
+// it has none: where an outreach domain added by hand goes.
+func ManualConnection(ctx context.Context, q *db.Queries, orgID, poolID string) (db.MailboxConnection, error) {
+	c, err := q.FirstManualConnection(ctx, poolID)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return c, err
+	}
+	return q.CreateMailboxConnection(ctx, db.CreateMailboxConnectionParams{
+		ID: uuid.NewString(), OrgID: orgID, PathwayID: poolID, Service: providers.Manual, Name: ManualConnectionName,
+	})
+}
+
+// MailboxLimits are the limits a pool mailbox sends under, each resolved
+// on its own: the daily limit is the mailbox's own, else its connection's,
+// else the pool's; the warm-up start and step are its connection's, else
+// the pool's. A Maildoso connection's are 15 a day, warming up from 5 by 1.
+// Sending and the health view both read them here.
+func (s *Service) MailboxLimits(ctx context.Context, p db.SendingPathway, mb db.Mailbox) (SenderLimits, error) {
+	l := PathwayLimits(p)
+	c, err := s.db.GetMailboxConnectionLimits(ctx, mb.ID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return l, err
+	}
+	for _, v := range []struct {
+		to  *int64
+		set sql.NullInt64
+	}{{&l.DailyLimit, c.DailyLimit}, {&l.WarmupStart, c.WarmupStart}, {&l.WarmupStep, c.WarmupStep}} {
+		if v.set.Valid {
+			*v.to = v.set.Int64
+		}
+	}
+	if mb.DailyLimit.Valid {
+		l.DailyLimit = mb.DailyLimit.Int64
+	}
+	return l, nil
 }
 
 // SetMailboxDailyLimit gives one mailbox its own daily limit, or (nil) puts

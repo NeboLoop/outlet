@@ -134,7 +134,8 @@ var policy = map[string]toolPolicy{
 	"setup_sending": {rules: map[string]rule{
 		"settings": obWrite(), "dns_token": obAdmin(), "add_domain": obAdmin(), "check_domain": obWrite(),
 		"add_mailboxes": obAdmin(), "list": obRead(), "set_limits": obAdmin(), "mailbox_limit": obAdmin(),
-		"mailbox_service": obAdmin(), "service_inventory": obRead(), "connect_domain": obAdmin(), "quote": obWrite(),
+		"connections": obRead(), "add_connection": obAdmin(), "update_connection": obAdmin(), "remove_connection": obAdmin(),
+		"move_domain": obAdmin(), "service_inventory": obRead(), "connect_domain": obAdmin(), "quote": obWrite(),
 		"buy": obAdmin(), "sync": obAdmin(), "delete_mailbox": obAdmin(),
 	}},
 	"add_prospects":  {rules: map[string]rule{"add": obWrite()}},

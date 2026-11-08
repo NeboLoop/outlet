@@ -1213,13 +1213,54 @@ type MCPAPIKeyInfo struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type MailboxConnection struct {
+	Id          string                    `json:"id"`
+	PoolId      string                    `json:"pool_id"`
+	Service     string                    `json:"service"` // manual, maildoso, cheapinboxes, infraforge
+	Name        string                    `json:"name"`
+	KeySet      bool                      `json:"key_set"`
+	DailyLimit  *int64                    `json:"daily_limit,optional"`  // its mailboxes' daily limit unless one has its own; empty: the pool's
+	WarmupStart *int64                    `json:"warmup_start,optional"` // its mailboxes' warm-up, first day's allowance; empty: the pool's
+	WarmupStep  *int64                    `json:"warmup_step,optional"`  // added each day until the daily limit; empty: the pool's
+	Domains     []MailboxConnectionDomain `json:"domains"`
+	Mailboxes   int64                     `json:"mailboxes"`
+	CreatedAt   string                    `json:"created_at"`
+}
+
+type MailboxConnectionDomain struct {
+	Id     string `json:"id"`
+	Domain string `json:"domain"`
+}
+
+type MailboxConnectionIDRequest struct {
+	Id string `path:"id"` // the connection
+}
+
+type MailboxConnectionList struct {
+	Connections []MailboxConnection `json:"connections"`
+}
+
+type MailboxConnectionListRequest struct {
+	PoolId string `form:"pool_id,optional"` // one pool's; empty: every pool's
+}
+
+type MailboxConnectionRequest struct {
+	PoolId      string `json:"pool_id,optional"`     // empty: the pool carrying outreach (made if the brand has none)
+	Service     string `json:"service"`              // manual, maildoso, cheapinboxes, infraforge
+	Name        string `json:"name,optional"`        // empty: the service's name
+	APIKey      string `json:"api_key,optional"`     // required for a service; tried before it is saved
+	DailyLimit  *int64 `json:"daily_limit,optional"` // the three limits all empty: the service's terms (Maildoso 15 a day, warming up from 5 by 1), else the pool's
+	WarmupStart *int64 `json:"warmup_start,optional"`
+	WarmupStep  *int64 `json:"warmup_step,optional"`
+}
+
 type MailboxDailyLimitRequest struct {
 	Id         string `path:"id"`
 	DailyLimit *int64 `json:"daily_limit,optional"` // empty: use the pool's
 }
 
 type MailboxServiceBuyRequest struct {
-	Id      string `path:"id"`
+	Id      string `path:"id"` // the connection the quote is from
 	QuoteId string `json:"quote_id"`
 	Confirm bool   `json:"confirm"` // must be true: buying spends money
 }
@@ -1235,7 +1276,7 @@ type MailboxServiceBuyResponse struct {
 }
 
 type MailboxServiceConnectRequest struct {
-	Id     string `path:"id"`
+	Id     string `path:"id"` // the connection
 	Domain string `json:"domain"`
 }
 
@@ -1247,7 +1288,7 @@ type MailboxServiceConnection struct {
 }
 
 type MailboxServiceDeleteRequest struct {
-	Id        string `path:"id"`
+	Id        string `path:"id"` // the connection
 	MailboxId string `path:"mailbox_id"`
 }
 
@@ -1290,10 +1331,6 @@ type MailboxServicePoolMailbox struct {
 	Email string `json:"email"`
 }
 
-type MailboxServicePoolRequest struct {
-	Id string `path:"id"` // the mailbox pool
-}
-
 type MailboxServiceQuote struct {
 	Id         string `json:"id"`
 	Service    string `json:"service"`
@@ -1308,27 +1345,14 @@ type MailboxServiceQuote struct {
 }
 
 type MailboxServiceQuoteRequest struct {
-	Id     string                 `path:"id"`
+	Id     string                 `path:"id"`   // the connection
 	Kind   string                 `json:"kind"` // domain, connect, mailboxes
 	Domain string                 `json:"domain"`
 	People []MailboxServicePerson `json:"people,optional"` // for mailboxes
 }
 
-type MailboxServiceRequest struct {
-	Id      string `path:"id"`
-	Service string `json:"service"`          // manual, maildoso, cheapinboxes, infraforge
-	APIKey  string `json:"api_key,optional"` // empty keeps the stored key
-}
-
-type MailboxServiceStatus struct {
-	PoolId  string        `json:"pool_id"`
-	Service string        `json:"service"`
-	KeySet  bool          `json:"key_set"`
-	Limits  SendingLimits `json:"limits"` // picking a service sets them to its terms
-}
-
 type MailboxServiceSyncRequest struct {
-	Id     string `path:"id"`
+	Id     string `path:"id"`              // the connection
 	Import bool   `json:"import,optional"` // import the service's mailboxes the pool lacks
 }
 
@@ -1345,6 +1369,11 @@ type MarkContactReadRequest struct {
 
 type MarkContactReadResponse struct {
 	Success bool `json:"success"`
+}
+
+type MoveDomainConnectionRequest struct {
+	Id           string `path:"id"`            // the outreach domain
+	ConnectionId string `json:"connection_id"` // another connection of the domain's pool
 }
 
 type MoveDomainRequest struct {
@@ -1571,7 +1600,8 @@ type OutboundDomainRequest struct {
 	DKIMValue     string   `json:"dkim_value,optional"`
 	DMARCReport   string   `json:"dmarc_report,optional"`
 	ClickTracking bool     `json:"click_tracking,optional"`
-	PathwayId     string   `json:"pathway_id,optional"` // the mailbox pool it joins; empty: the brand's pool
+	PathwayId     string   `json:"pathway_id,optional"`    // the mailbox pool it joins; empty: the brand's pool
+	ConnectionId  string   `json:"connection_id,optional"` // the pool's manual connection it joins; empty: the pool's first manual one
 }
 
 type OutboundDomainResponse struct {
@@ -1657,11 +1687,12 @@ type OutboundMailboxHealth struct {
 	SpamBlocks7d int64  `json:"spam_blocks_7d"`
 	Complaints7d int64  `json:"complaints_7d"`
 	LastError    string `json:"last_error,optional"`
-	PoolId       string `json:"pool_id,optional"`     // its mailbox pool (sending pathway)
-	DailyLimit   *int64 `json:"daily_limit,optional"` // its own daily limit; empty uses the pool's
-	Limited      bool   `json:"limited"`              // false: no daily limit applies
-	LimitInUse   int64  `json:"limit_in_use"`         // the daily limit it sends under: its own, else its pool's; 0: none
-	WarmingUp    bool   `json:"warming_up"`           // the warm-up holds it below limit_in_use; allowed_today is today's step
+	PoolId       string `json:"pool_id,optional"`       // its mailbox pool (sending pathway)
+	ConnectionId string `json:"connection_id,optional"` // the pool's connection its domain belongs to
+	DailyLimit   *int64 `json:"daily_limit,optional"`   // its own daily limit; empty uses its connection's, else the pool's (warm-up: its connection's, else the pool's)
+	Limited      bool   `json:"limited"`                // false: no daily limit applies
+	LimitInUse   int64  `json:"limit_in_use"`           // the daily limit it sends under: its own, else its connection's, else its pool's; 0: none
+	WarmingUp    bool   `json:"warming_up"`             // the warm-up holds it below limit_in_use; allowed_today is today's step
 	Domain       string `json:"domain"`
 }
 
@@ -1997,23 +2028,21 @@ type SendingLimits struct {
 }
 
 type SendingPathway struct {
-	Id                   string                 `json:"id"`
-	Name                 string                 `json:"name"`
-	Provider             string                 `json:"provider"` // platform, ses, smtp, mailboxes
-	Kinds                []string               `json:"kinds"`    // transactional, marketing, outreach
-	AWSRegion            string                 `json:"aws_region,optional"`
-	AWSKeysSet           bool                   `json:"aws_keys_set"`
-	SMTPHost             string                 `json:"smtp_host,optional"`
-	SMTPPort             int64                  `json:"smtp_port,optional"`
-	SMTPUsername         string                 `json:"smtp_username,optional"`
-	SMTPPasswordSet      bool                   `json:"smtp_password_set"`
-	Limits               SendingLimits          `json:"limits"`
-	Domains              []SendingPathwayDomain `json:"domains"`
-	Mailboxes            int64                  `json:"mailboxes"`
-	Warning              string                 `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
-	CreatedAt            string                 `json:"created_at"`
-	MailboxService       string                 `json:"mailbox_service,optional"` // a mailbox pool's: manual, maildoso, cheapinboxes, infraforge
-	MailboxServiceKeySet bool                   `json:"mailbox_service_key_set"`
+	Id              string                 `json:"id"`
+	Name            string                 `json:"name"`
+	Provider        string                 `json:"provider"` // platform, ses, smtp, mailboxes
+	Kinds           []string               `json:"kinds"`    // transactional, marketing, outreach
+	AWSRegion       string                 `json:"aws_region,optional"`
+	AWSKeysSet      bool                   `json:"aws_keys_set"`
+	SMTPHost        string                 `json:"smtp_host,optional"`
+	SMTPPort        int64                  `json:"smtp_port,optional"`
+	SMTPUsername    string                 `json:"smtp_username,optional"`
+	SMTPPasswordSet bool                   `json:"smtp_password_set"`
+	Limits          SendingLimits          `json:"limits"`
+	Domains         []SendingPathwayDomain `json:"domains"`
+	Mailboxes       int64                  `json:"mailboxes"`
+	Warning         string                 `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
+	CreatedAt       string                 `json:"created_at"`
 }
 
 type SendingPathwayDomain struct {
@@ -2382,6 +2411,15 @@ type UpdateListRequest struct {
 	GoodbyeEmailBody       *string `json:"goodbye_email_body,optional"`
 	UnsubscribeBehavior    *string `json:"unsubscribe_behavior,optional"`
 	UnsubscribeScope       *string `json:"unsubscribe_scope,optional"`
+}
+
+type UpdateMailboxConnectionRequest struct {
+	Id          string `path:"id"`
+	Name        string `json:"name,optional"`         // empty keeps it
+	APIKey      string `json:"api_key,optional"`      // empty keeps the stored key
+	DailyLimit  *int64 `json:"daily_limit,optional"`  // set as given; empty: the pool's
+	WarmupStart *int64 `json:"warmup_start,optional"` // set as given; empty: the pool's
+	WarmupStep  *int64 `json:"warmup_step,optional"`  // set as given; empty: the pool's
 }
 
 type UpdateOrgEmailConfigRequest struct {

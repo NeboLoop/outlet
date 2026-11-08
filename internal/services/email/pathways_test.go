@@ -161,25 +161,26 @@ func TestWarmupRamp(t *testing.T) {
 	row, err := h.s.GetPathway(context.Background(), "org-a", p.ID)
 	require.NoError(t, err)
 	start := parseStored(row.CreatedAt)
+	limits := PathwayLimits(row)
 	for days, want := range []int64{1, 2, 3, 3, 3} {
-		n, limited := Allowance(row, start, sql.NullInt64{}, start.Add(time.Duration(days)*24*time.Hour))
+		n, limited := Allowance(limits, start, start.Add(time.Duration(days)*24*time.Hour))
 		assert.True(t, limited)
 		assert.Equal(t, want, n, "day %d", days)
 	}
-	n, limited := Allowance(row, start, sql.NullInt64{Int64: 50, Valid: true}, start.Add(100*24*time.Hour))
+	own := limits
+	own.DailyLimit = 50
+	n, limited := Allowance(own, start, start.Add(100*24*time.Hour))
 	assert.True(t, limited)
 	assert.EqualValues(t, 50, n, "a mailbox's own limit, reached through the ramp")
-	_, limited = Allowance(db.SendingPathway{}, start, sql.NullInt64{}, start)
+	_, limited = Allowance(SenderLimits{}, start, start)
 	assert.False(t, limited, "no limit set")
 
 	// Warming up until the ramp reaches the limit in use; the mailbox's own
 	// limit is its choice, never capped to the pathway's.
-	assert.EqualValues(t, 3, DailyLimitOf(row, sql.NullInt64{}))
-	assert.EqualValues(t, 50, DailyLimitOf(row, sql.NullInt64{Int64: 50, Valid: true}))
-	assert.True(t, WarmingUp(row, start, sql.NullInt64{}, start.Add(24*time.Hour)))
-	assert.False(t, WarmingUp(row, start, sql.NullInt64{}, start.Add(2*24*time.Hour)), "day 3 reaches the limit of 3")
-	assert.True(t, WarmingUp(row, start, sql.NullInt64{Int64: 50, Valid: true}, start.Add(10*24*time.Hour)), "an own limit of 50 takes longer to reach")
-	assert.False(t, WarmingUp(db.SendingPathway{DailyLimit: 30}, start, sql.NullInt64{}, start), "no warm-up")
+	assert.True(t, WarmingUp(limits, start, start.Add(24*time.Hour)))
+	assert.False(t, WarmingUp(limits, start, start.Add(2*24*time.Hour)), "day 3 reaches the limit of 3")
+	assert.True(t, WarmingUp(own, start, start.Add(10*24*time.Hour)), "an own limit of 50 takes longer to reach")
+	assert.False(t, WarmingUp(SenderLimits{DailyLimit: 30}, start, start), "no warm-up")
 }
 
 // Two sends from one sender are at least the minimum gap apart.

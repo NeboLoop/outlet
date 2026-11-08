@@ -839,10 +839,34 @@ export function updateOutboundSettings(req: components.OutboundSettingsRequest) 
 /**
  * @description 
  * @param params
+ */
+export function listMailboxConnections(params: components.MailboxConnectionListRequestParams) {
+	return webapi.get<components.MailboxConnectionList>(`/api/admin/outbound/connections`, params)
+}
+
+/**
+ * @description 
  * @param req
  */
-export function setMailboxService(params: components.MailboxServiceRequestParams, req: components.MailboxServiceRequest, id: string) {
-	return webapi.put<components.MailboxServiceStatus>(`/api/admin/outbound/pools/${id}/service`, params, req)
+export function addMailboxConnection(req: components.MailboxConnectionRequest) {
+	return webapi.post<components.MailboxConnection>(`/api/admin/outbound/connections`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function updateMailboxConnection(params: components.UpdateMailboxConnectionRequestParams, req: components.UpdateMailboxConnectionRequest, id: string) {
+	return webapi.put<components.MailboxConnection>(`/api/admin/outbound/connections/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function removeMailboxConnection(params: components.MailboxConnectionIDRequestParams, id: string) {
+	return webapi.delete<components.Response>(`/api/admin/outbound/connections/${id}`, params)
 }
 
 /**
@@ -851,7 +875,7 @@ export function setMailboxService(params: components.MailboxServiceRequestParams
  * @param req
  */
 export function buyMailboxService(params: components.MailboxServiceBuyRequestParams, req: components.MailboxServiceBuyRequest, id: string) {
-	return webapi.post<components.MailboxServiceBuyResponse>(`/api/admin/outbound/pools/${id}/service/buy`, params, req)
+	return webapi.post<components.MailboxServiceBuyResponse>(`/api/admin/outbound/connections/${id}/buy`, params, req)
 }
 
 /**
@@ -860,15 +884,15 @@ export function buyMailboxService(params: components.MailboxServiceBuyRequestPar
  * @param req
  */
 export function connectMailboxServiceDomain(params: components.MailboxServiceConnectRequestParams, req: components.MailboxServiceConnectRequest, id: string) {
-	return webapi.post<components.MailboxServiceDomainResponse>(`/api/admin/outbound/pools/${id}/service/domains`, params, req)
+	return webapi.post<components.MailboxServiceDomainResponse>(`/api/admin/outbound/connections/${id}/domains`, params, req)
 }
 
 /**
  * @description 
  * @param params
  */
-export function getMailboxServiceInventory(params: components.MailboxServicePoolRequestParams, id: string) {
-	return webapi.get<components.MailboxServiceInventory>(`/api/admin/outbound/pools/${id}/service/inventory`, params)
+export function getMailboxServiceInventory(params: components.MailboxConnectionIDRequestParams, id: string) {
+	return webapi.get<components.MailboxServiceInventory>(`/api/admin/outbound/connections/${id}/inventory`, params)
 }
 
 /**
@@ -876,7 +900,7 @@ export function getMailboxServiceInventory(params: components.MailboxServicePool
  * @param params
  */
 export function deleteMailboxServiceMailbox(params: components.MailboxServiceDeleteRequestParams, id: string, mailbox_id: string) {
-	return webapi.delete<components.Response>(`/api/admin/outbound/pools/${id}/service/mailboxes/${mailbox_id}`, params)
+	return webapi.delete<components.Response>(`/api/admin/outbound/connections/${id}/mailboxes/${mailbox_id}`, params)
 }
 
 /**
@@ -885,7 +909,7 @@ export function deleteMailboxServiceMailbox(params: components.MailboxServiceDel
  * @param req
  */
 export function quoteMailboxService(params: components.MailboxServiceQuoteRequestParams, req: components.MailboxServiceQuoteRequest, id: string) {
-	return webapi.post<components.MailboxServiceQuote>(`/api/admin/outbound/pools/${id}/service/quotes`, params, req)
+	return webapi.post<components.MailboxServiceQuote>(`/api/admin/outbound/connections/${id}/quotes`, params, req)
 }
 
 /**
@@ -894,7 +918,16 @@ export function quoteMailboxService(params: components.MailboxServiceQuoteReques
  * @param req
  */
 export function syncMailboxService(params: components.MailboxServiceSyncRequestParams, req: components.MailboxServiceSyncRequest, id: string) {
-	return webapi.post<components.MailboxServiceSyncResponse>(`/api/admin/outbound/pools/${id}/service/sync`, params, req)
+	return webapi.post<components.MailboxServiceSyncResponse>(`/api/admin/outbound/connections/${id}/sync`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function moveOutboundDomainConnection(params: components.MoveDomainConnectionRequestParams, req: components.MoveDomainConnectionRequest, id: string) {
+	return webapi.put<components.MailboxConnection>(`/api/admin/outbound/domains/${id}/connection`, params, req)
 }
 
 /**
@@ -1746,10 +1779,34 @@ export function sdkUpdateOutboundSettings(req: components.OutboundSettingsReques
 /**
  * @description 
  * @param params
+ */
+export function sdkListMailboxConnections(params: components.MailboxConnectionListRequestParams) {
+	return webapi.get<components.MailboxConnectionList>(`/sdk/v1/outbound/connections`, params)
+}
+
+/**
+ * @description 
  * @param req
  */
-export function sdkSetMailboxService(params: components.MailboxServiceRequestParams, req: components.MailboxServiceRequest, id: string) {
-	return webapi.put<components.MailboxServiceStatus>(`/sdk/v1/outbound/pools/${id}/service`, params, req)
+export function sdkAddMailboxConnection(req: components.MailboxConnectionRequest) {
+	return webapi.post<components.MailboxConnection>(`/sdk/v1/outbound/connections`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkUpdateMailboxConnection(params: components.UpdateMailboxConnectionRequestParams, req: components.UpdateMailboxConnectionRequest, id: string) {
+	return webapi.put<components.MailboxConnection>(`/sdk/v1/outbound/connections/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkRemoveMailboxConnection(params: components.MailboxConnectionIDRequestParams, id: string) {
+	return webapi.delete<components.Response>(`/sdk/v1/outbound/connections/${id}`, params)
 }
 
 /**
@@ -1758,7 +1815,7 @@ export function sdkSetMailboxService(params: components.MailboxServiceRequestPar
  * @param req
  */
 export function sdkBuyMailboxService(params: components.MailboxServiceBuyRequestParams, req: components.MailboxServiceBuyRequest, id: string) {
-	return webapi.post<components.MailboxServiceBuyResponse>(`/sdk/v1/outbound/pools/${id}/service/buy`, params, req)
+	return webapi.post<components.MailboxServiceBuyResponse>(`/sdk/v1/outbound/connections/${id}/buy`, params, req)
 }
 
 /**
@@ -1767,15 +1824,15 @@ export function sdkBuyMailboxService(params: components.MailboxServiceBuyRequest
  * @param req
  */
 export function sdkConnectMailboxServiceDomain(params: components.MailboxServiceConnectRequestParams, req: components.MailboxServiceConnectRequest, id: string) {
-	return webapi.post<components.MailboxServiceDomainResponse>(`/sdk/v1/outbound/pools/${id}/service/domains`, params, req)
+	return webapi.post<components.MailboxServiceDomainResponse>(`/sdk/v1/outbound/connections/${id}/domains`, params, req)
 }
 
 /**
  * @description 
  * @param params
  */
-export function sdkGetMailboxServiceInventory(params: components.MailboxServicePoolRequestParams, id: string) {
-	return webapi.get<components.MailboxServiceInventory>(`/sdk/v1/outbound/pools/${id}/service/inventory`, params)
+export function sdkGetMailboxServiceInventory(params: components.MailboxConnectionIDRequestParams, id: string) {
+	return webapi.get<components.MailboxServiceInventory>(`/sdk/v1/outbound/connections/${id}/inventory`, params)
 }
 
 /**
@@ -1783,7 +1840,7 @@ export function sdkGetMailboxServiceInventory(params: components.MailboxServiceP
  * @param params
  */
 export function sdkDeleteMailboxServiceMailbox(params: components.MailboxServiceDeleteRequestParams, id: string, mailbox_id: string) {
-	return webapi.delete<components.Response>(`/sdk/v1/outbound/pools/${id}/service/mailboxes/${mailbox_id}`, params)
+	return webapi.delete<components.Response>(`/sdk/v1/outbound/connections/${id}/mailboxes/${mailbox_id}`, params)
 }
 
 /**
@@ -1792,7 +1849,7 @@ export function sdkDeleteMailboxServiceMailbox(params: components.MailboxService
  * @param req
  */
 export function sdkQuoteMailboxService(params: components.MailboxServiceQuoteRequestParams, req: components.MailboxServiceQuoteRequest, id: string) {
-	return webapi.post<components.MailboxServiceQuote>(`/sdk/v1/outbound/pools/${id}/service/quotes`, params, req)
+	return webapi.post<components.MailboxServiceQuote>(`/sdk/v1/outbound/connections/${id}/quotes`, params, req)
 }
 
 /**
@@ -1801,7 +1858,16 @@ export function sdkQuoteMailboxService(params: components.MailboxServiceQuoteReq
  * @param req
  */
 export function sdkSyncMailboxService(params: components.MailboxServiceSyncRequestParams, req: components.MailboxServiceSyncRequest, id: string) {
-	return webapi.post<components.MailboxServiceSyncResponse>(`/sdk/v1/outbound/pools/${id}/service/sync`, params, req)
+	return webapi.post<components.MailboxServiceSyncResponse>(`/sdk/v1/outbound/connections/${id}/sync`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkMoveOutboundDomainConnection(params: components.MoveDomainConnectionRequestParams, req: components.MoveDomainConnectionRequest, id: string) {
+	return webapi.put<components.MailboxConnection>(`/sdk/v1/outbound/domains/${id}/connection`, params, req)
 }
 
 /**

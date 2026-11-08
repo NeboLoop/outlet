@@ -355,9 +355,9 @@ func (q *Queries) CreateMailbox(ctx context.Context, arg CreateMailboxParams) (M
 
 const createOutreachDomain = `-- name: CreateOutreachDomain :one
 
-INSERT INTO domain_identities (id, org_id, domain, verification_status, dkim_status, purpose, dns_host, dkim_selector, tracking_host, pathway_id)
-VALUES (?, ?, ?, 'pending', 'pending', 'outreach', ?, ?, ?, ?)
-RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id
+INSERT INTO domain_identities (id, org_id, domain, verification_status, dkim_status, purpose, dns_host, dkim_selector, tracking_host, pathway_id, connection_id)
+VALUES (?, ?, ?, 'pending', 'pending', 'outreach', ?, ?, ?, ?, ?)
+RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id, connection_id
 `
 
 type CreateOutreachDomainParams struct {
@@ -368,6 +368,7 @@ type CreateOutreachDomainParams struct {
 	DkimSelector string         `json:"dkim_selector"`
 	TrackingHost string         `json:"tracking_host"`
 	PathwayID    sql.NullString `json:"pathway_id"`
+	ConnectionID sql.NullString `json:"connection_id"`
 }
 
 // ---- outreach domains (domain_identities with purpose 'outreach') -------------
@@ -380,6 +381,7 @@ func (q *Queries) CreateOutreachDomain(ctx context.Context, arg CreateOutreachDo
 		arg.DkimSelector,
 		arg.TrackingHost,
 		arg.PathwayID,
+		arg.ConnectionID,
 	)
 	var i DomainIdentity
 	err := row.Scan(
@@ -402,6 +404,7 @@ func (q *Queries) CreateOutreachDomain(ctx context.Context, arg CreateOutreachDo
 		&i.TrackingHost,
 		&i.DnsCheck,
 		&i.PathwayID,
+		&i.ConnectionID,
 	)
 	return i, err
 }
@@ -433,7 +436,7 @@ func (q *Queries) EditOutreachEmail(ctx context.Context, arg EditOutreachEmailPa
 }
 
 const getAnyDomainIdentity = `-- name: GetAnyDomainIdentity :one
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities WHERE LOWER(domain) = LOWER(?) LIMIT 1
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id, connection_id FROM domain_identities WHERE LOWER(domain) = LOWER(?) LIMIT 1
 `
 
 // A domain belongs to one brand and one purpose.
@@ -460,6 +463,7 @@ func (q *Queries) GetAnyDomainIdentity(ctx context.Context, lower string) (Domai
 		&i.TrackingHost,
 		&i.DnsCheck,
 		&i.PathwayID,
+		&i.ConnectionID,
 	)
 	return i, err
 }
@@ -574,7 +578,7 @@ func (q *Queries) GetMailboxByEmail(ctx context.Context, email string) (Mailbox,
 }
 
 const getOutreachDomain = `-- name: GetOutreachDomain :one
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities WHERE id = ? AND org_id = ? AND purpose = 'outreach'
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id, connection_id FROM domain_identities WHERE id = ? AND org_id = ? AND purpose = 'outreach'
 `
 
 type GetOutreachDomainParams struct {
@@ -605,6 +609,7 @@ func (q *Queries) GetOutreachDomain(ctx context.Context, arg GetOutreachDomainPa
 		&i.TrackingHost,
 		&i.DnsCheck,
 		&i.PathwayID,
+		&i.ConnectionID,
 	)
 	return i, err
 }
@@ -1082,7 +1087,7 @@ func (q *Queries) ListAllMailboxes(ctx context.Context) ([]Mailbox, error) {
 }
 
 const listAllOutreachDomains = `-- name: ListAllOutreachDomains :many
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities WHERE purpose = 'outreach' ORDER BY domain
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id, connection_id FROM domain_identities WHERE purpose = 'outreach' ORDER BY domain
 `
 
 func (q *Queries) ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity, error) {
@@ -1114,6 +1119,7 @@ func (q *Queries) ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity,
 			&i.TrackingHost,
 			&i.DnsCheck,
 			&i.PathwayID,
+			&i.ConnectionID,
 		); err != nil {
 			return nil, err
 		}
@@ -1254,7 +1260,7 @@ func (q *Queries) ListMailboxes(ctx context.Context, orgID string) ([]Mailbox, e
 }
 
 const listOutreachDomains = `-- name: ListOutreachDomains :many
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities WHERE org_id = ? AND purpose = 'outreach' ORDER BY domain
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id, connection_id FROM domain_identities WHERE org_id = ? AND purpose = 'outreach' ORDER BY domain
 `
 
 func (q *Queries) ListOutreachDomains(ctx context.Context, orgID string) ([]DomainIdentity, error) {
@@ -1286,6 +1292,7 @@ func (q *Queries) ListOutreachDomains(ctx context.Context, orgID string) ([]Doma
 			&i.TrackingHost,
 			&i.DnsCheck,
 			&i.PathwayID,
+			&i.ConnectionID,
 		); err != nil {
 			return nil, err
 		}

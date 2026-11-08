@@ -137,7 +137,7 @@ func (s *Service) sendThroughProvider(ctx context.Context, org db.Organization, 
 	if err != nil {
 		return err
 	}
-	release, err := s.reserve(ctx, org, p, sender{id: p.ID, label: p.Name, start: parseStored(p.CreatedAt), next: p.NextSendAt.String})
+	release, err := s.reserve(ctx, org, p, sender{id: p.ID, label: p.Name, start: parseStored(p.CreatedAt), limits: PathwayLimits(p), next: p.NextSendAt.String})
 	if err != nil {
 		return err
 	}
@@ -199,7 +199,11 @@ func (s *Service) sendFromPool(ctx context.Context, org db.Organization, p db.Se
 	}
 	var limitErr error
 	for _, mb := range candidates {
-		release, err := s.reserve(ctx, org, p, sender{id: mb.ID, label: mb.Email, start: parseStored(mb.WarmupStartedAt), override: mb.DailyLimit, next: mb.NextSendAt.String, mailbox: true})
+		limits, err := s.MailboxLimits(ctx, p, mb)
+		if err != nil {
+			return err
+		}
+		release, err := s.reserve(ctx, org, p, sender{id: mb.ID, label: mb.Email, start: parseStored(mb.WarmupStartedAt), limits: limits, next: mb.NextSendAt.String, mailbox: true})
 		if errors.Is(err, ErrOverLimit) {
 			if limitErr == nil || RetryAt(err, time.Time{}).Before(RetryAt(limitErr, time.Time{})) {
 				limitErr = err
