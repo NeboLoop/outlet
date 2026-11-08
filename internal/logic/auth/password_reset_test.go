@@ -48,3 +48,25 @@ func TestForgotThenResetPassword(t *testing.T) {
 	_, err = NewResetPasswordLogic(ctx, s).ResetPassword(&types.ResetPasswordRequest{Token: token, NewPassword: "other-password", ConfirmPassword: "other-password"})
 	assert.True(t, err != nil && strings.Contains(err.Error(), "invalid or expired"), "a reset link works once: %v", err)
 }
+
+// The link `outlet reset-link` prints resets the password once, and issuing
+// a new one retires the old.
+func TestIssuePasswordReset(t *testing.T) {
+	s := newAuthSvc(t)
+	ctx := context.Background()
+	_, err := s.DB.CreateUser(ctx, db.CreateUserParams{
+		ID: "u1", Email: "ana@example.com", PasswordHash: "x", Name: "Ana", Role: "agent", Status: "active", EmailVerified: int64(1),
+	})
+	require.NoError(t, err)
+
+	old, err := IssuePasswordReset(ctx, s.DB, "u1")
+	require.NoError(t, err)
+	token, err := IssuePasswordReset(ctx, s.DB, "u1")
+	require.NoError(t, err)
+	assert.Equal(t, "https://outlet.example.com/auth/reset-password?token="+token, ResetURL("https://outlet.example.com/", token))
+
+	_, err = NewResetPasswordLogic(ctx, s).ResetPassword(&types.ResetPasswordRequest{Token: old, NewPassword: "new-password", ConfirmPassword: "new-password"})
+	assert.Error(t, err, "the older link is retired")
+	_, err = NewResetPasswordLogic(ctx, s).ResetPassword(&types.ResetPasswordRequest{Token: token, NewPassword: "new-password", ConfirmPassword: "new-password"})
+	require.NoError(t, err)
+}
