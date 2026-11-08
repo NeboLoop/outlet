@@ -206,8 +206,9 @@ type Querier interface {
 	CreateWebhookLog(ctx context.Context, arg CreateWebhookLogParams) (WebhookLog, error)
 	DeactivateMCPOAuthClient(ctx context.Context, id string) error
 	// ---- deferring held-back sends ---------------------------------------------------
-	// A send held back by a pathway limit waits, unclaimed and pending (a retry
-	// held back goes back to pending too, without using up a retry).
+	// A send that failed for now (a pathway limit, a 4xx, a dropped connection)
+	// waits, unclaimed and pending, to be claimed again after send_after. A sent
+	// or failed send is final and never goes back.
 	DeferCampaignSend(ctx context.Context, arg DeferCampaignSendParams) error
 	// A sequence email held back by a pathway limit waits, unclaimed and still pending.
 	DeferQueuedEmail(ctx context.Context, arg DeferQueuedEmailParams) error
@@ -356,8 +357,6 @@ type Querier interface {
 	GetEntityRules(ctx context.Context, arg GetEntityRulesParams) ([]OrgRule, error)
 	GetEntryRule(ctx context.Context, id string) (SequenceEntryRule, error)
 	GetEntryRuleOrgID(ctx context.Context, id string) (string, error)
-	// Retry Worker Queries
-	GetFailedCampaignSendsForRetry(ctx context.Context, limitCount int64) ([]GetFailedCampaignSendsForRetryRow, error)
 	GetImportJob(ctx context.Context, arg GetImportJobParams) (ImportJob, error)
 	GetLatestBackup(ctx context.Context) (BackupHistory, error)
 	GetListByIDForPublicPage(ctx context.Context, id int64) (GetListByIDForPublicPageRow, error)
@@ -486,7 +485,6 @@ type Querier interface {
 	IncrementBlockedDomainAttempts(ctx context.Context, arg IncrementBlockedDomainAttemptsParams) error
 	IncrementCampaignClicked(ctx context.Context, id string) error
 	IncrementCampaignOpened(ctx context.Context, id string) error
-	IncrementCampaignSendRetry(ctx context.Context, id string) error
 	IncrementCampaignSent(ctx context.Context, id string) error
 	IncrementFailedLogins(ctx context.Context, id string) error
 	// Counts one send for a sender on a day, only while it is under its
@@ -606,9 +604,6 @@ type Querier interface {
 	ManuallyVerifyContact(ctx context.Context, id string) error
 	MarkAuthTokenUsed(ctx context.Context, id string) error
 	MarkCampaignSendFailed(ctx context.Context, arg MarkCampaignSendFailedParams) error
-	// Stays 'failed' (the status CHECK allows nothing else); retry_count 3 takes
-	// it out of the retry queue for good.
-	MarkCampaignSendPermanentlyFailed(ctx context.Context, id string) error
 	MarkCampaignSendSent(ctx context.Context, id string) error
 	MarkEmailFailed(ctx context.Context, arg MarkEmailFailedParams) error
 	MarkEmailSent(ctx context.Context, id string) error

@@ -184,8 +184,8 @@ func (q *Queries) CreateSendingPathway(ctx context.Context, arg CreateSendingPat
 
 const deferCampaignSend = `-- name: DeferCampaignSend :exec
 
-UPDATE campaign_sends SET status = 'pending', claim_token = NULL, claimed_at = NULL, send_after = ?
-WHERE id = ? AND status IN ('pending', 'failed')
+UPDATE campaign_sends SET claim_token = NULL, claimed_at = NULL, send_after = ?
+WHERE id = ? AND status = 'pending'
 `
 
 type DeferCampaignSendParams struct {
@@ -194,8 +194,9 @@ type DeferCampaignSendParams struct {
 }
 
 // ---- deferring held-back sends ---------------------------------------------------
-// A send held back by a pathway limit waits, unclaimed and pending (a retry
-// held back goes back to pending too, without using up a retry).
+// A send that failed for now (a pathway limit, a 4xx, a dropped connection)
+// waits, unclaimed and pending, to be claimed again after send_after. A sent
+// or failed send is final and never goes back.
 func (q *Queries) DeferCampaignSend(ctx context.Context, arg DeferCampaignSendParams) error {
 	_, err := q.db.ExecContext(ctx, deferCampaignSend, arg.SendAfter, arg.ID)
 	return err

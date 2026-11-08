@@ -133,10 +133,11 @@ WHERE pathway_id = sqlc.arg(pathway_id) AND sender_id = sqlc.arg(sender_id) AND 
 -- ---- deferring held-back sends ---------------------------------------------------
 
 -- name: DeferCampaignSend :exec
--- A send held back by a pathway limit waits, unclaimed and pending (a retry
--- held back goes back to pending too, without using up a retry).
-UPDATE campaign_sends SET status = 'pending', claim_token = NULL, claimed_at = NULL, send_after = ?
-WHERE id = ? AND status IN ('pending', 'failed');
+-- A send that failed for now (a pathway limit, a 4xx, a dropped connection)
+-- waits, unclaimed and pending, to be claimed again after send_after. A sent
+-- or failed send is final and never goes back.
+UPDATE campaign_sends SET claim_token = NULL, claimed_at = NULL, send_after = ?
+WHERE id = ? AND status = 'pending';
 
 -- name: DeferQueuedEmail :exec
 -- A sequence email held back by a pathway limit waits, unclaimed and still pending.

@@ -281,12 +281,12 @@ func (s *Service) deliverPlatform(ctx context.Context, env envelope, raw []byte)
 		return fmt.Errorf("email not configured - set AWS SES credentials or SMTP settings in platform settings")
 	}
 	if s.poolEnabled && s.pool != nil {
-		return s.pool.SendWithPool(env.from.Address, []string{env.to.Address}, raw)
+		return smtpFailure(s.pool.SendWithPool(env.from.Address, []string{env.to.Address}, raw))
 	}
 	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
 	addr := net.JoinHostPort(smtpConfig.Host, strconv.Itoa(smtpConfig.Port))
 	if err := smtp.SendMail(addr, auth, env.from.Address, []string{env.to.Address}, raw); err != nil {
-		return fmt.Errorf("send via SMTP: %w", err)
+		return smtpFailure(fmt.Errorf("send via SMTP: %w", err))
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/textproto"
 	"time"
 
 	"github.com/emersion/go-sasl"
@@ -107,12 +108,27 @@ func deliverSMTP(l MailboxLogin, from, to string, raw []byte) error {
 	}
 	defer c.Close()
 	if err := c.SendMail(from, []string{to}, bytes.NewReader(raw)); err != nil {
-		var se *smtp.SMTPError
-		if errors.As(err, &se) {
-			return &DeliveryError{Temporary: se.Code >= 400 && se.Code < 500, Err: err}
-		}
-		return &DeliveryError{Temporary: true, Err: err}
+		return smtpFailure(err)
 	}
 	_ = c.Quit()
 	return nil
+}
+
+// smtpFailure classifies an SMTP send's error: a 4xx reply is temporary, a
+// 5xx reply permanent, and anything without a reply (a refused or dropped
+// connection, a timeout) temporary. It reads the replies of both SMTP
+// clients Outlet uses: go-smtp's and net/smtp's.
+func smtpFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	var se *smtp.SMTPError
+	if errors.As(err, &se) {
+		return &DeliveryError{Temporary: se.Code >= 400 && se.Code < 500, Err: err}
+	}
+	var te *textproto.Error
+	if errors.As(err, &te) {
+		return &DeliveryError{Temporary: te.Code >= 400 && te.Code < 500, Err: err}
+	}
+	return &DeliveryError{Temporary: true, Err: err}
 }

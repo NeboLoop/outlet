@@ -632,91 +632,6 @@ func (q *Queries) GetDashboardEmailStats30Days(ctx context.Context, orgID string
 	return i, err
 }
 
-const getFailedCampaignSendsForRetry = `-- name: GetFailedCampaignSendsForRetry :many
-
-SELECT cs.id, cs.campaign_id, cs.contact_id, cs.tracking_token, cs.retry_count, cs.failed_at,
-       c.email, c.name,
-       ec.org_id, ec.subject, ec.html_body, ec.plain_text, ec.from_name, ec.from_email, ec.reply_to,
-       ec.track_opens, ec.track_clicks,
-       CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html,
-       CAST(COALESCE(d.plain_text, '') AS TEXT) AS design_text
-FROM campaign_sends cs
-JOIN contacts c ON c.id = cs.contact_id
-JOIN email_campaigns ec ON ec.id = cs.campaign_id
-LEFT JOIN email_designs d ON d.id = ec.design_id AND d.org_id = ec.org_id
-WHERE cs.status = 'failed' AND cs.retry_count < 3
-  AND ec.status IN ('sending', 'sent')
-  AND c.unsubscribed_at IS NULL
-ORDER BY cs.failed_at ASC
-LIMIT ?1
-`
-
-type GetFailedCampaignSendsForRetryRow struct {
-	ID            string         `json:"id"`
-	CampaignID    string         `json:"campaign_id"`
-	ContactID     string         `json:"contact_id"`
-	TrackingToken sql.NullString `json:"tracking_token"`
-	RetryCount    sql.NullInt64  `json:"retry_count"`
-	FailedAt      sql.NullString `json:"failed_at"`
-	Email         string         `json:"email"`
-	Name          string         `json:"name"`
-	OrgID         string         `json:"org_id"`
-	Subject       string         `json:"subject"`
-	HtmlBody      string         `json:"html_body"`
-	PlainText     sql.NullString `json:"plain_text"`
-	FromName      sql.NullString `json:"from_name"`
-	FromEmail     sql.NullString `json:"from_email"`
-	ReplyTo       sql.NullString `json:"reply_to"`
-	TrackOpens    sql.NullInt64  `json:"track_opens"`
-	TrackClicks   sql.NullInt64  `json:"track_clicks"`
-	DesignHtml    string         `json:"design_html"`
-	DesignText    string         `json:"design_text"`
-}
-
-// Retry Worker Queries
-func (q *Queries) GetFailedCampaignSendsForRetry(ctx context.Context, limitCount int64) ([]GetFailedCampaignSendsForRetryRow, error) {
-	rows, err := q.db.QueryContext(ctx, getFailedCampaignSendsForRetry, limitCount)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetFailedCampaignSendsForRetryRow
-	for rows.Next() {
-		var i GetFailedCampaignSendsForRetryRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.CampaignID,
-			&i.ContactID,
-			&i.TrackingToken,
-			&i.RetryCount,
-			&i.FailedAt,
-			&i.Email,
-			&i.Name,
-			&i.OrgID,
-			&i.Subject,
-			&i.HtmlBody,
-			&i.PlainText,
-			&i.FromName,
-			&i.FromEmail,
-			&i.ReplyTo,
-			&i.TrackOpens,
-			&i.TrackClicks,
-			&i.DesignHtml,
-			&i.DesignText,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getPendingCampaignSends = `-- name: GetPendingCampaignSends :many
 SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.tracking_token, cs.status,
        c.email, c.name,
@@ -879,17 +794,6 @@ WHERE id = ?1
 
 func (q *Queries) IncrementCampaignOpened(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, incrementCampaignOpened, id)
-	return err
-}
-
-const incrementCampaignSendRetry = `-- name: IncrementCampaignSendRetry :exec
-UPDATE campaign_sends
-SET retry_count = retry_count + 1
-WHERE id = ?1
-`
-
-func (q *Queries) IncrementCampaignSendRetry(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, incrementCampaignSendRetry, id)
 	return err
 }
 
@@ -1201,19 +1105,6 @@ type MarkCampaignSendFailedParams struct {
 
 func (q *Queries) MarkCampaignSendFailed(ctx context.Context, arg MarkCampaignSendFailedParams) error {
 	_, err := q.db.ExecContext(ctx, markCampaignSendFailed, arg.ErrorMessage, arg.ID)
-	return err
-}
-
-const markCampaignSendPermanentlyFailed = `-- name: MarkCampaignSendPermanentlyFailed :exec
-UPDATE campaign_sends
-SET status = 'failed', retry_count = 3
-WHERE id = ?1
-`
-
-// Stays 'failed' (the status CHECK allows nothing else); retry_count 3 takes
-// it out of the retry queue for good.
-func (q *Queries) MarkCampaignSendPermanentlyFailed(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, markCampaignSendPermanentlyFailed, id)
 	return err
 }
 

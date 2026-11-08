@@ -169,9 +169,9 @@ func TestCampaignLists_MustBeTheBrandsOwn(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A send held back by its pathway's limit waits, pending and unclaimed,
-// until the limit lifts; a retry held back returns to pending the same way.
-// Other errors are not deferred.
+// A send held back by a temporary failure waits, pending and unclaimed,
+// until it comes due. A failed send is final: deferring never brings it
+// back. Other errors are not deferred.
 func TestDeferCampaignSend_WaitsForTheLimit(t *testing.T) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
 	require.NoError(t, err)
@@ -199,14 +199,14 @@ func TestDeferCampaignSend_WaitsForTheLimit(t *testing.T) {
 	assert.False(t, deferCampaignSend(ctx, store, "s1", errors.New("SES said no")), "a plain failure isn't deferred")
 	limit := &email.DeliveryError{Temporary: true, RetryAt: time.Now().Add(time.Hour), Err: email.ErrOverLimit}
 	assert.True(t, deferCampaignSend(ctx, store, "s1", limit))
-	assert.True(t, deferCampaignSend(ctx, store, "s2", limit))
-	assert.Equal(t, 0, claim("t2"), "both wait for the limit")
+	deferCampaignSend(ctx, store, "s2", limit)
+	assert.Equal(t, 0, claim("t2"), "s1 waits for the limit")
 
 	var status string
 	require.NoError(t, conn.QueryRow(`SELECT status FROM campaign_sends WHERE id = 's2'`).Scan(&status))
-	assert.Equal(t, "pending", status)
+	assert.Equal(t, "failed", status, "a failed send stays failed")
 
 	_, err = conn.Exec(`UPDATE campaign_sends SET send_after = datetime('now', '-1 minute')`)
 	require.NoError(t, err)
-	assert.Equal(t, 2, claim("t3"), "once the limit lifts, both go")
+	assert.Equal(t, 1, claim("t3"), "once the limit lifts, s1 goes; s2 never does")
 }

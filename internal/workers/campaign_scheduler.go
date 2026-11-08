@@ -461,10 +461,9 @@ func (s *CampaignScheduler) sendWorker(id int) {
 		if err := s.sendCampaignEmail(send); deferCampaignSend(s.ctx, s.store, send.ID, err) {
 			continue
 		} else if errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
-			// The recipient can never be sent to: record it, never retry it,
-			// and don't count it toward auto-pausing the campaign
+			// The recipient can never be sent to: record it, and don't count
+			// it toward auto-pausing the campaign
 			s.markSendFailed(send.ID, err.Error())
-			_ = s.store.MarkCampaignSendPermanentlyFailed(s.ctx, send.ID)
 		} else if err != nil {
 			s.markSendFailed(send.ID, err.Error())
 			s.totalFailed.Add(1)
@@ -510,9 +509,11 @@ func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow
 	}))
 }
 
-// deferCampaignSend puts a campaign send held back by a temporary failure
-// (its pathway's limit, a mailbox's 4xx) back to pending, to go again when
-// the limit lifts. It reports whether it did.
+// deferCampaignSend leaves a campaign send held back by a temporary failure
+// (its pathway's limit, a 4xx, a dropped connection, SES throttling) pending
+// and unclaimed, to go again at RetryAt, or in 15 minutes. It is the one way
+// a campaign send is tried again; a send that failed for good is marked
+// failed and never retried. It reports whether it deferred.
 func deferCampaignSend(ctx context.Context, store *db.Store, id string, err error) bool {
 	if err == nil || !email.IsTemporary(err) {
 		return false

@@ -282,37 +282,6 @@ WHERE campaign_id = sqlc.arg(campaign_id) AND status = 'pending';
 SELECT COUNT(*) as count FROM campaign_sends
 WHERE campaign_id = sqlc.arg(campaign_id) AND status = 'sent';
 
--- Retry Worker Queries
-
--- name: GetFailedCampaignSendsForRetry :many
-SELECT cs.id, cs.campaign_id, cs.contact_id, cs.tracking_token, cs.retry_count, cs.failed_at,
-       c.email, c.name,
-       ec.org_id, ec.subject, ec.html_body, ec.plain_text, ec.from_name, ec.from_email, ec.reply_to,
-       ec.track_opens, ec.track_clicks,
-       CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html,
-       CAST(COALESCE(d.plain_text, '') AS TEXT) AS design_text
-FROM campaign_sends cs
-JOIN contacts c ON c.id = cs.contact_id
-JOIN email_campaigns ec ON ec.id = cs.campaign_id
-LEFT JOIN email_designs d ON d.id = ec.design_id AND d.org_id = ec.org_id
-WHERE cs.status = 'failed' AND cs.retry_count < 3
-  AND ec.status IN ('sending', 'sent')
-  AND c.unsubscribed_at IS NULL
-ORDER BY cs.failed_at ASC
-LIMIT sqlc.arg(limit_count);
-
--- name: IncrementCampaignSendRetry :exec
-UPDATE campaign_sends
-SET retry_count = retry_count + 1
-WHERE id = sqlc.arg(id);
-
--- name: MarkCampaignSendPermanentlyFailed :exec
--- Stays 'failed' (the status CHECK allows nothing else); retry_count 3 takes
--- it out of the retry queue for good.
-UPDATE campaign_sends
-SET status = 'failed', retry_count = 3
-WHERE id = sqlc.arg(id);
-
 -- Dashboard Stats
 
 -- name: GetDashboardEmailStats30Days :one

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
@@ -60,7 +61,16 @@ func SendRawEmailViaSES(ctx context.Context, sesConfig *SESConfig, source, to st
 		Destinations: []string{to},
 	}
 	if _, err := client.SendRawEmail(ctx, input); err != nil {
-		return fmt.Errorf("SES SendRawEmail failed: %w", err)
+		return sesFailure(fmt.Errorf("SES SendRawEmail failed: %w", err))
 	}
 	return nil
+}
+
+// sesFailure classifies an SES send's error the way the AWS SDK decides what
+// to retry: throttling (the sending rate or daily quota), a 5xx and a failed
+// connection are temporary; anything else (a rejected message, an unverified
+// sender, bad credentials) is permanent.
+func sesFailure(err error) error {
+	temporary := retry.IsErrorRetryables(retry.DefaultRetryables).IsErrorRetryable(err) == aws.TrueTernary
+	return &DeliveryError{Temporary: temporary, Err: err}
 }
