@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,37 +19,9 @@ import (
 )
 
 const (
-	// GitHubReleasesAPI is the URL for checking GitHub releases
-	GitHubReleasesAPI = "https://api.github.com/repos/localrivet/outlet/releases/latest"
 	// UpdateTimeout is the timeout for update operations
 	UpdateTimeout = 5 * time.Minute
 )
-
-// GitHubRelease represents a GitHub release response
-type GitHubRelease struct {
-	TagName     string         `json:"tag_name"`
-	Name        string         `json:"name"`
-	Body        string         `json:"body"`
-	PublishedAt string         `json:"published_at"`
-	Assets      []GitHubAsset  `json:"assets"`
-	HTMLURL     string         `json:"html_url"`
-}
-
-// GitHubAsset represents a release asset
-type GitHubAsset struct {
-	Name               string `json:"name"`
-	BrowserDownloadURL string `json:"browser_download_url"`
-	Size               int64  `json:"size"`
-}
-
-// UpdateResponse represents the processed update information
-type UpdateResponse struct {
-	Version     string `json:"version"`
-	ReleaseDate string `json:"release_date"`
-	DownloadURL string `json:"download_url"`
-	Checksum    string `json:"checksum"` // SHA256 (from checksums.txt asset)
-	Changelog   string `json:"changelog"`
-}
 
 var (
 	checkOnly   bool
@@ -82,10 +54,14 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	// Check for updates from GitHub
 	fmt.Print("Checking for updates... ")
-	update, err := checkForUpdates()
+	update, err := version.CheckForUpdate(context.Background(), forceUpdate)
 	if err != nil {
 		fmt.Println("FAILED")
 		return fmt.Errorf("update check failed: %w", err)
+	}
+	if update != nil && update.DownloadURL == "" {
+		fmt.Println("FAILED")
+		return fmt.Errorf("release %s has no binary for %s/%s: %s", update.Version, runtime.GOOS, runtime.GOARCH, update.ReleaseURL)
 	}
 
 	if update == nil {
@@ -150,108 +126,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func checkForUpdates() (*UpdateResponse, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	req, err := http.NewRequest("GET", GitHubReleasesAPI, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", fmt.Sprintf("Outlet/%s (%s/%s)", version.Version, runtime.GOOS, runtime.GOARCH))
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to GitHub: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		// No releases yet
-		return nil, nil
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, string(body))
-	}
-
-	var release GitHubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("failed to parse GitHub response: %w", err)
-	}
-
-	// Clean up version tag (remove 'v' prefix if present)
-	latestVersion := strings.TrimPrefix(release.TagName, "v")
-	currentVersion := strings.TrimPrefix(version.Version, "v")
-
-	// Compare versions (simple string comparison - assumes semver)
-	if !forceUpdate && latestVersion <= currentVersion {
-		return nil, nil
-	}
-
-	// Find the appropriate asset for this platform
-	assetName := fmt.Sprintf("outlet_%s_%s", runtime.GOOS, runtime.GOARCH)
-	var downloadURL string
-	var checksumURL string
-
-	for _, asset := range release.Assets {
-		if strings.Contains(asset.Name, assetName) && !strings.HasSuffix(asset.Name, ".txt") {
-			downloadURL = asset.BrowserDownloadURL
-		}
-		if asset.Name == "checksums.txt" {
-			checksumURL = asset.BrowserDownloadURL
-		}
-	}
-
-	if downloadURL == "" {
-		return nil, fmt.Errorf("no release asset found for %s/%s", runtime.GOOS, runtime.GOARCH)
-	}
-
-	// Try to get checksum
-	checksum := ""
-	if checksumURL != "" {
-		checksum = fetchChecksum(checksumURL, assetName)
-	}
-
-	return &UpdateResponse{
-		Version:     latestVersion,
-		ReleaseDate: release.PublishedAt,
-		DownloadURL: downloadURL,
-		Checksum:    checksum,
-		Changelog:   release.Body,
-	}, nil
-}
-
-func fetchChecksum(checksumURL, assetName string) string {
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(checksumURL)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return ""
-	}
-
-	// Parse checksums.txt format: "checksum  filename"
-	lines := strings.Split(string(body), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, assetName) {
-			parts := strings.Fields(line)
-			if len(parts) >= 1 {
-				return parts[0]
-			}
-		}
-	}
-
-	return ""
-}
-
-func downloadUpdate(update *UpdateResponse) (string, error) {
+func downloadUpdate(update *version.Update) (string, error) {
 	client := &http.Client{Timeout: UpdateTimeout}
 
 	resp, err := client.Get(update.DownloadURL)

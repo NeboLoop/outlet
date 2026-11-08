@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import * as api from '$lib/api';
 	import type { VersionInfo, UpdateCheckResponse } from '$lib/api';
 	import { Button, Card, Alert, LoadingSpinner, Badge } from '$lib/components/ui';
@@ -111,7 +112,7 @@
 								</p>
 								{#if updateInfo.release_date}
 									<p class="text-sm text-text-muted mt-2">
-										Released: {updateInfo.release_date}
+										Released: {formatDate(updateInfo.release_date)}
 									</p>
 								{/if}
 								{#if updateInfo.changelog}
@@ -129,7 +130,7 @@
 											onclick={() => window.open(updateInfo?.download_url, '_blank')}
 										>
 											<Download class="mr-2 h-4 w-4" />
-											Download Update
+											View Release
 										</Button>
 									</div>
 								{/if}
@@ -175,13 +176,13 @@
 					<h3 class="font-medium text-text mb-2">Docker Update</h3>
 					<p>If running via Docker, pull the latest image:</p>
 					<code class="block bg-bg-secondary rounded p-3 mt-2 font-mono">
-						docker pull ghcr.io/localrivet/outlet:latest
+						docker pull ghcr.io/outlet-sh/outlet:latest
 					</code>
 				</div>
 				<div>
 					<h3 class="font-medium text-text mb-2">Manual Update</h3>
 					<ol class="list-decimal list-inside space-y-1">
-						<li>Download the latest release from <a href="https://github.com/localrivet/outlet/releases" target="_blank" class="text-primary hover:underline">GitHub Releases</a></li>
+						<li>Download the latest release from <a href="https://github.com/outlet-sh/outlet/releases" target="_blank" class="text-primary hover:underline">GitHub Releases</a></li>
 						<li>Stop the current Outlet instance</li>
 						<li>Replace the binary with the new version</li>
 						<li>Start Outlet again</li>
