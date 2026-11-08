@@ -359,56 +359,10 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 
 	sent := 0
 	for _, email := range pendingEmails {
-		// Build template context
-		tplCtx := TemplateContext{
-			Name:          email.Name,
-			Email:         email.Email,
-			TrackingToken: email.TrackingToken.String,
-			CustomFields:  make(map[string]string),
-		}
-
-		// Fetch custom fields if this is a sequence email with a contact
-		if email.ContactID.Valid && email.TemplateID.Valid {
-			template, err := s.db.GetTemplateByID(ctx, email.TemplateID.String)
-			if err == nil && template.SequenceID.Valid {
-				sequence, err := s.db.GetSequenceByID(ctx, template.SequenceID.String)
-				if err == nil && sequence.ListID.Valid {
-					tplCtx.CustomFields = s.GetCustomFieldsForContact(ctx, email.ContactID.String, sequence.ListID.Int64)
-				}
-			}
-		}
-
-		// Process template variables
-		htmlBody := s.processTemplateVariables(email.HtmlBody, tplCtx, true)
-		subject := s.processTemplateVariables(email.Subject, tplCtx, false)
-
-		// Rewrite links to go through tracking redirect
-		if email.TrackingToken.Valid && email.TrackingToken.String != "" {
-			htmlBody = s.rewriteLinksForTracking(htmlBody, email.TrackingToken.String)
-		}
-
-		// Determine if this is a transactional email (no unsubscribe needed)
-		isTransactional := email.IsTransactional.Valid && email.IsTransactional.Int64 == 1
-
-		// Apply base template based on template_type
-		// 'none' = raw HTML (no wrapping), 'simple' = just footer, 'branded' = header + footer
-		templateType := "simple"
-		if email.TemplateType.Valid {
-			templateType = email.TemplateType.String
-		}
-		switch templateType {
-		case "none":
-			// Raw HTML - no wrapping needed
-		case "branded":
-			htmlBody = s.wrapWithBrandedTemplate(htmlBody, isTransactional, email.TrackingToken.String)
-		case "simple":
-			fallthrough
-		default:
-			htmlBody = s.wrapWithSimpleTemplate(htmlBody, isTransactional, email.TrackingToken.String)
-		}
+		subject, htmlBody := s.renderQueued(ctx, email)
 
 		// Send the email
-		err = s.sender.Send(ctx, s.sequenceMessage(email, subject, htmlBody))
+		err := s.sender.Send(ctx, s.sequenceMessage(email, subject, htmlBody))
 		if err != nil {
 			logx.Errorf("Failed to send email %s to %s: %v", email.ID, email.Email, err)
 			_ = s.db.MarkEmailFailed(ctx, db.MarkEmailFailedParams{
@@ -432,6 +386,55 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 	}
 
 	return sent, nil
+}
+
+// renderQueued builds a queued sequence email's subject and HTML. The content
+// goes into the template's design, or when it has none the built-in layout its
+// template_type names ('simple' footer, 'branded' header and footer, 'none'
+// raw), through ApplyDesign as campaigns do. Merge tags are then filled in
+// the whole email and its links rewritten for click tracking.
+func (s *SequenceService) renderQueued(ctx context.Context, email db.GetPendingEmailsRow) (subject, htmlBody string) {
+	tplCtx := TemplateContext{
+		Name:          email.Name,
+		Email:         email.Email,
+		TrackingToken: email.TrackingToken.String,
+		CustomFields:  make(map[string]string),
+	}
+	if email.ContactID.Valid && email.TemplateID.Valid {
+		template, err := s.db.GetTemplateByID(ctx, email.TemplateID.String)
+		if err == nil && template.SequenceID.Valid {
+			sequence, err := s.db.GetSequenceByID(ctx, template.SequenceID.String)
+			if err == nil && sequence.ListID.Valid {
+				tplCtx.CustomFields = s.GetCustomFieldsForContact(ctx, email.ContactID.String, sequence.ListID.Int64)
+			}
+		}
+	}
+
+	design := email.DesignHtml
+	if design == "" {
+		isTransactional := email.IsTransactional.Valid && email.IsTransactional.Int64 == 1
+		design = s.builtinLayout(email.TemplateType.String, isTransactional, email.TrackingToken.String)
+	}
+	htmlBody = s.processTemplateVariables(ApplyDesign(design, email.HtmlBody), tplCtx, true)
+	if email.TrackingToken.Valid && email.TrackingToken.String != "" {
+		htmlBody = s.rewriteLinksForTracking(htmlBody, email.TrackingToken.String)
+	}
+	return s.processTemplateVariables(email.Subject, tplCtx, false), htmlBody
+}
+
+// builtinLayout is the design a sequence email without one of its own gets,
+// by its template_type: 'none' is no layout, 'branded' a header and footer,
+// anything else ('simple') a footer. The unsubscribe link is left out of
+// transactional steps.
+func (s *SequenceService) builtinLayout(templateType string, isTransactional bool, trackingToken string) string {
+	switch templateType {
+	case "none":
+		return ""
+	case "branded":
+		return s.brandedLayout(isTransactional, trackingToken)
+	default:
+		return s.simpleLayout(isTransactional, trackingToken)
+	}
 }
 
 // claimDueEmails claims up to limit due sequence emails for this worker and
@@ -532,8 +535,8 @@ func (s *SequenceService) sequenceMessage(email db.GetPendingEmailsRow, subject,
 	return m
 }
 
-// wrapWithSimpleTemplate wraps email content with a simple template (just footer)
-func (s *SequenceService) wrapWithSimpleTemplate(content string, isTransactional bool, trackingToken string) string {
+// simpleLayout is the built-in design with just a footer.
+func (s *SequenceService) simpleLayout(isTransactional bool, trackingToken string) string {
 	unsubscribeSection := ""
 	if !isTransactional && trackingToken != "" {
 		link := unsubscribeURL(s.baseURL, trackingToken)
@@ -561,17 +564,17 @@ func (s *SequenceService) wrapWithSimpleTemplate(content string, isTransactional
     </style>
 </head>
 <body>
-    %s
+    {{content}}
     <div class="footer">
         %s
         %s
     </div>
 </body>
-</html>`, content, footerLink, unsubscribeSection)
+</html>`, footerLink, unsubscribeSection)
 }
 
-// wrapWithBrandedTemplate wraps email content with header + footer
-func (s *SequenceService) wrapWithBrandedTemplate(content string, isTransactional bool, trackingToken string) string {
+// brandedLayout is the built-in design with a header and footer.
+func (s *SequenceService) brandedLayout(isTransactional bool, trackingToken string) string {
 	unsubscribeSection := ""
 	if !isTransactional && trackingToken != "" {
 		link := unsubscribeURL(s.baseURL, trackingToken)
@@ -603,14 +606,14 @@ func (s *SequenceService) wrapWithBrandedTemplate(content string, isTransactiona
 </head>
 <body>
     <div class="content">
-        %s
+        {{content}}
     </div>
     <div class="footer">
         %s
         %s
     </div>
 </body>
-</html>`, content, footerLink, unsubscribeSection)
+</html>`, footerLink, unsubscribeSection)
 }
 
 // rewriteLinksForTracking replaces href URLs with signed click-tracking URLs

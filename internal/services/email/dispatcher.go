@@ -217,53 +217,7 @@ func (d *Dispatcher) worker(id int) {
 // sendEmail processes and sends a single email
 func (d *Dispatcher) sendEmail(job EmailJob) error {
 	email := job.Email
-
-	// Build template context
-	tplCtx := TemplateContext{
-		Name:          email.Name,
-		Email:         email.Email,
-		TrackingToken: email.TrackingToken.String,
-		CustomFields:  make(map[string]string),
-	}
-
-	// Fetch custom fields if this is a sequence email with a contact
-	if email.ContactID.Valid && email.TemplateID.Valid {
-		template, err := d.db.GetTemplateByID(d.ctx, email.TemplateID.String)
-		if err == nil && template.SequenceID.Valid {
-			sequence, err := d.db.GetSequenceByID(d.ctx, template.SequenceID.String)
-			if err == nil && sequence.ListID.Valid {
-				tplCtx.CustomFields = d.sequenceService.GetCustomFieldsForContact(
-					d.ctx, email.ContactID.String, sequence.ListID.Int64)
-			}
-		}
-	}
-
-	// Process template variables
-	htmlBody := d.sequenceService.processTemplateVariables(email.HtmlBody, tplCtx, true)
-	subject := d.sequenceService.processTemplateVariables(email.Subject, tplCtx, false)
-
-	// Rewrite links for tracking
-	if email.TrackingToken.Valid && email.TrackingToken.String != "" {
-		htmlBody = d.sequenceService.rewriteLinksForTracking(htmlBody, email.TrackingToken.String)
-	}
-
-	// Apply template wrapping
-	isTransactional := email.IsTransactional.Valid && email.IsTransactional.Int64 == 1
-	templateType := "simple"
-	if email.TemplateType.Valid {
-		templateType = email.TemplateType.String
-	}
-
-	switch templateType {
-	case "none":
-		// Raw HTML
-	case "branded":
-		htmlBody = d.sequenceService.wrapWithBrandedTemplate(htmlBody, isTransactional, email.TrackingToken.String)
-	case "simple":
-		fallthrough
-	default:
-		htmlBody = d.sequenceService.wrapWithSimpleTemplate(htmlBody, isTransactional, email.TrackingToken.String)
-	}
+	subject, htmlBody := d.sequenceService.renderQueued(d.ctx, email)
 
 	// Send via SMTP
 	return d.sequenceService.sender.Send(d.ctx, d.sequenceService.sequenceMessage(email, subject, htmlBody))

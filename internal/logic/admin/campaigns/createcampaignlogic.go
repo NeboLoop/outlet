@@ -3,7 +3,6 @@ package campaigns
 import (
 	"context"
 	"database/sql"
-	"strconv"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
@@ -49,9 +48,11 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 
 	var designID sql.NullInt64
 	if req.DesignId != nil {
-		if parsed, err := strconv.ParseInt(*req.DesignId, 10, 64); err == nil {
-			designID = sql.NullInt64{Int64: parsed, Valid: true}
+		design, err := brandDesign(l.ctx, l.svcCtx.DB, orgID, *req.DesignId)
+		if err != nil {
+			return nil, err
 		}
+		designID = designColumn(design)
 	}
 
 	var trackOpens, trackClicks sql.NullInt64

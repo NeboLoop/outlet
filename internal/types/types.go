@@ -1748,6 +1748,17 @@ type SendCampaignNowRequest struct {
 	Id string `path:"id"`
 }
 
+type SendCampaignTestRequest struct {
+	To        string `json:"to"`
+	Subject   string `json:"subject"`
+	HtmlBody  string `json:"html_body"`
+	PlainText string `json:"plain_text,optional"`
+	DesignId  string `json:"design_id,optional"`
+	FromName  string `json:"from_name,optional"`
+	FromEmail string `json:"from_email,optional"`
+	ReplyTo   string `json:"reply_to,optional"`
+}
+
 type SendEmailRequest struct {
 	To           string            `json:"to"`                     // Email address
 	TemplateSlug string            `json:"template_slug,optional"` // Use design template
@@ -2008,6 +2019,7 @@ type UnenrollSequenceRequest struct {
 
 type UpdateCampaignRequest struct {
 	Id             string   `path:"id"`
+	DesignId       *string  `json:"design_id,optional"` // Omitted keeps the design; "" removes it
 	Name           string   `json:"name,optional"`
 	Subject        string   `json:"subject,optional"`
 	PreviewText    string   `json:"preview_text,optional"`

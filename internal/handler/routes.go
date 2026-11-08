@@ -235,6 +235,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/campaigns/:id/stats",
 					Handler: admincampaigns.GetCampaignStatsHandler(serverCtx),
 				},
+				{
+					// Send a test of a campaign to one address, built as a real send is (design, merge tags, unsubscribe link)
+					Method:  http.MethodPost,
+					Path:    "/campaigns/test",
+					Handler: admincampaigns.SendCampaignTestHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/admin"),

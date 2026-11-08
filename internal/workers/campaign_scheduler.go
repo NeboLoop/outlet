@@ -499,6 +499,8 @@ func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow
 		Subject:       send.Subject,
 		HTML:          send.HtmlBody,
 		Text:          send.PlainText.String,
+		DesignHTML:    send.DesignHtml,
+		DesignText:    send.DesignText,
 		TrackingToken: send.TrackingToken.String,
 		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
 		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,

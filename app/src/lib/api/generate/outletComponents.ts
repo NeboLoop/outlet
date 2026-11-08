@@ -1859,6 +1859,17 @@ export interface SendCampaignNowRequest {
 export interface SendCampaignNowRequestParams {
 }
 
+export interface SendCampaignTestRequest {
+	to: string
+	subject: string
+	html_body: string
+	plain_text?: string
+	design_id?: string
+	from_name?: string
+	from_email?: string
+	reply_to?: string
+}
+
 export interface SendEmailRequest {
 	to: string // Email address
 	template_slug?: string // Use design template
@@ -2125,6 +2136,7 @@ export interface UnenrollSequenceRequest {
 }
 
 export interface UpdateCampaignRequest {
+	design_id?: string // Omitted keeps the design; "" removes it
 	name?: string
 	subject?: string
 	preview_text?: string

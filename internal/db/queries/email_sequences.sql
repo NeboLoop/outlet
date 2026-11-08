@@ -121,11 +121,13 @@ WHERE id IN (
 SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.status, eq.tracking_token,
        et.subject, et.html_body, et.template_type, et.is_transactional,
        c.email, c.name,
-       CAST(COALESCE(es.org_id, c.org_id, '') AS TEXT) AS org_id
+       CAST(COALESCE(es.org_id, c.org_id, '') AS TEXT) AS org_id,
+       CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
 LEFT JOIN email_sequences es ON es.id = et.sequence_id
+LEFT JOIN email_designs d ON d.id = et.design_id AND d.org_id = COALESCE(es.org_id, c.org_id)
 WHERE eq.status = 'pending' AND eq.claim_token = sqlc.arg(claim_token)
 ORDER BY eq.scheduled_for;
 

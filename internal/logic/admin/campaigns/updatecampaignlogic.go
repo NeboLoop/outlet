@@ -52,6 +52,17 @@ func (l *UpdateCampaignLogic) UpdateCampaign(req *types.UpdateCampaignRequest) (
 		excludeListIds = db.EncodeListIDs(ids)
 	}
 
+	// Without design_id the campaign keeps its design; "" removes it.
+	var setDesign int64
+	var designID sql.NullInt64
+	if req.DesignId != nil {
+		design, err := brandDesign(l.ctx, l.svcCtx.DB, orgID, *req.DesignId)
+		if err != nil {
+			return nil, err
+		}
+		setDesign, designID = 1, designColumn(design)
+	}
+
 	var trackOpens, trackClicks sql.NullInt64
 	if req.TrackOpens {
 		trackOpens = sql.NullInt64{Int64: 1, Valid: true}
@@ -79,6 +90,8 @@ func (l *UpdateCampaignLogic) UpdateCampaign(req *types.UpdateCampaignRequest) (
 		ExcludeListIds: excludeListIds,
 		TrackOpens:     trackOpens,
 		TrackClicks:    trackClicks,
+		SetDesign:      setDesign,
+		DesignID:       designID,
 	})
 	if err != nil {
 		l.Errorf("Failed to update campaign: %v", err)

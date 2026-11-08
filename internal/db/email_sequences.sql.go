@@ -831,11 +831,13 @@ const getPendingEmails = `-- name: GetPendingEmails :many
 SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.status, eq.tracking_token,
        et.subject, et.html_body, et.template_type, et.is_transactional,
        c.email, c.name,
-       CAST(COALESCE(es.org_id, c.org_id, '') AS TEXT) AS org_id
+       CAST(COALESCE(es.org_id, c.org_id, '') AS TEXT) AS org_id,
+       CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
 LEFT JOIN email_sequences es ON es.id = et.sequence_id
+LEFT JOIN email_designs d ON d.id = et.design_id AND d.org_id = COALESCE(es.org_id, c.org_id)
 WHERE eq.status = 'pending' AND eq.claim_token = ?1
 ORDER BY eq.scheduled_for
 `
@@ -854,6 +856,7 @@ type GetPendingEmailsRow struct {
 	Email           string         `json:"email"`
 	Name            string         `json:"name"`
 	OrgID           string         `json:"org_id"`
+	DesignHtml      string         `json:"design_html"`
 }
 
 // Returns the sequence emails claimed with claim_token.
@@ -880,6 +883,7 @@ func (q *Queries) GetPendingEmails(ctx context.Context, claimToken sql.NullStrin
 			&i.Email,
 			&i.Name,
 			&i.OrgID,
+			&i.DesignHtml,
 		); err != nil {
 			return nil, err
 		}

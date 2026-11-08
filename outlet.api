@@ -709,6 +709,7 @@ type (
 	}
 	UpdateCampaignRequest {
 		Id             string   `path:"id"`
+		DesignId       *string  `json:"design_id,optional"` // Omitted keeps the design; "" removes it
 		Name           string   `json:"name,optional"`
 		Subject        string   `json:"subject,optional"`
 		PreviewText    string   `json:"preview_text,optional"`
@@ -731,6 +732,17 @@ type (
 	}
 	SendCampaignNowRequest {
 		Id string `path:"id"`
+	}
+	// A test of a campaign as it is in the editor, sent to one address
+	SendCampaignTestRequest {
+		To        string `json:"to"`
+		Subject   string `json:"subject"`
+		HtmlBody  string `json:"html_body"`
+		PlainText string `json:"plain_text,optional"`
+		DesignId  string `json:"design_id,optional"`
+		FromName  string `json:"from_name,optional"`
+		FromEmail string `json:"from_email,optional"`
+		ReplyTo   string `json:"reply_to,optional"`
 	}
 	CampaignStatsResponse {
 		Campaign CampaignInfo       `json:"campaign"`
@@ -2511,6 +2523,10 @@ service outlet {
 	@handler SendCampaignNow
 	post /campaigns/:id/send (SendCampaignNowRequest) returns (CampaignInfo)
 
+	@doc "Send a test of a campaign to one address, built as a real send is (design, merge tags, unsubscribe link)"
+	@handler SendCampaignTest
+	post /campaigns/test (SendCampaignTestRequest) returns (Response)
+
 	@handler GetCampaignStats
 	get /campaigns/:id/stats (GetCampaignRequest) returns (CampaignStatsResponse)
 }
@@ -2993,7 +3009,6 @@ service outlet {
 	get /outbound/explain (OutboundExplainRequest) returns (OutboundExplainResponse)
 }
 
-
 // Outbound through a brand's API key, for other systems: the same operations
 // as the admin routes and the MCP tools. Turning outbound on stays with the
 // brand's admin in the app.
@@ -3060,3 +3075,4 @@ service outlet {
 	@handler SdkExplainOutbound
 	get /explain (OutboundExplainRequest) returns (OutboundExplainResponse)
 }
+

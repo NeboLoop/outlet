@@ -240,6 +240,14 @@ export function getCampaignStats(params: components.GetCampaignRequestParams, id
 }
 
 /**
+ * @description "Send a test of a campaign to one address, built as a real send is (design, merge tags, unsubscribe link)"
+ * @param req
+ */
+export function sendCampaignTest(req: components.SendCampaignTestRequest) {
+	return webapi.post<components.Response>(`/api/admin/campaigns/test`, req)
+}
+
+/**
  * @description 
  * @param params
  */
