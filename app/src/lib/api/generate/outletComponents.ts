@@ -1030,6 +1030,7 @@ export interface ImportJobInfo {
 export interface ImportListSubscribersRequest {
 	filename: string
 	csv: string
+	start_signup?: boolean // Start the list's sign-up emails for the people added; off for an old list that shouldn't get them
 }
 export interface ImportListSubscribersRequestParams {
 }

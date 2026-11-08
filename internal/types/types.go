@@ -961,9 +961,10 @@ type ImportJobInfo struct {
 }
 
 type ImportListSubscribersRequest struct {
-	Id       string `path:"id"` // list ID
-	Filename string `json:"filename"`
-	Csv      string `json:"csv"`
+	Id          string `path:"id"` // list ID
+	Filename    string `json:"filename"`
+	Csv         string `json:"csv"`
+	StartSignup bool   `json:"start_signup,optional,default=true"` // Start the list's sign-up emails for the people added; off for an old list that shouldn't get them
 }
 
 type ListBackupsRequest struct {

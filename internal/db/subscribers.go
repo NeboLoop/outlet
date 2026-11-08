@@ -42,8 +42,10 @@ func (s *Store) RefuseBlockedDomain(ctx context.Context, orgID, email string) er
 // way an admin adds people by hand or by CSV import: no confirmation email.
 // It finds the contact by address or creates it, and takes a given name. A
 // contact already on the list, unsubscribed included, is left as it is:
-// added is false. listID 0 adds the contact to no list.
-func (s *Store) AddSubscriber(ctx context.Context, orgID string, listID int64, email, name, source string) (added bool, err error) {
+// added is false. listID 0 adds the contact to no list. startSignup runs
+// OnSubscriptionActivated for a contact it added, as for any other way a
+// subscription becomes active; an import of an old list can leave it off.
+func (s *Store) AddSubscriber(ctx context.Context, orgID string, listID int64, email, name, source string, startSignup bool) (added bool, err error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	name = strings.TrimSpace(name)
 	if a, err := mail.ParseAddress(email); err != nil || a.Address != email {
@@ -83,5 +85,11 @@ func (s *Store) AddSubscriber(ctx context.Context, orgID string, listID int64, e
 		ID: uuid.NewString(), ListID: listID, ContactID: contact.ID,
 		Status: sql.NullString{String: "active", Valid: true},
 	})
-	return err == nil, err
+	if err != nil {
+		return false, err
+	}
+	if startSignup {
+		s.activated(ctx, contact.ID, listID)
+	}
+	return true, nil
 }

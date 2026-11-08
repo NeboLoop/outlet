@@ -27,7 +27,8 @@
 		AlertDialog,
 		ValidationBadge,
 		Input,
-		ProgressBar
+		ProgressBar,
+		Checkbox
 	} from '$lib/components/ui';
 	import {
 		Users,
@@ -78,6 +79,8 @@
 
 	// CSV import: the file goes to an import job the server runs
 	let importInput = $state<HTMLInputElement | null>(null);
+	let showImportModal = $state(false);
+	let importStartSignup = $state(true);
 	let importJob = $state<ImportJobInfo | null>(null);
 	let importing = $derived(!!importJob && (importJob.status === 'pending' || importJob.status === 'processing'));
 
@@ -112,7 +115,12 @@
 		error = '';
 		notice = '';
 		try {
-			importJob = await importListSubscribers({}, { filename: file.name, csv: await file.text() }, listId);
+			showImportModal = false;
+			importJob = await importListSubscribers(
+				{},
+				{ filename: file.name, csv: await file.text(), start_signup: importStartSignup },
+				listId
+			);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to import the file';
 		}
@@ -261,7 +269,15 @@
 
 <div class="flex justify-end gap-2 mb-4">
 	<input bind:this={importInput} type="file" accept=".csv,text/csv" class="hidden" onchange={handleImportFile} />
-	<Button type="secondary" size="sm" onclick={() => importInput?.click()} disabled={importing}>
+	<Button
+		type="secondary"
+		size="sm"
+		onclick={() => {
+			importStartSignup = true;
+			showImportModal = true;
+		}}
+		disabled={importing}
+	>
 		<Upload class="mr-2 h-4 w-4" />
 		Import CSV
 	</Button>
@@ -369,9 +385,33 @@
 {/if}
 
 <!-- Add Subscriber Modal -->
+<Modal bind:show={showImportModal} title="Import CSV">
+	<div class="space-y-4">
+		<p class="text-sm text-text-muted">
+			A CSV file with an email column, and optionally a name column. Everyone in it joins the list right away, with no
+			confirmation email. Import only people who asked to hear from you.
+		</p>
+		<Checkbox
+			bind:checked={importStartSignup}
+			label="Start sign-up emails for these subscribers"
+			description="Each person gets this list's sign-up autoresponders from the first email. Turn this off when importing an old list whose people already had them."
+		/>
+	</div>
+
+	{#snippet footer()}
+		<div class="flex justify-end gap-3">
+			<Button type="secondary" onclick={() => (showImportModal = false)}>Cancel</Button>
+			<Button type="primary" onclick={() => importInput?.click()}>
+				<Upload class="mr-2 h-4 w-4" />
+				Choose file
+			</Button>
+		</div>
+	{/snippet}
+</Modal>
+
 <Modal bind:show={showAddModal} title="Add subscriber">
 	<div class="space-y-4">
-		<p class="text-sm text-text-muted">They join the list right away, with no confirmation email. Add only people who asked to hear from you.</p>
+		<p class="text-sm text-text-muted">They join the list right away, with no confirmation email, and the list's sign-up emails start for them. Add only people who asked to hear from you.</p>
 		<div>
 			<label for="add-email" class="form-label">Email</label>
 			<Input id="add-email" type="email" bind:value={addEmail} placeholder="name@example.com" />

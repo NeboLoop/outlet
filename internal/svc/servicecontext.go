@@ -165,6 +165,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	sequences := email.NewSequenceServiceWithBaseURL(store, emailService, c.App.BaseURL)
 	// A new tag starts the sequences whose entry rules wait on it
 	store.OnTagAdded(sequences.TagAdded)
+	// Every way a subscription becomes active starts the list's sign-up emails
+	store.OnSubscriptionActivated(sequences.SubscriptionActivated)
 
 	return &ServiceContext{
 		Config:            c,
