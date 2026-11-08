@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -607,31 +608,6 @@ func registerEmailTrackingRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 		},
 	})
 
-	// Email unsubscribe
-	server.AddRoute(rest.Route{
-		Method: http.MethodGet,
-		Path:   "/api/e/u/:token",
-		Handler: func(w http.ResponseWriter, r *http.Request) {
-			token := r.PathValue("token")
-			if token == "" {
-				parts := strings.Split(r.URL.Path, "/")
-				if len(parts) >= 4 {
-					token = parts[len(parts)-1]
-				}
-			}
-
-			if token == "" {
-				http.Error(w, "Invalid unsubscribe link", http.StatusBadRequest)
-				return
-			}
-
-			// Older emails link here. Unsubscribing on GET let link scanners and
-			// prefetchers unsubscribe people, so send them to the confirmation page,
-			// which also handles one-click POSTs.
-			http.Redirect(w, r, "/u/"+url.PathEscape(token), http.StatusSeeOther)
-		},
-	})
-
 	// Confirm email (double opt-in)
 	server.AddRoute(rest.Route{
 		Method: http.MethodGet,
@@ -825,7 +801,7 @@ func proxyWebSocket(w http.ResponseWriter, r *http.Request, backendHost string, 
 		return
 	}
 
-	backendAddr := fmt.Sprintf("%s:%d", backendHost, backendPort)
+	backendAddr := net.JoinHostPort(backendHost, strconv.Itoa(backendPort))
 	fmt.Printf("[WS Proxy] Dialing backend: %s\n", backendAddr)
 	backendConn, err := net.Dial("tcp", backendAddr)
 	if err != nil {
