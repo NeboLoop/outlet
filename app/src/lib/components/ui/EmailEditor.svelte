@@ -73,16 +73,17 @@
 					color: #333;
 				}
 				#editor-root:focus { outline: none; }
+				#editor-root:empty::before { content: attr(data-placeholder); color: #9ca3af; pointer-events: none; }
 			</style>
 		`;
 
-		const content = value || `<p>${placeholder}</p>`;
-
-		// Put content directly in editable div so email's styles apply
-		shadowRoot.innerHTML = baseStyles + `<div id="editor-root" contenteditable="true">${content}</div>`;
+		// Put content directly in editable div so email's styles apply. The
+		// placeholder is only shown (CSS, while empty), never written into the email.
+		shadowRoot.innerHTML = baseStyles + `<div id="editor-root" contenteditable="true">${value}</div>`;
 
 		editableDiv = shadowRoot.querySelector('#editor-root');
 		if (editableDiv) {
+			editableDiv.setAttribute('data-placeholder', placeholder);
 			editableDiv.addEventListener('input', syncWysiwygToHtml);
 		}
 	}
@@ -96,13 +97,22 @@
 
 	function syncWysiwygToHtml() {
 		if (editableDiv) {
+			// Deleting everything leaves a stray <br> or empty paragraph behind;
+			// that is no content, so the editor is emptied and shows its placeholder
+			if (isBlank(editableDiv)) {
+				editableDiv.innerHTML = '';
+			}
 			value = editableDiv.innerHTML;
 		}
 	}
 
+	function isBlank(el: HTMLElement): boolean {
+		return el.textContent?.trim() === '' && !el.querySelector(':not(br, p, div, span)');
+	}
+
 	function syncHtmlToWysiwyg() {
 		if (editableDiv && editorMode === 'visual') {
-			editableDiv.innerHTML = value || `<p>${placeholder}</p>`;
+			editableDiv.innerHTML = value;
 		}
 	}
 
