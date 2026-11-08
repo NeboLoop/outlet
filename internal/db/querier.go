@@ -507,6 +507,8 @@ type Querier interface {
 	// The outreach campaigns some people are in now.
 	ListActiveOutreachCampaignsFor(ctx context.Context, arg ListActiveOutreachCampaignsForParams) ([]ListActiveOutreachCampaignsForRow, error)
 	ListActiveOutreachStatesForContact(ctx context.Context, contactID sql.NullString) ([]ContactSequenceState, error)
+	// Every active sequence of a list that this trigger starts, oldest first.
+	ListActiveSequencesByListAndTrigger(ctx context.Context, arg ListActiveSequencesByListAndTriggerParams) ([]ListActiveSequencesByListAndTriggerRow, error)
 	ListAllContactTags(ctx context.Context) ([]ListAllContactTagsRow, error)
 	ListAllMailboxes(ctx context.Context) ([]Mailbox, error)
 	ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity, error)
