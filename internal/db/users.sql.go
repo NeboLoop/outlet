@@ -422,33 +422,47 @@ func (q *Queries) UpdateLastLogin(ctx context.Context, id string) error {
 	return err
 }
 
-const updateUser = `-- name: UpdateUser :exec
+const updateUser = `-- name: UpdateUser :execrows
 UPDATE users
 SET name = COALESCE(?1, name),
-    phone = COALESCE(?2, phone),
-    avatar_url = COALESCE(?3, avatar_url),
-    status = COALESCE(?4, status),
+    email = ?2,
+    role = ?3,
+    phone = COALESCE(?4, phone),
+    avatar_url = COALESCE(?5, avatar_url),
+    status = COALESCE(?6, status),
     updated_at = datetime('now')
-WHERE id = ?5
+WHERE users.id = ?7
+  AND NOT (users.role = 'super_admin' AND users.status = 'active'
+           AND (?3 <> 'super_admin' OR ?6 <> 'active')
+           AND (SELECT COUNT(*) FROM users AS admins WHERE admins.role = 'super_admin' AND admins.status = 'active') <= 1)
 `
 
 type UpdateUserParams struct {
 	Name      string         `json:"name"`
+	Email     string         `json:"email"`
+	Role      string         `json:"role"`
 	Phone     sql.NullString `json:"phone"`
 	AvatarUrl sql.NullString `json:"avatar_url"`
 	Status    string         `json:"status"`
 	ID        string         `json:"id"`
 }
 
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
-	_, err := q.db.ExecContext(ctx, updateUser,
+// The last active super admin keeps the role and stays active: with none
+// left, nobody runs the platform and the first-run setup would open to anyone.
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateUser,
 		arg.Name,
+		arg.Email,
+		arg.Role,
 		arg.Phone,
 		arg.AvatarUrl,
 		arg.Status,
 		arg.ID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateUserPassword = `-- name: UpdateUserPassword :exec

@@ -31,6 +31,17 @@ func BrandRole(s string) bool {
 	return s == string(Member) || s == string(Admin)
 }
 
+// PlatformUser is the platform role (users.role) of everyone who isn't a super
+// admin. It grants nothing by itself: what such a person may do is their role
+// in each brand they belong to.
+const PlatformUser = "agent"
+
+// PlatformRole reports whether s names a platform role: SuperAdmin or
+// PlatformUser.
+func PlatformRole(s string) bool {
+	return s == string(SuperAdmin) || s == PlatformUser
+}
+
 func rank(r Role) int {
 	switch r {
 	case Member:

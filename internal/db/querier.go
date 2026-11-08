@@ -683,7 +683,9 @@ type Querier interface {
 	UpdateTemplate(ctx context.Context, arg UpdateTemplateParams) error
 	UpdateTransactionalEmail(ctx context.Context, arg UpdateTransactionalEmailParams) (TransactionalEmail, error)
 	UpdateTransactionalSendStatus(ctx context.Context, arg UpdateTransactionalSendStatusParams) error
-	UpdateUser(ctx context.Context, arg UpdateUserParams) error
+	// The last active super admin keeps the role and stays active: with none
+	// left, nobody runs the platform and the first-run setup would open to anyone.
+	UpdateUser(ctx context.Context, arg UpdateUserParams) (int64, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpdateWebhook(ctx context.Context, arg UpdateWebhookParams) (Webhook, error)
 	UpdateWebhookDeliveryStats(ctx context.Context, arg UpdateWebhookDeliveryStatsParams) error
