@@ -162,7 +162,7 @@ func wantedRecords(in DomainInput) ([]DNSRecord, error) {
 		spf = "v=spf1 include:_spf.google.com ~all"
 	default:
 		if len(in.MXHosts) == 0 || in.SPFInclude == "" {
-			return nil, refuse("For mail provider %q, pass mx_hosts and spf_include (from the provider's setup page).", in.MailProvider)
+			return nil, refuse("For mail provider %q, give its MX hosts and SPF include (from the provider's setup page).", in.MailProvider)
 		}
 		for i, h := range in.MXHosts {
 			recs = append(recs, DNSRecord{Type: "MX", Name: "@", Data: strings.TrimSuffix(h, ".") + ".", Priority: 10 * (i + 1)})

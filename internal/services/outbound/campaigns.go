@@ -76,40 +76,40 @@ const maxSteps = 5
 
 func (in *CampaignInput) check() error {
 	if strings.TrimSpace(in.Name) == "" {
-		return refuse("name is required")
+		return refuse("A campaign needs a name.")
 	}
 	if len(in.Steps) == 0 || len(in.Steps) > maxSteps {
-		return refuse("pass 1 to %d steps; 3 over about 12 days works best for creators", maxSteps)
+		return refuse("A campaign has 1 to %d emails; 3 over about 12 days works best for creators.", maxSteps)
 	}
 	if strings.TrimSpace(in.Steps[0].Subject) == "" {
-		return refuse("the first step needs a subject")
+		return refuse("The first email needs a subject.")
 	}
 	for i, st := range in.Steps {
 		if strings.TrimSpace(st.Body) == "" {
-			return refuse("step %d has no body", i+1)
+			return refuse("Step %d has no body.", i+1)
 		}
 		if i > 0 && st.DelayDays < 1 {
-			return refuse("step %d needs delay_days of at least 1", i+1)
+			return refuse("Step %d needs to wait at least 1 day after the step before.", i+1)
 		}
 		if n := strings.Count(st.Body, "http://") + strings.Count(st.Body, "https://"); n > 1 && i == 0 {
-			return refuse("the first email may have at most one link; cold email with several links lands in spam")
+			return refuse("The first email may have at most one link; cold email with several links lands in spam.")
 		}
 	}
 	if len(in.ProspectIDs) == 0 || len(in.ProspectIDs) > maxBatch {
-		return refuse("pass 1 to %d prospect_ids (add them first with add_prospects)", maxBatch)
+		return refuse("Pick 1 to %d prospects. Add prospects first if there are none.", maxBatch)
 	}
 	switch in.ApprovalMode {
 	case "":
 		in.ApprovalMode = "every"
 	case "every", "first", "automatic":
 	default:
-		return refuse("approval_mode must be every, first or automatic")
+		return refuse("Approval must be every email, the first email only, or automatic.")
 	}
 	if in.WindowStartHour == 0 && in.WindowEndHour == 0 {
 		in.WindowStartHour, in.WindowEndHour = 8, 17
 	}
 	if in.WindowStartHour < 0 || in.WindowEndHour > 24 || in.WindowStartHour >= in.WindowEndHour {
-		return refuse("the sending window must run from window_start_hour to a later window_end_hour, 0 to 24")
+		return refuse("The sending window must start before it ends, between hour 0 and hour 24.")
 	}
 	return nil
 }
@@ -124,7 +124,7 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 		return CampaignResult{}, err
 	}
 	if strings.TrimSpace(org.MailingAddress) == "" {
-		return CampaignResult{}, refuse("Set the brand's mailing address first: setup_sending(action: settings, mailing_address: ...). Every outreach email carries it.")
+		return CampaignResult{}, refuse("Set the brand's mailing address in Outbound, Setup first. Every outreach email carries it.")
 	}
 	slug := "outreach-" + slugify(in.IdempotencyKey)
 	if !in.DryRun && in.IdempotencyKey != "" {
@@ -144,7 +144,7 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 	if in.ApprovalMode == "automatic" {
 		for _, mb := range pool {
 			if s.now().Sub(parseTS(mb.WarmupStartedAt)) < 30*24*time.Hour {
-				return CampaignResult{}, refuse("approval_mode automatic needs 30 days of history on every mailbox; %s is newer. Use every or first.", mb.Email)
+				return CampaignResult{}, refuse("Sending without approval needs 30 days of history on every mailbox; %s is newer. Approve every email, or the first one only.", mb.Email)
 			}
 		}
 	}
@@ -238,7 +238,7 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 	if in.ApprovalMode == "automatic" {
 		res.Next = fmt.Sprintf("%d first emails will send inside the window, paced per mailbox.", res.Enrolled)
 	} else {
-		res.Next = fmt.Sprintf("%d first emails wait for approval: review_drafts(action: list), then review_drafts(action: approve, ids: [...]).", res.Enrolled)
+		res.Next = fmt.Sprintf("%d first emails wait for approval with the drafts.", res.Enrolled)
 	}
 	if len(res.Skipped) == 0 {
 		res.Skipped = nil
@@ -280,7 +280,7 @@ func (s *Service) activeMailboxes(ctx context.Context, orgID string) ([]db.Mailb
 		}
 	}
 	if len(pool) == 0 {
-		return nil, refuse("No active mailbox to send from. Connect one with setup_sending(action: add_mailboxes), or check outreach_overview for paused ones.")
+		return nil, refuse("No active mailbox to send from. Connect a mailbox in Outbound, Setup, or resume a paused one.")
 	}
 	return pool, nil
 }
@@ -304,12 +304,12 @@ func (s *Service) trackingReady(ctx context.Context, orgID string, pool []db.Mai
 			return err
 		}
 		if d.TrackingHost == "" {
-			return refuse("%s has no tracking subdomain. Run setup_sending(action: add_domain, domain: %q, click_tracking: true), or create the campaign without tracking.", d.Domain, d.Domain)
+			return refuse("%s has no tracking subdomain. Add the domain again with click tracking on, or create the campaign without tracking.", d.Domain)
 		}
 		var c DNSCheck
 		_ = json.Unmarshal([]byte(d.DnsCheck), &c)
 		if c.Tracking == nil || !*c.Tracking {
-			return refuse("%s doesn't point at this server yet (CNAME go to %s). Add it, then setup_sending(action: check_domain).", d.TrackingHost, s.tracking)
+			return refuse("%s doesn't point at this server yet (a CNAME record for go, to %s). Add it at the DNS host, then check the domain again.", d.TrackingHost, s.tracking)
 		}
 	}
 	return nil

@@ -748,7 +748,7 @@ func TestOperations(t *testing.T) {
 	tagged, _ := h.store.HasContactTag(ctx, db.HasContactTagParams{ContactID: sql.NullString{String: ivy, Valid: true}, Tag: "interested"})
 	assert.EqualValues(t, 1, tagged)
 	require.NoError(t, h.svc.MarkPartner(ctx, h.org, ivy))
-	assert.ErrorContains(t, h.svc.Classify(ctx, h.org, replies[0].ID, "maybe"), "must be one of")
+	assert.ErrorContains(t, h.svc.Classify(ctx, h.org, replies[0].ID, "maybe"), "A reply sorts as")
 }
 
 // DigitalOcean: missing records are added, an existing SPF is never doubled.
@@ -789,6 +789,41 @@ func TestDigitalOceanRecords(t *testing.T) {
 		kinds = append(kinds, r.Type+" "+r.Name)
 	}
 	assert.ElementsMatch(t, []string{"MX @", "TXT _dmarc", "TXT google._domainkey"}, kinds, "SPF already existed and is not doubled")
+}
+
+// Messages people see in the app say what to do in plain words, never an
+// MCP call; the MCP tool descriptions explain the tools.
+func TestMessagesReadInTheApp(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	var said []string
+
+	o, err := h.svc.Overview(ctx, h.org)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Set the brand's mailing address in Outbound, Setup."}, o.Next)
+	said = append(said, o.Next...)
+
+	_, err = h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{"p"}})
+	require.Error(t, err)
+	assert.Equal(t, "Set the brand's mailing address in Outbound, Setup first. Every outreach email carries it.", err.Error())
+	said = append(said, err.Error())
+
+	_, err = h.svc.UpdateSettings(ctx, h.org, SettingsInput{MailingAddress: "123 Main St"})
+	require.NoError(t, err)
+	h.refresh()
+	o, _ = h.svc.Overview(ctx, h.org)
+	said = append(said, o.Next...)
+	_, err = h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{"p"}})
+	require.Error(t, err)
+	said = append(said, err.Error())
+	res, err := h.svc.AddMailboxes(ctx, h.org, []MailboxInput{h.mailbox("sam@elsewhere.com", "pw")})
+	require.NoError(t, err)
+	said = append(said, res[0].Error)
+
+	for _, m := range said {
+		assert.NotContains(t, m, "(action:", m)
+		assert.NotContains(t, m, "setup_sending", m)
+	}
 }
 
 // The prospect list is one row per person, with their lists and the

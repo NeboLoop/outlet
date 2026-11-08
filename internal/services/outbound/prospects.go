@@ -81,7 +81,7 @@ func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.
 		res.Status, res.Reason = "refused", "not an email address"
 		return res
 	case strings.TrimSpace(in.EmailSource) == "":
-		res.Status, res.Reason = "refused", "email_source is required: where the address was published for business (channel About page, bio, website)"
+		res.Status, res.Reason = "refused", "the source is required: where the address was published for business (channel About page, bio, website)"
 		return res
 	case seen[address]:
 		res.Status, res.Reason = "duplicate", "listed twice in this batch"

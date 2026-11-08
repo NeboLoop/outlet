@@ -125,27 +125,27 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 
 	switch {
 	case !o.Enabled:
-		o.Next = append(o.Next, "Outbound is off for this brand. Its admin turns it on in the Outlet app (Outbound, Settings).")
+		o.Next = append(o.Next, "Outbound is off for this brand. Its admin turns it on in the Outlet app, in Outbound, Setup.")
 	case org.MailingAddress == "":
-		o.Next = append(o.Next, "Set the mailing address: setup_sending(action: settings, mailing_address: ...).")
+		o.Next = append(o.Next, "Set the brand's mailing address in Outbound, Setup.")
 	case len(domains) == 0:
-		o.Next = append(o.Next, "Add an outreach domain: setup_sending(action: add_domain, domain: ...).")
+		o.Next = append(o.Next, "Add an outreach domain in Outbound, Setup.")
 	case len(mbs) == 0:
-		o.Next = append(o.Next, "Connect mailboxes: setup_sending(action: add_mailboxes, mailboxes: [...]).")
+		o.Next = append(o.Next, "Connect mailboxes in Outbound, Setup.")
 	}
 	if o.Paused != "" {
-		o.Next = append(o.Next, "All outreach is paused ("+o.Paused+"); pause(action: resume, scope: all) restarts it.")
+		o.Next = append(o.Next, "All outreach is paused ("+o.Paused+"). Resume it to send again.")
 	}
 	for _, mb := range o.Mailboxes {
 		if mb.Status == "paused" {
-			o.Next = append(o.Next, fmt.Sprintf("%s is paused (%s); explain(mailbox_id: %q) says how to fix it.", mb.Email, mb.Reason, mb.ID))
+			o.Next = append(o.Next, fmt.Sprintf("%s is paused (%s). Explaining the mailbox says how to fix it.", mb.Email, mb.Reason))
 		}
 	}
 	if n := o.Messages["draft"]; n > 0 {
-		o.Next = append(o.Next, fmt.Sprintf("%d drafts wait for approval: review_drafts(action: list).", n))
+		o.Next = append(o.Next, fmt.Sprintf("%d drafts wait for approval.", n))
 	}
 	if o.RepliesWaiting > 0 {
-		o.Next = append(o.Next, fmt.Sprintf("%d replies need you: conversations(action: list).", o.RepliesWaiting))
+		o.Next = append(o.Next, fmt.Sprintf("%d replies need you.", o.RepliesWaiting))
 	}
 	return o, nil
 }
@@ -166,7 +166,7 @@ func (s *Service) UpdateSettings(ctx context.Context, org db.Organization, in Se
 	}
 	if in.Timezone != "" {
 		if _, err := time.LoadLocation(in.Timezone); err != nil {
-			return org, refuse("unknown time zone %q; use an IANA name like America/Denver", in.Timezone)
+			return org, refuse("Unknown time zone %q; use a name like America/Denver.", in.Timezone)
 		}
 		org.OutboundTimezone = in.Timezone
 	}
@@ -201,7 +201,7 @@ type ReviewResult struct {
 // Review approves or skips drafts by ID.
 func (s *Service) Review(ctx context.Context, org db.Organization, action string, ids []string) (ReviewResult, error) {
 	if len(ids) == 0 || len(ids) > maxBatch {
-		return ReviewResult{}, refuse("pass 1 to %d ids", maxBatch)
+		return ReviewResult{}, refuse("Pick 1 to %d drafts.", maxBatch)
 	}
 	if action == "approve" {
 		if err := s.requireEnabled(org); err != nil {
@@ -269,7 +269,7 @@ var classes = map[string]bool{
 // Classify records what a reply means and applies it.
 func (s *Service) Classify(ctx context.Context, org db.Organization, replyID, class string) error {
 	if !classes[class] {
-		return refuse("classification must be one of interested, not_interested, question, out_of_office, wrong_person, unsubscribe, complaint")
+		return refuse("A reply sorts as interested, not interested, question, out of office, wrong person, unsubscribe or complaint.")
 	}
 	r, err := s.db.GetEmailReply(ctx, db.GetEmailReplyParams{ID: replyID, OrgID: org.ID})
 	if err != nil {
@@ -387,7 +387,7 @@ func (s *Service) Pause(ctx context.Context, org db.Organization, scope, id stri
 		}
 		return s.db.SetSequenceActive(ctx, db.SetSequenceActiveParams{IsActive: sql.NullInt64{Int64: boolInt(resume), Valid: true}, ID: id, OrgID: sql.NullString{String: org.ID, Valid: true}})
 	}
-	return refuse("scope must be all, mailbox or campaign")
+	return refuse("Pause all outreach, one mailbox or one campaign.")
 }
 
 // Explain answers "why didn't this send?" and "why is this mailbox paused?"
@@ -402,7 +402,7 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 		}
 		switch m.Status.String {
 		case "draft":
-			return "It is a draft waiting for approval: review_drafts(action: approve, ids: [\"" + m.ID + "\"]).", nil
+			return "It is a draft waiting for approval.", nil
 		case "sent":
 			return "It was sent at " + m.SentAt.String + " UTC.", nil
 		case "cancelled":
@@ -458,11 +458,11 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 		r := mb.PausedReason
 		switch {
 		case strings.HasPrefix(r, "DNS:"):
-			return mb.Email + " is paused because " + strings.TrimPrefix(r, "DNS: ") + ". Fix those records, then pause(action: resume, scope: mailbox, id).", nil
+			return mb.Email + " is paused because " + strings.TrimPrefix(r, "DNS: ") + ". Fix those records, then resume the mailbox.", nil
 		case strings.HasPrefix(r, "Health:"):
 			return mb.Email + " is paused to protect its reputation: " + strings.TrimPrefix(r, "Health: ") + ". Check the bounced, blocked and complaining addresses, verify the rest of the list, and resume once the 7-day window clears.", nil
 		}
-		return mb.Email + " is paused: " + r + ". Resume with pause(action: resume, scope: mailbox, id).", nil
+		return mb.Email + " is paused: " + r + ". Resume the mailbox to send again.", nil
 	case prospectID != "":
 		c, err := s.db.GetContactByID(ctx, prospectID)
 		if err != nil || c.OrgID.String != org.ID {
@@ -473,5 +473,5 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 		}
 		return c.Email + " can be enrolled in an outreach campaign if it's on an outreach list with status prospect.", nil
 	}
-	return "", refuse("pass message_id, mailbox_id or prospect_id")
+	return "", refuse("Name an email, a mailbox or a prospect to explain.")
 }

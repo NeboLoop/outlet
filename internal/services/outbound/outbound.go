@@ -88,7 +88,7 @@ func (s *Service) SetEnabled(ctx context.Context, orgID string, on bool) error {
 
 func (s *Service) requireEnabled(org db.Organization) error {
 	if !s.Enabled(org) {
-		return refuse("Outbound is off for brand %q. The brand's admin turns it on in the Outlet app (Outbound, Settings); no tool call can.", org.Name)
+		return refuse("Outbound is off for brand %q. The brand's admin turns it on in the Outlet app, in Outbound, Setup.", org.Name)
 	}
 	return nil
 }
