@@ -4,13 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 )
 
-// The kind decides the route, and the routes never cross: outreach (cold
-// email) leaves only through its brand's own mailbox and can never reach SES
-// or the platform SMTP sender; transactional and marketing mail never use a
-// mailbox or send from an outreach domain.
+// The kind decides the route, and the routes never cross: each kind goes
+// only through the brand's pathway carrying it; a kind no pathway carries
+// is refused, never sent another way; a mailbox is named only by outreach.
 func TestKindDecidesTheRoute(t *testing.T) {
 	s, store := newTestService(t)
 	ctx := context.Background()
@@ -20,37 +20,51 @@ func TestKindDecidesTheRoute(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	exec(`INSERT INTO domain_identities (id, org_id, domain, purpose) VALUES ('d-out', 'org-a', 'getexample.com', 'outreach')`)
+
+	// No pathway carries org-a's outreach yet: refused, and not sent through
+	// the platform pathway that carries its other mail.
+	err := s.Send(ctx, Message{Kind: KindOutreach, OrgID: "org-a", MailboxID: "mb-a", To: "c@x.example", Subject: "s", Text: "b"})
+	if !errors.Is(err, ErrInvalidMessage) || !strings.Contains(err.Error(), "no sending pathway for outreach mail") {
+		t.Fatalf("outreach with no pathway: want a refusal, got %v", err)
+	}
+
+	exec(`INSERT INTO sending_pathways (id, org_id, name, provider, carries_outreach) VALUES ('pool-a', 'org-a', 'Mailboxes', 'mailboxes', 1)`)
+	exec(`INSERT INTO domain_identities (id, org_id, domain, purpose, pathway_id) VALUES ('d-out', 'org-a', 'getexample.com', 'outreach', 'pool-a')`)
 	exec(`INSERT INTO mailboxes (id, org_id, domain_id, email, from_name, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc)
 	      VALUES ('mb-a', 'org-a', 'd-out', 'sam@getexample.com', 'Sam', '127.0.0.1', 1, 'sam', x'00', '127.0.0.1', 1, 'sam', x'00')`)
 
 	// Outreach without a mailbox, or with another brand's, is refused before
-	// any provider is looked up.
+	// anything is sent.
 	for _, m := range []Message{
 		{Kind: KindOutreach, OrgID: "org-a", To: "c@x.example", Subject: "s", Text: "b"},
 		{Kind: KindOutreach, OrgID: "org-b", MailboxID: "mb-a", To: "c@x.example", Subject: "s", Text: "b"},
+		{Kind: KindOutreach, MailboxID: "mb-a", To: "c@x.example", Subject: "s", Text: "b"},
 	} {
 		if err := s.Send(ctx, m); !errors.Is(err, ErrInvalidMessage) {
 			t.Errorf("%+v: want ErrInvalidMessage, got %v", m, err)
 		}
 	}
 
-	// Outreach from a real mailbox goes to the mailbox's own SMTP login (here
-	// a closed port), never to SES or the platform sender, and says so.
-	err := s.Send(ctx, Message{Kind: KindOutreach, OrgID: "org-a", MailboxID: "mb-a", To: "c@x.example", Subject: "s", Text: "b"})
-	if err == nil || errors.Is(err, ErrInvalidMessage) {
-		t.Fatalf("want a mailbox delivery error, got %v", err)
-	}
-
 	// Nothing but outreach may name a mailbox.
 	if err := s.Send(ctx, Message{Kind: KindMarketing, OrgID: "org-a", MailboxID: "mb-a", To: "c@x.example", Subject: "s", HTML: "b"}); !errors.Is(err, ErrInvalidMessage) {
-		t.Errorf("marketing through a mailbox: want ErrInvalidMessage, got %v", err)
+		t.Errorf("marketing naming a mailbox: want ErrInvalidMessage, got %v", err)
 	}
 
 	// A brand's transactional and marketing mail can't send from its
-	// outreach domain: that domain is for mailboxes only.
-	if err := CheckSender(ctx, store, "org-a", "hello@getexample.com"); err == nil {
+	// outreach domain: that domain belongs to the mailbox pool.
+	if err := CheckSender(ctx, store, "org-a", KindTransactional, "hello@getexample.com"); err == nil {
 		t.Error("transactional mail from an outreach domain must be refused")
+	}
+
+	// Marketing goes through the pathway carrying it. Move marketing to a
+	// pathway of its own, and the platform pathway no longer takes it.
+	exec(`UPDATE sending_pathways SET carries_marketing = 0 WHERE org_id = 'org-a'`)
+	if err := s.Send(ctx, Message{Kind: KindMarketing, OrgID: "org-a", To: "c@x.example", Subject: "s", HTML: "b"}); !errors.Is(err, ErrInvalidMessage) || !strings.Contains(err.Error(), "marketing") {
+		t.Errorf("marketing with no pathway: want a refusal, got %v", err)
+	}
+	// Transactional still has its own and reaches delivery.
+	if err := s.Send(ctx, Message{OrgID: "org-a", To: "c@x.example", Subject: "s", HTML: "b"}); !notConfigured(err) {
+		t.Errorf("transactional: want it to reach the platform, got %v", err)
 	}
 
 	// The marketing worker never claims an outreach email.

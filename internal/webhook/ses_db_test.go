@@ -21,7 +21,7 @@ func TestProcessBounceAndComplaintRecord(t *testing.T) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	svcCtx := &svc.ServiceContext{DB: db.NewStore(conn)}
 	ctx := context.Background()
 

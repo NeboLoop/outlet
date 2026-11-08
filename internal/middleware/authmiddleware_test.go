@@ -37,7 +37,7 @@ func newAuthFixture(t *testing.T) authFixture {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 
 	f := authFixture{store: store, mw: NewAuthMiddleware(testAccessSecret, store), active: uuid.NewString(), disabled: uuid.NewString()}

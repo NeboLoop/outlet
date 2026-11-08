@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -177,19 +178,46 @@ func verifySNSMessage(m *snsMessage) error {
 	return nil
 }
 
-// snsAccount returns the AWS account an org sends with. A variable so tests
-// need no AWS.
-var snsAccount = awsAccountForOrg
+// snsAccounts returns the AWS accounts an org sends with. A variable so
+// tests need no AWS.
+var snsAccounts = awsAccountsForOrg
 
 var (
 	snsAccountMu    sync.Mutex
 	snsAccountCache = map[string]string{} // access key id -> account id
 )
 
-// awsAccountForOrg looks up (once per access key) the account of the AWS
-// credentials the org sends with.
-func awsAccountForOrg(ctx context.Context, svcCtx *svc.ServiceContext, orgID string) (string, error) {
-	region, accessKey, secretKey, err := email.AWSCredentials(ctx, svcCtx.DB, svcCtx.CryptoService, orgID)
+// awsAccountsForOrg is the AWS account of each of the org's sending
+// pathways that sends through SES (its own ses pathways, and the platform's
+// account for a platform pathway).
+func awsAccountsForOrg(ctx context.Context, svcCtx *svc.ServiceContext, orgID string) ([]string, error) {
+	pathways, err := svcCtx.DB.ListSendingPathways(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	var accounts []string
+	var lastErr error
+	for _, p := range pathways {
+		if p.Provider != email.ProviderSES && p.Provider != email.ProviderPlatform {
+			continue
+		}
+		account, err := awsAccount(ctx, svcCtx, orgID, p.ID)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		accounts = append(accounts, account)
+	}
+	if len(accounts) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return accounts, nil
+}
+
+// awsAccount looks up (once per access key) the account of a pathway's AWS
+// credentials.
+func awsAccount(ctx context.Context, svcCtx *svc.ServiceContext, orgID, pathwayID string) (string, error) {
+	region, accessKey, secretKey, err := email.AWSCredentials(ctx, svcCtx.DB, svcCtx.CryptoService, orgID, pathwayID)
 	if err != nil {
 		return "", fmt.Errorf("AWS credentials: %w", err)
 	}
@@ -233,11 +261,11 @@ func checkTopicAccount(ctx context.Context, svcCtx *svc.ServiceContext, orgID, t
 	if got == "" {
 		return fmt.Errorf("invalid TopicArn %q", topicArn)
 	}
-	want, err := snsAccount(ctx, svcCtx, orgID)
+	want, err := snsAccounts(ctx, svcCtx, orgID)
 	if err != nil {
 		return err
 	}
-	if got != want {
+	if !slices.Contains(want, got) {
 		return fmt.Errorf("topic %s is not in the org's AWS account", topicArn)
 	}
 	return nil

@@ -80,16 +80,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	log.Printf("SQLite database connected: %s", dbPath)
 
-	// Run database migrations (non-destructive - only applies pending migrations)
-	log.Printf("Running database migrations...")
-	if err := migrations.Run(conn); err != nil {
-		log.Fatalf("Failed to run database migrations: %v", err)
-	}
-	log.Printf("Database migrations completed")
-
-	// Create database store
-	store := db.NewStore(conn)
-
 	// Initialize Crypto service for credential encryption (must be before email service)
 	var cryptoService *crypto.Service
 	if c.Encryption.Key != "" {
@@ -103,6 +93,21 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	} else {
 		log.Printf("Warning: ENCRYPTION_KEY not set - credential storage (Stripe, AI keys) will be disabled")
 	}
+
+	// Run database migrations (non-destructive - only applies pending
+	// migrations). A migration that moves credentials encrypts them.
+	log.Printf("Running database migrations...")
+	var cipher migrations.Cipher
+	if cryptoService != nil {
+		cipher = cryptoService
+	}
+	if err := migrations.Run(conn, cipher); err != nil {
+		log.Fatalf("Failed to run database migrations: %v", err)
+	}
+	log.Printf("Database migrations completed")
+
+	// Create database store
+	store := db.NewStore(conn)
 
 	// Initialize Email service (AWS SES preferred, SMTP fallback - config from platform_settings)
 	emailService := email.NewService(store, cryptoService)

@@ -229,6 +229,7 @@ WHERE id IN (
     JOIN email_campaigns ec ON ec.id = cs.campaign_id
     WHERE cs.status = 'pending' AND ec.status = 'sending'
       AND (cs.claimed_at IS NULL OR cs.claimed_at < datetime('now', '-15 minutes'))
+      AND (cs.send_after IS NULL OR cs.send_after <= datetime('now'))
     ORDER BY cs.created_at ASC
     LIMIT sqlc.arg(limit_count)
 );

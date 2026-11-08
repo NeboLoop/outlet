@@ -214,7 +214,7 @@ func newHarness(t *testing.T) *harness {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	ctx := context.Background()
 	org, err := store.CreateOrganization(ctx, db.CreateOrganizationParams{ID: "org-1", Name: "Nebo Outreach", Slug: "nebo-outreach", ApiKey: "key-1"})
@@ -232,6 +232,7 @@ func newHarness(t *testing.T) *harness {
 	mailer.SetBaseURL("https://outlet.example.com")
 	mailer.SetLinkSecret("test-secret")
 	h.mailer = mailer
+	mailer.SetClock(func() time.Time { return h.clock })
 	h.seq = email.NewSequenceServiceWithBaseURL(store, mailer, "https://outlet.example.com")
 	h.seq.SetClock(func() time.Time { return h.clock })
 	h.svc = New(store, cs, Config{ProtectedDomains: []string{"neboai.com", "neboloop.com"}, Mailer: mailer, Sequences: h.seq})
@@ -507,16 +508,25 @@ func TestSafetyLimits(t *testing.T) {
 	ctx := h.ctx
 	sam, pat := h.setup()
 
-	mb := db.Mailbox{DailyCap: 30, WarmupStartedAt: ts(h.clock)}
-	assert.EqualValues(t, 5, allowance(mb, h.clock))
-	assert.EqualValues(t, 7, allowance(mb, h.clock.Add(24*time.Hour)))
-	assert.EqualValues(t, 30, allowance(mb, h.clock.Add(40*24*time.Hour)))
-	mb.DailyCap = 500
-	assert.EqualValues(t, 30, allowance(mb, h.clock.Add(40*24*time.Hour)), "no stored cap gets past 30")
+	// The first outreach domain made the brand's mailbox pool, carrying its
+	// outreach with the pool defaults: 5 a day, 2 more each day, up to 30.
+	pool, err := h.store.GetMailboxPathway(ctx, sam.ID)
+	require.NoError(t, err)
+	assert.Equal(t, email.ProviderMailboxes, pool.Provider)
+	assert.Equal(t, []string{"outreach"}, email.KindsOf(pool))
+	allow := func(days int, own sql.NullInt64) int64 {
+		n, limited := email.Allowance(pool, h.clock, own, h.clock.Add(time.Duration(days)*24*time.Hour))
+		assert.True(t, limited)
+		return n
+	}
+	assert.EqualValues(t, 5, allow(0, sql.NullInt64{}))
+	assert.EqualValues(t, 7, allow(1, sql.NullInt64{}))
+	assert.EqualValues(t, 30, allow(40, sql.NullInt64{}))
+	assert.EqualValues(t, 50, allow(40, sql.NullInt64{Int64: 50, Valid: true}), "a mailbox's own limit, reached through the warm-up")
 
 	// Not enabled in config: refused.
 	other, _ := h.store.GetOrganizationByID(ctx, "org-2")
-	_, err := h.svc.DraftOutreach(ctx, other, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{"p"}})
+	_, err = h.svc.DraftOutreach(ctx, other, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{"p"}})
 	assert.ErrorContains(t, err, "Outbound is off")
 
 	// Automatic approval needs 30 days of mailbox history.
@@ -583,6 +593,55 @@ func TestSafetyLimits(t *testing.T) {
 	m, _ := h.store.GetOutreachEmail(ctx, db.GetOutreachEmailParams{ID: stuck.ID, OrgID: sql.NullString{String: h.org.ID, Valid: true}})
 	assert.Equal(t, "failed", m.Status.String)
 	assert.Equal(t, before, h.mail.count())
+}
+
+// A mailbox over its pool's daily limit holds its outreach until the limit
+// lifts: the email waits, still approved, and the mailbox shows no error.
+func TestOutreachWaitsForThePoolLimit(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	sam, pat := h.setup()
+	pool, err := h.store.GetMailboxPathway(ctx, sam.ID)
+	require.NoError(t, err)
+	_, err = h.mailer.UpdatePathway(ctx, h.org.ID, pool.ID, email.PathwayInput{Kinds: email.KindsOf(pool), Limits: &email.Limits{DailyLimit: 1}})
+	require.NoError(t, err)
+
+	require.NoError(t, h.store.SetMailboxStatus(ctx, db.SetMailboxStatusParams{Status: "paused", PausedReason: "held for the test", ID: pat.ID}))
+	got := h.prospects(creator("ivy@example.org", "Ivy", "v"), creator("jo@example.org", "Jo", "v"))
+	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{got["ivy@example.org"].ID, got["jo@example.org"].ID}})
+	require.NoError(t, err)
+	require.Len(t, camp.Drafts, 2)
+	_, err = h.svc.Review(ctx, h.org, "approve", []string{camp.Drafts[0].MessageID, camp.Drafts[1].MessageID})
+	require.NoError(t, err)
+
+	h.svc.Tick(ctx)
+	h.advance(10 * time.Minute)
+	h.svc.Tick(ctx)
+	assert.Equal(t, 1, h.mail.count(), "one a day")
+
+	held := camp.Drafts[1].MessageID
+	if len(h.mail.sentTo("jo@example.org")) == 1 {
+		held = camp.Drafts[0].MessageID
+	}
+	m, err := h.store.GetOutreachEmail(ctx, db.GetOutreachEmailParams{ID: held, OrgID: sql.NullString{String: h.org.ID, Valid: true}})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", m.Status.String)
+	assert.Greater(t, m.ScheduledFor, ts(h.clock), "it waits for tomorrow")
+	assert.Contains(t, m.ErrorMessage.String, "daily limit")
+	sam, _ = h.store.GetMailboxByEmail(ctx, sam.Email)
+	assert.Empty(t, sam.LastError, "a limit is not the mailbox's fault")
+
+	// The overview shows the pool's limit for the mailbox.
+	o, err := h.svc.Overview(ctx, h.org)
+	require.NoError(t, err)
+	for _, mb := range o.Mailboxes {
+		if mb.ID == sam.ID {
+			assert.EqualValues(t, 1, mb.SentToday)
+			assert.EqualValues(t, 1, mb.AllowToday)
+			assert.True(t, mb.Limited)
+			assert.Equal(t, pool.ID, mb.PoolID)
+		}
+	}
 }
 
 // Outreach writing uses Outlet's merge tags, with spintax and the empty-tag

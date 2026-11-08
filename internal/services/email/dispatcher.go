@@ -206,6 +206,9 @@ func (d *Dispatcher) worker(id int) {
 
 		// Send the email
 		err := d.sendEmail(job)
+		if d.sequenceService.deferIfTemporary(d.ctx, job.Email, err) {
+			continue
+		}
 		if err != nil {
 			d.handleSendError(job, err)
 		} else {

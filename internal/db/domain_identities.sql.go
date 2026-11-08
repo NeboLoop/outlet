@@ -10,25 +10,6 @@ import (
 	"database/sql"
 )
 
-const countBrandDomain = `-- name: CountBrandDomain :one
-SELECT COUNT(*) FROM domain_identities
-WHERE org_id = ?1 AND LOWER(domain) = LOWER(?2) AND purpose = 'sending'
-`
-
-type CountBrandDomainParams struct {
-	OrgID  string `json:"org_id"`
-	Domain string `json:"domain"`
-}
-
-// A brand's transactional and campaign mail sends only from its sending
-// domains, never from an outreach domain.
-func (q *Queries) CountBrandDomain(ctx context.Context, arg CountBrandDomainParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countBrandDomain, arg.OrgID, arg.Domain)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countOtherBrandsWithDomain = `-- name: CountOtherBrandsWithDomain :one
 
 SELECT COUNT(*) FROM domain_identities
@@ -53,9 +34,9 @@ func (q *Queries) CountOtherBrandsWithDomain(ctx context.Context, arg CountOther
 const createDomainIdentity = `-- name: CreateDomainIdentity :one
 INSERT INTO domain_identities (
     id, org_id, domain, verification_status, dkim_status,
-    verification_token, dkim_tokens, dns_records, mail_from_domain
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check
+    verification_token, dkim_tokens, dns_records, mail_from_domain, pathway_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id
 `
 
 type CreateDomainIdentityParams struct {
@@ -68,6 +49,7 @@ type CreateDomainIdentityParams struct {
 	DkimTokens         sql.NullString `json:"dkim_tokens"`
 	DnsRecords         sql.NullString `json:"dns_records"`
 	MailFromDomain     sql.NullString `json:"mail_from_domain"`
+	PathwayID          sql.NullString `json:"pathway_id"`
 }
 
 func (q *Queries) CreateDomainIdentity(ctx context.Context, arg CreateDomainIdentityParams) (DomainIdentity, error) {
@@ -81,6 +63,7 @@ func (q *Queries) CreateDomainIdentity(ctx context.Context, arg CreateDomainIden
 		arg.DkimTokens,
 		arg.DnsRecords,
 		arg.MailFromDomain,
+		arg.PathwayID,
 	)
 	var i DomainIdentity
 	err := row.Scan(
@@ -102,6 +85,7 @@ func (q *Queries) CreateDomainIdentity(ctx context.Context, arg CreateDomainIden
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }
@@ -132,7 +116,7 @@ func (q *Queries) DeleteDomainIdentityByOrg(ctx context.Context, arg DeleteDomai
 }
 
 const getDomainIdentity = `-- name: GetDomainIdentity :one
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check FROM domain_identities
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities
 WHERE id = ?
 `
 
@@ -158,12 +142,13 @@ func (q *Queries) GetDomainIdentity(ctx context.Context, id string) (DomainIdent
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }
 
 const getDomainIdentityByDomain = `-- name: GetDomainIdentityByDomain :one
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check FROM domain_identities
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities
 WHERE org_id = ? AND domain = ?
 `
 
@@ -194,12 +179,13 @@ func (q *Queries) GetDomainIdentityByDomain(ctx context.Context, arg GetDomainId
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }
 
 const listDomainIdentitiesByOrg = `-- name: ListDomainIdentitiesByOrg :many
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check FROM domain_identities
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities
 WHERE org_id = ? AND purpose = 'sending'
 ORDER BY created_at DESC
 `
@@ -233,6 +219,7 @@ func (q *Queries) ListDomainIdentitiesByOrg(ctx context.Context, orgID string) (
 			&i.DkimSelector,
 			&i.TrackingHost,
 			&i.DnsCheck,
+			&i.PathwayID,
 		); err != nil {
 			return nil, err
 		}
@@ -248,7 +235,7 @@ func (q *Queries) ListDomainIdentitiesByOrg(ctx context.Context, orgID string) (
 }
 
 const listPendingDomainIdentities = `-- name: ListPendingDomainIdentities :many
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check FROM domain_identities
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities
 WHERE purpose = 'sending' AND (verification_status IN ('pending', 'Pending', 'not_started')
    OR dkim_status IN ('pending', 'Pending', 'not_started'))
 ORDER BY created_at ASC
@@ -283,6 +270,7 @@ func (q *Queries) ListPendingDomainIdentities(ctx context.Context) ([]DomainIden
 			&i.DkimSelector,
 			&i.TrackingHost,
 			&i.DnsCheck,
+			&i.PathwayID,
 		); err != nil {
 			return nil, err
 		}
@@ -302,7 +290,7 @@ UPDATE domain_identities
 SET dns_records = ?,
     updated_at = datetime('now')
 WHERE id = ?
-RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check
+RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id
 `
 
 type UpdateDomainIdentityDNSRecordsParams struct {
@@ -332,6 +320,7 @@ func (q *Queries) UpdateDomainIdentityDNSRecords(ctx context.Context, arg Update
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }
@@ -345,7 +334,7 @@ SET verification_status = ?,
     last_checked_at = datetime('now'),
     updated_at = datetime('now')
 WHERE id = ?
-RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check
+RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id
 `
 
 type UpdateDomainIdentityFullParams struct {
@@ -384,6 +373,7 @@ func (q *Queries) UpdateDomainIdentityFull(ctx context.Context, arg UpdateDomain
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }
@@ -395,7 +385,7 @@ SET mail_from_domain = ?,
     dns_records = ?,
     updated_at = datetime('now')
 WHERE id = ?
-RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check
+RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id
 `
 
 type UpdateDomainIdentityMailFromParams struct {
@@ -432,6 +422,7 @@ func (q *Queries) UpdateDomainIdentityMailFrom(ctx context.Context, arg UpdateDo
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }
@@ -443,7 +434,7 @@ SET verification_status = ?,
     last_checked_at = datetime('now'),
     updated_at = datetime('now')
 WHERE id = ?
-RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check
+RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id
 `
 
 type UpdateDomainIdentityStatusParams struct {
@@ -474,6 +465,7 @@ func (q *Queries) UpdateDomainIdentityStatus(ctx context.Context, arg UpdateDoma
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }

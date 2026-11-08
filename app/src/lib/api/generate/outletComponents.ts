@@ -313,6 +313,7 @@ export interface CreateCustomFieldRequestParams {
 export interface CreateDomainIdentityRequest {
 	domain: string // If empty, extracted from org's from_email
 	mail_from_subdomain?: string // Custom MAIL FROM subdomain (default: "mail")
+	pathway_id?: string // The sending pathway it joins; empty: the one carrying transactional mail
 }
 export interface CreateDomainIdentityRequestParams {
 }
@@ -556,8 +557,9 @@ export interface DeleteWebhookRequestParams {
 
 export interface DetectSESQuotaRequest {
 	aws_region?: string
-	aws_access_key?: string // If empty, use org's stored creds
+	aws_access_key?: string // If empty, use the pathway's
 	aws_secret_key?: string
+	pathway_id?: string // An ses pathway's keys; empty: the platform's
 }
 export interface DetectSESQuotaRequestParams {
 }
@@ -1289,6 +1291,12 @@ export interface MCPAPIKeyInfo {
 	created_at: string
 }
 
+export interface MailboxDailyLimitRequest {
+	daily_limit?: number // empty: use the pool's
+}
+export interface MailboxDailyLimitRequestParams {
+}
+
 export interface MarkContactReadRequest {
 }
 export interface MarkContactReadRequestParams {
@@ -1354,8 +1362,6 @@ export interface OrgEmailConfigInfo {
 	ses_daily_quota: number // Daily sending quota
 	worker_count: number // Number of email workers
 	batch_size: number // Emails per batch
-	aws_region?: string
-	has_own_credentials: boolean // Has org-specific AWS credentials
 	from_email?: string
 	from_name?: string
 	reply_to?: string
@@ -1505,6 +1511,7 @@ export interface OutboundDomainRequest {
 	dkim_value?: string
 	dmarc_report?: string
 	click_tracking?: boolean
+	pathway_id?: string // the mailbox pool it joins; empty: the brand's pool
 }
 
 export interface OutboundDomainResponse {
@@ -1587,6 +1594,9 @@ export interface OutboundMailboxHealth {
 	spam_blocks_7d: number
 	complaints_7d: number
 	last_error?: string
+	pool_id?: string // its mailbox pool (sending pathway)
+	daily_limit?: number // its own daily limit; empty uses the pool's
+	limited: boolean // false: no daily limit applies
 }
 
 export interface OutboundMailboxInput {
@@ -1603,7 +1613,7 @@ export interface OutboundMailboxInput {
 	imap_port?: number
 	imap_username?: string
 	imap_password?: string
-	daily_cap?: number
+	daily_limit?: number // its own daily limit; empty uses the pool's
 }
 
 export interface OutboundMailboxResult {
@@ -1889,8 +1899,61 @@ export interface SendEmailRequest {
 export interface SendEmailResponse {
 	success: boolean
 	message_id: string // For tracking
-	status: string // queued, sent, failed
+	status: string // queued, sent, failed, suppressed, limited (over the brand's sending pathway limit; try again later)
 	message?: string
+}
+
+export interface SendingLimits {
+	daily_limit: number // per sender per day; 0: no limit
+	warmup_start: number // a new sender's first day; 0: no warm-up
+	warmup_step: number // added each day
+	min_gap_seconds: number // between two sends from one sender
+	max_gap_seconds: number
+	pause_bounce_rate: number // a fraction: 0.03 is 3%, over 7 days
+	pause_min_bounces: number
+	pause_spam_blocks: number
+	pause_complaints: number
+}
+
+export interface SendingPathway {
+	id: string
+	name: string
+	provider: string // platform, ses, smtp, mailboxes
+	kinds: Array<string> // transactional, marketing, outreach
+	aws_region?: string
+	aws_keys_set: boolean
+	smtp_host?: string
+	smtp_port?: number
+	smtp_username?: string
+	smtp_password_set: boolean
+	limits: SendingLimits
+	domains: Array<string>
+	mailboxes: number
+	warning?: string // set when outreach rides a provider other than mailboxes
+	created_at: string
+}
+
+export interface SendingPathwayIDRequest {
+}
+export interface SendingPathwayIDRequestParams {
+}
+
+export interface SendingPathwayList {
+	pathways: Array<SendingPathway>
+}
+
+export interface SendingPathwayRequest {
+	name?: string
+	provider: string // platform, ses, smtp, mailboxes
+	kinds?: Array<string>
+	aws_region?: string
+	aws_access_key?: string
+	aws_secret_key?: string
+	smtp_host?: string
+	smtp_port?: number
+	smtp_username?: string
+	smtp_password?: string
+	limits?: SendingLimits // empty: the provider's defaults
 }
 
 export interface SequenceDetailResponse {
@@ -2258,9 +2321,6 @@ export interface UpdateOrgEmailConfigRequest {
 	ses_daily_quota?: number
 	worker_count?: number
 	batch_size?: number
-	aws_region?: string
-	aws_access_key?: string // Will be encrypted
-	aws_secret_key?: string // Will be encrypted
 	from_email?: string
 	from_name?: string
 	reply_to?: string
@@ -2283,6 +2343,21 @@ export interface UpdateOrgRequest {
 	app_url?: string
 }
 export interface UpdateOrgRequestParams {
+}
+
+export interface UpdateSendingPathwayRequest {
+	name?: string
+	kinds: Array<string> // the whole set it carries
+	aws_region?: string
+	aws_access_key?: string // empty keeps the stored key
+	aws_secret_key?: string
+	smtp_host?: string
+	smtp_port?: number
+	smtp_username?: string
+	smtp_password?: string // empty keeps the stored password
+	limits?: SendingLimits // empty keeps them
+}
+export interface UpdateSendingPathwayRequestParams {
 }
 
 export interface UpdateSequenceRequest {

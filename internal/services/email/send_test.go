@@ -15,8 +15,8 @@ import (
 )
 
 // newTestService returns a Service on a migrated temporary database with two
-// brands, and no SES or SMTP configured, so a send that passes every check
-// stops at "email not configured".
+// brands on their platform pathways, and no SES or SMTP configured, so a
+// send that passes every check stops at "email not configured".
 func newTestService(t *testing.T) (*Service, *db.Store) {
 	t.Helper()
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
@@ -24,14 +24,16 @@ func newTestService(t *testing.T) (*Service, *db.Store) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := migrations.Run(conn); err != nil {
+	if err := migrations.Run(conn, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, q := range []string{
 		`INSERT INTO organizations (id, name, slug, api_key, from_email) VALUES ('org-a', 'A', 'a', 'key-a', 'hello@a.example')`,
 		`INSERT INTO organizations (id, name, slug, api_key, from_email) VALUES ('org-b', 'B', 'b', 'key-b', 'hello@b.example')`,
-		`INSERT INTO domain_identities (id, org_id, domain) VALUES ('d-a', 'org-a', 'a.example')`,
-		`INSERT INTO domain_identities (id, org_id, domain) VALUES ('d-b', 'org-b', 'b.example')`,
+		// Each brand's domain belongs to its platform pathway (every brand
+		// starts with one, carrying transactional and marketing mail).
+		`INSERT INTO domain_identities (id, org_id, domain, pathway_id) VALUES ('d-a', 'org-a', 'a.example', (SELECT id FROM sending_pathways WHERE org_id = 'org-a'))`,
+		`INSERT INTO domain_identities (id, org_id, domain, pathway_id) VALUES ('d-b', 'org-b', 'b.example', (SELECT id FROM sending_pathways WHERE org_id = 'org-b'))`,
 	} {
 		if _, err := conn.Exec(q); err != nil {
 			t.Fatal(err)

@@ -24,7 +24,7 @@ func TestSubscribeToList_StartsSignupSequence(t *testing.T) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	for _, q := range []string{
 		`INSERT INTO organizations (id, name, slug, api_key) VALUES ('org-a', 'A', 'a', 'key-a')`,
 		`INSERT INTO email_lists (id, public_id, org_id, name, slug, double_optin) VALUES (1, 'p1', 'org-a', 'News', 'news', 0)`,

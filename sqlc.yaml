@@ -5,6 +5,7 @@ sql:
     schema:
       - "internal/db/migrations"
       - "internal/db/migrations/columns"
+      - "internal/db/migrations/schema"
     gen:
       go:
         package: "db"

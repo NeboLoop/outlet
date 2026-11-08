@@ -10,6 +10,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/config"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/db/migrations"
+	"github.com/outlet-sh/outlet/internal/services/crypto"
 	"github.com/outlet-sh/outlet/internal/services/signalnet"
 	"github.com/spf13/cobra"
 	"github.com/zeromicro/go-zero/core/conf"
@@ -123,7 +124,15 @@ func openNetworkStore() (*db.Store, error) {
 	if _, err := conn.Exec("PRAGMA busy_timeout=5000"); err != nil {
 		return nil, err
 	}
-	if err := migrations.Run(conn); err != nil {
+	var cipher migrations.Cipher
+	if c.Encryption.Key != "" {
+		cs, err := crypto.NewService(c.Encryption.Key)
+		if err != nil {
+			return nil, err
+		}
+		cipher = cs
+	}
+	if err := migrations.Run(conn, cipher); err != nil {
 		return nil, err
 	}
 	return db.NewStore(conn), nil

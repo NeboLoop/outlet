@@ -33,7 +33,7 @@ func TestAdminEnrollInSequence(t *testing.T) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	for _, q := range []string{
 		`INSERT INTO users (id, email, password_hash, name, role, status, email_verified) VALUES ('mike', 'mike@example.com', 'x', 'M', 'agent', 'active', 1)`,
 		`INSERT INTO organizations (id, name, slug, api_key) VALUES ('alpha-id', 'alpha', 'alpha', 'k-a'), ('bravo-id', 'bravo', 'bravo', 'k-b')`,

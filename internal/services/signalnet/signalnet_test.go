@@ -158,7 +158,7 @@ func newTestHub(t *testing.T) *Hub {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := migrations.Run(conn); err != nil {
+	if err := migrations.Run(conn, nil); err != nil {
 		t.Fatal(err)
 	}
 	return NewHub(db.NewStore(conn))

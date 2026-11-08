@@ -43,7 +43,6 @@ CREATE TABLE IF NOT EXISTS mailboxes (
     imap_password_enc BLOB NOT NULL,
     status TEXT NOT NULL DEFAULT 'active', -- active, paused
     paused_reason TEXT NOT NULL DEFAULT '',
-    daily_cap INTEGER NOT NULL DEFAULT 30,
     warmup_started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
     next_send_at TEXT,
     imap_uid_validity INTEGER NOT NULL DEFAULT 0,

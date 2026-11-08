@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { resetPassword } from '$lib/api';
 	import { Card, Input, Button, Alert } from '$lib/components/ui';
@@ -10,7 +11,12 @@
 	let loading = $state(false);
 	let error = $state('');
 
-	const token = $page.url.searchParams.get('token') ?? '';
+	// Read in the browser: the page is prerendered, so the URL has no query
+	// string when it is built.
+	let token = $state('');
+	onMount(() => {
+		token = $page.url.searchParams.get('token') ?? '';
+	});
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();

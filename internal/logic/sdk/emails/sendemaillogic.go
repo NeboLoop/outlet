@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/middleware"
@@ -215,6 +216,11 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 		case errors.Is(sendErr, email.ErrSuppressed):
 			resp.Status = "suppressed"
 			resp.Message = "Not sent: the recipient bounced, complained, or is on the suppression list"
+		case errors.Is(sendErr, email.ErrOverLimit):
+			// The brand's transactional pathway is at its limit: the caller
+			// sends again once it lifts.
+			resp.Status = "limited"
+			resp.Message = "Not sent: " + sendErr.Error() + ". Try again after " + email.RetryAt(sendErr, time.Now().Add(15*time.Minute)).UTC().Format(time.RFC3339) + "."
 		case errors.Is(sendErr, email.ErrInvalidMessage):
 			resp.Message = sendErr.Error()
 		}

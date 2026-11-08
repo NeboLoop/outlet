@@ -1,8 +1,8 @@
 -- name: CreateDomainIdentity :one
 INSERT INTO domain_identities (
     id, org_id, domain, verification_status, dkim_status,
-    verification_token, dkim_tokens, dns_records, mail_from_domain
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    verification_token, dkim_tokens, dns_records, mail_from_domain, pathway_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetDomainIdentity :one
@@ -77,9 +77,3 @@ ORDER BY created_at ASC;
 -- name: CountOtherBrandsWithDomain :one
 SELECT COUNT(*) FROM domain_identities
 WHERE LOWER(domain) = LOWER(sqlc.arg(domain)) AND org_id <> sqlc.arg(org_id);
-
--- name: CountBrandDomain :one
--- A brand's transactional and campaign mail sends only from its sending
--- domains, never from an outreach domain.
-SELECT COUNT(*) FROM domain_identities
-WHERE org_id = sqlc.arg(org_id) AND LOWER(domain) = LOWER(sqlc.arg(domain)) AND purpose = 'sending';

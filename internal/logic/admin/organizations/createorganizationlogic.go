@@ -215,6 +215,14 @@ func (l *CreateOrganizationLogic) setupDomainIdentity(orgID string, fromEmail st
 		return
 	}
 
+	// The domain joins the brand's platform pathway (every new brand starts
+	// with it)
+	pathway, err := l.svcCtx.EmailService.DomainPathway(l.ctx, orgID, "sending", "")
+	if err != nil {
+		l.Errorf("No sending pathway for %s: %v", domain, err)
+		return
+	}
+
 	// Verify domain identity with AWS SES
 	result, err := email.VerifyDomainIdentity(l.ctx, region, accessKey, secretKey, domain)
 	if err != nil {
@@ -246,6 +254,7 @@ func (l *CreateOrganizationLogic) setupDomainIdentity(orgID string, fromEmail st
 		VerificationToken:  sql.NullString{String: result.VerificationToken, Valid: result.VerificationToken != ""},
 		DkimTokens:         sql.NullString{String: string(dkimTokensJSON), Valid: true},
 		DnsRecords:         sql.NullString{String: dnsRecordsJSON, Valid: true},
+		PathwayID:          sql.NullString{String: pathway.ID, Valid: true},
 	})
 	if err != nil {
 		l.Errorf("Failed to create domain identity record: %v", err)

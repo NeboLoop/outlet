@@ -135,6 +135,9 @@ type DomainInput struct {
 	DMARCReport  string   `json:"dmarc_report,omitempty"`  // rua address, optional
 	// ClickTracking sets up go.<domain>, a CNAME to this server, for tracked links.
 	ClickTracking bool `json:"click_tracking,omitempty"`
+	// PathwayID is the mailbox pool the domain joins; empty picks the
+	// brand's pool (made on its first outreach domain).
+	PathwayID string `json:"pathway_id,omitempty"`
 
 	trackingTarget string // this server's host, filled by AddDomain
 }
@@ -213,9 +216,13 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 	case err == nil && (d.OrgID != org.ID || d.Purpose != "outreach"):
 		return db.DomainIdentity{}, nil, DNSCheck{}, refuse("%s is already in use (another brand's, or this brand's sending domain); outreach needs a domain of its own.", in.Domain)
 	case err != nil:
+		pool, perr := s.mailer.DomainPathway(ctx, org.ID, "outreach", in.PathwayID)
+		if perr != nil {
+			return db.DomainIdentity{}, nil, DNSCheck{}, perr
+		}
 		d, err = s.db.CreateOutreachDomain(ctx, db.CreateOutreachDomainParams{
 			ID: uuid.NewString(), OrgID: org.ID, Domain: in.Domain, DnsHost: in.DNSHost, DkimSelector: in.DKIMSelector,
-			TrackingHost: trackingHost,
+			TrackingHost: trackingHost, PathwayID: sql.NullString{String: pool.ID, Valid: true},
 		})
 		if err != nil {
 			return d, nil, DNSCheck{}, err

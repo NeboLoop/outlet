@@ -7,6 +7,7 @@
 		addOutboundDomain,
 		checkOutboundDomain,
 		addOutboundMailboxes,
+		setMailboxDailyLimit,
 		type OutboundOverview,
 		type OutboundDNSRecord,
 		type OutboundMailboxInput,
@@ -14,7 +15,10 @@
 	} from '$lib/api';
 	import { Button, Alert, LoadingSpinner, Badge, Input, Textarea, Toggle, Select, SlideForm } from '$lib/components/ui';
 	import { Plus, Check, X, Copy } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import { errorMessage, when } from '../shared';
+
+	let brandSlug = $derived($page.params.brandSlug);
 
 	let loading = $state(true);
 	let error = $state('');
@@ -55,7 +59,7 @@
 	let mbSignature = $state('');
 	let mbProvider = $state('google');
 	let mbPassword = $state('');
-	let mbDailyCap = $state(30);
+	let mbDailyLimit = $state('');
 	let smtpHost = $state('');
 	let smtpPort = $state(587);
 	let smtpUsername = $state('');
@@ -65,6 +69,10 @@
 	let imapUsername = $state('');
 	let imapPassword = $state('');
 	let mailboxResults = $state<OutboundMailboxResult[]>([]);
+
+	// Each mailbox's own daily limit, as typed; empty uses its pool's.
+	let ownLimits = $state<Record<string, string>>({});
+	let savingLimit = $state('');
 
 	$effect(() => {
 		load();
@@ -89,6 +97,18 @@
 		mailingAddress = o.mailing_address;
 		optOutLine = o.opt_out_line;
 		timezone = o.timezone;
+		ownLimits = Object.fromEntries(o.mailboxes.map((m) => [m.id, m.daily_limit ? String(m.daily_limit) : '']));
+	}
+
+	async function saveLimit(id: string) {
+		savingLimit = id;
+		await run('Could not save the daily limit', async () => {
+			const value = String(ownLimits[id] ?? '').trim();
+			await setMailboxDailyLimit({}, { daily_limit: value === '' ? undefined : Number(value) }, id);
+			notice = value === '' ? "The mailbox uses its pool's daily limit" : 'Daily limit saved';
+			await refresh();
+		});
+		savingLimit = '';
 	}
 
 	async function run(fallback: string, call: () => Promise<void>) {
@@ -192,7 +212,7 @@
 		mbFromName = '';
 		mbSignature = '';
 		mbPassword = '';
-		mbDailyCap = 30;
+		mbDailyLimit = '';
 		smtpHost = '';
 		smtpPort = 587;
 		smtpUsername = '';
@@ -213,7 +233,7 @@
 				from_name: mbFromName.trim(),
 				signature: mbSignature || undefined,
 				password: mbPassword || undefined,
-				daily_cap: Math.min(Number(mbDailyCap) || 30, 30)
+				daily_limit: String(mbDailyLimit).trim() === '' ? undefined : Number(mbDailyLimit)
 			};
 			if (mbProvider === 'google') {
 				input.provider = 'google';
@@ -269,7 +289,7 @@
 				disabled={switching}
 				onchange={switchEnabled}
 				label="Outbound is {enabled ? 'on' : 'off'}"
-				description="Only the brand's admin can turn it on. Outreach sends only from the mailboxes below, never through SES."
+				description="Only the brand's admin can turn it on. Outreach goes through the sending pathway that carries it, normally the mailboxes below."
 			/>
 		</section>
 
@@ -501,6 +521,11 @@
 					Add mailbox
 				</Button>
 			</div>
+			<p class="form-hint mb-3">
+				The mailboxes form a pool. Its daily limit, warm-up, spacing between sends and health pauses are set in
+				<a href="/{brandSlug}/settings/sending" class="link link-primary">Settings, Sending</a>. A mailbox can have a daily
+				limit of its own below.
+			</p>
 
 			<SlideForm bind:show={showMailbox} title="Add a mailbox">
 				<div class="space-y-4">
@@ -537,9 +562,9 @@
 							<Input id="mb-password" type="password" bind:value={mbPassword} />
 						</div>
 						<div>
-							<label for="mb-cap" class="form-label">Daily limit</label>
-							<Input id="mb-cap" type="number" min={1} max={30} bind:value={mbDailyCap} />
-							<p class="form-hint">At most 30 a day.</p>
+							<label for="mb-cap" class="form-label">Own daily limit (optional)</label>
+							<Input id="mb-cap" type="number" min={1} bind:value={mbDailyLimit} placeholder="The pool's" />
+							<p class="form-hint">Empty uses the pool's limit.</p>
 						</div>
 					</div>
 					{#if mbProvider === 'google'}
@@ -608,7 +633,8 @@
 							<tr>
 								<th class="text-left">Mailbox</th>
 								<th class="text-left">Status</th>
-								<th class="text-right">Allowed today</th>
+								<th class="text-right">Sent today</th>
+								<th class="text-left">Own daily limit</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -626,7 +652,25 @@
 											<span class="text-xs text-error block mt-1">{m.reason}</span>
 										{/if}
 									</td>
-									<td class="text-right">{m.allowed_today}</td>
+									<td class="text-right whitespace-nowrap">
+										{m.sent_today} of {m.limited ? m.allowed_today : 'no limit'}
+									</td>
+									<td>
+										<div class="flex items-center gap-2">
+											<label for="limit-{m.id}" class="sr-only">Own daily limit for {m.email}</label>
+											<Input
+												id="limit-{m.id}"
+												type="number"
+												size="sm"
+												min={1}
+												bind:value={ownLimits[m.id]}
+												placeholder="The pool's"
+											/>
+											<Button type="ghost" size="xs" onclick={() => saveLimit(m.id)} disabled={savingLimit !== ''}>
+												{savingLimit === m.id ? 'Saving...' : 'Save'}
+											</Button>
+										</div>
+									</td>
 								</tr>
 							{/each}
 						</tbody>

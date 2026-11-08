@@ -35,18 +35,16 @@ func (l *DetectSESQuotaLogic) DetectSESQuota(req *types.DetectSESQuotaRequest) (
 	secretKey := req.AWSSecretKey
 	region := req.AWSRegion
 
-	// If credentials not provided, try to use org's stored credentials
+	// If credentials not provided, use the named ses pathway's (or the
+	// platform's)
 	if accessKey == "" || secretKey == "" {
-		config, err := email.GetOrgEmailConfig(l.ctx, l.svcCtx.DB, req.OrgId)
+		storedRegion, storedAccess, storedSecret, err := email.AWSCredentials(l.ctx, l.svcCtx.DB, l.svcCtx.CryptoService, req.OrgId, req.PathwayId)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get org config: %w", err)
+			return nil, fmt.Errorf("no AWS credentials to check: %w", err)
 		}
-		if config.HasOwnAWSCredentials() {
-			accessKey = config.AWSAccessKey
-			secretKey = config.AWSSecretKey
-			if region == "" {
-				region = config.AWSRegion
-			}
+		accessKey, secretKey = storedAccess, storedSecret
+		if region == "" {
+			region = storedRegion
 		}
 	}
 

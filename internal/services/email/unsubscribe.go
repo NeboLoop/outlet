@@ -46,6 +46,7 @@ func (s *Service) CampaignMessage(c CampaignEmail) Message {
 	tags := mergeContext{BaseURL: s.baseURL, Name: c.Name, Email: c.To, TrackingToken: c.TrackingToken}
 	m := Message{
 		OrgID:     c.OrgID,
+		Kind:      KindMarketing,
 		FromName:  c.FromName,
 		FromEmail: c.FromEmail,
 		ReplyTo:   c.ReplyTo,

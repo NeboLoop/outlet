@@ -280,27 +280,27 @@ const createMailbox = `-- name: CreateMailbox :one
 INSERT INTO mailboxes (
     id, org_id, domain_id, email, from_name, signature,
     smtp_host, smtp_port, smtp_username, smtp_password_enc,
-    imap_host, imap_port, imap_username, imap_password_enc, daily_cap
+    imap_host, imap_port, imap_username, imap_password_enc, daily_limit
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, daily_cap, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at
+RETURNING id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit
 `
 
 type CreateMailboxParams struct {
-	ID              string `json:"id"`
-	OrgID           string `json:"org_id"`
-	DomainID        string `json:"domain_id"`
-	Email           string `json:"email"`
-	FromName        string `json:"from_name"`
-	Signature       string `json:"signature"`
-	SmtpHost        string `json:"smtp_host"`
-	SmtpPort        int64  `json:"smtp_port"`
-	SmtpUsername    string `json:"smtp_username"`
-	SmtpPasswordEnc []byte `json:"smtp_password_enc"`
-	ImapHost        string `json:"imap_host"`
-	ImapPort        int64  `json:"imap_port"`
-	ImapUsername    string `json:"imap_username"`
-	ImapPasswordEnc []byte `json:"imap_password_enc"`
-	DailyCap        int64  `json:"daily_cap"`
+	ID              string        `json:"id"`
+	OrgID           string        `json:"org_id"`
+	DomainID        string        `json:"domain_id"`
+	Email           string        `json:"email"`
+	FromName        string        `json:"from_name"`
+	Signature       string        `json:"signature"`
+	SmtpHost        string        `json:"smtp_host"`
+	SmtpPort        int64         `json:"smtp_port"`
+	SmtpUsername    string        `json:"smtp_username"`
+	SmtpPasswordEnc []byte        `json:"smtp_password_enc"`
+	ImapHost        string        `json:"imap_host"`
+	ImapPort        int64         `json:"imap_port"`
+	ImapUsername    string        `json:"imap_username"`
+	ImapPasswordEnc []byte        `json:"imap_password_enc"`
+	DailyLimit      sql.NullInt64 `json:"daily_limit"`
 }
 
 // ---- mailboxes ----------------------------------------------------------------
@@ -320,7 +320,7 @@ func (q *Queries) CreateMailbox(ctx context.Context, arg CreateMailboxParams) (M
 		arg.ImapPort,
 		arg.ImapUsername,
 		arg.ImapPasswordEnc,
-		arg.DailyCap,
+		arg.DailyLimit,
 	)
 	var i Mailbox
 	err := row.Scan(
@@ -340,31 +340,32 @@ func (q *Queries) CreateMailbox(ctx context.Context, arg CreateMailboxParams) (M
 		&i.ImapPasswordEnc,
 		&i.Status,
 		&i.PausedReason,
-		&i.DailyCap,
 		&i.WarmupStartedAt,
 		&i.NextSendAt,
 		&i.ImapUidValidity,
 		&i.ImapLastUid,
 		&i.LastError,
 		&i.CreatedAt,
+		&i.DailyLimit,
 	)
 	return i, err
 }
 
 const createOutreachDomain = `-- name: CreateOutreachDomain :one
 
-INSERT INTO domain_identities (id, org_id, domain, verification_status, dkim_status, purpose, dns_host, dkim_selector, tracking_host)
-VALUES (?, ?, ?, 'pending', 'pending', 'outreach', ?, ?, ?)
-RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check
+INSERT INTO domain_identities (id, org_id, domain, verification_status, dkim_status, purpose, dns_host, dkim_selector, tracking_host, pathway_id)
+VALUES (?, ?, ?, 'pending', 'pending', 'outreach', ?, ?, ?, ?)
+RETURNING id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id
 `
 
 type CreateOutreachDomainParams struct {
-	ID           string `json:"id"`
-	OrgID        string `json:"org_id"`
-	Domain       string `json:"domain"`
-	DnsHost      string `json:"dns_host"`
-	DkimSelector string `json:"dkim_selector"`
-	TrackingHost string `json:"tracking_host"`
+	ID           string         `json:"id"`
+	OrgID        string         `json:"org_id"`
+	Domain       string         `json:"domain"`
+	DnsHost      string         `json:"dns_host"`
+	DkimSelector string         `json:"dkim_selector"`
+	TrackingHost string         `json:"tracking_host"`
+	PathwayID    sql.NullString `json:"pathway_id"`
 }
 
 // ---- outreach domains (domain_identities with purpose 'outreach') -------------
@@ -376,6 +377,7 @@ func (q *Queries) CreateOutreachDomain(ctx context.Context, arg CreateOutreachDo
 		arg.DnsHost,
 		arg.DkimSelector,
 		arg.TrackingHost,
+		arg.PathwayID,
 	)
 	var i DomainIdentity
 	err := row.Scan(
@@ -397,6 +399,7 @@ func (q *Queries) CreateOutreachDomain(ctx context.Context, arg CreateOutreachDo
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }
@@ -428,7 +431,7 @@ func (q *Queries) EditOutreachEmail(ctx context.Context, arg EditOutreachEmailPa
 }
 
 const getAnyDomainIdentity = `-- name: GetAnyDomainIdentity :one
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check FROM domain_identities WHERE LOWER(domain) = LOWER(?) LIMIT 1
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities WHERE LOWER(domain) = LOWER(?) LIMIT 1
 `
 
 // A domain belongs to one brand and one purpose.
@@ -454,6 +457,7 @@ func (q *Queries) GetAnyDomainIdentity(ctx context.Context, lower string) (Domai
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }
@@ -491,7 +495,7 @@ func (q *Queries) GetEmailReply(ctx context.Context, arg GetEmailReplyParams) (E
 }
 
 const getMailbox = `-- name: GetMailbox :one
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, daily_cap, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at FROM mailboxes WHERE id = ? AND org_id = ?
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes WHERE id = ? AND org_id = ?
 `
 
 type GetMailboxParams struct {
@@ -519,19 +523,19 @@ func (q *Queries) GetMailbox(ctx context.Context, arg GetMailboxParams) (Mailbox
 		&i.ImapPasswordEnc,
 		&i.Status,
 		&i.PausedReason,
-		&i.DailyCap,
 		&i.WarmupStartedAt,
 		&i.NextSendAt,
 		&i.ImapUidValidity,
 		&i.ImapLastUid,
 		&i.LastError,
 		&i.CreatedAt,
+		&i.DailyLimit,
 	)
 	return i, err
 }
 
 const getMailboxByEmail = `-- name: GetMailboxByEmail :one
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, daily_cap, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at FROM mailboxes WHERE email = ?
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes WHERE email = ?
 `
 
 func (q *Queries) GetMailboxByEmail(ctx context.Context, email string) (Mailbox, error) {
@@ -554,19 +558,19 @@ func (q *Queries) GetMailboxByEmail(ctx context.Context, email string) (Mailbox,
 		&i.ImapPasswordEnc,
 		&i.Status,
 		&i.PausedReason,
-		&i.DailyCap,
 		&i.WarmupStartedAt,
 		&i.NextSendAt,
 		&i.ImapUidValidity,
 		&i.ImapLastUid,
 		&i.LastError,
 		&i.CreatedAt,
+		&i.DailyLimit,
 	)
 	return i, err
 }
 
 const getOutreachDomain = `-- name: GetOutreachDomain :one
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check FROM domain_identities WHERE id = ? AND org_id = ? AND purpose = 'outreach'
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities WHERE id = ? AND org_id = ? AND purpose = 'outreach'
 `
 
 type GetOutreachDomainParams struct {
@@ -596,6 +600,7 @@ func (q *Queries) GetOutreachDomain(ctx context.Context, arg GetOutreachDomainPa
 		&i.DkimSelector,
 		&i.TrackingHost,
 		&i.DnsCheck,
+		&i.PathwayID,
 	)
 	return i, err
 }
@@ -873,7 +878,7 @@ func (q *Queries) GetSequenceStateFull(ctx context.Context, arg GetSequenceState
 }
 
 const listActiveMailboxes = `-- name: ListActiveMailboxes :many
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, daily_cap, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at FROM mailboxes WHERE status = 'active' ORDER BY email
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes WHERE status = 'active' ORDER BY email
 `
 
 // Every mailbox the sender works, across brands.
@@ -903,13 +908,13 @@ func (q *Queries) ListActiveMailboxes(ctx context.Context) ([]Mailbox, error) {
 			&i.ImapPasswordEnc,
 			&i.Status,
 			&i.PausedReason,
-			&i.DailyCap,
 			&i.WarmupStartedAt,
 			&i.NextSendAt,
 			&i.ImapUidValidity,
 			&i.ImapLastUid,
 			&i.LastError,
 			&i.CreatedAt,
+			&i.DailyLimit,
 		); err != nil {
 			return nil, err
 		}
@@ -966,7 +971,7 @@ func (q *Queries) ListActiveOutreachStatesForContact(ctx context.Context, contac
 }
 
 const listAllMailboxes = `-- name: ListAllMailboxes :many
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, daily_cap, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at FROM mailboxes ORDER BY email
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes ORDER BY email
 `
 
 func (q *Queries) ListAllMailboxes(ctx context.Context) ([]Mailbox, error) {
@@ -995,13 +1000,13 @@ func (q *Queries) ListAllMailboxes(ctx context.Context) ([]Mailbox, error) {
 			&i.ImapPasswordEnc,
 			&i.Status,
 			&i.PausedReason,
-			&i.DailyCap,
 			&i.WarmupStartedAt,
 			&i.NextSendAt,
 			&i.ImapUidValidity,
 			&i.ImapLastUid,
 			&i.LastError,
 			&i.CreatedAt,
+			&i.DailyLimit,
 		); err != nil {
 			return nil, err
 		}
@@ -1017,7 +1022,7 @@ func (q *Queries) ListAllMailboxes(ctx context.Context) ([]Mailbox, error) {
 }
 
 const listAllOutreachDomains = `-- name: ListAllOutreachDomains :many
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check FROM domain_identities WHERE purpose = 'outreach' ORDER BY domain
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities WHERE purpose = 'outreach' ORDER BY domain
 `
 
 func (q *Queries) ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity, error) {
@@ -1048,6 +1053,7 @@ func (q *Queries) ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity,
 			&i.DkimSelector,
 			&i.TrackingHost,
 			&i.DnsCheck,
+			&i.PathwayID,
 		); err != nil {
 			return nil, err
 		}
@@ -1112,7 +1118,7 @@ func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesPara
 }
 
 const listMailboxes = `-- name: ListMailboxes :many
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, daily_cap, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at FROM mailboxes WHERE org_id = ? ORDER BY email
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes WHERE org_id = ? ORDER BY email
 `
 
 func (q *Queries) ListMailboxes(ctx context.Context, orgID string) ([]Mailbox, error) {
@@ -1141,13 +1147,13 @@ func (q *Queries) ListMailboxes(ctx context.Context, orgID string) ([]Mailbox, e
 			&i.ImapPasswordEnc,
 			&i.Status,
 			&i.PausedReason,
-			&i.DailyCap,
 			&i.WarmupStartedAt,
 			&i.NextSendAt,
 			&i.ImapUidValidity,
 			&i.ImapLastUid,
 			&i.LastError,
 			&i.CreatedAt,
+			&i.DailyLimit,
 		); err != nil {
 			return nil, err
 		}
@@ -1163,7 +1169,7 @@ func (q *Queries) ListMailboxes(ctx context.Context, orgID string) ([]Mailbox, e
 }
 
 const listOutreachDomains = `-- name: ListOutreachDomains :many
-SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check FROM domain_identities WHERE org_id = ? AND purpose = 'outreach' ORDER BY domain
+SELECT id, org_id, domain, verification_status, dkim_status, verification_token, dkim_tokens, dns_records, mail_from_domain, mail_from_status, last_checked_at, created_at, updated_at, purpose, dns_host, dkim_selector, tracking_host, dns_check, pathway_id FROM domain_identities WHERE org_id = ? AND purpose = 'outreach' ORDER BY domain
 `
 
 func (q *Queries) ListOutreachDomains(ctx context.Context, orgID string) ([]DomainIdentity, error) {
@@ -1194,6 +1200,7 @@ func (q *Queries) ListOutreachDomains(ctx context.Context, orgID string) ([]Doma
 			&i.DkimSelector,
 			&i.TrackingHost,
 			&i.DnsCheck,
+			&i.PathwayID,
 		); err != nil {
 			return nil, err
 		}

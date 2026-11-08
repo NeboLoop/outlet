@@ -103,19 +103,21 @@ func (l *UpdateOrgEmailSettingsLogic) ensureDomainIdentity(orgID, fromEmail stri
 		l.Infof("Domain identity exists but verification not started for %s, will re-trigger", domain)
 	}
 
-	// Get AWS credentials
-	region, accessKey, secretKey, err := l.getAWSCredentials()
+	// The domain's pathway (a new domain joins the one carrying the brand's
+	// transactional mail), and that pathway's AWS account
+	pathwayID := existing.PathwayID.String
+	if existing.ID == "" {
+		pathway, err := l.svcCtx.EmailService.DomainPathway(l.ctx, orgID, "sending", "")
+		if err != nil {
+			l.Errorf("No sending pathway for %s: %v", domain, err)
+			return
+		}
+		pathwayID = pathway.ID
+	}
+	region, accessKey, secretKey, err := email.AWSCredentials(l.ctx, l.svcCtx.DB, l.svcCtx.CryptoService, orgID, pathwayID)
 	if err != nil {
 		l.Errorf("Failed to get AWS credentials for auto domain verification: %v", err)
 		return
-	}
-
-	// Check for org-specific AWS credentials
-	emailConfig, err := email.GetOrgEmailConfig(l.ctx, l.svcCtx.DB, orgID)
-	if err == nil && emailConfig.HasOwnAWSCredentials() {
-		region = emailConfig.AWSRegion
-		accessKey = emailConfig.AWSAccessKey
-		secretKey = emailConfig.AWSSecretKey
 	}
 
 	// Create domain identity in AWS SES
@@ -164,6 +166,7 @@ func (l *UpdateOrgEmailSettingsLogic) ensureDomainIdentity(orgID, fromEmail stri
 			VerificationToken:  sql.NullString{String: result.VerificationToken, Valid: result.VerificationToken != ""},
 			DkimTokens:         sql.NullString{String: string(dkimTokensJSON), Valid: true},
 			DnsRecords:         sql.NullString{String: dnsRecordsJSON, Valid: true},
+			PathwayID:          sql.NullString{String: pathwayID, Valid: true},
 		})
 		if err != nil {
 			l.Errorf("Failed to save domain identity for %s: %v", domain, err)
@@ -187,49 +190,4 @@ func (l *UpdateOrgEmailSettingsLogic) ensureDomainIdentity(orgID, fromEmail stri
 	if l.svcCtx.WebSocketHub != nil {
 		l.svcCtx.WebSocketHub.BroadcastDomainIdentityCreated(orgID, domain)
 	}
-}
-
-// getAWSCredentials retrieves AWS credentials from platform settings
-func (l *UpdateOrgEmailSettingsLogic) getAWSCredentials() (region, accessKey, secretKey string, err error) {
-	awsSettings, err := l.svcCtx.DB.GetPlatformSettingsByCategory(l.ctx, "aws")
-	if err != nil {
-		return "", "", "", err
-	}
-
-	region = "us-east-1" // default
-
-	for _, setting := range awsSettings {
-		switch setting.Key {
-		case "aws_access_key":
-			if setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "" {
-				if l.svcCtx.CryptoService != nil {
-					decrypted, decErr := l.svcCtx.CryptoService.DecryptString([]byte(setting.ValueEncrypted.String))
-					if decErr != nil {
-						return "", "", "", decErr
-					}
-					accessKey = decrypted
-				}
-			}
-		case "aws_secret_key":
-			if setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "" {
-				if l.svcCtx.CryptoService != nil {
-					decrypted, decErr := l.svcCtx.CryptoService.DecryptString([]byte(setting.ValueEncrypted.String))
-					if decErr != nil {
-						return "", "", "", decErr
-					}
-					secretKey = decrypted
-				}
-			}
-		case "aws_region":
-			if setting.ValueText.Valid && setting.ValueText.String != "" {
-				region = setting.ValueText.String
-			}
-		}
-	}
-
-	if accessKey == "" || secretKey == "" {
-		return "", "", "", err
-	}
-
-	return region, accessKey, secretKey, nil
 }

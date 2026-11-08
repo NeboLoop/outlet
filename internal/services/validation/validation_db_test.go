@@ -25,7 +25,7 @@ func newTestService(t *testing.T) (*Service, *db.Store, *sql.DB) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := migrations.Run(conn); err != nil {
+	if err := migrations.Run(conn, nil); err != nil {
 		t.Fatalf("migrations: %v", err)
 	}
 	mustExec(t, conn, `INSERT INTO organizations (id, name, slug, api_key) VALUES ('org1', 'Org', 'org', 'k1'), ('org2', 'Other', 'other', 'k2')`)

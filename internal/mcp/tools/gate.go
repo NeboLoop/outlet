@@ -133,7 +133,7 @@ var policy = map[string]toolPolicy{
 	"outreach_overview": {rules: map[string]rule{"get": obRead()}},
 	"setup_sending": {rules: map[string]rule{
 		"settings": obWrite(), "dns_token": obAdmin(), "add_domain": obAdmin(), "check_domain": obWrite(),
-		"add_mailboxes": obAdmin(), "list": obRead(),
+		"add_mailboxes": obAdmin(), "list": obRead(), "set_limits": obAdmin(), "mailbox_limit": obAdmin(),
 	}},
 	"add_prospects":  {rules: map[string]rule{"add": obWrite()}},
 	"draft_outreach": {rules: map[string]rule{"create": obWrite()}},

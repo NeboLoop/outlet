@@ -49,22 +49,14 @@ func (l *DeleteDomainIdentityLogic) DeleteDomainIdentity(req *types.DeleteDomain
 		return nil, err
 	}
 
-	// Get AWS credentials from platform settings
-	region, accessKey, secretKey, err := getAWSCredentials(l.ctx, l.svcCtx)
+	// The AWS account of the domain's pathway
+	region, accessKey, secretKey, err := email.AWSCredentials(l.ctx, l.svcCtx.DB, l.svcCtx.CryptoService, req.OrgId, identity.PathwayID.String)
 	if shared {
 		l.Infof("Domain %s is still held by another brand; leaving it in SES", identity.Domain)
 	} else if err != nil {
 		// Log but continue - we still want to delete from our database
 		l.Errorf("Failed to get AWS credentials: %v", err)
 	} else {
-		// Get email config for org-specific AWS credentials
-		emailConfig, configErr := email.GetOrgEmailConfig(l.ctx, l.svcCtx.DB, req.OrgId)
-		if configErr == nil && emailConfig.HasOwnAWSCredentials() {
-			region = emailConfig.AWSRegion
-			accessKey = emailConfig.AWSAccessKey
-			secretKey = emailConfig.AWSSecretKey
-		}
-
 		// Try to delete from AWS SES (don't fail if this doesn't work)
 		if deleteErr := email.DeleteDomainIdentity(l.ctx, region, accessKey, secretKey, identity.Domain); deleteErr != nil {
 			l.Errorf("Failed to delete domain identity from AWS SES: %v", deleteErr)

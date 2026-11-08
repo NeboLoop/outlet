@@ -306,6 +306,7 @@ type CreateDomainIdentityRequest struct {
 	OrgId             string `path:"org_id"`
 	Domain            string `json:"domain"`                       // If empty, extracted from org's from_email
 	MailFromSubdomain string `json:"mail_from_subdomain,optional"` // Custom MAIL FROM subdomain (default: "mail")
+	PathwayId         string `json:"pathway_id,optional"`          // The sending pathway it joins; empty: the one carrying transactional mail
 }
 
 type CreateEmailDesignRequest struct {
@@ -532,8 +533,9 @@ type DeleteWebhookRequest struct {
 type DetectSESQuotaRequest struct {
 	OrgId        string `path:"org_id"`
 	AWSRegion    string `json:"aws_region,optional"`
-	AWSAccessKey string `json:"aws_access_key,optional"` // If empty, use org's stored creds
+	AWSAccessKey string `json:"aws_access_key,optional"` // If empty, use the pathway's
 	AWSSecretKey string `json:"aws_secret_key,optional"`
+	PathwayId    string `json:"pathway_id,optional"` // An ses pathway's keys; empty: the platform's
 }
 
 type DomainIdentityInfo struct {
@@ -1198,6 +1200,11 @@ type MCPAPIKeyInfo struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type MailboxDailyLimitRequest struct {
+	Id         string `path:"id"`
+	DailyLimit *int64 `json:"daily_limit,optional"` // empty: use the pool's
+}
+
 type MarkContactReadRequest struct {
 	ID int64 `path:"id"`
 }
@@ -1262,8 +1269,6 @@ type OrgEmailConfigInfo struct {
 	SESDailyQuota int64   `json:"ses_daily_quota"` // Daily sending quota
 	WorkerCount   int     `json:"worker_count"`    // Number of email workers
 	BatchSize     int     `json:"batch_size"`      // Emails per batch
-	AWSRegion     string  `json:"aws_region,optional"`
-	HasOwnCreds   bool    `json:"has_own_credentials"` // Has org-specific AWS credentials
 	FromEmail     string  `json:"from_email,optional"`
 	FromName      string  `json:"from_name,optional"`
 	ReplyTo       string  `json:"reply_to,optional"`
@@ -1411,6 +1416,7 @@ type OutboundDomainRequest struct {
 	DKIMValue     string   `json:"dkim_value,optional"`
 	DMARCReport   string   `json:"dmarc_report,optional"`
 	ClickTracking bool     `json:"click_tracking,optional"`
+	PathwayId     string   `json:"pathway_id,optional"` // the mailbox pool it joins; empty: the brand's pool
 }
 
 type OutboundDomainResponse struct {
@@ -1483,6 +1489,9 @@ type OutboundMailboxHealth struct {
 	SpamBlocks7d int64  `json:"spam_blocks_7d"`
 	Complaints7d int64  `json:"complaints_7d"`
 	LastError    string `json:"last_error,optional"`
+	PoolId       string `json:"pool_id,optional"`     // its mailbox pool (sending pathway)
+	DailyLimit   *int64 `json:"daily_limit,optional"` // its own daily limit; empty uses the pool's
+	Limited      bool   `json:"limited"`              // false: no daily limit applies
 }
 
 type OutboundMailboxInput struct {
@@ -1499,7 +1508,7 @@ type OutboundMailboxInput struct {
 	IMAPPort     int    `json:"imap_port,optional"`
 	IMAPUsername string `json:"imap_username,optional"`
 	IMAPPassword string `json:"imap_password,optional"`
-	DailyCap     int    `json:"daily_cap,optional"`
+	DailyLimit   *int64 `json:"daily_limit,optional"` // its own daily limit; empty uses the pool's
 }
 
 type OutboundMailboxResult struct {
@@ -1778,8 +1787,60 @@ type SendEmailRequest struct {
 type SendEmailResponse struct {
 	Success   bool   `json:"success"`
 	MessageId string `json:"message_id"` // For tracking
-	Status    string `json:"status"`     // queued, sent, failed
+	Status    string `json:"status"`     // queued, sent, failed, suppressed, limited (over the brand's sending pathway limit; try again later)
 	Message   string `json:"message,optional"`
+}
+
+type SendingLimits struct {
+	DailyLimit      int64   `json:"daily_limit"`     // per sender per day; 0: no limit
+	WarmupStart     int64   `json:"warmup_start"`    // a new sender's first day; 0: no warm-up
+	WarmupStep      int64   `json:"warmup_step"`     // added each day
+	MinGapSeconds   int64   `json:"min_gap_seconds"` // between two sends from one sender
+	MaxGapSeconds   int64   `json:"max_gap_seconds"`
+	PauseBounceRate float64 `json:"pause_bounce_rate"` // a fraction: 0.03 is 3%, over 7 days
+	PauseMinBounces int64   `json:"pause_min_bounces"`
+	PauseSpamBlocks int64   `json:"pause_spam_blocks"`
+	PauseComplaints int64   `json:"pause_complaints"`
+}
+
+type SendingPathway struct {
+	Id              string        `json:"id"`
+	Name            string        `json:"name"`
+	Provider        string        `json:"provider"` // platform, ses, smtp, mailboxes
+	Kinds           []string      `json:"kinds"`    // transactional, marketing, outreach
+	AWSRegion       string        `json:"aws_region,optional"`
+	AWSKeysSet      bool          `json:"aws_keys_set"`
+	SMTPHost        string        `json:"smtp_host,optional"`
+	SMTPPort        int64         `json:"smtp_port,optional"`
+	SMTPUsername    string        `json:"smtp_username,optional"`
+	SMTPPasswordSet bool          `json:"smtp_password_set"`
+	Limits          SendingLimits `json:"limits"`
+	Domains         []string      `json:"domains"`
+	Mailboxes       int64         `json:"mailboxes"`
+	Warning         string        `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
+	CreatedAt       string        `json:"created_at"`
+}
+
+type SendingPathwayIDRequest struct {
+	Id string `path:"id"`
+}
+
+type SendingPathwayList struct {
+	Pathways []SendingPathway `json:"pathways"`
+}
+
+type SendingPathwayRequest struct {
+	Name         string         `json:"name,optional"`
+	Provider     string         `json:"provider"` // platform, ses, smtp, mailboxes
+	Kinds        []string       `json:"kinds,optional"`
+	AWSRegion    string         `json:"aws_region,optional"`
+	AWSAccessKey string         `json:"aws_access_key,optional"`
+	AWSSecretKey string         `json:"aws_secret_key,optional"`
+	SMTPHost     string         `json:"smtp_host,optional"`
+	SMTPPort     int64          `json:"smtp_port,optional"`
+	SMTPUsername string         `json:"smtp_username,optional"`
+	SMTPPassword string         `json:"smtp_password,optional"`
+	Limits       *SendingLimits `json:"limits,optional"` // empty: the provider's defaults
 }
 
 type SequenceDetailResponse struct {
@@ -2129,9 +2190,6 @@ type UpdateOrgEmailConfigRequest struct {
 	SESDailyQuota int64   `json:"ses_daily_quota,optional"`
 	WorkerCount   int     `json:"worker_count,optional"`
 	BatchSize     int     `json:"batch_size,optional"`
-	AWSRegion     string  `json:"aws_region,optional"`
-	AWSAccessKey  string  `json:"aws_access_key,optional"` // Will be encrypted
-	AWSSecretKey  string  `json:"aws_secret_key,optional"` // Will be encrypted
 	FromEmail     string  `json:"from_email,optional"`
 	FromName      string  `json:"from_name,optional"`
 	ReplyTo       string  `json:"reply_to,optional"`
@@ -2150,6 +2208,20 @@ type UpdateOrgRequest struct {
 	Plan        string `json:"plan,optional"`
 	MaxContacts int    `json:"max_contacts,optional"`
 	AppUrl      string `json:"app_url,optional"`
+}
+
+type UpdateSendingPathwayRequest struct {
+	Id           string         `path:"id"`
+	Name         string         `json:"name,optional"`
+	Kinds        []string       `json:"kinds"` // the whole set it carries
+	AWSRegion    string         `json:"aws_region,optional"`
+	AWSAccessKey string         `json:"aws_access_key,optional"` // empty keeps the stored key
+	AWSSecretKey string         `json:"aws_secret_key,optional"`
+	SMTPHost     string         `json:"smtp_host,optional"`
+	SMTPPort     int64          `json:"smtp_port,optional"`
+	SMTPUsername string         `json:"smtp_username,optional"`
+	SMTPPassword string         `json:"smtp_password,optional"` // empty keeps the stored password
+	Limits       *SendingLimits `json:"limits,optional"`        // empty keeps them
 }
 
 type UpdateSequenceRequest struct {

@@ -26,7 +26,7 @@ func newSignupFixture(t *testing.T) (*Handler, *db.Store) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	for _, q := range []string{
 		`INSERT INTO organizations (id, name, slug, api_key) VALUES ('org-a', 'A', 'a', 'key-a')`,
 		`INSERT INTO email_lists (id, public_id, org_id, name, slug, double_optin) VALUES (1, 'single', 'org-a', 'Single', 'single', 0)`,

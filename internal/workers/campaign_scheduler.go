@@ -254,10 +254,10 @@ func (s *CampaignScheduler) checkScheduledCampaigns() {
 func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	logx.Infof("Processing campaign %s: %s", campaign.ID, campaign.Name)
 
-	// A campaign sends only from one of its brand's domains. One that can't
-	// send is paused (the admin shows it as an error); "failed" is not a
-	// campaign status.
-	if err := email.CheckSender(s.ctx, s.store, campaign.OrgID, campaign.FromEmail.String); err != nil {
+	// A campaign sends only from a domain of its brand's marketing pathway.
+	// One that can't send is paused (the admin shows it as an error);
+	// "failed" is not a campaign status.
+	if err := email.CheckSender(s.ctx, s.store, campaign.OrgID, email.KindMarketing, campaign.FromEmail.String); err != nil {
 		logx.Errorf("Campaign %s can't send: %v", campaign.ID, err)
 		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
 			ID:     campaign.ID,
@@ -456,8 +456,11 @@ func (s *CampaignScheduler) sendWorker(id int) {
 			continue
 		}
 
-		// Send the email
-		if err := s.sendCampaignEmail(send); errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
+		// Send the email. One held back by its pathway's limit waits, still
+		// pending, until the limit lifts; it never fails or pauses the campaign.
+		if err := s.sendCampaignEmail(send); deferCampaignSend(s.ctx, s.store, send.ID, err) {
+			continue
+		} else if errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
 			// The recipient can never be sent to: record it, never retry it,
 			// and don't count it toward auto-pausing the campaign
 			s.markSendFailed(send.ID, err.Error())
@@ -505,6 +508,20 @@ func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow
 		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
 		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
 	}))
+}
+
+// deferCampaignSend puts a campaign send held back by a temporary failure
+// (its pathway's limit, a mailbox's 4xx) back to pending, to go again when
+// the limit lifts. It reports whether it did.
+func deferCampaignSend(ctx context.Context, store *db.Store, id string, err error) bool {
+	if err == nil || !email.IsTemporary(err) {
+		return false
+	}
+	at := email.RetryAt(err, time.Now().Add(15*time.Minute))
+	if derr := store.DeferCampaignSend(ctx, db.DeferCampaignSendParams{SendAfter: sql.NullString{String: at.UTC().Format(time.DateTime), Valid: true}, ID: id}); derr != nil {
+		logx.Errorf("Failed to defer send %s: %v", id, derr)
+	}
+	return true
 }
 
 // markSendSent marks a campaign send as sent
