@@ -59,6 +59,8 @@ type Service struct {
 	now       func() time.Time
 	mu        sync.Mutex
 	rnd       *rand.Rand
+
+	serviceAPI map[string]string // a mailbox service's API base, replaced in tests
 }
 
 // New makes the service. Outbound is off for a brand until its admin turns it on.

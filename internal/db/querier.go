@@ -162,6 +162,7 @@ type Querier interface {
 	CreateMCPOAuthToken(ctx context.Context, arg CreateMCPOAuthTokenParams) (McpOauthToken, error)
 	// ---- mailboxes ----------------------------------------------------------------
 	CreateMailbox(ctx context.Context, arg CreateMailboxParams) (Mailbox, error)
+	CreateMailboxServiceQuote(ctx context.Context, arg CreateMailboxServiceQuoteParams) (MailboxServiceQuote, error)
 	CreateNetworkInstance(ctx context.Context, arg CreateNetworkInstanceParams) (NetworkInstance, error)
 	CreateOrgInvitation(ctx context.Context, arg CreateOrgInvitationParams) (OrgInvitation, error)
 	// Create a new rule
@@ -360,6 +361,7 @@ type Querier interface {
 	GetMailboxByEmail(ctx context.Context, email string) (Mailbox, error)
 	// The mailbox pool a mailbox belongs to: its domain's pathway.
 	GetMailboxPathway(ctx context.Context, id string) (SendingPathway, error)
+	GetMailboxServiceQuote(ctx context.Context, arg GetMailboxServiceQuoteParams) (MailboxServiceQuote, error)
 	GetNetworkInstanceByKeyHash(ctx context.Context, keyHash string) (NetworkInstance, error)
 	GetNetworkSignals(ctx context.Context, hashes []string) ([]GetNetworkSignalsRow, error)
 	GetNextTemplate(ctx context.Context, arg GetNextTemplateParams) (GetNextTemplateRow, error)
@@ -663,6 +665,7 @@ type Querier interface {
 	SetMailboxError(ctx context.Context, arg SetMailboxErrorParams) error
 	SetMailboxIMAPState(ctx context.Context, arg SetMailboxIMAPStateParams) error
 	SetMailboxNextSend(ctx context.Context, arg SetMailboxNextSendParams) error
+	SetMailboxServiceRef(ctx context.Context, arg SetMailboxServiceRefParams) error
 	SetMailboxStatus(ctx context.Context, arg SetMailboxStatusParams) error
 	SetOrganizationDNSToken(ctx context.Context, arg SetOrganizationDNSTokenParams) error
 	// Outbound runs on Outlet's lists, contacts, sequences and email queue.
@@ -676,6 +679,9 @@ type Querier interface {
 	SetOutreachSchedule(ctx context.Context, arg SetOutreachScheduleParams) error
 	SetOutreachSequenceOptions(ctx context.Context, arg SetOutreachSequenceOptionsParams) error
 	SetPathwayKinds(ctx context.Context, arg SetPathwayKindsParams) error
+	// A mailbox pool's mailbox service, its quotes, and the service's ids for
+	// the pool's mailboxes.
+	SetPathwayMailboxService(ctx context.Context, arg SetPathwayMailboxServiceParams) error
 	SetSendingPathwayAWSKeys(ctx context.Context, arg SetSendingPathwayAWSKeysParams) error
 	SetSendingPathwaySMTPPassword(ctx context.Context, arg SetSendingPathwaySMTPPasswordParams) error
 	SetSequenceActive(ctx context.Context, arg SetSequenceActiveParams) error
@@ -756,6 +762,8 @@ type Querier interface {
 	UpsertMCPSession(ctx context.Context, arg UpsertMCPSessionParams) error
 	UpsertPlatformSetting(ctx context.Context, arg UpsertPlatformSettingParams) (PlatformSetting, error)
 	UpsertValidationCache(ctx context.Context, arg UpsertValidationCacheParams) error
+	// Spends a quote once: only an unused, unexpired one.
+	UseMailboxServiceQuote(ctx context.Context, arg UseMailboxServiceQuoteParams) (int64, error)
 	VerifyContact(ctx context.Context, id string) error
 	VerifyContactEmail(ctx context.Context, id string) error
 }

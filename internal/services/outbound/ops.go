@@ -390,6 +390,9 @@ func (s *Service) Pause(ctx context.Context, org db.Organization, scope, id stri
 		if !resume {
 			return s.db.SetMailboxStatus(ctx, db.SetMailboxStatusParams{Status: "paused", PausedReason: "paused by hand", ID: mb.ID})
 		}
+		if strings.HasPrefix(mb.PausedReason, deletedPrefix) {
+			return refuse("%s was deleted at its mailbox service; it can't send again", mb.Email)
+		}
 		if strings.HasPrefix(mb.PausedReason, "DNS:") {
 			d, err := s.db.GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: mb.DomainID, OrgID: org.ID})
 			if err != nil {

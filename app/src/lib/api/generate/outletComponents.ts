@@ -1311,6 +1311,133 @@ export interface MailboxDailyLimitRequest {
 export interface MailboxDailyLimitRequestParams {
 }
 
+export interface MailboxServiceBuyRequest {
+	quote_id: string
+	confirm: boolean // must be true: buying spends money
+}
+export interface MailboxServiceBuyRequestParams {
+}
+
+export interface MailboxServiceBuyResponse {
+	summary: string
+	charged_cents?: number
+	domain_id?: string
+	connection: MailboxServiceConnection
+	check?: OutboundDNSCheck
+	imported: Array<OutboundMailboxResult>
+	pending: Array<string> // not finished at the service yet; sync with import later
+}
+
+export interface MailboxServiceConnectRequest {
+	domain: string
+}
+export interface MailboxServiceConnectRequestParams {
+}
+
+export interface MailboxServiceConnection {
+	domain: string
+	nameservers?: Array<string> // set these at the domain's registrar
+	status?: string
+	note: string
+}
+
+export interface MailboxServiceDeleteRequest {
+}
+export interface MailboxServiceDeleteRequestParams {
+}
+
+export interface MailboxServiceDomain {
+	id: string
+	name: string
+	status: string
+	nameservers?: Array<string>
+}
+
+export interface MailboxServiceDomainResponse {
+	domain_id?: string
+	connection: MailboxServiceConnection
+	check: OutboundDNSCheck
+}
+
+export interface MailboxServiceInventory {
+	service: string
+	domains: Array<MailboxServiceDomain>
+	mailboxes: Array<MailboxServiceMailbox>
+}
+
+export interface MailboxServiceMailbox {
+	id: string
+	email: string
+	first_name?: string
+	last_name?: string
+	status: string
+	ready: boolean
+}
+
+export interface MailboxServicePerson {
+	first_name: string
+	last_name: string
+	local?: string // before the @; empty: first.last
+}
+
+export interface MailboxServicePoolMailbox {
+	id: string
+	email: string
+}
+
+export interface MailboxServicePoolRequest {
+}
+export interface MailboxServicePoolRequestParams {
+}
+
+export interface MailboxServiceQuote {
+	id: string
+	service: string
+	kind: string
+	domain: string
+	mailboxes: number
+	price_cents?: number // empty: the service's API gives no price
+	price_known: boolean
+	currency?: string
+	summary: string
+	expires_at: string
+}
+
+export interface MailboxServiceQuoteRequest {
+	kind: string // domain, connect, mailboxes
+	domain: string
+	people?: Array<MailboxServicePerson> // for mailboxes
+}
+export interface MailboxServiceQuoteRequestParams {
+}
+
+export interface MailboxServiceRequest {
+	service: string // manual, maildoso, cheapinboxes, infraforge
+	api_key?: string // empty keeps the stored key
+}
+export interface MailboxServiceRequestParams {
+}
+
+export interface MailboxServiceStatus {
+	pool_id: string
+	service: string
+	key_set: boolean
+	limits: SendingLimits // picking a service sets them to its terms
+}
+
+export interface MailboxServiceSyncRequest {
+	import?: boolean // import the service's mailboxes the pool lacks
+}
+export interface MailboxServiceSyncRequestParams {
+}
+
+export interface MailboxServiceSyncResponse {
+	only_at_service: Array<MailboxServiceMailbox>
+	only_in_pool: Array<MailboxServicePoolMailbox>
+	imported: Array<OutboundMailboxResult>
+	pending: Array<string>
+}
+
 export interface MarkContactReadRequest {
 }
 export interface MarkContactReadRequestParams {
@@ -2005,6 +2132,8 @@ export interface SendingPathway {
 	mailboxes: number
 	warning?: string // set when outreach rides a provider other than mailboxes
 	created_at: string
+	mailbox_service?: string // a mailbox pool's: manual, maildoso, cheapinboxes, infraforge
+	mailbox_service_key_set: boolean
 }
 
 export interface SendingPathwayDomain {

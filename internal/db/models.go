@@ -458,6 +458,22 @@ type Mailbox struct {
 	LastError       string         `json:"last_error"`
 	CreatedAt       string         `json:"created_at"`
 	DailyLimit      sql.NullInt64  `json:"daily_limit"`
+	ServiceRef      string         `json:"service_ref"`
+}
+
+type MailboxServiceQuote struct {
+	ID         string         `json:"id"`
+	OrgID      string         `json:"org_id"`
+	PathwayID  string         `json:"pathway_id"`
+	Service    string         `json:"service"`
+	Kind       string         `json:"kind"`
+	Request    string         `json:"request"`
+	PriceCents sql.NullInt64  `json:"price_cents"`
+	Currency   string         `json:"currency"`
+	Summary    string         `json:"summary"`
+	ExpiresAt  string         `json:"expires_at"`
+	UsedAt     sql.NullString `json:"used_at"`
+	CreatedAt  string         `json:"created_at"`
 }
 
 type McpApiKey struct {
@@ -682,6 +698,8 @@ type SendingPathway struct {
 	PauseComplaints      int64          `json:"pause_complaints"`
 	NextSendAt           sql.NullString `json:"next_send_at"`
 	CreatedAt            string         `json:"created_at"`
+	MailboxService       string         `json:"mailbox_service"`
+	MailboxServiceKeyEnc []byte         `json:"mailbox_service_key_enc"`
 }
 
 type SequenceEntryRule struct {

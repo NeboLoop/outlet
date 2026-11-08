@@ -213,6 +213,11 @@ type Pathway struct {
 	Mailboxes       int             `json:"mailboxes"`
 	Warning         string   `json:"warning,omitempty"`
 	CreatedAt       string   `json:"created_at"`
+
+	// A mailbox pool's mailbox service (manual, maildoso, cheapinboxes,
+	// infraforge), and whether its API key is set.
+	MailboxService       string `json:"mailbox_service,omitempty"`
+	MailboxServiceKeySet bool   `json:"mailbox_service_key_set"`
 }
 
 // PathwayDomain is one domain a pathway holds: a sending domain, or an
@@ -261,6 +266,7 @@ func (s *Service) view(ctx context.Context, p db.SendingPathway) (Pathway, error
 			return out, err
 		}
 		out.Mailboxes = len(mbs)
+		out.MailboxService, out.MailboxServiceKeySet = p.MailboxService, len(p.MailboxServiceKeyEnc) > 0
 	}
 	return out, nil
 }

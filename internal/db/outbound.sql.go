@@ -283,7 +283,7 @@ INSERT INTO mailboxes (
     smtp_host, smtp_port, smtp_username, smtp_password_enc,
     imap_host, imap_port, imap_username, imap_password_enc, daily_limit
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit
+RETURNING id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit, service_ref
 `
 
 type CreateMailboxParams struct {
@@ -348,6 +348,7 @@ func (q *Queries) CreateMailbox(ctx context.Context, arg CreateMailboxParams) (M
 		&i.LastError,
 		&i.CreatedAt,
 		&i.DailyLimit,
+		&i.ServiceRef,
 	)
 	return i, err
 }
@@ -496,7 +497,7 @@ func (q *Queries) GetEmailReply(ctx context.Context, arg GetEmailReplyParams) (E
 }
 
 const getMailbox = `-- name: GetMailbox :one
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes WHERE id = ? AND org_id = ?
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit, service_ref FROM mailboxes WHERE id = ? AND org_id = ?
 `
 
 type GetMailboxParams struct {
@@ -531,12 +532,13 @@ func (q *Queries) GetMailbox(ctx context.Context, arg GetMailboxParams) (Mailbox
 		&i.LastError,
 		&i.CreatedAt,
 		&i.DailyLimit,
+		&i.ServiceRef,
 	)
 	return i, err
 }
 
 const getMailboxByEmail = `-- name: GetMailboxByEmail :one
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes WHERE email = ?
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit, service_ref FROM mailboxes WHERE email = ?
 `
 
 func (q *Queries) GetMailboxByEmail(ctx context.Context, email string) (Mailbox, error) {
@@ -566,6 +568,7 @@ func (q *Queries) GetMailboxByEmail(ctx context.Context, email string) (Mailbox,
 		&i.LastError,
 		&i.CreatedAt,
 		&i.DailyLimit,
+		&i.ServiceRef,
 	)
 	return i, err
 }
@@ -879,7 +882,7 @@ func (q *Queries) GetSequenceStateFull(ctx context.Context, arg GetSequenceState
 }
 
 const listActiveMailboxes = `-- name: ListActiveMailboxes :many
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes WHERE status = 'active' ORDER BY email
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit, service_ref FROM mailboxes WHERE status = 'active' ORDER BY email
 `
 
 // Every mailbox the sender works, across brands.
@@ -916,6 +919,7 @@ func (q *Queries) ListActiveMailboxes(ctx context.Context) ([]Mailbox, error) {
 			&i.LastError,
 			&i.CreatedAt,
 			&i.DailyLimit,
+			&i.ServiceRef,
 		); err != nil {
 			return nil, err
 		}
@@ -1026,7 +1030,7 @@ func (q *Queries) ListActiveOutreachStatesForContact(ctx context.Context, contac
 }
 
 const listAllMailboxes = `-- name: ListAllMailboxes :many
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes ORDER BY email
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit, service_ref FROM mailboxes ORDER BY email
 `
 
 func (q *Queries) ListAllMailboxes(ctx context.Context) ([]Mailbox, error) {
@@ -1062,6 +1066,7 @@ func (q *Queries) ListAllMailboxes(ctx context.Context) ([]Mailbox, error) {
 			&i.LastError,
 			&i.CreatedAt,
 			&i.DailyLimit,
+			&i.ServiceRef,
 		); err != nil {
 			return nil, err
 		}
@@ -1197,7 +1202,7 @@ func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesPara
 }
 
 const listMailboxes = `-- name: ListMailboxes :many
-SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit FROM mailboxes WHERE org_id = ? ORDER BY email
+SELECT id, org_id, domain_id, email, from_name, signature, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc, status, paused_reason, warmup_started_at, next_send_at, imap_uid_validity, imap_last_uid, last_error, created_at, daily_limit, service_ref FROM mailboxes WHERE org_id = ? ORDER BY email
 `
 
 func (q *Queries) ListMailboxes(ctx context.Context, orgID string) ([]Mailbox, error) {
@@ -1233,6 +1238,7 @@ func (q *Queries) ListMailboxes(ctx context.Context, orgID string) ([]Mailbox, e
 			&i.LastError,
 			&i.CreatedAt,
 			&i.DailyLimit,
+			&i.ServiceRef,
 		); err != nil {
 			return nil, err
 		}

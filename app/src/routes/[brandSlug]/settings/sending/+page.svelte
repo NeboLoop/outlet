@@ -13,6 +13,7 @@
 	import { Plus, Pencil, Trash2, TriangleAlert } from '@lucide/svelte';
 	import { errorMessage } from '../../outbound/shared';
 	import { moveTargets } from './pathways';
+	import MailboxService from './MailboxService.svelte';
 
 	const OUTREACH_WARNING =
 		'Amazon SES and most email platforms forbid cold email in their terms and can suspend the account.';
@@ -72,6 +73,11 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	// refresh rereads the pathways in place, keeping each pool's open forms.
+	async function refresh() {
+		pathways = (await listSendingPathways()).pathways || [];
 	}
 
 	function providerLabel(value: string): string {
@@ -502,6 +508,9 @@
 								another platform, SES or SMTP pathway.
 							</p>
 						</div>
+					{/if}
+					{#if p.provider === 'mailboxes'}
+						<MailboxService pool={p} onchange={refresh} />
 					{/if}
 				</section>
 			{/each}

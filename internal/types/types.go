@@ -1217,6 +1217,127 @@ type MailboxDailyLimitRequest struct {
 	DailyLimit *int64 `json:"daily_limit,optional"` // empty: use the pool's
 }
 
+type MailboxServiceBuyRequest struct {
+	Id      string `path:"id"`
+	QuoteId string `json:"quote_id"`
+	Confirm bool   `json:"confirm"` // must be true: buying spends money
+}
+
+type MailboxServiceBuyResponse struct {
+	Summary      string                   `json:"summary"`
+	ChargedCents *int64                   `json:"charged_cents,optional"`
+	DomainId     string                   `json:"domain_id,optional"`
+	Connection   MailboxServiceConnection `json:"connection"`
+	Check        *OutboundDNSCheck        `json:"check,optional"`
+	Imported     []OutboundMailboxResult  `json:"imported"`
+	Pending      []string                 `json:"pending"` // not finished at the service yet; sync with import later
+}
+
+type MailboxServiceConnectRequest struct {
+	Id     string `path:"id"`
+	Domain string `json:"domain"`
+}
+
+type MailboxServiceConnection struct {
+	Domain      string   `json:"domain"`
+	Nameservers []string `json:"nameservers,optional"` // set these at the domain's registrar
+	Status      string   `json:"status,optional"`
+	Note        string   `json:"note"`
+}
+
+type MailboxServiceDeleteRequest struct {
+	Id        string `path:"id"`
+	MailboxId string `path:"mailbox_id"`
+}
+
+type MailboxServiceDomain struct {
+	Id          string   `json:"id"`
+	Name        string   `json:"name"`
+	Status      string   `json:"status"`
+	Nameservers []string `json:"nameservers,optional"`
+}
+
+type MailboxServiceDomainResponse struct {
+	DomainId   string                   `json:"domain_id,optional"`
+	Connection MailboxServiceConnection `json:"connection"`
+	Check      OutboundDNSCheck         `json:"check"`
+}
+
+type MailboxServiceInventory struct {
+	Service   string                  `json:"service"`
+	Domains   []MailboxServiceDomain  `json:"domains"`
+	Mailboxes []MailboxServiceMailbox `json:"mailboxes"`
+}
+
+type MailboxServiceMailbox struct {
+	Id        string `json:"id"`
+	Email     string `json:"email"`
+	FirstName string `json:"first_name,optional"`
+	LastName  string `json:"last_name,optional"`
+	Status    string `json:"status"`
+	Ready     bool   `json:"ready"`
+}
+
+type MailboxServicePerson struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Local     string `json:"local,optional"` // before the @; empty: first.last
+}
+
+type MailboxServicePoolMailbox struct {
+	Id    string `json:"id"`
+	Email string `json:"email"`
+}
+
+type MailboxServicePoolRequest struct {
+	Id string `path:"id"` // the mailbox pool
+}
+
+type MailboxServiceQuote struct {
+	Id         string `json:"id"`
+	Service    string `json:"service"`
+	Kind       string `json:"kind"`
+	Domain     string `json:"domain"`
+	Mailboxes  int64  `json:"mailboxes"`
+	PriceCents *int64 `json:"price_cents,optional"` // empty: the service's API gives no price
+	PriceKnown bool   `json:"price_known"`
+	Currency   string `json:"currency,optional"`
+	Summary    string `json:"summary"`
+	ExpiresAt  string `json:"expires_at"`
+}
+
+type MailboxServiceQuoteRequest struct {
+	Id     string                 `path:"id"`
+	Kind   string                 `json:"kind"` // domain, connect, mailboxes
+	Domain string                 `json:"domain"`
+	People []MailboxServicePerson `json:"people,optional"` // for mailboxes
+}
+
+type MailboxServiceRequest struct {
+	Id      string `path:"id"`
+	Service string `json:"service"`          // manual, maildoso, cheapinboxes, infraforge
+	APIKey  string `json:"api_key,optional"` // empty keeps the stored key
+}
+
+type MailboxServiceStatus struct {
+	PoolId  string        `json:"pool_id"`
+	Service string        `json:"service"`
+	KeySet  bool          `json:"key_set"`
+	Limits  SendingLimits `json:"limits"` // picking a service sets them to its terms
+}
+
+type MailboxServiceSyncRequest struct {
+	Id     string `path:"id"`
+	Import bool   `json:"import,optional"` // import the service's mailboxes the pool lacks
+}
+
+type MailboxServiceSyncResponse struct {
+	OnlyAtService []MailboxServiceMailbox     `json:"only_at_service"`
+	OnlyInPool    []MailboxServicePoolMailbox `json:"only_in_pool"`
+	Imported      []OutboundMailboxResult     `json:"imported"`
+	Pending       []string                    `json:"pending"`
+}
+
 type MarkContactReadRequest struct {
 	ID int64 `path:"id"`
 }
@@ -1875,21 +1996,23 @@ type SendingLimits struct {
 }
 
 type SendingPathway struct {
-	Id              string                 `json:"id"`
-	Name            string                 `json:"name"`
-	Provider        string                 `json:"provider"` // platform, ses, smtp, mailboxes
-	Kinds           []string               `json:"kinds"`    // transactional, marketing, outreach
-	AWSRegion       string                 `json:"aws_region,optional"`
-	AWSKeysSet      bool                   `json:"aws_keys_set"`
-	SMTPHost        string                 `json:"smtp_host,optional"`
-	SMTPPort        int64                  `json:"smtp_port,optional"`
-	SMTPUsername    string                 `json:"smtp_username,optional"`
-	SMTPPasswordSet bool                   `json:"smtp_password_set"`
-	Limits          SendingLimits          `json:"limits"`
-	Domains         []SendingPathwayDomain `json:"domains"`
-	Mailboxes       int64                  `json:"mailboxes"`
-	Warning         string                 `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
-	CreatedAt       string                 `json:"created_at"`
+	Id                   string                 `json:"id"`
+	Name                 string                 `json:"name"`
+	Provider             string                 `json:"provider"` // platform, ses, smtp, mailboxes
+	Kinds                []string               `json:"kinds"`    // transactional, marketing, outreach
+	AWSRegion            string                 `json:"aws_region,optional"`
+	AWSKeysSet           bool                   `json:"aws_keys_set"`
+	SMTPHost             string                 `json:"smtp_host,optional"`
+	SMTPPort             int64                  `json:"smtp_port,optional"`
+	SMTPUsername         string                 `json:"smtp_username,optional"`
+	SMTPPasswordSet      bool                   `json:"smtp_password_set"`
+	Limits               SendingLimits          `json:"limits"`
+	Domains              []SendingPathwayDomain `json:"domains"`
+	Mailboxes            int64                  `json:"mailboxes"`
+	Warning              string                 `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
+	CreatedAt            string                 `json:"created_at"`
+	MailboxService       string                 `json:"mailbox_service,optional"` // a mailbox pool's: manual, maildoso, cheapinboxes, infraforge
+	MailboxServiceKeySet bool                   `json:"mailbox_service_key_set"`
 }
 
 type SendingPathwayDomain struct {
