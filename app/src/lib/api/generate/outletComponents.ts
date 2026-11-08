@@ -2728,7 +2728,8 @@ export interface ValidateBatchRequest {
 }
 
 export interface ValidateBatchResponse {
-	results: Array<ValidationResult>
+	job: ValidationJobInfo // status completed when every address is checked
+	results: Array<ValidationResult> // one per address, in address order; status pending until checked
 }
 
 export interface ValidateEmailRequest {

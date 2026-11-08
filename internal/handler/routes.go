@@ -1630,6 +1630,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/batch",
 					Handler: sdkvalidation.ValidateBatchHandler(serverCtx),
 				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/batch/:id",
+					Handler: sdkvalidation.GetValidateBatchHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/sdk/v1/validate"),

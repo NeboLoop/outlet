@@ -1995,7 +1995,15 @@ export function validateEmail(req: components.ValidateEmailRequest) {
  * @param req
  */
 export function validateBatch(req: components.ValidateBatchRequest) {
-	return webapi.post<components.ValidateBatchResponse>(`/sdk/v1/validate/batch`, req)
+	return webapi.post<components.ValidationJobInfo>(`/sdk/v1/validate/batch`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getValidateBatch(params: components.ValidationJobIdRequestParams, id: string) {
+	return webapi.get<components.ValidateBatchResponse>(`/sdk/v1/validate/batch/${id}`, params)
 }
 
 /**

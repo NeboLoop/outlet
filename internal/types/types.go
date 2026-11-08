@@ -2574,7 +2574,8 @@ type ValidateBatchRequest struct {
 }
 
 type ValidateBatchResponse struct {
-	Results []ValidationResult `json:"results"`
+	Job     ValidationJobInfo  `json:"job"`     // status completed when every address is checked
+	Results []ValidationResult `json:"results"` // one per address, in address order; status pending until checked
 }
 
 type ValidateEmailRequest struct {

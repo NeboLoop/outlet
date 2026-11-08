@@ -1536,7 +1536,8 @@ type (
 		Emails []string `json:"emails"` // max 100
 	}
 	ValidateBatchResponse {
-		Results []ValidationResult `json:"results"`
+		Job     ValidationJobInfo  `json:"job"` // status completed when every address is checked
+		Results []ValidationResult `json:"results"` // one per address, in address order; status pending until checked
 	}
 	ValidationJobInfo {
 		Id          string `json:"id"`
@@ -3297,6 +3298,9 @@ service outlet {
 	post / (ValidateEmailRequest) returns (ValidationResult)
 }
 
+// A batch is accepted at once as a validation job; the validation worker
+// checks its addresses in the background. Fetch the job and its results with
+// its ID until its status is completed.
 @server (
 	group:      sdk/validation
 	prefix:     /sdk/v1/validate
@@ -3304,7 +3308,10 @@ service outlet {
 )
 service outlet {
 	@handler ValidateBatch
-	post /batch (ValidateBatchRequest) returns (ValidateBatchResponse)
+	post /batch (ValidateBatchRequest) returns (ValidationJobInfo)
+
+	@handler GetValidateBatch
+	get /batch/:id (ValidationJobIdRequest) returns (ValidateBatchResponse)
 }
 
 // Signal Network hub (only served when SignalNet.Hub is true; 404 otherwise)
