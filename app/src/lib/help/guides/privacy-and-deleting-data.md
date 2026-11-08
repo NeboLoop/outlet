@@ -15,7 +15,7 @@ Under **Consent Preferences**, switch **GDPR Consent** and **Marketing Consent**
 
 ## Export someone's data
 
-Under **Export Personal Data**, press **Export Data**. Outlet gathers their profile, consent, tags and activity into one file, which is kept for 24 hours.
+Under **Export Personal Data**, press **Export Data**. Outlet gathers their profile, consent, tags and activity (campaigns, sequence emails, transactional emails and clicks) into one JSON file, and your browser downloads it. Nothing is kept on the server. To save it again, press **Download Export**. The MCP gdpr tool's export gives the same data.
 
 ## Delete someone's data
 
@@ -37,4 +37,4 @@ People unsubscribe with the link in every marketing email. You choose in each li
 ## Common problems
 
 - **The search finds nobody**: check the spelling, and that you're in the right brand.
-- **The export download doesn't start**: the export is made, but the **Download Export** link doesn't work yet. Ask whoever runs your Outlet server for the file.
+- **The export download doesn't start**: your browser may have blocked it. Press **Download Export** to save it again, or allow downloads from your Outlet address.

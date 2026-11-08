@@ -103,59 +103,6 @@ type GDPRLookupOutput struct {
 	Found     bool   `json:"found"`
 }
 
-// GDPRContactData represents contact info in export.
-type GDPRContactData struct {
-	ID          string `json:"id"`
-	Email       string `json:"email"`
-	Name        string `json:"name,omitempty"`
-	Status      string `json:"status,omitempty"`
-	GDPRConsent bool   `json:"gdpr_consent"`
-	CreatedAt   string `json:"created_at,omitempty"`
-	UpdatedAt   string `json:"updated_at,omitempty"`
-}
-
-// GDPRCampaignSend represents a campaign send.
-type GDPRCampaignSend struct {
-	CampaignID   string `json:"campaign_id"`
-	CampaignName string `json:"campaign_name,omitempty"`
-	SentAt       string `json:"sent_at,omitempty"`
-	OpenedAt     string `json:"opened_at,omitempty"`
-	ClickedAt    string `json:"clicked_at,omitempty"`
-}
-
-// GDPRSequenceEmail represents a sequence email.
-type GDPRSequenceEmail struct {
-	SequenceID   string `json:"sequence_id"`
-	SequenceName string `json:"sequence_name,omitempty"`
-	Subject      string `json:"subject,omitempty"`
-	SentAt       string `json:"sent_at,omitempty"`
-	OpenedAt     string `json:"opened_at,omitempty"`
-}
-
-// GDPRTransactionalSend represents a transactional send.
-type GDPRTransactionalSend struct {
-	TemplateID   string `json:"template_id"`
-	TemplateName string `json:"template_name,omitempty"`
-	SentAt       string `json:"sent_at,omitempty"`
-	OpenedAt     string `json:"opened_at,omitempty"`
-}
-
-// GDPRClick represents a click event.
-type GDPRClick struct {
-	URL       string `json:"url,omitempty"`
-	ClickedAt string `json:"clicked_at,omitempty"`
-}
-
-// GDPRExportOutput defines output for export.
-type GDPRExportOutput struct {
-	Contact            GDPRContactData         `json:"contact"`
-	Tags               []string                `json:"tags"`
-	CampaignsSent      []GDPRCampaignSend      `json:"campaigns_sent"`
-	SequenceEmails     []GDPRSequenceEmail     `json:"sequence_emails"`
-	TransactionalSends []GDPRTransactionalSend `json:"transactional_sends"`
-	Clicks             []GDPRClick             `json:"clicks"`
-}
-
 // GDPRConsentOutput defines output for get_consent and update_consent.
 type GDPRConsentOutput struct {
 	ContactID        string `json:"contact_id"`
@@ -207,99 +154,14 @@ func handleGDPRExport(ctx context.Context, toolCtx *mcpctx.ToolContext, input GD
 		return nil, nil, mcpctx.NewValidationError("contact_id is required", "contact_id")
 	}
 
-	// Get contact
-	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
-		ID:    input.ContactID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
-	})
-	if err != nil {
+	export, err := gdpr.Export(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), input.ContactID)
+	if errors.Is(err, gdpr.ErrNotFound) {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ContactID))
 	}
-
-	// Build contact data
-	contactData := GDPRContactData{
-		ID:          contact.ID,
-		Email:       contact.Email,
-		Name:        contact.Name,
-		Status:      contact.Status.String,
-		GDPRConsent: int64ToBool(contact.GdprConsent),
-		CreatedAt:   contact.CreatedAt.String,
-		UpdatedAt:   contact.UpdatedAt.String,
+	if err != nil {
+		return nil, nil, err
 	}
-
-	// Get tags
-	tags := make([]string, 0)
-	contactTags, err := toolCtx.DB().GetContactTags(ctx, sql.NullString{String: contact.ID, Valid: true})
-	if err == nil {
-		for _, t := range contactTags {
-			tags = append(tags, t.Tag)
-		}
-	}
-
-	// Get campaign sends
-	campaignsSent := make([]GDPRCampaignSend, 0)
-	campaigns, err := toolCtx.DB().GetContactCampaignSends(ctx, contact.ID)
-	if err == nil {
-		for _, c := range campaigns {
-			campaignsSent = append(campaignsSent, GDPRCampaignSend{
-				CampaignID:   c.CampaignID,
-				CampaignName: c.CampaignName.String,
-				SentAt:       c.SentAt.String,
-				OpenedAt:     c.OpenedAt.String,
-				ClickedAt:    c.ClickedAt.String,
-			})
-		}
-	}
-
-	// Get sequence emails
-	sequenceEmails := make([]GDPRSequenceEmail, 0)
-	seqEmails, err := toolCtx.DB().GetContactSequenceEmails(ctx, sql.NullString{String: contact.ID, Valid: true})
-	if err == nil {
-		for _, s := range seqEmails {
-			sequenceEmails = append(sequenceEmails, GDPRSequenceEmail{
-				SequenceID:   s.SequenceID.String,
-				SequenceName: s.SequenceName.String,
-				Subject:      s.Subject.String,
-				SentAt:       s.SentAt.String,
-				OpenedAt:     s.OpenedAt.String,
-			})
-		}
-	}
-
-	// Get transactional sends
-	transactionalSends := make([]GDPRTransactionalSend, 0)
-	txSends, err := toolCtx.DB().GetContactTransactionalSends(ctx, sql.NullString{String: contact.ID, Valid: true})
-	if err == nil {
-		for _, t := range txSends {
-			transactionalSends = append(transactionalSends, GDPRTransactionalSend{
-				TemplateID:   t.TemplateID,
-				TemplateName: t.TemplateName.String,
-				SentAt:       t.CreatedAt.String, // Use CreatedAt as SentAt
-				OpenedAt:     t.OpenedAt.String,
-			})
-		}
-	}
-
-	// Get clicks
-	clicks := make([]GDPRClick, 0)
-	contactClicks, err := toolCtx.DB().GetContactEmailClicks(ctx, sql.NullString{String: contact.ID, Valid: true})
-	if err == nil {
-		for _, c := range contactClicks {
-			clicks = append(clicks, GDPRClick{
-				URL:       c.LinkUrl,
-				ClickedAt: c.ClickedAt,
-			})
-		}
-	}
-
-	return nil, GDPRExportOutput{
-		Contact:            contactData,
-		Tags:               tags,
-		CampaignsSent:      campaignsSent,
-		SequenceEmails:     sequenceEmails,
-		TransactionalSends: transactionalSends,
-		Clicks:             clicks,
-	}, nil
+	return nil, export, nil
 }
 
 func handleGDPRDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input GDPRInput) (*mcp.CallToolResult, any, error) {
