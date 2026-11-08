@@ -755,14 +755,15 @@ type GDPRConsentRequest struct {
 type GDPRDeleteRequest struct {
 	ContactId   string `path:"contact_id"`
 	Confirm     bool   `json:"confirm"`               // Must be true to proceed
-	DeleteEmail bool   `json:"delete_email,optional"` // Also delete from email provider logs if possible
+	DeleteEmail bool   `json:"delete_email,optional"` // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
 }
 
 type GDPRDeleteResponse struct {
-	Success       bool   `json:"success"`
-	Message       string `json:"message"`
-	DeletedData   string `json:"deleted_data"` // Summary of what was deleted
-	AuditRecordId string `json:"audit_record_id"`
+	Success         bool                 `json:"success"`
+	Message         string               `json:"message"`
+	DeletedData     string               `json:"deleted_data"`     // Summary of what was deleted
+	AuditRecordId   string               `json:"audit_record_id"`  // The deletion's row in the GDPR audit log
+	ProviderResults []GDPRProviderResult `json:"provider_results"` // Set when delete_email was asked for
 }
 
 type GDPRExportRequest struct {
@@ -783,6 +784,13 @@ type GDPRLookupResponse struct {
 	Found     bool   `json:"found"`
 	ContactId string `json:"contact_id,omitempty"`
 	Email     string `json:"email,omitempty"`
+}
+
+type GDPRProviderResult struct {
+	Pathway  string `json:"pathway"`
+	Provider string `json:"provider"` // Amazon SES, SMTP relay, Mailboxes
+	Result   string `json:"result"`
+	Failed   bool   `json:"failed"`
 }
 
 type GetBackupRequest struct {
@@ -961,9 +969,10 @@ type ImportJobInfo struct {
 }
 
 type ImportListSubscribersRequest struct {
-	Id       string `path:"id"` // list ID
-	Filename string `json:"filename"`
-	Csv      string `json:"csv"`
+	Id          string `path:"id"` // list ID
+	Filename    string `json:"filename"`
+	Csv         string `json:"csv"`
+	StartSignup bool   `json:"start_signup,optional,default=true"` // Start the list's sign-up emails for the people added; off for an old list that shouldn't get them
 }
 
 type ListBackupsRequest struct {
@@ -2021,11 +2030,15 @@ type SendEmailRequest struct {
 	FromName     string            `json:"from_name,optional"`     // Override org default
 	FromEmail    string            `json:"from_email,optional"`    // Override org default
 	ReplyTo      string            `json:"reply_to,optional"`
-	Headers      map[string]string `json:"headers,optional"`     // Threading headers: In-Reply-To, References, Message-ID
-	Variables    map[string]string `json:"variables,optional"`   // Template variables
-	Tags         []string          `json:"tags,optional"`        // For tracking/filtering
-	Meta         map[string]string `json:"meta,optional"`        // Custom metadata
-	Attachments  []EmailAttachment `json:"attachments,optional"` // Optional file attachments
+	Headers      map[string]string `json:"headers,optional"`      // Threading headers: In-Reply-To, References, Message-ID
+	Variables    map[string]string `json:"variables,optional"`    // Template variables
+	Tags         []string          `json:"tags,optional"`         // For tracking/filtering
+	Meta         map[string]string `json:"meta,optional"`         // Custom metadata
+	Attachments  []EmailAttachment `json:"attachments,optional"`  // Optional file attachments
+	Type         string            `json:"type,optional"`         // transactional (default) or marketing
+	ListSlug     string            `json:"list_slug,optional"`    // Marketing only, and required for it: the list the recipient subscribed to. Sent only to an active subscriber, with an unsubscribe link
+	TrackOpens   bool              `json:"track_opens,optional"`  // Add an open pixel
+	TrackClicks  bool              `json:"track_clicks,optional"` // Send links through click tracking
 }
 
 type SendEmailResponse struct {

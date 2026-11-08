@@ -283,10 +283,6 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
 		}
 	}
 
-	if err := l.svcCtx.Sequences.SubscriptionActivated(l.ctx, contact.ID, list.ID); err != nil {
-		l.Errorf("Failed to start signup sequence: %v", err)
-	}
-
 	l.Infof("Subscribed: org=%s email=%s list=%s", orgID, req.Email, req.Slug)
 	return &types.Response{Success: true, Message: "Subscribed"}, nil
 }

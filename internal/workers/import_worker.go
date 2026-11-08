@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -215,6 +216,11 @@ func (w *ImportWorker) processImportJob(job db.ImportJob) error {
 		logx.Errorf("Failed to set total rows: %v", err)
 	}
 
+	opts, err := ImportOptionsOf(job)
+	if err != nil {
+		return w.failJob(job.ID, "Failed to read the import's options: "+err.Error())
+	}
+
 	// Process rows
 	var processed, success, errors, skipped int64
 	var errorMessages []string
@@ -242,7 +248,7 @@ func (w *ImportWorker) processImportJob(job db.ImportJob) error {
 		var importErr error
 		switch job.Type {
 		case "subscribers":
-			importErr = w.importSubscriber(job, record, colMap)
+			importErr = w.importSubscriber(job, opts, record, colMap)
 		case "suppression":
 			importErr = w.importSuppression(job, record, colMap)
 		case "blocked_domains":
@@ -298,8 +304,26 @@ func (w *ImportWorker) processImportJob(job db.ImportJob) error {
 	return nil
 }
 
+// ImportOptions are an import job's options, stored as JSON in
+// import_jobs.options.
+type ImportOptions struct {
+	// StartSignup starts the list's sign-up emails for each person a
+	// subscriber import adds.
+	StartSignup bool `json:"start_signup"`
+}
+
+// ImportOptionsOf reads a job's options. A job saved without any has none set.
+func ImportOptionsOf(job db.ImportJob) (ImportOptions, error) {
+	var opts ImportOptions
+	if !job.Options.Valid || job.Options.String == "" {
+		return opts, nil
+	}
+	err := json.Unmarshal([]byte(job.Options.String), &opts)
+	return opts, err
+}
+
 // importSubscriber imports a single subscriber row
-func (w *ImportWorker) importSubscriber(job db.ImportJob, record []string, colMap map[string]int) error {
+func (w *ImportWorker) importSubscriber(job db.ImportJob, opts ImportOptions, record []string, colMap map[string]int) error {
 	// Get email (required)
 	emailIdx, ok := colMap["email"]
 	if !ok {
@@ -319,7 +343,7 @@ func (w *ImportWorker) importSubscriber(job db.ImportJob, record []string, colMa
 		name = strings.TrimSpace(record[nameIdx])
 	}
 
-	if _, err := w.store.AddSubscriber(w.ctx, job.OrgID, job.ListID.Int64, email, name, "import"); err != nil {
+	if _, err := w.store.AddSubscriber(w.ctx, job.OrgID, job.ListID.Int64, email, name, "import", opts.StartSignup); err != nil {
 		return fmt.Errorf("%s: %w", email, err)
 	}
 	return nil

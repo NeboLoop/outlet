@@ -4,12 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
+	"github.com/outlet-sh/outlet/internal/services/email"
+	"github.com/outlet-sh/outlet/internal/services/gdpr"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,8 +34,9 @@ type GDPRInput struct {
 	GDPRConsent *bool `json:"gdpr_consent,omitempty" jsonschema:"GDPR consent status (update_consent)"`
 
 	// Confirmation
-	Confirm     bool `json:"confirm,omitempty" jsonschema:"Confirmation for delete action (delete)"`
-	ConfirmLive bool `json:"confirm_live,omitempty" jsonschema:"Set to true to delete while the brand's API key is in live use (delete)"`
+	Confirm      bool `json:"confirm,omitempty" jsonschema:"Confirmation for delete action (delete)"`
+	ProviderLogs bool `json:"provider_logs,omitempty" jsonschema:"Also ask the brand's email providers to delete what they keep about the address (delete). Amazon SES: the address comes off the account's suppression list, the one per-recipient record its API can delete. SMTP relays and mailboxes have no API for it, which the result says"`
+	ConfirmLive  bool `json:"confirm_live,omitempty" jsonschema:"Set to true to delete while the brand's API key is in live use (delete)"`
 }
 
 // RegisterGDPRTool registers the GDPR tool.
@@ -47,7 +51,7 @@ PREREQUISITE: You must first select a brand using brand(resource: brand, action:
 Actions and Required Fields:
 - lookup: Look up a contact by email (requires: email)
 - export: Export all data for a contact (requires: contact_id)
-- delete: Delete all data for a contact (requires: contact_id, confirm=true)
+- delete: Delete all data for a contact (requires: contact_id, confirm=true; optional: provider_logs). Recorded in the GDPR audit log
 - get_consent: Get consent status for a contact (requires: contact_id)
 - update_consent: Update consent status (requires: contact_id, optional: gdpr_consent)
 
@@ -311,25 +315,39 @@ func handleGDPRDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input GD
 		return nil, nil, mcpctx.NewValidationError("confirm=true is required to delete contact data", "confirm")
 	}
 
-	// Verify contact exists and belongs to brand
-	contact, err := toolCtx.DB().GetContactByOrgID(ctx, db.GetContactByOrgIDParams{
-		ID:    input.ContactID,
-		OrgID: sql.NullString{String: toolCtx.BrandID(ctx), Valid: true},
+	requestedBy, requestedByEmail := "api-key", ""
+	if u := toolCtx.User(); u != nil {
+		requestedBy, requestedByEmail = u.ID, u.Email
+	}
+	deleted, err := gdpr.Delete(ctx, toolCtx.DB(), toolCtx.Svc().EmailService, gdpr.DeleteRequest{
+		OrgID:            toolCtx.BrandID(ctx),
+		ContactID:        input.ContactID,
+		ProviderLogs:     input.ProviderLogs,
+		RequestedBy:      requestedBy,
+		RequestedByEmail: requestedByEmail,
+		Via:              "mcp",
 	})
-	if err != nil {
+	if errors.Is(err, gdpr.ErrNotFound) {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("contact %s not found", input.ContactID))
 	}
-
-	// Delete contact (cascades to related data)
-	err = toolCtx.DB().DeleteContact(ctx, contact.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to delete contact: %w", err)
 	}
 
-	return nil, DeleteOutput{
-		Success: true,
-		Message: fmt.Sprintf("Contact %s and all associated data deleted successfully", input.ContactID),
+	return nil, GDPRDeleteOutput{
+		Success:   true,
+		Message:   fmt.Sprintf("Contact %s and all associated data deleted successfully", input.ContactID),
+		AuditID:   deleted.AuditID,
+		Providers: deleted.Providers,
 	}, nil
+}
+
+// GDPRDeleteOutput defines output for gdpr delete.
+type GDPRDeleteOutput struct {
+	Success   bool                    `json:"success"`
+	Message   string                  `json:"message"`
+	AuditID   string                  `json:"audit_id"` // the deletion's row in the GDPR audit log
+	Providers []email.ProviderErasure `json:"providers,omitempty"`
 }
 
 func handleGDPRGetConsent(ctx context.Context, toolCtx *mcpctx.ToolContext, input GDPRInput) (*mcp.CallToolResult, any, error) {

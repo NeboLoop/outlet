@@ -166,6 +166,8 @@ type Querier interface {
 	// ---- replies ------------------------------------------------------------------
 	CreateEmailReply(ctx context.Context, arg CreateEmailReplyParams) (EmailReply, error)
 	CreateEntryRule(ctx context.Context, arg CreateEntryRuleParams) (SequenceEntryRule, error)
+	// GDPR deletions audit log
+	CreateGDPRDeletion(ctx context.Context, arg CreateGDPRDeletionParams) error
 	// ========== IMPORT JOBS ==========
 	CreateImportJob(ctx context.Context, arg CreateImportJobParams) (ImportJob, error)
 	CreateListSubscriber(ctx context.Context, arg CreateListSubscriberParams) (ListSubscriber, error)
@@ -374,6 +376,7 @@ type Querier interface {
 	GetEntryRuleOrgID(ctx context.Context, id string) (string, error)
 	// Retry Worker Queries
 	GetFailedCampaignSendsForRetry(ctx context.Context, limitCount int64) ([]GetFailedCampaignSendsForRetryRow, error)
+	GetGDPRDeletion(ctx context.Context, arg GetGDPRDeletionParams) (GdprDeletion, error)
 	GetImportJob(ctx context.Context, arg GetImportJobParams) (ImportJob, error)
 	GetLatestBackup(ctx context.Context) (BackupHistory, error)
 	GetListByIDForPublicPage(ctx context.Context, id int64) (GetListByIDForPublicPageRow, error)
@@ -536,6 +539,8 @@ type Querier interface {
 	// The outreach campaigns some people are in now.
 	ListActiveOutreachCampaignsFor(ctx context.Context, arg ListActiveOutreachCampaignsForParams) ([]ListActiveOutreachCampaignsForRow, error)
 	ListActiveOutreachStatesForContact(ctx context.Context, contactID sql.NullString) ([]ContactSequenceState, error)
+	// Every active sequence of a list that this trigger starts, oldest first.
+	ListActiveSequencesByListAndTrigger(ctx context.Context, arg ListActiveSequencesByListAndTriggerParams) ([]ListActiveSequencesByListAndTriggerRow, error)
 	ListAllContactTags(ctx context.Context) ([]ListAllContactTagsRow, error)
 	ListAllMailboxes(ctx context.Context) ([]Mailbox, error)
 	ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity, error)

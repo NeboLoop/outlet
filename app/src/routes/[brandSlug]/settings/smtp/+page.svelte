@@ -266,14 +266,17 @@ $mail->send();`);
 						<td class="py-3 text-text-muted">
 							Email type. Default: <code class="text-xs bg-surface-tertiary px-1 rounded"
 								>transactional</code
-							>
+							>. Marketing mail goes through the brand's marketing pathway, needs
+							<code class="text-xs bg-surface-tertiary px-1 rounded">X-Outlet-List</code>, and gets an
+							unsubscribe link and one-click unsubscribe headers.
 						</td>
 					</tr>
 					<tr>
 						<td class="py-3 font-mono text-primary whitespace-nowrap">X-Outlet-List</td>
 						<td class="py-3"><code class="text-xs bg-surface-tertiary px-1 rounded">slug</code></td>
 						<td class="py-3 text-text-muted">
-							Associate email with a list (for marketing). List slug is scoped to your brand.
+							Marketing mail only: the list the recipient subscribed to, by slug. A recipient who isn't an
+							active subscriber of the list isn't sent to.
 						</td>
 					</tr>
 					<tr>
@@ -281,13 +284,13 @@ $mail->send();`);
 						<td class="py-3"
 							><code class="text-xs bg-surface-tertiary px-1 rounded">tag1,tag2,tag3</code></td
 						>
-						<td class="py-3 text-text-muted">Comma-separated tags to apply to recipient</td>
+						<td class="py-3 text-text-muted">Comma-separated tags recorded with the send, as the API's <code class="text-xs bg-surface-tertiary px-1 rounded">tags</code></td>
 					</tr>
 					<tr>
 						<td class="py-3 font-mono text-primary whitespace-nowrap">X-Outlet-Template</td>
 						<td class="py-3"><code class="text-xs bg-surface-tertiary px-1 rounded">slug</code></td>
 						<td class="py-3 text-text-muted">
-							Use a predefined email template. Template slug is scoped to your brand.
+							Send one of your transactional templates, by slug. Its subject and body replace the message's.
 						</td>
 					</tr>
 					<tr>
@@ -308,7 +311,7 @@ $mail->send();`);
 							><code class="text-xs bg-surface-tertiary px-1 rounded">any value</code></td
 						>
 						<td class="py-3 text-text-muted"
-							>Custom metadata. E.g., <code class="text-xs bg-surface-tertiary px-1 rounded"
+							>Custom metadata recorded with the send. E.g., <code class="text-xs bg-surface-tertiary px-1 rounded"
 								>X-Outlet-Meta-Order-ID: 12345</code
 							></td
 						>

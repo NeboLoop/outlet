@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/zeromicro/go-zero/core/logx"
 )
 
 func int64ToBool(i sql.NullInt64) bool {
@@ -1573,9 +1572,6 @@ func handleListSubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 			Status:    "already_subscribed",
 			Message:   "Contact is already subscribed to this list",
 		}, nil
-	}
-	if err := toolCtx.Svc().Sequences.SubscriptionActivated(ctx, contact.ID, listID); err != nil {
-		logx.Errorf("Failed to start signup sequence for contact %s: %v", contact.ID, err)
 	}
 
 	return nil, ListSubscribeOutput{

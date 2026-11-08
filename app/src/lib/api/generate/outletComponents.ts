@@ -790,7 +790,7 @@ export interface GDPRConsentRequestParams {
 
 export interface GDPRDeleteRequest {
 	confirm: boolean // Must be true to proceed
-	delete_email?: boolean // Also delete from email provider logs if possible
+	delete_email?: boolean // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
 }
 export interface GDPRDeleteRequestParams {
 }
@@ -799,7 +799,8 @@ export interface GDPRDeleteResponse {
 	success: boolean
 	message: string
 	deleted_data: string // Summary of what was deleted
-	audit_record_id: string
+	audit_record_id: string // The deletion's row in the GDPR audit log
+	provider_results: Array<GDPRProviderResult> // Set when delete_email was asked for
 }
 
 export interface GDPRExportRequest {
@@ -823,6 +824,13 @@ export interface GDPRLookupResponse {
 	found: boolean
 	contact_id?: string
 	email?: string
+}
+
+export interface GDPRProviderResult {
+	pathway: string
+	provider: string // Amazon SES, SMTP relay, Mailboxes
+	result: string
+	failed: boolean
 }
 
 export interface GetBackupRequest {
@@ -1030,6 +1038,7 @@ export interface ImportJobInfo {
 export interface ImportListSubscribersRequest {
 	filename: string
 	csv: string
+	start_signup?: boolean // Start the list's sign-up emails for the people added; off for an old list that shouldn't get them
 }
 export interface ImportListSubscribersRequestParams {
 }
@@ -2150,6 +2159,10 @@ export interface SendEmailRequest {
 	tags?: Array<string> // For tracking/filtering
 	meta?: { [key: string]: string } // Custom metadata
 	attachments?: Array<EmailAttachment> // Optional file attachments
+	type?: string // transactional (default) or marketing
+	list_slug?: string // Marketing only, and required for it: the list the recipient subscribed to. Sent only to an active subscriber, with an unsubscribe link
+	track_opens?: boolean // Add an open pixel
+	track_clicks?: boolean // Send links through click tracking
 }
 
 export interface SendEmailResponse {

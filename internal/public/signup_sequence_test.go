@@ -40,6 +40,7 @@ func newSignupFixture(t *testing.T) (*Handler, *db.Store) {
 	store := db.NewStore(conn)
 	emailService := email.NewService(store, nil)
 	s := &svc.ServiceContext{DB: store, EmailService: emailService, Sequences: email.NewSequenceServiceWithBaseURL(store, emailService, "https://outlet.test")}
+	store.OnSubscriptionActivated(s.Sequences.SubscriptionActivated)
 	s.Config.App.BaseURL = "https://outlet.test"
 	h, err := NewHandler(s)
 	require.NoError(t, err)

@@ -22,9 +22,18 @@ type SESConfig struct {
 }
 
 
-// newSESClient builds an SES client from the config, using static credentials
-// when provided and otherwise the default AWS credential chain.
+// newSESClient builds an SES client from the config.
 func newSESClient(ctx context.Context, sesConfig *SESConfig) (*ses.Client, error) {
+	cfg, err := awsConfig(ctx, sesConfig)
+	if err != nil {
+		return nil, err
+	}
+	return ses.NewFromConfig(cfg), nil
+}
+
+// awsConfig is the AWS configuration for an SES account, using static
+// credentials when provided and otherwise the default AWS credential chain.
+func awsConfig(ctx context.Context, sesConfig *SESConfig) (aws.Config, error) {
 	if sesConfig.Region == "" {
 		sesConfig.Region = "us-east-1"
 	}
@@ -41,9 +50,9 @@ func newSESClient(ctx context.Context, sesConfig *SESConfig) (*ses.Client, error
 		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(sesConfig.Region))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return aws.Config{}, fmt.Errorf("failed to load AWS config: %w", err)
 	}
-	return ses.NewFromConfig(cfg), nil
+	return cfg, nil
 }
 
 // SendRawEmailViaSES sends a complete RFC 5322 message through SES

@@ -38,10 +38,8 @@ type CampaignEmail struct {
 
 // CampaignMessage builds the Message for a campaign send, the same way for the
 // first attempt, every retry and a test send. It places the content in the
-// campaign's design, fills merge tags, adds a footer
-// unsubscribe link when the body has none, adds open and click tracking when
-// enabled (never on the unsubscribe link), and sets the one-click
-// List-Unsubscribe headers.
+// campaign's design, fills merge tags, and adds the unsubscribe link, the
+// List-Unsubscribe headers and open and click tracking through Track.
 func (s *Service) CampaignMessage(c CampaignEmail) Message {
 	tags := MergeContext{BaseURL: s.baseURL, Name: c.Name, Email: c.To, TrackingToken: c.TrackingToken}
 	m := Message{
@@ -56,31 +54,48 @@ func (s *Service) CampaignMessage(c CampaignEmail) Message {
 	if c.Text != "" {
 		m.Text = FillMergeTags(ApplyDesign(c.DesignText, c.Text), tags, false)
 	}
-	htmlBody := FillMergeTags(ApplyDesign(c.DesignHTML, c.HTML), tags, true)
-	if c.TrackingToken == "" {
-		m.HTML = htmlBody
-		return m
-	}
+	m.HTML = FillMergeTags(ApplyDesign(c.DesignHTML, c.HTML), tags, true)
+	s.Track(&m, Tracking{Token: c.TrackingToken, Unsubscribe: true, Opens: c.TrackOpens, Clicks: c.TrackClicks})
+	return m
+}
 
-	link := s.UnsubscribeURL(c.TrackingToken)
-	if !strings.Contains(htmlBody, link) {
-		footer := fmt.Sprintf(`<p style="text-align:center;font-size:12px;color:#6b7280;margin-top:30px;"><a href="%s" style="color:#6b7280;">Unsubscribe</a></p>`, link)
-		htmlBody = insertBeforeBodyEnd(htmlBody, footer)
+// Tracking is what Track adds to one send's email.
+type Tracking struct {
+	Token string // the send's tracking token; without one nothing is added
+	// Unsubscribe adds a footer unsubscribe link when the body has none, and
+	// the one-click List-Unsubscribe headers: marketing mail.
+	Unsubscribe bool
+	Opens       bool // an open pixel
+	Clicks      bool // signed click-tracking links (never on the unsubscribe link)
+}
+
+// Track adds a send's unsubscribe link, open pixel and click tracking to its
+// built message. It is the one way: campaign sends through CampaignMessage,
+// and transactional and marketing sends from the API and SMTP.
+func (s *Service) Track(m *Message, t Tracking) {
+	if t.Token == "" {
+		return
 	}
-	if m.Text != "" && !strings.Contains(m.Text, link) {
-		m.Text += "\n\nUnsubscribe: " + link
+	htmlBody := m.HTML
+	if t.Unsubscribe {
+		link := s.UnsubscribeURL(t.Token)
+		if !strings.Contains(htmlBody, link) {
+			footer := fmt.Sprintf(`<p style="text-align:center;font-size:12px;color:#6b7280;margin-top:30px;"><a href="%s" style="color:#6b7280;">Unsubscribe</a></p>`, link)
+			htmlBody = insertBeforeBodyEnd(htmlBody, footer)
+		}
+		if m.Text != "" && !strings.Contains(m.Text, link) {
+			m.Text += "\n\nUnsubscribe: " + link
+		}
+		m.ListUnsubscribe = link
 	}
-	if c.TrackOpens {
-		pixel := fmt.Sprintf(`<img src="%s" width="1" height="1" alt="" style="display:none" />`, s.GetTrackingPixelURL(c.TrackingToken))
+	if t.Opens {
+		pixel := fmt.Sprintf(`<img src="%s" width="1" height="1" alt="" style="display:none" />`, s.GetTrackingPixelURL(t.Token))
 		htmlBody = insertBeforeBodyEnd(htmlBody, pixel)
 	}
-	if c.TrackClicks {
-		htmlBody = s.RewriteLinksForTracking(htmlBody, c.TrackingToken)
+	if t.Clicks {
+		htmlBody = s.RewriteLinksForTracking(htmlBody, t.Token)
 	}
-
 	m.HTML = htmlBody
-	m.ListUnsubscribe = link
-	return m
 }
 
 func insertBeforeBodyEnd(htmlBody, fragment string) string {
