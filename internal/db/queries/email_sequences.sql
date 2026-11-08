@@ -41,8 +41,10 @@ LEFT JOIN email_sequences ocs ON ocs.id = es.on_completion_sequence_id
 ORDER BY es.created_at;
 
 -- name: CreateSequence :one
-INSERT INTO email_sequences (id, org_id, list_id, slug, name, trigger_event, is_active, sequence_type, created_at)
-VALUES (sqlc.arg(id), sqlc.arg(org_id), sqlc.arg(list_id), sqlc.arg(slug), sqlc.arg(name), sqlc.arg(trigger_event), sqlc.arg(is_active), COALESCE(sqlc.arg(sequence_type), 'lifecycle'), datetime('now'))
+-- A new sequence sends each email its delay after the contact joins (no
+-- fixed send hour), as the app shows; a send hour is set with UpdateSequence.
+INSERT INTO email_sequences (id, org_id, list_id, slug, name, trigger_event, is_active, sequence_type, send_hour, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(org_id), sqlc.arg(list_id), sqlc.arg(slug), sqlc.arg(name), sqlc.arg(trigger_event), sqlc.arg(is_active), COALESCE(sqlc.arg(sequence_type), 'lifecycle'), NULL, datetime('now'))
 RETURNING *;
 
 -- name: UpdateSequence :exec

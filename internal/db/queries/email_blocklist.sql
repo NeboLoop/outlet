@@ -201,6 +201,12 @@ SET status = sqlc.arg(status),
     completed_at = CASE WHEN sqlc.arg(status) = 'completed' OR sqlc.arg(status) = 'failed' OR sqlc.arg(status) = 'cancelled' THEN datetime('now') ELSE completed_at END
 WHERE id = sqlc.arg(id);
 
+-- name: ClaimImportJob :execrows
+-- Moves a pending job to processing. Only one import worker wins it.
+UPDATE import_jobs
+SET status = 'processing', started_at = datetime('now')
+WHERE id = sqlc.arg(id) AND status = 'pending';
+
 -- name: UpdateImportJobProgress :exec
 UPDATE import_jobs
 SET processed_rows = sqlc.arg(processed_rows),

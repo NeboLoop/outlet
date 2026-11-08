@@ -6,11 +6,13 @@
 		getTransactionalEmailStats,
 		sendTransactionalTest,
 		getOrganizationBySlug,
+		listEmailDesigns,
+		type EmailDesignInfo,
 		type TransactionalEmailInfo,
 		type TransactionalStatsResponse,
 		type OrgInfo
 	} from '$lib/api';
-	import { Button, Alert, LoadingSpinner, Input, Textarea, HtmlEditor, Card, Badge } from '$lib/components/ui';
+	import { Button, Alert, LoadingSpinner, Input, Textarea, HtmlEditor, Card, Badge, Select } from '$lib/components/ui';
 	import { ArrowLeft, Send, Copy, Check } from '@lucide/svelte';
 
 	let id = $derived($page.params.id ?? '');
@@ -34,6 +36,8 @@
 	let fromEmail = $state('');
 	let replyTo = $state('');
 	let isActive = $state(true);
+	let designId = $state('');
+	let designs = $state<EmailDesignInfo[]>([]);
 
 	let samples = $state<Record<string, string>>({});
 	let testTo = $state('');
@@ -59,7 +63,8 @@
 				fromName !== (saved.from_name ?? '') ||
 				fromEmail !== (saved.from_email ?? '') ||
 				replyTo !== (saved.reply_to ?? '') ||
-				isActive !== saved.is_active)
+				isActive !== saved.is_active ||
+				designId !== (saved.design_id ?? ''))
 	);
 
 	function fill(text: string): string {
@@ -67,7 +72,9 @@
 	}
 
 	let previewSubject = $derived(fill(subject));
-	let previewHTML = $derived(fill(htmlBody));
+	// The send places the body into the design at {{content}}; so does the preview.
+	let design = $derived(designs.find((d) => d.id === designId));
+	let previewHTML = $derived(fill(design ? design.html_body.replaceAll('{{content}}', htmlBody) : htmlBody));
 
 	let snippet = $derived.by(() => {
 		const vars = Object.fromEntries(variables.map((v) => [v, samples[v] || `<${v}>`]));
@@ -84,11 +91,13 @@
 		loading = true;
 		error = '';
 		try {
-			const [t, o] = await Promise.all([
+			const [t, o, d] = await Promise.all([
 				getTransactionalEmail({}, templateId),
-				getOrganizationBySlug({}, $page.params.brandSlug as string)
+				getOrganizationBySlug({}, $page.params.brandSlug as string),
+				listEmailDesigns({})
 			]);
 			org = o;
+			designs = (d.designs || []).filter((x) => x.is_active || x.id === t.design_id);
 			setFrom(t);
 			getTransactionalEmailStats({}, templateId)
 				.then((s) => (stats = s))
@@ -111,6 +120,7 @@
 		fromEmail = t.from_email ?? '';
 		replyTo = t.reply_to ?? '';
 		isActive = t.is_active;
+		designId = t.design_id ?? '';
 	}
 
 	async function save() {
@@ -129,7 +139,8 @@
 					from_name: fromName,
 					from_email: fromEmail,
 					reply_to: replyTo,
-					is_active: isActive
+					is_active: isActive,
+					design_id: designId
 				},
 				id
 			);
@@ -247,6 +258,15 @@
 						</div>
 					</div>
 					<p class="mt-3 text-xs text-text-muted">Empty sender fields use the brand's settings.</p>
+					<div class="mt-4">
+						<label for="design" class="form-label">Design</label>
+						<Select
+							id="design"
+							bind:value={designId}
+							options={[{ value: '', label: 'None: send the body as it is' }, ...designs.map((d) => ({ value: d.id, label: d.name }))]}
+						/>
+						<p class="mt-1 text-xs text-text-muted">The body is placed into the design when the email is sent.</p>
+					</div>
 				</Card>
 
 				<Card title="HTML body">

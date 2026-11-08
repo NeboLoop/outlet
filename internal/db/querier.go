@@ -40,6 +40,8 @@ type Querier interface {
 	// Check if an event has already been processed by a rule
 	CheckEventProcessed(ctx context.Context, arg CheckEventProcessedParams) (int64, error)
 	CheckListSubscription(ctx context.Context, arg CheckListSubscriptionParams) (int64, error)
+	// Moves a pending job to processing. Only one import worker wins it.
+	ClaimImportJob(ctx context.Context, id string) (int64, error)
 	// Takes the mailbox's next send slot, only when its spacing has passed.
 	ClaimMailboxSpacing(ctx context.Context, arg ClaimMailboxSpacingParams) (int64, error)
 	// Claimed once: only one sender moves a row from pending to sending.
@@ -175,6 +177,8 @@ type Querier interface {
 	// Sending pathways: the ways a brand delivers mail, which kinds each one
 	// carries, and the per-sender limits email.Send enforces.
 	CreateSendingPathway(ctx context.Context, arg CreateSendingPathwayParams) (SendingPathway, error)
+	// A new sequence sends each email its delay after the contact joins (no
+	// fixed send hour), as the app shows; a send hour is set with UpdateSequence.
 	CreateSequence(ctx context.Context, arg CreateSequenceParams) (EmailSequence, error)
 	CreateTemplate(ctx context.Context, arg CreateTemplateParams) (EmailTemplate, error)
 	// Transactional Emails

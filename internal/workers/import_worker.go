@@ -151,16 +151,16 @@ func (w *ImportWorker) processPendingImports() {
 
 // processImportJob processes a single import job
 func (w *ImportWorker) processImportJob(job db.ImportJob) error {
-	logx.Infof("Processing import job %s: %s (%s)", job.ID, job.Filename, job.Type)
-
-	// Update status to processing
-	err := w.store.UpdateImportJobStatus(w.ctx, db.UpdateImportJobStatusParams{
-		ID:     job.ID,
-		Status: sql.NullString{String: "processing", Valid: true},
-	})
+	// Every import worker sees the same pending jobs: the one that claims the
+	// job runs it, the others leave it.
+	claimed, err := w.store.ClaimImportJob(w.ctx, job.ID)
 	if err != nil {
 		return err
 	}
+	if claimed == 0 {
+		return nil
+	}
+	logx.Infof("Processing import job %s: %s (%s)", job.ID, job.Filename, job.Type)
 
 	// Open CSV file; it holds people's addresses, so it goes when the job ends
 	filePath := ImportFile(w.config.UploadDir, job.ID)

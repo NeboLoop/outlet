@@ -8,6 +8,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/errorx"
+	"github.com/outlet-sh/outlet/internal/logic/admin/designs"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -50,7 +51,7 @@ func (l *SendCampaignTestLogic) SendCampaignTest(req *types.SendCampaignTestRequ
 	if strings.TrimSpace(req.Subject) == "" || strings.TrimSpace(req.HtmlBody) == "" {
 		return nil, errorx.NewBadRequestError("A test needs a subject and content.")
 	}
-	design, err := brandDesign(l.ctx, l.svcCtx.DB, orgID, req.DesignId)
+	design, err := designs.BrandDesign(l.ctx, l.svcCtx.DB, orgID, req.DesignId)
 	if err != nil {
 		return nil, err
 	}

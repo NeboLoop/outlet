@@ -3,11 +3,10 @@ package transactional
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"strconv"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/logic/admin/designs"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -37,11 +36,11 @@ func (l *CreateTransactionalEmailLogic) CreateTransactionalEmail(req *types.Crea
 
 	var designID sql.NullInt64
 	if req.DesignId != nil {
-		parsedDesignID, err := strconv.ParseInt(*req.DesignId, 10, 64)
+		design, err := designs.BrandDesign(l.ctx, l.svcCtx.DB, orgID, *req.DesignId)
 		if err != nil {
-			return nil, errors.New("invalid design_id format")
+			return nil, err
 		}
-		designID = sql.NullInt64{Int64: parsedDesignID, Valid: true}
+		designID = designs.DesignColumn(design)
 	}
 
 	var isActive sql.NullInt64

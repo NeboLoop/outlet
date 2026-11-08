@@ -96,7 +96,7 @@
 			const res = await addListSubscriber({}, { email: addEmail.trim(), name: addName.trim() }, listId);
 			notice = res.message || 'Subscriber added';
 			showAddModal = false;
-			await loadSubscribers();
+			await Promise.all([loadSubscribers(), ctx.reload()]);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to add subscriber';
 		} finally {
@@ -135,7 +135,7 @@
 					`Imported ${importJob.success_count.toLocaleString()} of ${importJob.processed_rows.toLocaleString()} rows` +
 					(importJob.error_count ? ` (${importJob.error_count.toLocaleString()} refused or invalid)` : '');
 				importJob = null;
-				await loadSubscribers();
+				await Promise.all([loadSubscribers(), ctx.reload()]);
 			} else if (importJob.status === 'failed' || importJob.status === 'cancelled') {
 				error = importJob.status === 'failed' ? 'The import failed.' : 'The import was cancelled.';
 				importJob = null;
@@ -198,7 +198,7 @@
 		removing = true;
 		try {
 			await removeListSubscriber({}, listId, removeSubscriber.id);
-			await loadSubscribers();
+			await Promise.all([loadSubscribers(), ctx.reload()]);
 		} catch (err: any) {
 			error = err.message || 'Failed to remove subscriber';
 		} finally {
@@ -242,6 +242,10 @@
 				email: enrollingSubscriber.email
 			});
 			enrollSuccess = true;
+			// The open drawer lists the subscriber's enrollments: show the new one.
+			if (selectedSubscriber?.id === enrollingSubscriber.id) {
+				subscriberDetail = await getSubscriberDetail({}, listId, enrollingSubscriber.id);
+			}
 			setTimeout(() => {
 				showEnrollModal = false;
 				enrollingSubscriber = null;
@@ -407,9 +411,9 @@
 				</div>
 			{:else if sequences.length === 0}
 				<Alert type="info" title="No sequences available">
-					<p>You haven't created any sequences yet. Create a sequence first to enroll subscribers.</p>
-					<a href="{basePath}/sequences" class="btn btn-sm btn-primary mt-3">
-						Create Sequence
+					<p>You haven't created any sequences yet. Create an autoresponder first to enroll subscribers.</p>
+					<a href="{basePath}/lists/{listId}/autoresponders" class="btn btn-sm btn-primary mt-3">
+						Create Autoresponder
 					</a>
 				</Alert>
 			{:else}

@@ -39,6 +39,8 @@ SET name = COALESCE(NULLIF(sqlc.arg(name), ''), name),
     from_email = CASE WHEN sqlc.narg(from_email) IS NULL THEN from_email ELSE NULLIF(sqlc.narg(from_email), '') END,
     reply_to = CASE WHEN sqlc.narg(reply_to) IS NULL THEN reply_to ELSE NULLIF(sqlc.narg(reply_to), '') END,
     is_active = COALESCE(sqlc.arg(is_active), is_active),
+    -- set_design 1 replaces the design (a NULL design_id clears it); 0 keeps it
+    design_id = CASE WHEN CAST(sqlc.arg(set_design) AS INTEGER) = 1 THEN sqlc.narg(design_id) ELSE design_id END,
     updated_at = datetime('now')
 WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id)
 RETURNING *;

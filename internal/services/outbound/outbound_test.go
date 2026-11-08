@@ -1077,3 +1077,18 @@ func mustCampaign(t *testing.T, h *harness, id string) db.EmailSequence {
 	require.NoError(t, err)
 	return c
 }
+
+// A brand with nothing set up yet reads its overview with empty lists, not
+// null: the app's Overview and Setup screens read their length.
+func TestOverviewOfANewBrand(t *testing.T) {
+	h := newHarness(t)
+	other, err := h.store.GetOrganizationByID(h.ctx, "org-2")
+	require.NoError(t, err)
+	o, err := h.svc.Overview(h.ctx, other)
+	require.NoError(t, err)
+	raw, err := json.Marshal(o)
+	require.NoError(t, err)
+	for _, field := range []string{`"domains":[]`, `"mailboxes":[]`, `"campaigns":[]`} {
+		assert.Contains(t, string(raw), field)
+	}
+}

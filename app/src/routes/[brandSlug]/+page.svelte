@@ -4,8 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { Card, Badge, LoadingSpinner, EmptyState, Alert } from '$lib/components/ui';
 	import { ChartCard, AreaChart } from '$lib/components/charts';
-	import { getEmailDashboardStats, listLists, listCampaigns, type EmailDashboardStatsResponse, type ListInfo, type CampaignInfo } from '$lib/api';
-	import { getCurrentUser } from '$lib/auth';
+	import { getEmailDashboardStats, listLists, listCampaigns, getCurrentUser, type EmailDashboardStatsResponse, type ListInfo, type CampaignInfo } from '$lib/api';
 	import { TrendingUp, TrendingDown, Users, Mail, Send, MousePointerClick, AlertTriangle, UserMinus, ArrowRight, Plus, RefreshCw } from '@lucide/svelte';
 
 	interface Props {
@@ -16,7 +15,7 @@
 
 	const { data }: Props = $props();
 	let basePath = $derived(data.brandSlug ? `/${data.brandSlug}` : '');
-	let user = $state(getCurrentUser());
+	let userName = $state('');
 
 	let loading = $state(true);
 	let emailStats = $state<EmailDashboardStatsResponse | null>(null);
@@ -27,6 +26,12 @@
 
 	$effect(() => {
 		loadDashboardData();
+	});
+
+	$effect(() => {
+		getCurrentUser()
+			.then((me) => (userName = me.name || me.email.split('@')[0]))
+			.catch(() => {});
 	});
 
 	async function loadDashboardData() {
@@ -94,7 +99,7 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between">
 		<div>
-			<h1 class="text-2xl font-semibold text-text">Welcome back, {user?.name || user?.email?.split('@')[0] || 'there'}</h1>
+			<h1 class="text-2xl font-semibold text-text">Welcome back, {userName || 'there'}</h1>
 			<p class="mt-1 text-sm text-text-muted">{orgName}</p>
 		</div>
 		<button

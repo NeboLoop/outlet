@@ -64,7 +64,13 @@ func checkPathwayDomain(ctx context.Context, q db.Querier, p db.SendingPathway, 
 		return err
 	}
 	if n == 0 {
-		return errorx.NewBadRequestError(fmt.Sprintf("This brand can't send %s mail from %s. Add %s to its %q sending pathway first.", kind.Name(), from, domain, p.Name))
+		// Say where the fix is: a domain the brand has goes to the pathway in
+		// Settings, Sending; a new one is added in Settings, Email.
+		where := fmt.Sprintf("Add %s in Settings, Email, under Domain Verification", domain)
+		if _, err := q.GetDomainIdentityByDomain(ctx, db.GetDomainIdentityByDomainParams{OrgID: p.OrgID, Domain: domain}); err == nil {
+			where = fmt.Sprintf("Move %s to it in Settings, Sending", domain)
+		}
+		return errorx.NewBadRequestError(fmt.Sprintf("This brand can't send %s mail from %s: its %q sending pathway has no %s. %s.", kind.Name(), from, p.Name, domain, where))
 	}
 	return nil
 }

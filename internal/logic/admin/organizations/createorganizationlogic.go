@@ -150,8 +150,7 @@ func (l *CreateOrganizationLogic) seedDefaultDesigns(orgID string, orgName strin
     <div style="background-color: #f3f4f6; padding: 24px 20px; text-align: center; color: #6b7280; font-size: 12px;">
       <p style="margin: 0; font-weight: 500;">` + orgName + `</p>
       <p style="margin: 12px 0 0 0;">
-        <a href="{{unsubscribe_url}}" style="color: #6b7280;">Unsubscribe</a> ·
-        <a href="{{preferences_url}}" style="color: #6b7280;">Email Preferences</a>
+        <a href="{{unsubscribe_url}}" style="color: #6b7280;">Unsubscribe</a>
       </p>
     </div>
   </div>

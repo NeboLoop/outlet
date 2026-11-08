@@ -226,8 +226,8 @@ func (q *Queries) CreateEmailClick(ctx context.Context, arg CreateEmailClickPara
 }
 
 const createSequence = `-- name: CreateSequence :one
-INSERT INTO email_sequences (id, org_id, list_id, slug, name, trigger_event, is_active, sequence_type, created_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, COALESCE(?8, 'lifecycle'), datetime('now'))
+INSERT INTO email_sequences (id, org_id, list_id, slug, name, trigger_event, is_active, sequence_type, send_hour, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, COALESCE(?8, 'lifecycle'), NULL, datetime('now'))
 RETURNING id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks
 `
 
@@ -242,6 +242,8 @@ type CreateSequenceParams struct {
 	SequenceType interface{}    `json:"sequence_type"`
 }
 
+// A new sequence sends each email its delay after the contact joins (no
+// fixed send hour), as the app shows; a send hour is set with UpdateSequence.
 func (q *Queries) CreateSequence(ctx context.Context, arg CreateSequenceParams) (EmailSequence, error) {
 	row := q.db.QueryRowContext(ctx, createSequence,
 		arg.ID,

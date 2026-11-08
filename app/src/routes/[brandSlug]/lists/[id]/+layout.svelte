@@ -43,8 +43,10 @@
 		loadList();
 	});
 
+	// The spinner shows only while a list is first loading: a reload after a
+	// change keeps the page (and its notices) on screen.
 	async function loadList() {
-		loading = true;
+		loading = list?.id !== listId;
 		error = '';
 		try {
 			list = await getList({}, listId);

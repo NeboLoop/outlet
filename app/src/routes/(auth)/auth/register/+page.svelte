@@ -3,8 +3,9 @@
 	import { page } from '$app/stores';
 	import { acceptInvitation, register, validateInvitation } from '$lib/api';
 	import { authStore } from '$lib/stores/auth.svelte';
+	import { loginPath } from '$lib/auth';
 	import { onMount } from 'svelte';
-	import { Card, Input, Button, Alert, Checkbox, Spinner, Badge } from '$lib/components/ui';
+	import { Card, Input, Button, Alert, Spinner, Badge } from '$lib/components/ui';
 	import { ArrowLeft, AlertTriangle } from '@lucide/svelte';
 
 	// Outlet is invite-only: an account starts from an invitation link, and the
@@ -15,8 +16,7 @@
 		lastName: '',
 		phone: '',
 		password: '',
-		confirmPassword: '',
-		agreeToTerms: false
+		confirmPassword: ''
 	});
 
 	let loading = $state(false);
@@ -169,10 +169,10 @@
 					</Button>
 				{:else}
 					<Alert type="info" title="Sign in to accept">
-						<p>{email} already has an Outlet account. Sign in as {email}, then open the link in your invitation email again.</p>
+						<p>{email} already has an Outlet account. Sign in as {email} and you come back here to join.</p>
 					</Alert>
 					<div class="text-center">
-						<a href="/auth/login" class="text-sm font-medium text-primary hover:underline">Sign in</a>
+						<a href={loginPath($page.url.pathname + $page.url.search)} class="text-sm font-medium text-primary hover:underline">Sign in</a>
 					</div>
 				{/if}
 			</div>
@@ -229,21 +229,11 @@
 					<Input id="confirm-password" type="password" bind:value={formData.confirmPassword} />
 				</div>
 
-				<div class="flex items-start gap-3">
-					<Checkbox bind:checked={formData.agreeToTerms} />
-					<span class="text-sm text-text">
-						I agree to the
-						<a href="/terms" class="text-primary hover:underline">Terms of Service</a>
-						and
-						<a href="/privacy" class="text-primary hover:underline">Privacy Policy</a>
-					</span>
-				</div>
-
 				<Button
 					htmlType="submit"
 					type="primary"
 					size="lg"
-					disabled={loading || !formData.agreeToTerms}
+					disabled={loading}
 					class="w-full justify-center"
 				>
 					{loading ? 'Creating account...' : 'Create account'}

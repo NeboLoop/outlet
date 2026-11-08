@@ -3,9 +3,7 @@ package lists
 import (
 	"context"
 	"errors"
-	"net/mail"
 	"strconv"
-	"strings"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
@@ -42,12 +40,10 @@ func (l *AddListSubscriberLogic) AddListSubscriber(req *types.AddListSubscriberR
 	if err != nil {
 		return nil, err
 	}
-	address := strings.TrimSpace(req.Email)
-	if a, err := mail.ParseAddress(address); err != nil || a.Address != address {
+	added, err := l.svcCtx.DB.AddSubscriber(l.ctx, orgID, listID, req.Email, req.Name, "manual")
+	if errors.Is(err, db.ErrInvalidEmail) {
 		return nil, errorx.NewBadRequestError("Enter a valid email address.")
 	}
-
-	added, err := l.svcCtx.DB.AddSubscriber(l.ctx, orgID, listID, address, req.Name, "manual")
 	if errors.Is(err, db.ErrBlockedDomain) {
 		return nil, errorx.NewBadRequestError("This address's domain is on the brand's blocklist.")
 	}

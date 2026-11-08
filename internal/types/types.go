@@ -2454,17 +2454,18 @@ type UpdateTemplateRequest struct {
 }
 
 type UpdateTransactionalEmailRequest struct {
-	Id          string `path:"id"`
-	Name        string `json:"name,optional"`
-	Slug        string `json:"slug,optional"`
-	Description string `json:"description,optional"`
-	Subject     string `json:"subject,optional"`
-	HtmlBody    string `json:"html_body,optional"`
-	PlainText   string `json:"plain_text,optional"`
-	FromName    string `json:"from_name,optional"`
-	FromEmail   string `json:"from_email,optional"`
-	ReplyTo     string `json:"reply_to,optional"`
-	IsActive    bool   `json:"is_active,optional"`
+	Id          string  `path:"id"`
+	DesignId    *string `json:"design_id,optional"` // Omitted keeps the design; "" removes it
+	Name        string  `json:"name,optional"`
+	Slug        string  `json:"slug,optional"`
+	Description string  `json:"description,optional"`
+	Subject     string  `json:"subject,optional"`
+	HtmlBody    string  `json:"html_body,optional"`
+	PlainText   string  `json:"plain_text,optional"`
+	FromName    string  `json:"from_name,optional"`
+	FromEmail   string  `json:"from_email,optional"`
+	ReplyTo     string  `json:"reply_to,optional"`
+	IsActive    bool    `json:"is_active,optional"`
 }
 
 type UpdateUserRequest struct {

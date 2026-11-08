@@ -111,6 +111,8 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 		Enabled: s.Enabled(org), Paused: org.OutboundPausedReason, MailingAddress: org.MailingAddress,
 		OptOutLine: org.OutboundOptOutLine, Timezone: org.OutboundTimezone, DNSTokenSet: len(org.DnsTokenEnc) > 0,
 		Prospects: map[string]int64{}, Messages: map[string]int64{},
+		// Empty lists are [] in JSON, never null: the app reads their length.
+		Domains: []DomainInfo{}, Mailboxes: []MailboxHealth{}, Campaigns: []CampaignResults{}, Next: []string{},
 	}
 	domains, _ := s.db.ListOutreachDomains(ctx, org.ID)
 	for _, d := range domains {

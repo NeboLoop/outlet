@@ -39,7 +39,9 @@ func TestSendingDomains_BelongToOneBrand(t *testing.T) {
 	err = CheckSender(ctx, store, "alpha", KindMarketing, "security@neboai.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "can't send marketing mail from security@neboai.com")
-	assert.Error(t, CheckSender(ctx, store, "alpha", KindMarketing, "news@alpha.example"), "a domain no brand holds")
+	err = CheckSender(ctx, store, "alpha", KindMarketing, "news@alpha.example")
+	require.Error(t, err, "a domain no brand holds")
+	assert.Contains(t, err.Error(), "Add alpha.example in Settings, Email", "says where a new domain is added")
 
 	assert.Error(t, ClaimDomain(ctx, store, "alpha", "NEBOAI.com"))
 	assert.NoError(t, ClaimDomain(ctx, store, "alpha", "alpha.example"))

@@ -6,6 +6,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/logic/admin/designs"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -48,11 +49,11 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 
 	var designID sql.NullInt64
 	if req.DesignId != nil {
-		design, err := brandDesign(l.ctx, l.svcCtx.DB, orgID, *req.DesignId)
+		design, err := designs.BrandDesign(l.ctx, l.svcCtx.DB, orgID, *req.DesignId)
 		if err != nil {
 			return nil, err
 		}
-		designID = designColumn(design)
+		designID = designs.DesignColumn(design)
 	}
 
 	var trackOpens, trackClicks sql.NullInt64

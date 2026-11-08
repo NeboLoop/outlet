@@ -122,6 +122,21 @@ func (q *Queries) CancelImportJob(ctx context.Context, arg CancelImportJobParams
 	return err
 }
 
+const claimImportJob = `-- name: ClaimImportJob :execrows
+UPDATE import_jobs
+SET status = 'processing', started_at = datetime('now')
+WHERE id = ?1 AND status = 'pending'
+`
+
+// Moves a pending job to processing. Only one import worker wins it.
+func (q *Queries) ClaimImportJob(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, claimImportJob, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const clearSuppressionList = `-- name: ClearSuppressionList :exec
 DELETE FROM suppression_list WHERE org_id = ?1
 `

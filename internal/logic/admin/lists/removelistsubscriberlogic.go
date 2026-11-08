@@ -2,11 +2,14 @@ package lists
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -37,9 +40,18 @@ func (l *RemoveListSubscriberLogic) RemoveListSubscriber(req *types.RemoveSubscr
 		return nil, err
 	}
 
+	// The subscriber ID is the list subscription's, as the list of
+	// subscribers and the detail view give it.
+	sub, err := l.svcCtx.DB.GetListSubscriberByID(l.ctx, req.SubscriberId)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && sub.ListID != listID) {
+		return nil, errorx.NewNotFoundError("Subscriber not found on this list.")
+	}
+	if err != nil {
+		return nil, err
+	}
 	err = l.svcCtx.DB.RemoveSubscriberFromList(l.ctx, db.RemoveSubscriberFromListParams{
 		ListID:    listID,
-		ContactID: req.SubscriberId,
+		ContactID: sub.ContactID,
 	})
 	if err != nil {
 		l.Errorf("Failed to remove subscriber: %v", err)

@@ -2601,6 +2601,7 @@ export interface UpdateTemplateRequestParams {
 }
 
 export interface UpdateTransactionalEmailRequest {
+	design_id?: string // Omitted keeps the design; "" removes it
 	name?: string
 	slug?: string
 	description?: string

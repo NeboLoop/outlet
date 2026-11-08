@@ -2,8 +2,11 @@ package organizations
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -26,6 +29,9 @@ func NewGetOrganizationBySlugLogic(ctx context.Context, svcCtx *svc.ServiceConte
 
 func (l *GetOrganizationBySlugLogic) GetOrganizationBySlug(req *types.GetOrgBySlugRequest) (resp *types.OrgInfo, err error) {
 	org, err := l.svcCtx.DB.GetOrganizationBySlug(l.ctx, req.Slug)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errorx.NewNotFoundError("Brand not found")
+	}
 	if err != nil {
 		return nil, err
 	}

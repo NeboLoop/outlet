@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/mail"
 	"strings"
 
 	"github.com/google/uuid"
@@ -12,6 +13,9 @@ import (
 // ErrBlockedDomain means the address is at a domain the brand blocked, so it
 // can't become a contact or subscribe.
 var ErrBlockedDomain = errors.New("this email address's domain is blocked")
+
+// ErrInvalidEmail means the address isn't one mail can be sent to.
+var ErrInvalidEmail = errors.New("not a valid email address")
 
 // RefuseBlockedDomain returns ErrBlockedDomain when email is at a domain the
 // brand blocked, and counts the attempt on that domain.
@@ -42,6 +46,9 @@ func (s *Store) RefuseBlockedDomain(ctx context.Context, orgID, email string) er
 func (s *Store) AddSubscriber(ctx context.Context, orgID string, listID int64, email, name, source string) (added bool, err error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	name = strings.TrimSpace(name)
+	if a, err := mail.ParseAddress(email); err != nil || a.Address != email {
+		return false, ErrInvalidEmail
+	}
 	if err := s.RefuseBlockedDomain(ctx, orgID, email); err != nil {
 		return false, err
 	}

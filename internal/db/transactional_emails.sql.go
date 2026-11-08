@@ -616,8 +616,10 @@ SET name = COALESCE(NULLIF(?1, ''), name),
     from_email = CASE WHEN ?8 IS NULL THEN from_email ELSE NULLIF(?8, '') END,
     reply_to = CASE WHEN ?9 IS NULL THEN reply_to ELSE NULLIF(?9, '') END,
     is_active = COALESCE(?10, is_active),
+    -- set_design 1 replaces the design (a NULL design_id clears it); 0 keeps it
+    design_id = CASE WHEN CAST(?11 AS INTEGER) = 1 THEN ?12 ELSE design_id END,
     updated_at = datetime('now')
-WHERE id = ?11 AND org_id = ?12
+WHERE id = ?13 AND org_id = ?14
 RETURNING id, org_id, design_id, name, slug, description, subject, html_body, plain_text, from_name, from_email, reply_to, is_active, created_at, updated_at
 `
 
@@ -632,6 +634,8 @@ type UpdateTransactionalEmailParams struct {
 	FromEmail   interface{}   `json:"from_email"`
 	ReplyTo     interface{}   `json:"reply_to"`
 	IsActive    sql.NullInt64 `json:"is_active"`
+	SetDesign   int64         `json:"set_design"`
+	DesignID    sql.NullInt64 `json:"design_id"`
 	ID          string        `json:"id"`
 	OrgID       string        `json:"org_id"`
 }
@@ -648,6 +652,8 @@ func (q *Queries) UpdateTransactionalEmail(ctx context.Context, arg UpdateTransa
 		arg.FromEmail,
 		arg.ReplyTo,
 		arg.IsActive,
+		arg.SetDesign,
+		arg.DesignID,
 		arg.ID,
 		arg.OrgID,
 	)
