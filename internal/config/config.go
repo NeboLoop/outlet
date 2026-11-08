@@ -37,6 +37,14 @@ type Config struct {
 	Encryption struct {
 		Key string // 32-byte hex-encoded key for AES-256 encryption
 	}
+	Outbound struct {
+		// Brands is the comma-separated slugs of brands outbound runs for.
+		// It is off for every other brand, and no API or tool call turns it on.
+		Brands string `json:",optional"`
+		// ProtectedDomains is comma-separated domains outbound never uses,
+		// beyond each brand's own sending domains.
+		ProtectedDomains string `json:",optional"`
+	}
 }
 
 // Validate checks that all required configuration values are set

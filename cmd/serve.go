@@ -204,6 +204,10 @@ func runServe(cmd *cobra.Command, args []string) {
 	domainVerificationWorker := workers.StartDomainVerificationWorker(ctx)
 	fmt.Println("Domain verification worker started")
 
+	// Start the outbound engine (it acts only for brands in Outbound.Brands)
+	outboundWorker := workers.StartOutboundWorker(ctx)
+	fmt.Println("Outbound worker started")
+
 	// Start MCP session cleanup job (runs every hour, cleans sessions older than 30 days)
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
 	go func() {
@@ -279,6 +283,8 @@ func runServe(cmd *cobra.Command, args []string) {
 				domainVerificationWorker.Stop()
 				fmt.Println("Domain verification worker stopped")
 			}
+			outboundWorker.Stop()
+			fmt.Println("Outbound worker stopped")
 			if smtpServer != nil {
 				smtpServer.Stop()
 				fmt.Println("SMTP server stopped")
@@ -512,6 +518,8 @@ func runServe(cmd *cobra.Command, args []string) {
 		domainVerificationWorker.Stop()
 		fmt.Println("Domain verification worker stopped")
 	}
+	outboundWorker.Stop()
+	fmt.Println("Outbound worker stopped")
 	if smtpServer != nil {
 		smtpServer.Stop()
 		fmt.Println("SMTP server stopped")

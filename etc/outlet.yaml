@@ -72,6 +72,12 @@ Stripe:
 Encryption:
   Key: ${ENCRYPTION_KEY}
 
+# Outbound: cold outreach from connected mailboxes, never through SES.
+# Off for every brand not listed. Comma-separated brand slugs and domains.
+Outbound:
+  Brands: "${OUTBOUND_BRANDS}"
+  ProtectedDomains: "${OUTBOUND_PROTECTED_DOMAINS}"
+
 # gRPC Configuration (LLM streaming)
 GRPC:
   Port: 9889

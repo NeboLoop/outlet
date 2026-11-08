@@ -16,6 +16,7 @@ type Querier interface {
 	// ========== SUPPRESSION LIST ==========
 	AddToSuppressionList(ctx context.Context, arg AddToSuppressionListParams) (SuppressionList, error)
 	AddUserToOrganization(ctx context.Context, arg AddUserToOrganizationParams) error
+	ApproveOutboundMessage(ctx context.Context, arg ApproveOutboundMessageParams) (int64, error)
 	BlockContact(ctx context.Context, id string) error
 	// ========== BLOCK CONTACT BY EMAIL ==========
 	BlockContactByEmail(ctx context.Context, email string) error
@@ -33,6 +34,8 @@ type Querier interface {
 	// Check if an event has already been processed by a rule
 	CheckEventProcessed(ctx context.Context, arg CheckEventProcessedParams) (int64, error)
 	CheckListSubscription(ctx context.Context, arg CheckListSubscriptionParams) (int64, error)
+	// Claimed once: only one sender can move a row from approved to sending.
+	ClaimOutboundMessage(ctx context.Context, arg ClaimOutboundMessageParams) (int64, error)
 	CleanupExpiredMCPOAuthCodes(ctx context.Context) error
 	CleanupExpiredMCPOAuthTokens(ctx context.Context) error
 	// Delete sessions older than 30 days
@@ -67,6 +70,11 @@ type Querier interface {
 	// SES account, so a second brand holding the same domain could send as it
 	// or delete it from SES.
 	CountOtherBrandsWithDomain(ctx context.Context, arg CountOtherBrandsWithDomainParams) (int64, error)
+	CountOutboundBouncesSince(ctx context.Context, arg CountOutboundBouncesSinceParams) (int64, error)
+	CountOutboundComplaintsSince(ctx context.Context, arg CountOutboundComplaintsSinceParams) (int64, error)
+	CountOutboundMessagesByStatus(ctx context.Context, orgID string) ([]CountOutboundMessagesByStatusRow, error)
+	CountOutboundProspectsByStatus(ctx context.Context, orgID string) ([]CountOutboundProspectsByStatusRow, error)
+	CountOutboundSentSince(ctx context.Context, arg CountOutboundSentSinceParams) (int64, error)
 	CountPendingCampaignSends(ctx context.Context, campaignID string) (int64, error)
 	CountSentCampaignSends(ctx context.Context, campaignID string) (int64, error)
 	CountSuppressedEmails(ctx context.Context, orgID string) (int64, error)
@@ -74,6 +82,7 @@ type Querier interface {
 	CountTransactionalEmails(ctx context.Context, orgID string) (int64, error)
 	CountTransactionalSends(ctx context.Context, templateID string) (int64, error)
 	CountUnconfirmedContactsOlderThan(ctx context.Context, arg CountUnconfirmedContactsOlderThanParams) (int64, error)
+	CountUnhandledOutboundReplies(ctx context.Context, orgID string) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CountWebhookLogs(ctx context.Context, webhookID string) (int64, error)
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
@@ -121,6 +130,14 @@ type Querier interface {
 	// Create a new rule
 	CreateOrgRule(ctx context.Context, arg CreateOrgRuleParams) (OrgRule, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
+	CreateOutboundCampaign(ctx context.Context, arg CreateOutboundCampaignParams) (OutboundCampaign, error)
+	CreateOutboundDomain(ctx context.Context, arg CreateOutboundDomainParams) (OutboundDomain, error)
+	CreateOutboundEnrollment(ctx context.Context, arg CreateOutboundEnrollmentParams) (OutboundEnrollment, error)
+	CreateOutboundMailbox(ctx context.Context, arg CreateOutboundMailboxParams) (OutboundMailbox, error)
+	CreateOutboundMessage(ctx context.Context, arg CreateOutboundMessageParams) (OutboundMessage, error)
+	CreateOutboundProspect(ctx context.Context, arg CreateOutboundProspectParams) (OutboundProspect, error)
+	CreateOutboundReply(ctx context.Context, arg CreateOutboundReplyParams) (OutboundReply, error)
+	CreateOutboundStep(ctx context.Context, arg CreateOutboundStepParams) (OutboundStep, error)
 	// Create a new rule template (platform admin only)
 	CreateRuleTemplate(ctx context.Context, arg CreateRuleTemplateParams) (RuleTemplate, error)
 	CreateSequence(ctx context.Context, arg CreateSequenceParams) (EmailSequence, error)
@@ -177,6 +194,7 @@ type Querier interface {
 	// the platform and the first-run setup would open to anyone.
 	DeleteUser(ctx context.Context, id string) (int64, error)
 	DeleteWebhook(ctx context.Context, arg DeleteWebhookParams) error
+	EditOutboundMessage(ctx context.Context, arg EditOutboundMessageParams) (int64, error)
 	GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiveEntryRuleForTriggerParams) ([]GetActiveEntryRuleForTriggerRow, error)
 	GetActiveSequenceForContact(ctx context.Context, contactID sql.NullString) (GetActiveSequenceForContactRow, error)
 	// Only a list of the campaign's own brand gives recipients.
@@ -298,6 +316,20 @@ type Querier interface {
 	GetOrganizationByID(ctx context.Context, id string) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
 	GetOrganizationUsers(ctx context.Context, orgID string) ([]GetOrganizationUsersRow, error)
+	GetOutboundCampaign(ctx context.Context, arg GetOutboundCampaignParams) (OutboundCampaign, error)
+	GetOutboundCampaignByKey(ctx context.Context, arg GetOutboundCampaignByKeyParams) (OutboundCampaign, error)
+	GetOutboundDomain(ctx context.Context, arg GetOutboundDomainParams) (OutboundDomain, error)
+	GetOutboundDomainByName(ctx context.Context, domain string) (OutboundDomain, error)
+	GetOutboundEnrollment(ctx context.Context, id string) (OutboundEnrollment, error)
+	GetOutboundMailbox(ctx context.Context, arg GetOutboundMailboxParams) (OutboundMailbox, error)
+	GetOutboundMailboxByEmail(ctx context.Context, email string) (OutboundMailbox, error)
+	GetOutboundMessage(ctx context.Context, arg GetOutboundMessageParams) (OutboundMessage, error)
+	GetOutboundMessageByMessageID(ctx context.Context, messageID string) (OutboundMessage, error)
+	GetOutboundProspect(ctx context.Context, arg GetOutboundProspectParams) (OutboundProspect, error)
+	GetOutboundProspectByEmail(ctx context.Context, arg GetOutboundProspectByEmailParams) (OutboundProspect, error)
+	GetOutboundReply(ctx context.Context, arg GetOutboundReplyParams) (OutboundReply, error)
+	// Outbound: times are UTC text, 'YYYY-MM-DD HH:MM:SS', so they compare as text.
+	GetOutboundSettings(ctx context.Context, orgID string) (OutboundSetting, error)
 	GetPendingAuthToken(ctx context.Context, arg GetPendingAuthTokenParams) (AuthToken, error)
 	GetPendingCampaignSends(ctx context.Context, limitCount int64) ([]GetPendingCampaignSendsRow, error)
 	GetPendingEmails(ctx context.Context, arg GetPendingEmailsParams) ([]GetPendingEmailsRow, error)
@@ -366,7 +398,12 @@ type Querier interface {
 	IsEmailFullyBlocked(ctx context.Context, arg IsEmailFullyBlockedParams) (int64, error)
 	IsEmailSuppressed(ctx context.Context, arg IsEmailSuppressedParams) (int64, error)
 	ListActiveAgents(ctx context.Context) ([]ListActiveAgentsRow, error)
+	ListActiveOutboundEnrollmentsForProspect(ctx context.Context, prospectID string) ([]OutboundEnrollment, error)
+	// Every mailbox the sender and the reply reader work, across brands.
+	ListActiveOutboundMailboxes(ctx context.Context) ([]OutboundMailbox, error)
 	ListAllContactTags(ctx context.Context) ([]ListAllContactTagsRow, error)
+	ListAllOutboundDomains(ctx context.Context) ([]OutboundDomain, error)
+	ListAllOutboundMailboxes(ctx context.Context) ([]OutboundMailbox, error)
 	ListAllSequences(ctx context.Context) ([]ListAllSequencesRow, error)
 	ListBackups(ctx context.Context, arg ListBackupsParams) ([]BackupHistory, error)
 	ListBlockedDomains(ctx context.Context, arg ListBlockedDomainsParams) ([]BlockedDomain, error)
@@ -380,6 +417,9 @@ type Querier interface {
 	ListCustomFieldValuesBySubscriber(ctx context.Context, subscriberID string) ([]ListCustomFieldValuesBySubscriberRow, error)
 	ListCustomFieldsByList(ctx context.Context, listID int64) ([]CustomField, error)
 	ListDomainIdentitiesByOrg(ctx context.Context, orgID string) ([]DomainIdentity, error)
+	// Enrollments whose next step is due and has no draft yet. A step's draft
+	// is written once; next_at is cleared when it is.
+	ListDueOutboundEnrollments(ctx context.Context, arg ListDueOutboundEnrollmentsParams) ([]OutboundEnrollment, error)
 	ListEmailDesigns(ctx context.Context, orgID string) ([]EmailDesign, error)
 	ListEmailDesignsByCategory(ctx context.Context, arg ListEmailDesignsByCategoryParams) ([]EmailDesign, error)
 	ListEmailLists(ctx context.Context, orgID string) ([]EmailList, error)
@@ -391,6 +431,14 @@ type Querier interface {
 	ListMCPAPIKeysByUser(ctx context.Context, userID string) ([]McpApiKey, error)
 	ListMCPOAuthClients(ctx context.Context) ([]McpOauthClient, error)
 	ListOrganizations(ctx context.Context) ([]Organization, error)
+	ListOutboundCampaigns(ctx context.Context, orgID string) ([]OutboundCampaign, error)
+	ListOutboundDomains(ctx context.Context, orgID string) ([]OutboundDomain, error)
+	ListOutboundMailboxes(ctx context.Context, orgID string) ([]OutboundMailbox, error)
+	ListOutboundMessagesByStatus(ctx context.Context, arg ListOutboundMessagesByStatusParams) ([]OutboundMessage, error)
+	ListOutboundProspectsByIDs(ctx context.Context, arg ListOutboundProspectsByIDsParams) ([]OutboundProspect, error)
+	ListOutboundReplies(ctx context.Context, arg ListOutboundRepliesParams) ([]OutboundReply, error)
+	ListOutboundSteps(ctx context.Context, campaignID string) ([]OutboundStep, error)
+	ListOutboundThread(ctx context.Context, enrollmentID sql.NullString) ([]OutboundMessage, error)
 	ListPendingDomainIdentities(ctx context.Context) ([]DomainIdentity, error)
 	ListPendingImportJobs(ctx context.Context) ([]ImportJob, error)
 	ListPlatformSettings(ctx context.Context) ([]PlatformSetting, error)
@@ -398,8 +446,13 @@ type Querier interface {
 	ListRecentComplaints(ctx context.Context, arg ListRecentComplaintsParams) ([]EmailComplaint, error)
 	ListSequencesByList(ctx context.Context, listID sql.NullInt64) ([]ListSequencesByListRow, error)
 	ListSequencesByOrg(ctx context.Context, orgID sql.NullString) ([]ListSequencesByOrgRow, error)
+	// Rows left in sending by a crash. We can't know whether they went, so they
+	// are marked failed and never sent again.
+	ListStuckOutboundMessages(ctx context.Context, claimedAt sql.NullString) ([]OutboundMessage, error)
 	ListSuppressedEmails(ctx context.Context, arg ListSuppressedEmailsParams) ([]SuppressionList, error)
 	ListTemplatesBySequence(ctx context.Context, sequenceID sql.NullString) ([]ListTemplatesBySequenceRow, error)
+	// Every domain any brand sends transactional mail from; outreach may use none.
+	ListTransactionalDomains(ctx context.Context) ([]string, error)
 	ListTransactionalEmails(ctx context.Context, orgID string) ([]TransactionalEmail, error)
 	ListTransactionalSends(ctx context.Context, arg ListTransactionalSendsParams) ([]TransactionalSend, error)
 	ListTransactionalSendsByOrg(ctx context.Context, arg ListTransactionalSendsByOrgParams) ([]ListTransactionalSendsByOrgRow, error)
@@ -419,7 +472,13 @@ type Querier interface {
 	MarkEmailFailed(ctx context.Context, arg MarkEmailFailedParams) error
 	MarkEmailSent(ctx context.Context, id string) error
 	MarkMCPOAuthCodeUsed(ctx context.Context, id string) error
+	MarkOutboundMessageFailed(ctx context.Context, arg MarkOutboundMessageFailedParams) error
+	MarkOutboundMessageSent(ctx context.Context, arg MarkOutboundMessageSentParams) error
+	// The oldest approved email due on this mailbox whose enrollment, if any, is
+	// still running.
+	NextOutboundMessageForMailbox(ctx context.Context, arg NextOutboundMessageForMailboxParams) (OutboundMessage, error)
 	PauseContactSequence(ctx context.Context, arg PauseContactSequenceParams) error
+	PauseOutboundMailboxesOnDomain(ctx context.Context, arg PauseOutboundMailboxesOnDomainParams) error
 	QueueEmail(ctx context.Context, arg QueueEmailParams) (EmailQueue, error)
 	// Email tracking queries
 	QueueEmailWithTracking(ctx context.Context, arg QueueEmailWithTrackingParams) (EmailQueue, error)
@@ -430,12 +489,15 @@ type Querier interface {
 	RecordTransactionalClick(ctx context.Context, id string) error
 	RecordTransactionalOpen(ctx context.Context, id string) error
 	RegenerateAPIKey(ctx context.Context, arg RegenerateAPIKeyParams) (Organization, error)
+	// A transient failure: back to approved, tried again later from the same mailbox.
+	ReleaseOutboundMessage(ctx context.Context, arg ReleaseOutboundMessageParams) error
 	RemoveContactTag(ctx context.Context, arg RemoveContactTagParams) error
 	RemoveSubscriberFromList(ctx context.Context, arg RemoveSubscriberFromListParams) error
 	RemoveUserFromOrganization(ctx context.Context, arg RemoveUserFromOrganizationParams) error
 	ResetFailedLogins(ctx context.Context, id string) error
 	ResubscribeContact(ctx context.Context, id string) error
 	ResumeContactSequence(ctx context.Context, arg ResumeContactSequenceParams) error
+	ResumeOutboundMailboxesPausedForDNS(ctx context.Context, domainID string) error
 	// People revoke their own keys.
 	RevokeMCPAPIKey(ctx context.Context, arg RevokeMCPAPIKeyParams) (int64, error)
 	RevokeMCPOAuthToken(ctx context.Context, id string) error
@@ -447,7 +509,23 @@ type Querier interface {
 	SetContactVerificationToken(ctx context.Context, arg SetContactVerificationTokenParams) error
 	SetImportJobErrors(ctx context.Context, arg SetImportJobErrorsParams) error
 	SetImportJobTotalRows(ctx context.Context, arg SetImportJobTotalRowsParams) error
+	SetOutboundCampaignStatus(ctx context.Context, arg SetOutboundCampaignStatusParams) error
+	SetOutboundDNSToken(ctx context.Context, arg SetOutboundDNSTokenParams) error
+	SetOutboundDomainCheck(ctx context.Context, arg SetOutboundDomainCheckParams) error
+	SetOutboundEnrollmentNext(ctx context.Context, arg SetOutboundEnrollmentNextParams) error
+	SetOutboundEnrollmentStatus(ctx context.Context, arg SetOutboundEnrollmentStatusParams) error
+	SetOutboundMailboxError(ctx context.Context, arg SetOutboundMailboxErrorParams) error
+	SetOutboundMailboxIMAPState(ctx context.Context, arg SetOutboundMailboxIMAPStateParams) error
+	SetOutboundMailboxNextSend(ctx context.Context, arg SetOutboundMailboxNextSendParams) error
+	SetOutboundMailboxStatus(ctx context.Context, arg SetOutboundMailboxStatusParams) error
+	SetOutboundMessageNotBefore(ctx context.Context, arg SetOutboundMessageNotBeforeParams) error
+	SetOutboundPaused(ctx context.Context, arg SetOutboundPausedParams) error
+	SetOutboundProspectStatus(ctx context.Context, arg SetOutboundProspectStatusParams) error
+	SetOutboundReplyClassification(ctx context.Context, arg SetOutboundReplyClassificationParams) error
+	SetOutboundReplyHandled(ctx context.Context, arg SetOutboundReplyHandledParams) error
 	SetUserEmailVerified(ctx context.Context, id string) error
+	SkipOpenOutboundMessagesForEnrollment(ctx context.Context, enrollmentID sql.NullString) error
+	SkipOutboundMessage(ctx context.Context, arg SkipOutboundMessageParams) (int64, error)
 	SubscribeToList(ctx context.Context, arg SubscribeToListParams) (ListSubscriber, error)
 	SubscribeToListPending(ctx context.Context, arg SubscribeToListPendingParams) (ListSubscriber, error)
 	// Toggle enabled state of a rule
@@ -505,6 +583,7 @@ type Querier interface {
 	UpsertCustomFieldValue(ctx context.Context, arg UpsertCustomFieldValueParams) (CustomFieldValue, error)
 	// MCP Sessions (for persisting org selection across server restarts)
 	UpsertMCPSession(ctx context.Context, arg UpsertMCPSessionParams) error
+	UpsertOutboundSettings(ctx context.Context, arg UpsertOutboundSettingsParams) (OutboundSetting, error)
 	UpsertPlatformSetting(ctx context.Context, arg UpsertPlatformSettingParams) (PlatformSetting, error)
 	VerifyContact(ctx context.Context, id string) error
 	VerifyContactEmail(ctx context.Context, id string) error

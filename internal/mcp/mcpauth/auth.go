@@ -175,6 +175,14 @@ func tokenInfo(user db.User, mode AuthMode, scopes []string, expiresAt time.Time
 // ScopeFull lets a key or token call every tool, with the person's own access.
 const ScopeFull = "mcp:full"
 
+// The outbound scopes let a key use only the outreach tools: read looks,
+// write sets up and drafts, send approves and answers (anything that mails).
+const (
+	ScopeOutboundRead  = "outbound:read"
+	ScopeOutboundWrite = "outbound:write"
+	ScopeOutboundSend  = "outbound:send"
+)
+
 // ParseScopes reads a stored scope list: OAuth space-separated, comma-separated,
 // or a JSON array (the column default).
 func ParseScopes(s string) []string {
