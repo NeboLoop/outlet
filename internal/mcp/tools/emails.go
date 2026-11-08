@@ -1478,8 +1478,17 @@ func handleListSubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("list %s not found", input.ID))
 	}
 
-	// Find or create contact
+	// An address at a domain the brand blocked doesn't subscribe, a contact
+	// already stored included
 	brandID := toolCtx.BrandID(ctx)
+	if err := toolCtx.DB().RefuseBlockedDomain(ctx, brandID, input.Email); err != nil {
+		if errors.Is(err, db.ErrBlockedDomain) {
+			return nil, nil, mcpctx.NewValidationError(db.ErrBlockedDomain.Error(), "email")
+		}
+		return nil, nil, fmt.Errorf("failed to check blocked domains: %w", err)
+	}
+
+	// Find or create contact
 	contact, err := toolCtx.DB().GetContactByOrgAndEmail(ctx, db.GetContactByOrgAndEmailParams{
 		OrgID: sql.NullString{String: brandID, Valid: true},
 		Email: input.Email,
