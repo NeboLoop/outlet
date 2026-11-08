@@ -714,7 +714,7 @@ func registerWebhookRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 // registerListExportRoutes adds the list CSV downloads. They stream rows as
 // they are read, so they are written here rather than in outlet.api, whose
 // handlers answer with JSON. They have no timeout: a download of any size
-// finishes (listexport.Unbounded lifts the write deadline).
+// finishes (middleware.Unbounded lifts the write deadline).
 func registerListExportRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 	server.AddRoutes(
 		rest.WithMiddlewares([]rest.Middleware{ctx.Auth}, rest.Route{
@@ -988,8 +988,9 @@ func registerWebSocketRoute(server *rest.Server, ctx *svc.ServiceContext) {
 // registerBackupDownloadRoute adds the backup file download. It streams the
 // file, so it is written here rather than in outlet.api, whose handlers
 // answer with JSON. It sits behind the admin auth middleware like the other
-// backup routes; the handler lets only a super admin through. The timeout
-// matches the HTTPS server's write timeout.
+// backup routes; the handler lets only a super admin through. It has no
+// timeout: a download of any size finishes (middleware.Unbounded lifts the
+// write deadline).
 func registerBackupDownloadRoute(server *rest.Server, ctx *svc.ServiceContext) {
 	server.AddRoutes(
 		rest.WithMiddlewares([]rest.Middleware{ctx.Auth}, rest.Route{
@@ -997,6 +998,6 @@ func registerBackupDownloadRoute(server *rest.Server, ctx *svc.ServiceContext) {
 			Path:    "/api/admin/backup/:id/download",
 			Handler: adminbackup.DownloadHandler(ctx),
 		}),
-		rest.WithTimeout(30*time.Second),
+		rest.WithTimeout(0),
 	)
 }

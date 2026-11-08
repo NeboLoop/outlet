@@ -18,7 +18,7 @@ import (
 // the server's own response-writer wrappers.
 func TestDownloadOutlivesWriteTimeout(t *testing.T) {
 	slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NoError(t, Unbounded(w))
+		require.NoError(t, middleware.Unbounded(w))
 		cw := &countingWriter{ResponseWriter: w}
 		for i := 0; i < 4; i++ {
 			io.WriteString(cw, "row\n")

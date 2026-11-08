@@ -254,7 +254,7 @@ func serve(w http.ResponseWriter, r *http.Request, q db.Querier, list db.EmailLi
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
 	w.Header().Set("Cache-Control", "no-store")
-	if err := Unbounded(w); err != nil {
+	if err := middleware.Unbounded(w); err != nil {
 		fmt.Printf("[List Export] list %d: %v\n", list.ID, err)
 	}
 	cw := &countingWriter{ResponseWriter: w}
@@ -289,14 +289,6 @@ func (c *countingWriter) Flush() {
 	if f, ok := c.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
-}
-
-// Unbounded lifts the server's write deadline for this one response, so a
-// download of any size finishes: a download has no time limit. Its route must
-// also have no go-zero timeout (rest.WithTimeout(0)), which would otherwise
-// buffer the whole response and cut it off.
-func Unbounded(w http.ResponseWriter) error {
-	return http.NewResponseController(w).SetWriteDeadline(time.Time{})
 }
 
 // Unwrap lets http.ResponseController reach the connection.

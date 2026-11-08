@@ -10,6 +10,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/errorx"
+	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -70,6 +71,9 @@ func DownloadHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", backup.Filename))
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 		w.Header().Set("Cache-Control", "no-store")
+		if err := middleware.Unbounded(w); err != nil {
+			logx.WithContext(r.Context()).Errorf("Backup %s download keeps the write deadline: %v", backup.Filename, err)
+		}
 		// Flushed as it goes, so the file is never held in memory whole
 		if _, err := io.CopyBuffer(flushWriter{w}, file, make([]byte, 256<<10)); err != nil {
 			// The download has started, so its status can't change; it is cut off
