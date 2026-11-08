@@ -3,6 +3,7 @@ package validation
 import (
 	"context"
 	"database/sql"
+	"github.com/outlet-sh/outlet/internal/access"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	validationsvc "github.com/outlet-sh/outlet/internal/services/validation"
@@ -28,7 +29,7 @@ func NewListValidationResultsLogic(ctx context.Context, svcCtx *svc.ServiceConte
 }
 
 func (l *ListValidationResultsLogic) ListValidationResults(req *types.ListValidationResultsRequest) (resp *types.ListValidationResultsResponse, err error) {
-	orgID, err := orgIDFrom(l.ctx)
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -30,7 +31,13 @@ func (l *SetOutboundEnabledLogic) SetOutboundEnabled(req *types.OutboundEnabledR
 	if err != nil {
 		return nil, err
 	}
-	if err := l.svcCtx.Outbound.SetEnabled(l.ctx, org.ID, req.Enabled); err != nil {
+	return SetOutboundEnabled(l.ctx, l.svcCtx, org, req)
+}
+
+// SetOutboundEnabled runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func SetOutboundEnabled(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundEnabledRequest) (*types.Response, error) {
+	if err := svcCtx.Outbound.SetEnabled(ctx, org.ID, req.Enabled); err != nil {
 		return nil, err
 	}
 	if req.Enabled {

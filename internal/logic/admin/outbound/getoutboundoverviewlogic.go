@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -29,7 +30,13 @@ func (l *GetOutboundOverviewLogic) GetOutboundOverview() (resp *types.OutboundOv
 	if err != nil {
 		return nil, err
 	}
-	o, err := l.svcCtx.Outbound.Overview(l.ctx, org)
+	return GetOutboundOverview(l.ctx, l.svcCtx, org)
+}
+
+// GetOutboundOverview runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func GetOutboundOverview(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization) (*types.OutboundOverview, error) {
+	o, err := svcCtx.Outbound.Overview(ctx, org)
 	if err != nil {
 		return nil, apiErr(err)
 	}

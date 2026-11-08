@@ -3,6 +3,7 @@ package validation
 import (
 	"context"
 	"database/sql"
+	"github.com/outlet-sh/outlet/internal/access"
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -30,7 +31,7 @@ func NewGetValidationUsageLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *GetValidationUsageLogic) GetValidationUsage(req *types.ValidationUsageRequest) (resp *types.ValidationUsageResponse, err error) {
-	orgID, err := orgIDFrom(l.ctx)
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
 	if err != nil {
 		return nil, err
 	}

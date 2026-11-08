@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -29,7 +30,13 @@ func (l *AnswerOutboundReplyLogic) AnswerOutboundReply(req *types.OutboundAnswer
 	if err != nil {
 		return nil, err
 	}
-	if _, err := l.svcCtx.Outbound.Answer(l.ctx, org, req.Id, req.Body); err != nil {
+	return AnswerOutboundReply(l.ctx, l.svcCtx, org, req)
+}
+
+// AnswerOutboundReply runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func AnswerOutboundReply(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundAnswerRequest) (*types.Response, error) {
+	if _, err := svcCtx.Outbound.Answer(ctx, org, req.Id, req.Body); err != nil {
 		return nil, apiErr(err)
 	}
 	return ok("Queued. It goes from the same mailbox, in the same thread, within its daily limit."), nil

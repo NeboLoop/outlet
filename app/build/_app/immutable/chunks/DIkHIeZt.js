@@ -1,1 +1,0 @@
-import{nt as e}from"./CoJjFYjg.js";async function t(t,n){let r=await e({},t),i=await fetch(`/sdk/v1/emails`,{method:`POST`,headers:{"Content-Type":`application/json`,"X-API-Key":r.api_key},body:JSON.stringify(n)}),a=await i.json().catch(()=>null);if(!i.ok||!a?.success)throw Error(a?.message||a?.error||`Send failed with status ${i.status}`);return a.message_id}export{t};

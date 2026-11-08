@@ -2,6 +2,7 @@ package validation
 
 import (
 	"context"
+	"github.com/outlet-sh/outlet/internal/access"
 
 	"github.com/outlet-sh/outlet/internal/db"
 
@@ -26,7 +27,7 @@ func NewListValidationJobsLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *ListValidationJobsLogic) ListValidationJobs(req *types.ListValidationJobsRequest) (resp *types.ListValidationJobsResponse, err error) {
-	orgID, err := orgIDFrom(l.ctx)
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
 	if err != nil {
 		return nil, err
 	}

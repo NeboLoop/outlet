@@ -69,19 +69,17 @@ func (l *CreateDomainIdentityLogic) CreateDomainIdentity(req *types.CreateDomain
 		return nil, err
 	}
 
-	// Get AWS credentials from platform settings
-	region, accessKey, secretKey, err := getAWSCredentials(l.ctx, l.svcCtx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get email config for org-specific AWS credentials
+	// AWS credentials: the brand's own, else the platform's.
+	region, accessKey, secretKey, awsErr := getAWSCredentials(l.ctx, l.svcCtx)
 	emailConfig, err := email.GetOrgEmailConfig(l.ctx, l.svcCtx.DB, req.OrgId)
 	if err == nil && emailConfig.HasOwnAWSCredentials() {
-		// Use org's own credentials
-		region = emailConfig.AWSRegion
-		accessKey = emailConfig.AWSAccessKey
-		secretKey = emailConfig.AWSSecretKey
+		region, accessKey, secretKey, awsErr = emailConfig.AWSRegion, emailConfig.AWSAccessKey, emailConfig.AWSSecretKey, nil
+	}
+	if awsErr != nil {
+		// No SES: mail goes through the platform's SMTP server, which signs it
+		// with its own SPF and DKIM. The domain is recorded so the brand may
+		// send from it; SES never sees it.
+		return l.recordSMTPDomain(req.OrgId, domain)
 	}
 
 	// Determine MAIL FROM subdomain (default to "mail" if not specified)
@@ -199,4 +197,25 @@ func getAWSCredentials(ctx context.Context, svcCtx *svc.ServiceContext) (region,
 	}
 
 	return region, accessKey, secretKey, nil
+}
+
+// recordSMTPDomain adds a sending domain on a server that sends through SMTP
+// rather than SES. There is nothing for SES to verify, so it is ready at once.
+func (l *CreateDomainIdentityLogic) recordSMTPDomain(orgID, domain string) (*types.DomainIdentityInfo, error) {
+	identity, err := l.svcCtx.DB.CreateDomainIdentity(l.ctx, db.CreateDomainIdentityParams{
+		ID: uuid.New().String(), OrgID: orgID, Domain: domain,
+		VerificationStatus: sql.NullString{String: "success", Valid: true},
+		DkimStatus:         sql.NullString{String: "success", Valid: true},
+		DkimTokens:         sql.NullString{String: "[]", Valid: true},
+		DnsRecords:         sql.NullString{String: "[]", Valid: true},
+	})
+	if err != nil {
+		l.Errorf("Failed to create domain identity record: %v", err)
+		return nil, errorx.NewInternalError("Failed to save domain identity")
+	}
+	return &types.DomainIdentityInfo{
+		Id: identity.ID, OrgId: identity.OrgID, Domain: identity.Domain,
+		VerificationStatus: "success", DKIMStatus: "success", MailFromStatus: "not_started",
+		DNSRecords: []types.DNSRecord{}, CreatedAt: identity.CreatedAt.String,
+	}, nil
 }

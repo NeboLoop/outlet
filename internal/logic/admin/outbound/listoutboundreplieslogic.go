@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -29,7 +30,13 @@ func (l *ListOutboundRepliesLogic) ListOutboundReplies(req *types.OutboundListRe
 	if err != nil {
 		return nil, err
 	}
-	rows, err := l.svcCtx.Outbound.ListReplies(l.ctx, org, req.Handled, req.Limit)
+	return ListOutboundReplies(l.ctx, l.svcCtx, org, req)
+}
+
+// ListOutboundReplies runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func ListOutboundReplies(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundListRepliesRequest) (*types.OutboundReplyList, error) {
+	rows, err := svcCtx.Outbound.ListReplies(ctx, org, req.Handled, req.Limit)
 	if err != nil {
 		return nil, err
 	}

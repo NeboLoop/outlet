@@ -38,6 +38,6 @@ features/
 .out/
 
 # SDKs (separate repos)
-sdk/
+/sdk/
 
 

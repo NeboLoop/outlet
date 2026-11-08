@@ -151,13 +151,16 @@ func runServe(cmd *cobra.Command, args []string) {
 	// Create go-zero server with optional embedded SPA
 	var serverOpts []rest.RunOption
 	if err == nil {
-		serverOpts = append(serverOpts,
-			rest.WithFileServer("/", http.FS(spaFS)),
-			rest.WithNotFoundHandler(app.NotFoundHandler(spaFS)),
-		)
+		// Every path that isn't an API route is the app: a file, a prerendered
+		// page (/settings → settings.html), or the app's fallback page. The
+		// same handler serves the HTTPS mode below.
+		serverOpts = append(serverOpts, rest.WithNotFoundHandler(app.SPAHandler(spaFS)))
 	}
+	// One request line per call, without headers or bodies (see RequestLog).
+	c.RestConf.Middlewares.Log = false
 	server := rest.MustNewServer(c.RestConf, serverOpts...)
 	defer server.Stop()
+	server.Use(middleware.RequestLog)
 
 	// Initialize service context (DB, external services)
 	ctx := svc.NewServiceContext(c)

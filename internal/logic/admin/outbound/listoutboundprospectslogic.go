@@ -30,11 +30,17 @@ func (l *ListOutboundProspectsLogic) ListOutboundProspects(req *types.OutboundLi
 	if err != nil {
 		return nil, err
 	}
+	return ListOutboundProspects(l.ctx, l.svcCtx, org, req)
+}
+
+// ListOutboundProspects runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func ListOutboundProspects(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundListProspectsRequest) (*types.OutboundProspectList, error) {
 	limit := int64(req.Limit)
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := l.svcCtx.DB.ListProspects(l.ctx, db.ListProspectsParams{OrgID: org.ID, ListID: req.ListId, LimitCount: limit})
+	rows, err := svcCtx.DB.ListProspects(ctx, db.ListProspectsParams{OrgID: org.ID, ListID: req.ListId, LimitCount: limit})
 	if err != nil {
 		return nil, err
 	}

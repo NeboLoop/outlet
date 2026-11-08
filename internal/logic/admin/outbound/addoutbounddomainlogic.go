@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/services/outbound"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -30,11 +31,17 @@ func (l *AddOutboundDomainLogic) AddOutboundDomain(req *types.OutboundDomainRequ
 	if err != nil {
 		return nil, err
 	}
+	return AddOutboundDomain(l.ctx, l.svcCtx, org, req)
+}
+
+// AddOutboundDomain runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func AddOutboundDomain(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundDomainRequest) (*types.OutboundDomainResponse, error) {
 	in, err := convertInto[outbound.DomainInput](req)
 	if err != nil {
 		return nil, err
 	}
-	d, pending, _, err := l.svcCtx.Outbound.AddDomain(l.ctx, org, in)
+	d, pending, _, err := svcCtx.Outbound.AddDomain(ctx, org, in)
 	if err != nil {
 		return nil, apiErr(err)
 	}

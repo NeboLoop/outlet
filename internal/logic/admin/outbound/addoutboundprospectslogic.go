@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/services/outbound"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -30,11 +31,17 @@ func (l *AddOutboundProspectsLogic) AddOutboundProspects(req *types.OutboundAddP
 	if err != nil {
 		return nil, err
 	}
+	return AddOutboundProspects(l.ctx, l.svcCtx, org, req)
+}
+
+// AddOutboundProspects runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func AddOutboundProspects(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundAddProspectsRequest) (*types.OutboundAddProspectsResponse, error) {
 	in, err := convertInto[[]outbound.ProspectInput](req.Prospects)
 	if err != nil {
 		return nil, err
 	}
-	res, err := l.svcCtx.Outbound.AddProspects(l.ctx, org, req.List, in)
+	res, err := svcCtx.Outbound.AddProspects(ctx, org, req.List, in)
 	if err != nil {
 		return nil, apiErr(err)
 	}

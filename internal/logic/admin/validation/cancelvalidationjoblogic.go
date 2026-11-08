@@ -2,6 +2,7 @@ package validation
 
 import (
 	"context"
+	"github.com/outlet-sh/outlet/internal/access"
 
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -24,7 +25,7 @@ func NewCancelValidationJobLogic(ctx context.Context, svcCtx *svc.ServiceContext
 }
 
 func (l *CancelValidationJobLogic) CancelValidationJob(req *types.ValidationJobIdRequest) (resp *types.ValidationJobInfo, err error) {
-	orgID, err := orgIDFrom(l.ctx)
+	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
 	if err != nil {
 		return nil, err
 	}

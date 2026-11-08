@@ -32,11 +32,17 @@ func (l *GetOutboundCampaignLogic) GetOutboundCampaign(req *types.OutboundIDRequ
 	if err != nil {
 		return nil, err
 	}
-	c, err := l.svcCtx.DB.GetOutreachSequence(l.ctx, db.GetOutreachSequenceParams{ID: req.Id, OrgID: sql.NullString{String: org.ID, Valid: true}})
+	return GetOutboundCampaign(l.ctx, l.svcCtx, org, req)
+}
+
+// GetOutboundCampaign runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func GetOutboundCampaign(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundIDRequest) (*types.OutboundCampaignResults, error) {
+	c, err := svcCtx.DB.GetOutreachSequence(ctx, db.GetOutreachSequenceParams{ID: req.Id, OrgID: sql.NullString{String: org.ID, Valid: true}})
 	if err != nil {
 		return nil, errorx.NewNotFoundError("No such campaign.")
 	}
-	r, err := l.svcCtx.Outbound.CampaignResults(l.ctx, c, true)
+	r, err := svcCtx.Outbound.CampaignResults(ctx, c, true)
 	if err != nil {
 		return nil, err
 	}

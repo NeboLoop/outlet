@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/services/outbound"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -30,7 +31,13 @@ func (l *UpdateOutboundSettingsLogic) UpdateOutboundSettings(req *types.Outbound
 	if err != nil {
 		return nil, err
 	}
-	if _, err := l.svcCtx.Outbound.UpdateSettings(l.ctx, org, outbound.SettingsInput{
+	return UpdateOutboundSettings(l.ctx, l.svcCtx, org, req)
+}
+
+// UpdateOutboundSettings runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func UpdateOutboundSettings(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundSettingsRequest) (*types.Response, error) {
+	if _, err := svcCtx.Outbound.UpdateSettings(ctx, org, outbound.SettingsInput{
 		MailingAddress: req.MailingAddress, OptOutLine: req.OptOutLine, Timezone: req.Timezone,
 	}); err != nil {
 		return nil, apiErr(err)

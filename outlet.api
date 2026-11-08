@@ -2993,3 +2993,70 @@ service outlet {
 	get /outbound/explain (OutboundExplainRequest) returns (OutboundExplainResponse)
 }
 
+
+// Outbound through a brand's API key, for other systems: the same operations
+// as the admin routes and the MCP tools. Turning outbound on stays with the
+// brand's admin in the app.
+@server (
+	group:      sdk/outbound
+	prefix:     /sdk/v1/outbound
+	middleware: APIKeyAuth
+)
+service outlet {
+	@handler SdkOutboundOverview
+	get / returns (OutboundOverview)
+
+	@handler SdkUpdateOutboundSettings
+	put /settings (OutboundSettingsRequest) returns (Response)
+
+	@handler SdkSetOutboundDNSToken
+	put /dns-token (OutboundDNSTokenRequest) returns (Response)
+
+	@handler SdkAddOutboundDomain
+	post /domains (OutboundDomainRequest) returns (OutboundDomainResponse)
+
+	@handler SdkCheckOutboundDomain
+	post /domains/:id/check (OutboundIDRequest) returns (OutboundDomainInfo)
+
+	@handler SdkAddOutboundMailboxes
+	post /mailboxes (OutboundAddMailboxesRequest) returns (OutboundAddMailboxesResponse)
+
+	@handler SdkPauseOutbound
+	post /pause (OutboundPauseRequest) returns (Response)
+
+	@handler SdkListOutboundProspects
+	get /prospects (OutboundListProspectsRequest) returns (OutboundProspectList)
+
+	@handler SdkAddOutboundProspects
+	post /prospects (OutboundAddProspectsRequest) returns (OutboundAddProspectsResponse)
+
+	@handler SdkMarkOutboundPartner
+	post /prospects/:id/partner (OutboundIDRequest) returns (Response)
+
+	@handler SdkCreateOutboundCampaign
+	post /campaigns (OutboundCampaignRequest) returns (OutboundCampaignResponse)
+
+	@handler SdkGetOutboundCampaign
+	get /campaigns/:id (OutboundIDRequest) returns (OutboundCampaignResults)
+
+	@handler SdkListOutboundDrafts
+	get /drafts (OutboundListRequest) returns (OutboundDraftList)
+
+	@handler SdkReviewOutboundDrafts
+	post /drafts/review (OutboundReviewRequest) returns (OutboundReviewResponse)
+
+	@handler SdkEditOutboundDraft
+	put /drafts/:id (OutboundEditDraftRequest) returns (Response)
+
+	@handler SdkListOutboundReplies
+	get /replies (OutboundListRepliesRequest) returns (OutboundReplyList)
+
+	@handler SdkAnswerOutboundReply
+	post /replies/:id/answer (OutboundAnswerRequest) returns (Response)
+
+	@handler SdkClassifyOutboundReply
+	post /replies/:id/classify (OutboundClassifyRequest) returns (Response)
+
+	@handler SdkExplainOutbound
+	get /explain (OutboundExplainRequest) returns (OutboundExplainResponse)
+}

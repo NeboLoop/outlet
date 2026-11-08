@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -29,7 +30,13 @@ func (l *MarkOutboundPartnerLogic) MarkOutboundPartner(req *types.OutboundIDRequ
 	if err != nil {
 		return nil, err
 	}
-	if err := l.svcCtx.Outbound.MarkPartner(l.ctx, org, req.Id); err != nil {
+	return MarkOutboundPartner(l.ctx, l.svcCtx, org, req)
+}
+
+// MarkOutboundPartner runs for a brand already resolved: the admin route's signed-in
+// person, or the API key of /sdk/v1/outbound.
+func MarkOutboundPartner(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundIDRequest) (*types.Response, error) {
+	if err := svcCtx.Outbound.MarkPartner(ctx, org, req.Id); err != nil {
 		return nil, apiErr(err)
 	}
 	return ok("Marked as a partner."), nil
