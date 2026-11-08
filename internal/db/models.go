@@ -91,6 +91,7 @@ type CampaignSend struct {
 	FailedAt      sql.NullString `json:"failed_at"`
 	ClaimToken    sql.NullString `json:"claim_token"`
 	ClaimedAt     sql.NullString `json:"claimed_at"`
+	SendAfter     sql.NullString `json:"send_after"`
 }
 
 type Contact struct {
@@ -179,6 +180,7 @@ type DomainIdentity struct {
 	DkimSelector       string         `json:"dkim_selector"`
 	TrackingHost       string         `json:"tracking_host"`
 	DnsCheck           string         `json:"dns_check"`
+	PathwayID          sql.NullString `json:"pathway_id"`
 }
 
 type EmailBounce struct {
@@ -449,13 +451,13 @@ type Mailbox struct {
 	ImapPasswordEnc []byte         `json:"imap_password_enc"`
 	Status          string         `json:"status"`
 	PausedReason    string         `json:"paused_reason"`
-	DailyCap        int64          `json:"daily_cap"`
 	WarmupStartedAt string         `json:"warmup_started_at"`
 	NextSendAt      sql.NullString `json:"next_send_at"`
 	ImapUidValidity int64          `json:"imap_uid_validity"`
 	ImapLastUid     int64          `json:"imap_last_uid"`
 	LastError       string         `json:"last_error"`
 	CreatedAt       string         `json:"created_at"`
+	DailyLimit      sql.NullInt64  `json:"daily_limit"`
 }
 
 type McpApiKey struct {
@@ -645,6 +647,41 @@ type RuleTemplate struct {
 	IsRecommended      sql.NullInt64  `json:"is_recommended"`
 	IsDefault          sql.NullInt64  `json:"is_default"`
 	CreatedAt          sql.NullString `json:"created_at"`
+}
+
+type SendCount struct {
+	PathwayID string `json:"pathway_id"`
+	SenderID  string `json:"sender_id"`
+	Day       string `json:"day"`
+	N         int64  `json:"n"`
+}
+
+type SendingPathway struct {
+	ID                   string         `json:"id"`
+	OrgID                string         `json:"org_id"`
+	Name                 string         `json:"name"`
+	Provider             string         `json:"provider"`
+	CarriesTransactional int64          `json:"carries_transactional"`
+	CarriesMarketing     int64          `json:"carries_marketing"`
+	CarriesOutreach      int64          `json:"carries_outreach"`
+	AwsRegion            string         `json:"aws_region"`
+	AwsAccessKeyEnc      []byte         `json:"aws_access_key_enc"`
+	AwsSecretKeyEnc      []byte         `json:"aws_secret_key_enc"`
+	SmtpHost             string         `json:"smtp_host"`
+	SmtpPort             int64          `json:"smtp_port"`
+	SmtpUsername         string         `json:"smtp_username"`
+	SmtpPasswordEnc      []byte         `json:"smtp_password_enc"`
+	DailyLimit           int64          `json:"daily_limit"`
+	WarmupStart          int64          `json:"warmup_start"`
+	WarmupStep           int64          `json:"warmup_step"`
+	MinGapSeconds        int64          `json:"min_gap_seconds"`
+	MaxGapSeconds        int64          `json:"max_gap_seconds"`
+	PauseBounceRate      float64        `json:"pause_bounce_rate"`
+	PauseMinBounces      int64          `json:"pause_min_bounces"`
+	PauseSpamBlocks      int64          `json:"pause_spam_blocks"`
+	PauseComplaints      int64          `json:"pause_complaints"`
+	NextSendAt           sql.NullString `json:"next_send_at"`
+	CreatedAt            string         `json:"created_at"`
 }
 
 type SequenceEntryRule struct {

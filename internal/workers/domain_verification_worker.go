@@ -84,7 +84,7 @@ func (w *DomainVerificationWorker) checkPendingDomains() {
 
 func (w *DomainVerificationWorker) checkDomainStatus(ctx context.Context, identity db.DomainIdentity) {
 	// Get AWS credentials
-	region, accessKey, secretKey, err := email.AWSCredentials(ctx, w.svcCtx.DB, w.svcCtx.CryptoService, identity.OrgID)
+	region, accessKey, secretKey, err := email.AWSCredentials(ctx, w.svcCtx.DB, w.svcCtx.CryptoService, identity.OrgID, identity.PathwayID.String)
 	if err != nil {
 		log.Printf("Failed to get AWS credentials for org %s: %v", identity.OrgID, err)
 		return

@@ -73,13 +73,6 @@ func DetectAndSaveQuota(ctx context.Context, region, accessKey, secretKey string
 		SESRateLimit:  quota.MaxSendRate,
 		SESRateBurst:  int(quota.MaxSendRate * 2), // Allow 2 seconds worth as burst
 		SESDailyQuota: int64(quota.Max24HourSend),
-		AWSRegion:     region,
-	}
-
-	// If using org-specific credentials, store them (should be encrypted by caller)
-	if accessKey != "" && secretKey != "" {
-		config.AWSAccessKey = accessKey
-		config.AWSSecretKey = secretKey
 	}
 
 	return config, nil

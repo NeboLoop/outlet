@@ -21,8 +21,8 @@ UPDATE organizations SET dns_token_enc = ?, updated_at = datetime('now') WHERE i
 -- ---- outreach domains (domain_identities with purpose 'outreach') -------------
 
 -- name: CreateOutreachDomain :one
-INSERT INTO domain_identities (id, org_id, domain, verification_status, dkim_status, purpose, dns_host, dkim_selector, tracking_host)
-VALUES (?, ?, ?, 'pending', 'pending', 'outreach', ?, ?, ?)
+INSERT INTO domain_identities (id, org_id, domain, verification_status, dkim_status, purpose, dns_host, dkim_selector, tracking_host, pathway_id)
+VALUES (?, ?, ?, 'pending', 'pending', 'outreach', ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetOutreachDomain :one
@@ -52,7 +52,7 @@ UPDATE domain_identities SET tracking_host = ?, updated_at = datetime('now') WHE
 INSERT INTO mailboxes (
     id, org_id, domain_id, email, from_name, signature,
     smtp_host, smtp_port, smtp_username, smtp_password_enc,
-    imap_host, imap_port, imap_username, imap_password_enc, daily_cap
+    imap_host, imap_port, imap_username, imap_password_enc, daily_limit
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 

@@ -35,6 +35,7 @@ WHERE id IN (
     JOIN email_campaigns ec ON ec.id = cs.campaign_id
     WHERE cs.status = 'pending' AND ec.status = 'sending'
       AND (cs.claimed_at IS NULL OR cs.claimed_at < datetime('now', '-15 minutes'))
+      AND (cs.send_after IS NULL OR cs.send_after <= datetime('now'))
     ORDER BY cs.created_at ASC
     LIMIT ?2
 )
@@ -258,7 +259,7 @@ const createCampaignSend = `-- name: CreateCampaignSend :one
 
 INSERT INTO campaign_sends (id, campaign_id, contact_id, list_id, tracking_token, status, created_at)
 VALUES (?1, ?2, ?3, ?4, ?5, 'pending', datetime('now'))
-RETURNING id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at, claim_token, claimed_at
+RETURNING id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at, claim_token, claimed_at, send_after
 `
 
 type CreateCampaignSendParams struct {
@@ -299,6 +300,7 @@ func (q *Queries) CreateCampaignSend(ctx context.Context, arg CreateCampaignSend
 		&i.FailedAt,
 		&i.ClaimToken,
 		&i.ClaimedAt,
+		&i.SendAfter,
 	)
 	return i, err
 }
@@ -539,7 +541,7 @@ func (q *Queries) GetCampaignLinkStats(ctx context.Context, campaignID string) (
 }
 
 const getCampaignSend = `-- name: GetCampaignSend :one
-SELECT id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at, claim_token, claimed_at FROM campaign_sends
+SELECT id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at, claim_token, claimed_at, send_after FROM campaign_sends
 WHERE id = ?1
 `
 
@@ -566,12 +568,13 @@ func (q *Queries) GetCampaignSend(ctx context.Context, id string) (CampaignSend,
 		&i.FailedAt,
 		&i.ClaimToken,
 		&i.ClaimedAt,
+		&i.SendAfter,
 	)
 	return i, err
 }
 
 const getCampaignSendByTracking = `-- name: GetCampaignSendByTracking :one
-SELECT id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at, claim_token, claimed_at FROM campaign_sends
+SELECT id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at, claim_token, claimed_at, send_after FROM campaign_sends
 WHERE tracking_token = ?1
 `
 
@@ -598,6 +601,7 @@ func (q *Queries) GetCampaignSendByTracking(ctx context.Context, trackingToken s
 		&i.FailedAt,
 		&i.ClaimToken,
 		&i.ClaimedAt,
+		&i.SendAfter,
 	)
 	return i, err
 }
@@ -945,7 +949,7 @@ func (q *Queries) ListCampaignClicks(ctx context.Context, arg ListCampaignClicks
 }
 
 const listCampaignSends = `-- name: ListCampaignSends :many
-SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.status, cs.sent_at, cs.delivered_at, cs.tracking_token, cs.opened_at, cs.open_count, cs.clicked_at, cs.click_count, cs.error_message, cs.bounce_type, cs.created_at, cs.retry_count, cs.failed_at, cs.claim_token, cs.claimed_at, c.email, c.name
+SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.status, cs.sent_at, cs.delivered_at, cs.tracking_token, cs.opened_at, cs.open_count, cs.clicked_at, cs.click_count, cs.error_message, cs.bounce_type, cs.created_at, cs.retry_count, cs.failed_at, cs.claim_token, cs.claimed_at, cs.send_after, c.email, c.name
 FROM campaign_sends cs
 JOIN contacts c ON cs.contact_id = c.id
 WHERE cs.campaign_id = ?1
@@ -979,6 +983,7 @@ type ListCampaignSendsRow struct {
 	FailedAt      sql.NullString `json:"failed_at"`
 	ClaimToken    sql.NullString `json:"claim_token"`
 	ClaimedAt     sql.NullString `json:"claimed_at"`
+	SendAfter     sql.NullString `json:"send_after"`
 	Email         string         `json:"email"`
 	Name          string         `json:"name"`
 }
@@ -1012,6 +1017,7 @@ func (q *Queries) ListCampaignSends(ctx context.Context, arg ListCampaignSendsPa
 			&i.FailedAt,
 			&i.ClaimToken,
 			&i.ClaimedAt,
+			&i.SendAfter,
 			&i.Email,
 			&i.Name,
 		); err != nil {

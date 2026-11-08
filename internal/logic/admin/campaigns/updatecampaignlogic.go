@@ -33,7 +33,7 @@ func (l *UpdateCampaignLogic) UpdateCampaign(req *types.UpdateCampaignRequest) (
 		return nil, err
 	}
 
-	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, req.FromEmail); err != nil {
+	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, email.KindMarketing, req.FromEmail); err != nil {
 		return nil, err
 	}
 	var listIds, excludeListIds interface{}

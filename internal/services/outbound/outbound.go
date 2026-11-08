@@ -1,9 +1,10 @@
 // Package outbound is a brand's one-to-one outreach. It runs on Outlet's own
 // lists, contacts, sequences, email queue, suppression, validation, merge
 // tags and tracking. What it adds: the brand's outreach domains and connected
-// mailboxes (outreach is sent only through them, never SES or any other
-// email platform), the rules cold email needs, paced sending per mailbox, and
-// reading replies. No caller can raise its limits: they are constants here.
+// mailboxes, the rules cold email needs, the outreach sender, and reading
+// replies. Outreach goes through the brand's sending pathway that carries it
+// (normally its mailbox pool); the pace, warm-up, daily limits and health
+// thresholds are that pathway's, enforced in email.Send.
 package outbound
 
 import (
@@ -19,19 +20,9 @@ import (
 	"github.com/outlet-sh/outlet/internal/services/email"
 )
 
-// The safety limits. Only a code change moves them.
 const (
-	MaxDailyCap       = 30               // emails per mailbox per day
-	warmupStart       = 5                // a new mailbox's first day
-	warmupStep        = 2                // added each day until the cap
-	minGap            = 4 * time.Minute  // between two sends from one mailbox
-	maxGap            = 9 * time.Minute  //
-	bounceRateLimit   = 0.03             // per mailbox, last 7 days
-	minBouncesToPause = 2                // one bounce alone never pauses
-	complaintLimit    = 2                // complaints per mailbox, last 7 days
-	spamBlockLimit    = 2                // spam-block rejections per mailbox, last 7 days
-	stuckAfter        = 10 * time.Minute // a send claimed this long ago crashed
-	maxBatch          = 100              // items in one call
+	stuckAfter = 10 * time.Minute // a send claimed this long ago crashed
+	maxBatch   = 100              // items in one call
 )
 
 // Refusal is an error the caller can act on: what was refused and how to fix it.
@@ -108,18 +99,9 @@ func (s *Service) rand() *rand.Rand {
 	return rand.New(rand.NewPCG(s.rnd.Uint64(), s.rnd.Uint64()))
 }
 
-func (s *Service) gap() time.Duration {
-	return minGap + time.Duration(s.rand().Int64N(int64(maxGap-minGap)))
-}
-
-// allowance is how many emails a mailbox may send today: the warm-up ramp
-// until it reaches its cap.
-func allowance(mb db.Mailbox, now time.Time) int64 {
-	days := int64(now.Sub(parseTS(mb.WarmupStartedAt)).Hours() / 24)
-	if days < 0 {
-		days = 0
-	}
-	return min(min(mb.DailyCap, MaxDailyCap), warmupStart+warmupStep*days)
+// pool is the mailbox pool (sending pathway) a mailbox belongs to.
+func (s *Service) pool(ctx context.Context, mb db.Mailbox) (db.SendingPathway, error) {
+	return s.db.GetMailboxPathway(ctx, mb.ID)
 }
 
 func ts(t time.Time) string { return t.UTC().Format(email.TimeLayout) }

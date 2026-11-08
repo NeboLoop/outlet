@@ -35,7 +35,7 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 		return nil, err
 	}
 
-	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, req.FromEmail); err != nil {
+	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, email.KindMarketing, req.FromEmail); err != nil {
 		return nil, err
 	}
 	listIDs, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ListIds)

@@ -28,6 +28,9 @@ type MailboxHealth struct {
 	SpamBlocks7d int64  `json:"spam_blocks_7d"`
 	Complaints7d int64  `json:"complaints_7d"`
 	LastError    string `json:"last_error,omitempty"`
+	PoolID       string `json:"pool_id,omitempty"`     // its mailbox pool (sending pathway)
+	DailyLimit   *int64 `json:"daily_limit,omitempty"` // its own daily limit; empty uses the pool's
+	Limited      bool   `json:"limited"`               // false: no daily limit applies, whatever allowed_today says
 }
 
 // DomainInfo is one outreach domain and its last DNS check.
@@ -65,22 +68,23 @@ type Overview struct {
 }
 
 func (s *Service) mailboxHealth(ctx context.Context, mb db.Mailbox, org db.Organization) MailboxHealth {
-	now := s.now()
-	since7 := ts(now.AddDate(0, 0, -7))
-	count := func(class string) int64 {
-		n, _ := s.db.CountMailboxRepliesSince(ctx, db.CountMailboxRepliesSinceParams{MailboxID: mb.ID, Classification: class, Since: since7})
-		return n
-	}
-	sentSince := func(since string) int64 {
-		n, _ := s.db.CountMailboxSentSince(ctx, db.CountMailboxSentSinceParams{MailboxID: sql.NullString{String: mb.ID, Valid: true}, Since: sql.NullString{String: since, Valid: true}})
-		return n
-	}
-	return MailboxHealth{
+	out := MailboxHealth{
 		ID: mb.ID, Email: mb.Email, FromName: mb.FromName, Status: mb.Status, Reason: mb.PausedReason,
-		SentToday: sentSince(startOfDay(now, email.LoadLocation(org.OutboundTimezone))), AllowToday: allowance(mb, now),
-		Sent7d: sentSince(since7), Bounces7d: count("bounce"), SpamBlocks7d: count("spam_block"), Complaints7d: count("complaint"),
 		LastError: mb.LastError,
 	}
+	if mb.DailyLimit.Valid {
+		out.DailyLimit = &mb.DailyLimit.Int64
+	}
+	h, p, err := s.health(ctx, mb)
+	if err != nil {
+		return out
+	}
+	now := s.now()
+	out.PoolID = p.ID
+	out.SentToday, _ = s.mailer.SentSince(ctx, org, p.ID, mb.ID, now)
+	out.AllowToday, out.Limited = email.Allowance(p, parseTS(mb.WarmupStartedAt), mb.DailyLimit, now)
+	out.Sent7d, out.Bounces7d, out.SpamBlocks7d, out.Complaints7d = h.Sent, h.Bounces, h.SpamBlocks, h.Complaints
+	return out
 }
 
 // Overview reads a brand's outreach.
@@ -424,7 +428,7 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 			why = append(why, "the mailbox's next send is spaced to "+mb.NextSendAt.String+" UTC")
 		}
 		h := s.mailboxHealth(ctx, mb, org)
-		if h.SentToday >= h.AllowToday {
+		if h.Limited && h.SentToday >= h.AllowToday {
 			why = append(why, fmt.Sprintf("the mailbox reached today's limit (%d of %d)", h.SentToday, h.AllowToday))
 		}
 		if mb.LastError != "" {
@@ -440,7 +444,11 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 			return "", refuse("no such mailbox")
 		}
 		if mb.Status == "active" {
-			return fmt.Sprintf("%s is active; warm-up allows %d today (at most %d).", mb.Email, allowance(mb, now), MaxDailyCap), nil
+			h := s.mailboxHealth(ctx, mb, org)
+			if !h.Limited {
+				return fmt.Sprintf("%s is active, with no daily limit; it sent %d today.", mb.Email, h.SentToday), nil
+			}
+			return fmt.Sprintf("%s is active; its pool's limits allow %d today (warm-up included) and it sent %d.", mb.Email, h.AllowToday, h.SentToday), nil
 		}
 		r := mb.PausedReason
 		switch {

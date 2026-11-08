@@ -2,27 +2,25 @@ package email
 
 import (
 	"bytes"
-	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
-
-	"github.com/outlet-sh/outlet/internal/db"
+	"time"
 
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 )
 
-// Outreach (cold email) leaves only through the brand's own connected
-// mailboxes, logged in over SMTP. It never reaches SES or any other email
-// platform: their terms forbid it, and a suspension would stop every brand's
-// transactional mail.
+// A brand's own SMTP logins: its connected mailboxes, and the relay of an
+// smtp pathway. Both deliver through deliverSMTP.
 
-// DeliveryError is a mailbox delivery failure. Temporary ones (a 4xx reply, a
-// dropped connection) are tried again later from the same mailbox.
+// DeliveryError is a delivery failure Send can tell apart. Temporary ones (a
+// 4xx reply, a dropped connection, a sender over its pathway's limit) are
+// tried again later; RetryAt, when set, is the earliest worth trying.
 type DeliveryError struct {
 	Temporary bool
+	RetryAt   time.Time
 	Err       error
 }
 
@@ -100,49 +98,15 @@ func CheckMailboxLogin(l MailboxLogin) error {
 	return c.Quit()
 }
 
-// sendThroughMailbox delivers an outreach email from its mailbox. The From is
-// the mailbox itself; nothing else may send as it.
-func (s *Service) sendThroughMailbox(ctx context.Context, m Message) error {
-	if m.MailboxID == "" || m.OrgID == "" {
-		return invalid("outreach needs its brand and mailbox")
-	}
-	mb, err := s.db.GetMailbox(ctx, db.GetMailboxParams{ID: m.MailboxID, OrgID: m.OrgID})
-	if err != nil {
-		return invalid("mailbox %s is not one of this brand's", m.MailboxID)
-	}
-	if s.cryptoSvc == nil {
-		return fmt.Errorf("ENCRYPTION_KEY is not set, so mailbox passwords can't be read")
-	}
-	password, err := s.cryptoSvc.DecryptString(mb.SmtpPasswordEnc)
-	if err != nil {
-		return err
-	}
-	m.FromEmail, m.FromName = mb.Email, mb.FromName
-	from, err := parseSingleAddress("from", m.FromEmail)
-	if err != nil {
-		return err
-	}
-	from.Name = m.FromName
-	to, err := parseSingleAddress("to", m.To)
-	if err != nil {
-		return err
-	}
-	env := envelope{from: from, to: to, msg: m}
-	if blocked, err := s.db.IsSendBlocked(ctx, db.IsSendBlockedParams{Email: to.Address, OrgID: m.OrgID, Domain: env.recipientDomain()}); err != nil {
-		return fmt.Errorf("check suppression: %w", err)
-	} else if blocked == 1 {
-		return ErrSuppressed
-	}
-	raw, err := env.build()
-	if err != nil {
-		return err
-	}
-	c, err := dialMailbox(MailboxLogin{Email: mb.Email, Host: mb.SmtpHost, Port: int(mb.SmtpPort), Username: mb.SmtpUsername, Password: password})
+// deliverSMTP sends one built message through a brand's own SMTP login. A
+// 4xx reply or a failed connection is temporary.
+func deliverSMTP(l MailboxLogin, from, to string, raw []byte) error {
+	c, err := dialMailbox(l)
 	if err != nil {
 		return &DeliveryError{Temporary: true, Err: err}
 	}
 	defer c.Close()
-	if err := c.SendMail(mb.Email, []string{to.Address}, bytes.NewReader(raw)); err != nil {
+	if err := c.SendMail(from, []string{to}, bytes.NewReader(raw)); err != nil {
 		var se *smtp.SMTPError
 		if errors.As(err, &se) {
 			return &DeliveryError{Temporary: se.Code >= 400 && se.Code < 500, Err: err}

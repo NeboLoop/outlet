@@ -164,12 +164,26 @@ func dedupe(s []string) []string {
 }
 
 // PickMailbox is the mailbox a person's outreach comes from: the one already
-// chosen for them in this sequence, or the brand's least-used active one.
+// chosen for them in this sequence, or the least-used active one of the pool
+// carrying the brand's outreach (any of the brand's mailboxes when outreach
+// rides another provider: the mailbox is then the sender's address).
 func (s *SequenceService) PickMailbox(ctx context.Context, seq db.EmailSequence, state db.ContactSequenceState) (db.Mailbox, error) {
 	if state.MailboxID.Valid {
 		return s.db.GetMailbox(ctx, db.GetMailboxParams{ID: state.MailboxID.String, OrgID: seq.OrgID.String})
 	}
-	all, err := s.db.ListMailboxes(ctx, seq.OrgID.String)
+	p, err := s.db.GetPathwayForKind(ctx, db.GetPathwayForKindParams{OrgID: seq.OrgID.String, Kind: KindOutreach.Name()})
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.Mailbox{}, errors.New("no sending pathway carries this brand's outreach")
+	}
+	if err != nil {
+		return db.Mailbox{}, err
+	}
+	var all []db.Mailbox
+	if p.Provider == ProviderMailboxes {
+		all, err = s.db.ListPoolMailboxes(ctx, sql.NullString{String: p.ID, Valid: true})
+	} else {
+		all, err = s.db.ListMailboxes(ctx, seq.OrgID.String)
+	}
 	if err != nil {
 		return db.Mailbox{}, err
 	}

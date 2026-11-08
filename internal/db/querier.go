@@ -37,8 +37,13 @@ type Querier interface {
 	// Check if an event has already been processed by a rule
 	CheckEventProcessed(ctx context.Context, arg CheckEventProcessedParams) (int64, error)
 	CheckListSubscription(ctx context.Context, arg CheckListSubscriptionParams) (int64, error)
+	// Takes the mailbox's next send slot, only when its spacing has passed.
+	ClaimMailboxSpacing(ctx context.Context, arg ClaimMailboxSpacingParams) (int64, error)
 	// Claimed once: only one sender moves a row from pending to sending.
 	ClaimOutreachEmail(ctx context.Context, arg ClaimOutreachEmailParams) (int64, error)
+	// ---- limits -----------------------------------------------------------------
+	// Takes the pathway's next send slot, only when its spacing has passed.
+	ClaimPathwaySpacing(ctx context.Context, arg ClaimPathwaySpacingParams) (int64, error)
 	// Claims up to limit_count pending sends of campaigns that are sending.
 	ClaimPendingCampaignSends(ctx context.Context, arg ClaimPendingCampaignSendsParams) error
 	// Claims up to limit_count due sequence emails. Skips unsubscribed or blocked
@@ -63,9 +68,6 @@ type Querier interface {
 	CountBackups(ctx context.Context) (int64, error)
 	CountBlockedDomains(ctx context.Context, orgID string) (int64, error)
 	CountBouncesInDateRange(ctx context.Context, arg CountBouncesInDateRangeParams) (int64, error)
-	// A brand's transactional and campaign mail sends only from its sending
-	// domains, never from an outreach domain.
-	CountBrandDomain(ctx context.Context, arg CountBrandDomainParams) (int64, error)
 	CountCampaignSendsByStatus(ctx context.Context, arg CountCampaignSendsByStatusParams) (int64, error)
 	CountCampaigns(ctx context.Context, orgID string) (int64, error)
 	CountCampaignsByStatus(ctx context.Context, arg CountCampaignsByStatusParams) (int64, error)
@@ -90,6 +92,8 @@ type Querier interface {
 	// or delete it from SES.
 	CountOtherBrandsWithDomain(ctx context.Context, arg CountOtherBrandsWithDomainParams) (int64, error)
 	CountOutreachEmailsByStatus(ctx context.Context, orgID sql.NullString) ([]CountOutreachEmailsByStatusRow, error)
+	// Whether a From domain belongs to a pathway.
+	CountPathwayDomain(ctx context.Context, arg CountPathwayDomainParams) (int64, error)
 	CountPendingCampaignSends(ctx context.Context, campaignID string) (int64, error)
 	CountPendingValidations(ctx context.Context, jobID sql.NullString) (int64, error)
 	CountProspectsByStatus(ctx context.Context, orgID string) ([]CountProspectsByStatusRow, error)
@@ -163,6 +167,9 @@ type Querier interface {
 	CreateOutreachDomain(ctx context.Context, arg CreateOutreachDomainParams) (DomainIdentity, error)
 	// Create a new rule template (platform admin only)
 	CreateRuleTemplate(ctx context.Context, arg CreateRuleTemplateParams) (RuleTemplate, error)
+	// Sending pathways: the ways a brand delivers mail, which kinds each one
+	// carries, and the per-sender limits email.Send enforces.
+	CreateSendingPathway(ctx context.Context, arg CreateSendingPathwayParams) (SendingPathway, error)
 	CreateSequence(ctx context.Context, arg CreateSequenceParams) (EmailSequence, error)
 	CreateTemplate(ctx context.Context, arg CreateTemplateParams) (EmailTemplate, error)
 	// Transactional Emails
@@ -177,6 +184,12 @@ type Querier interface {
 	CreateWebhook(ctx context.Context, arg CreateWebhookParams) (Webhook, error)
 	CreateWebhookLog(ctx context.Context, arg CreateWebhookLogParams) (WebhookLog, error)
 	DeactivateMCPOAuthClient(ctx context.Context, id string) error
+	// ---- deferring held-back sends ---------------------------------------------------
+	// A send held back by a pathway limit waits, unclaimed and pending (a retry
+	// held back goes back to pending too, without using up a retry).
+	DeferCampaignSend(ctx context.Context, arg DeferCampaignSendParams) error
+	// A sequence email held back by a pathway limit waits, unclaimed and still pending.
+	DeferQueuedEmail(ctx context.Context, arg DeferQueuedEmailParams) error
 	DeleteAuthTokensByUser(ctx context.Context, arg DeleteAuthTokensByUserParams) error
 	DeleteBackup(ctx context.Context, id string) error
 	DeleteBlockedDomain(ctx context.Context, arg DeleteBlockedDomainParams) error
@@ -210,6 +223,7 @@ type Querier interface {
 	DeletePlatformSetting(ctx context.Context, key string) error
 	// Delete a rule template
 	DeleteRuleTemplate(ctx context.Context, id string) error
+	DeleteSendingPathway(ctx context.Context, arg DeleteSendingPathwayParams) (int64, error)
 	DeleteSequence(ctx context.Context, id string) error
 	DeleteSuppressionByID(ctx context.Context, arg DeleteSuppressionByIDParams) error
 	DeleteTemplate(ctx context.Context, id string) error
@@ -220,6 +234,7 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id string) (int64, error)
 	DeleteWebhook(ctx context.Context, arg DeleteWebhookParams) error
 	EditOutreachEmail(ctx context.Context, arg EditOutreachEmailParams) (int64, error)
+	EnsureSendCount(ctx context.Context, arg EnsureSendCountParams) error
 	GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiveEntryRuleForTriggerParams) ([]GetActiveEntryRuleForTriggerRow, error)
 	GetActiveSequenceForContact(ctx context.Context, contactID sql.NullString) (GetActiveSequenceForContactRow, error)
 	// Only a list of the campaign's own brand gives recipients.
@@ -330,6 +345,8 @@ type Querier interface {
 	GetMCPSession(ctx context.Context, sessionID string) (McpSession, error)
 	GetMailbox(ctx context.Context, arg GetMailboxParams) (Mailbox, error)
 	GetMailboxByEmail(ctx context.Context, email string) (Mailbox, error)
+	// The mailbox pool a mailbox belongs to: its domain's pathway.
+	GetMailboxPathway(ctx context.Context, id string) (SendingPathway, error)
 	GetNetworkInstanceByKeyHash(ctx context.Context, keyHash string) (NetworkInstance, error)
 	GetNetworkSignals(ctx context.Context, hashes []string) ([]GetNetworkSignalsRow, error)
 	GetNextTemplate(ctx context.Context, arg GetNextTemplateParams) (GetNextTemplateRow, error)
@@ -359,6 +376,8 @@ type Querier interface {
 	GetOutreachEmailByMessageID(ctx context.Context, messageID sql.NullString) (GetOutreachEmailByMessageIDRow, error)
 	GetOutreachSequence(ctx context.Context, arg GetOutreachSequenceParams) (EmailSequence, error)
 	GetOutreachSequenceBySlug(ctx context.Context, arg GetOutreachSequenceBySlugParams) (EmailSequence, error)
+	// The one pathway carrying a kind of mail for a brand.
+	GetPathwayForKind(ctx context.Context, arg GetPathwayForKindParams) (SendingPathway, error)
 	GetPendingAuthToken(ctx context.Context, arg GetPendingAuthTokenParams) (AuthToken, error)
 	// Returns the sends claimed with claim_token.
 	GetPendingCampaignSends(ctx context.Context, claimToken sql.NullString) ([]GetPendingCampaignSendsRow, error)
@@ -385,6 +404,7 @@ type Querier interface {
 	// datetime() normalizes ISO 8601 values ("2026-11-08T09:00:00Z"), which
 	// would otherwise compare as later than datetime('now') all day.
 	GetScheduledCampaigns(ctx context.Context) ([]EmailCampaign, error)
+	GetSendingPathway(ctx context.Context, arg GetSendingPathwayParams) (SendingPathway, error)
 	GetSequenceByID(ctx context.Context, id string) (GetSequenceByIDRow, error)
 	GetSequenceByListAndSlug(ctx context.Context, arg GetSequenceByListAndSlugParams) (GetSequenceByListAndSlugRow, error)
 	GetSequenceByListAndTrigger(ctx context.Context, arg GetSequenceByListAndTriggerParams) (GetSequenceByListAndTriggerRow, error)
@@ -428,6 +448,9 @@ type Querier interface {
 	IncrementCampaignSendRetry(ctx context.Context, id string) error
 	IncrementCampaignSent(ctx context.Context, id string) error
 	IncrementFailedLogins(ctx context.Context, id string) error
+	// Counts one send for a sender on a day, only while it is under its
+	// allowance: one statement, so two senders can't both pass the cap.
+	IncrementSendCount(ctx context.Context, arg IncrementSendCountParams) (int64, error)
 	IncrementSuppressionAttempts(ctx context.Context, arg IncrementSuppressionAttemptsParams) error
 	InsertEmailValidation(ctx context.Context, arg InsertEmailValidationParams) error
 	// ========== VALIDATION ROWS ==========
@@ -492,15 +515,19 @@ type Querier interface {
 	ListOutreachSequences(ctx context.Context, orgID sql.NullString) ([]EmailSequence, error)
 	// The sent emails of one person's outreach sequence, oldest first.
 	ListOutreachThread(ctx context.Context, arg ListOutreachThreadParams) ([]EmailQueue, error)
+	ListPathwayDomains(ctx context.Context, pathwayID sql.NullString) ([]DomainIdentity, error)
 	// Sending domains awaiting SES verification; outreach domains never touch SES.
 	ListPendingDomainIdentities(ctx context.Context) ([]DomainIdentity, error)
 	ListPendingImportJobs(ctx context.Context) ([]ImportJob, error)
 	ListPlatformSettings(ctx context.Context) ([]PlatformSetting, error)
+	ListPoolMailboxes(ctx context.Context, pathwayID sql.NullString) ([]Mailbox, error)
 	ListProcessingValidationJobs(ctx context.Context) ([]ValidationJob, error)
 	// Prospects on a brand's outreach lists, newest first.
 	ListProspects(ctx context.Context, arg ListProspectsParams) ([]ListProspectsRow, error)
 	ListRecentBounces(ctx context.Context, arg ListRecentBouncesParams) ([]EmailBounce, error)
 	ListRecentComplaints(ctx context.Context, arg ListRecentComplaintsParams) ([]EmailComplaint, error)
+	ListSendCountsForDay(ctx context.Context, arg ListSendCountsForDayParams) ([]ListSendCountsForDayRow, error)
+	ListSendingPathways(ctx context.Context, orgID string) ([]SendingPathway, error)
 	ListSequenceSteps(ctx context.Context, sequenceID sql.NullString) ([]EmailTemplate, error)
 	ListSequencesByList(ctx context.Context, listID sql.NullInt64) ([]ListSequencesByListRow, error)
 	ListSequencesByOrg(ctx context.Context, orgID sql.NullString) ([]ListSequencesByOrgRow, error)
@@ -572,7 +599,11 @@ type Querier interface {
 	// so the totals never drift from what each recipient did.
 	RefreshCampaignEngagement(ctx context.Context, id string) error
 	RefreshValidationJobProgress(ctx context.Context, id string) error
+	// A counted send that failed gives its place back.
+	RefundSendCount(ctx context.Context, arg RefundSendCountParams) error
 	RegenerateAPIKey(ctx context.Context, arg RegenerateAPIKeyParams) (Organization, error)
+	// Ticking a kind on one pathway takes it off every other pathway of the brand.
+	ReleaseKindsFromOtherPathways(ctx context.Context, arg ReleaseKindsFromOtherPathwaysParams) error
 	// A transient failure: back to pending, tried again later from the same mailbox.
 	ReleaseOutreachEmail(ctx context.Context, arg ReleaseOutreachEmailParams) error
 	RemoveContactTag(ctx context.Context, arg RemoveContactTagParams) error
@@ -599,6 +630,7 @@ type Querier interface {
 	SetImportJobTotalRows(ctx context.Context, arg SetImportJobTotalRowsParams) error
 	// ---- outreach lists, prospects and sequences ----------------------------------
 	SetListKind(ctx context.Context, arg SetListKindParams) error
+	SetMailboxDailyLimit(ctx context.Context, arg SetMailboxDailyLimitParams) (int64, error)
 	SetMailboxError(ctx context.Context, arg SetMailboxErrorParams) error
 	SetMailboxIMAPState(ctx context.Context, arg SetMailboxIMAPStateParams) error
 	SetMailboxNextSend(ctx context.Context, arg SetMailboxNextSendParams) error
@@ -614,6 +646,9 @@ type Querier interface {
 	SetOutreachDomainTrackingHost(ctx context.Context, arg SetOutreachDomainTrackingHostParams) error
 	SetOutreachSchedule(ctx context.Context, arg SetOutreachScheduleParams) error
 	SetOutreachSequenceOptions(ctx context.Context, arg SetOutreachSequenceOptionsParams) error
+	SetPathwayKinds(ctx context.Context, arg SetPathwayKindsParams) error
+	SetSendingPathwayAWSKeys(ctx context.Context, arg SetSendingPathwayAWSKeysParams) error
+	SetSendingPathwaySMTPPassword(ctx context.Context, arg SetSendingPathwaySMTPPasswordParams) error
 	SetSequenceActive(ctx context.Context, arg SetSequenceActiveParams) error
 	SetSequenceStateMailbox(ctx context.Context, arg SetSequenceStateMailboxParams) error
 	SetUserEmailVerified(ctx context.Context, id string) error
@@ -623,6 +658,8 @@ type Querier interface {
 	StopSequenceState(ctx context.Context, arg StopSequenceStateParams) error
 	SubscribeToList(ctx context.Context, arg SubscribeToListParams) (ListSubscriber, error)
 	SubscribeToListPending(ctx context.Context, arg SubscribeToListPendingParams) (ListSubscriber, error)
+	// A sender's sends on and after a day.
+	SumSendCountsSince(ctx context.Context, arg SumSendCountsSinceParams) (int64, error)
 	// Adds a job's results with the given statuses to the org's suppression list.
 	SuppressValidationJobResults(ctx context.Context, arg SuppressValidationJobResultsParams) (int64, error)
 	// Toggle enabled state of a rule
@@ -674,6 +711,7 @@ type Querier interface {
 	// Update just the validation fields (after recompiling)
 	UpdateRuleValidation(ctx context.Context, arg UpdateRuleValidationParams) error
 	UpdateSDKContact(ctx context.Context, arg UpdateSDKContactParams) (Contact, error)
+	UpdateSendingPathway(ctx context.Context, arg UpdateSendingPathwayParams) error
 	UpdateSequence(ctx context.Context, arg UpdateSequenceParams) error
 	UpdateTemplate(ctx context.Context, arg UpdateTemplateParams) error
 	UpdateTransactionalEmail(ctx context.Context, arg UpdateTransactionalEmailParams) (TransactionalEmail, error)

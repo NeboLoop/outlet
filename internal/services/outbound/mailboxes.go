@@ -2,6 +2,7 @@ package outbound
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -27,7 +28,7 @@ type MailboxInput struct {
 	IMAPPort     int    `json:"imap_port,omitempty"`
 	IMAPUsername string `json:"imap_username,omitempty"`
 	IMAPPassword string `json:"imap_password,omitempty"`
-	DailyCap     int    `json:"daily_cap,omitempty"` // at most 30
+	DailyLimit   *int64 `json:"daily_limit,omitempty"` // its own daily limit; empty uses its pool's
 }
 
 // MailboxResult says what happened to one mailbox in a batch.
@@ -74,8 +75,8 @@ func (in *MailboxInput) fill() error {
 	if in.SMTPHost == "" || in.IMAPHost == "" || in.SMTPPassword == "" || in.IMAPPassword == "" {
 		return refuse("smtp_host, imap_host and a password are required (or provider: google with an app password)")
 	}
-	if in.DailyCap <= 0 || in.DailyCap > MaxDailyCap {
-		in.DailyCap = MaxDailyCap
+	if in.DailyLimit != nil && *in.DailyLimit < 1 {
+		return refuse("daily_limit is at least 1; leave it out to use the pool's")
 	}
 	return nil
 }
@@ -150,7 +151,7 @@ func (s *Service) addMailbox(ctx context.Context, org db.Organization, domains m
 		FromName: strings.TrimSpace(in.FromName), Signature: in.Signature,
 		SmtpHost: in.SMTPHost, SmtpPort: int64(in.SMTPPort), SmtpUsername: in.SMTPUsername, SmtpPasswordEnc: smtpEnc,
 		ImapHost: in.IMAPHost, ImapPort: int64(in.IMAPPort), ImapUsername: in.IMAPUsername, ImapPasswordEnc: imapEnc,
-		DailyCap: int64(in.DailyCap),
+		DailyLimit: nullInt(in.DailyLimit),
 	})
 	if err != nil {
 		return created, err
@@ -162,6 +163,13 @@ func (s *Service) addMailbox(ctx context.Context, org db.Organization, domains m
 		})
 	}
 	return created, nil
+}
+
+func nullInt(v *int64) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: *v, Valid: true}
 }
 
 // imapPassword reads a mailbox's IMAP password. (SMTP sending reads its own,

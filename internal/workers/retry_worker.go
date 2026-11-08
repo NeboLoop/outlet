@@ -170,12 +170,14 @@ func (w *RetryWorker) retrySend(send db.GetFailedCampaignSendsForRetryRow) {
 	// Attempt retry
 	logx.Infof("Retrying send %s (attempt %d/%d)", send.ID, retryCount+1, w.config.MaxRetries)
 
-	// Increment retry count first
+	// Try to send. One held back by its pathway's limit goes back to
+	// pending without using up a retry.
+	err := w.sendEmail(send)
+	if deferCampaignSend(w.ctx, w.store, send.ID, err) {
+		return
+	}
 	w.store.IncrementCampaignSendRetry(w.ctx, send.ID)
 	w.retried.Add(1)
-
-	// Try to send
-	err := w.sendEmail(send)
 	if errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
 		// Retrying cannot help
 		w.markPermanentlyFailed(send.ID)

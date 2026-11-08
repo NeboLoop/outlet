@@ -53,15 +53,6 @@ func (l *UpdateOrgEmailConfigLogic) UpdateOrgEmailConfig(req *types.UpdateOrgEma
 	if req.BatchSize > 0 {
 		config.BatchSize = req.BatchSize
 	}
-	if req.AWSRegion != "" {
-		config.AWSRegion = req.AWSRegion
-	}
-	if req.AWSAccessKey != "" {
-		config.AWSAccessKey = req.AWSAccessKey
-	}
-	if req.AWSSecretKey != "" {
-		config.AWSSecretKey = req.AWSSecretKey
-	}
 	if req.FromEmail != "" {
 		config.FromEmail = req.FromEmail
 	}
@@ -83,8 +74,6 @@ func (l *UpdateOrgEmailConfigLogic) UpdateOrgEmailConfig(req *types.UpdateOrgEma
 		SESDailyQuota: config.SESDailyQuota,
 		WorkerCount:   config.WorkerCount,
 		BatchSize:     config.BatchSize,
-		AWSRegion:     config.AWSRegion,
-		HasOwnCreds:   config.HasOwnAWSCredentials(),
 		FromEmail:     config.FromEmail,
 		FromName:      config.FromName,
 		ReplyTo:       config.ReplyTo,

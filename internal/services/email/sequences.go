@@ -398,6 +398,9 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 
 		// Send the email
 		err = s.sender.Send(ctx, s.sequenceMessage(email, subject, htmlBody))
+		if s.deferIfTemporary(ctx, email, err) {
+			continue
+		}
 		if err != nil {
 			logx.Errorf("Failed to send email %s to %s: %v", email.ID, email.Email, err)
 			_ = s.db.MarkEmailFailed(ctx, db.MarkEmailFailedParams{
@@ -421,6 +424,21 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 	}
 
 	return sent, nil
+}
+
+// deferIfTemporary puts a sequence email back in the queue, unclaimed and
+// pending, when its send failed only for now (its pathway's limit, a
+// mailbox's 4xx), to go again when the limit lifts. It reports whether it did.
+func (s *SequenceService) deferIfTemporary(ctx context.Context, email db.GetPendingEmailsRow, err error) bool {
+	if err == nil || !IsTemporary(err) {
+		return false
+	}
+	at := RetryAt(err, s.now().Add(15*time.Minute))
+	if derr := s.db.DeferQueuedEmail(ctx, db.DeferQueuedEmailParams{ScheduledFor: at.UTC().Format(time.RFC3339), ID: email.ID}); derr != nil {
+		logx.Errorf("Failed to defer email %s: %v", email.ID, derr)
+	}
+	logx.Infof("Email %s to %s waits until %s: %v", email.ID, email.Email, at.UTC().Format(time.RFC3339), err)
+	return true
 }
 
 // claimDueEmails claims up to limit due sequence emails for this worker and
@@ -509,13 +527,14 @@ func (s *SequenceService) processTemplateVariables(content string, ctx TemplateC
 	}, escapeHTML)
 }
 
-// sequenceMessage addresses a queued sequence email from its brand. Marketing
-// steps carry the one-click List-Unsubscribe headers; transactional steps and
-// sends without a tracking token do not.
+// sequenceMessage addresses a queued sequence email from its brand. A step is
+// marketing mail unless it is marked transactional; marketing steps carry the
+// one-click List-Unsubscribe headers (when they have a tracking token).
 func (s *SequenceService) sequenceMessage(email db.GetPendingEmailsRow, subject, htmlBody string) Message {
-	m := Message{OrgID: email.OrgID, To: email.Email, Subject: subject, HTML: htmlBody}
-	isTransactional := email.IsTransactional.Valid && email.IsTransactional.Int64 == 1
-	if !isTransactional && email.TrackingToken.String != "" {
+	m := Message{OrgID: email.OrgID, Kind: KindMarketing, To: email.Email, Subject: subject, HTML: htmlBody}
+	if email.IsTransactional.Valid && email.IsTransactional.Int64 == 1 {
+		m.Kind = KindTransactional
+	} else if email.TrackingToken.String != "" {
 		m.ListUnsubscribe = unsubscribeURL(s.baseURL, email.TrackingToken.String)
 	}
 	return m

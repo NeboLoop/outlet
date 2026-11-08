@@ -58,7 +58,7 @@ func TestBothHistoriesEndComplete(t *testing.T) {
 			_, err = conn.Exec(`INSERT INTO email_campaigns (id, org_id, name, subject, html_body, list_ids) VALUES ('c', 'o', 'n', 's', 'b', '1, 2')`)
 			require.NoError(t, err)
 
-			require.NoError(t, Run(conn))
+			require.NoError(t, Run(conn, nil))
 
 			for _, table := range []string{"mcp_audit_log", "mailboxes", "email_replies", "validation_jobs", "network_signals"} {
 				var n int

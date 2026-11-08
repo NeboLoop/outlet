@@ -32,7 +32,19 @@ type Service struct {
 	// Connection pool for high-throughput sending (optional)
 	pool        *SMTPPool
 	poolEnabled bool
+
+	clock func() time.Time // time.Now; tests move it
 }
+
+func (s *Service) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return time.Now()
+}
+
+// SetClock replaces the clock the pathway limits read (tests).
+func (s *Service) SetClock(now func() time.Time) { s.clock = now }
 
 // NewService creates a new email service that loads SMTP config from database
 func NewService(store *db.Store, cryptoSvc *crypto.Service) *Service {

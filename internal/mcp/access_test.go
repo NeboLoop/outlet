@@ -38,7 +38,7 @@ func newMCPFixture(t *testing.T) *mcpFixture {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	f := &mcpFixture{t: t, store: store, handler: NewHandler(&svc.ServiceContext{DB: store}, "https://outlet.test")}
 
@@ -480,7 +480,7 @@ func TestMCP_AnotherBrandsDomainIsRefused(t *testing.T) {
 		"action": "create", "name": "x", "subject": "x", "html_body": "x", "list_ids": alphaList, "from_email": "security@bravo.example",
 	})
 	assert.True(t, isErr)
-	assert.Contains(t, text, "can't send from security@bravo.example")
+	assert.Contains(t, text, "can't send marketing mail from security@bravo.example")
 
 	// Both refused writes are audited in the background; wait for them so
 	// nothing is still writing when the test's database is removed.

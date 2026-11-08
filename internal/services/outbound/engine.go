@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -15,7 +14,7 @@ import (
 
 // Tick is one pass of the outreach sender: recover crashed sends, then send
 // at most one email per mailbox, then check each mailbox's health. It runs
-// every 30 seconds; the per-mailbox gap (4 to 9 minutes) does the pacing.
+// every 30 seconds; the pathway's spacing between sends does the pacing.
 func (s *Service) Tick(ctx context.Context) {
 	s.recoverStuck(ctx)
 	mailboxes, err := s.db.ListActiveMailboxes(ctx)
@@ -43,13 +42,9 @@ func (s *Service) recoverStuck(ctx context.Context) {
 	}
 }
 
-// startOfDay is midnight today in a time zone, as stored text.
-func startOfDay(now time.Time, loc *time.Location) string {
-	l := now.In(loc)
-	return ts(time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, loc))
-}
-
-// sendOne sends the mailbox's next due email, if every limit allows it.
+// sendOne sends the mailbox's next due email. email.Send enforces the
+// pathway's limits; a mailbox still inside its spacing is skipped here only
+// to save a claim.
 func (s *Service) sendOne(ctx context.Context, mb db.Mailbox) error {
 	now := s.now()
 	if mb.NextSendAt.Valid && mb.NextSendAt.String > ts(now) {
@@ -58,10 +53,6 @@ func (s *Service) sendOne(ctx context.Context, mb db.Mailbox) error {
 	org, err := s.db.GetOrganizationByID(ctx, mb.OrgID)
 	if err != nil || !s.Enabled(org) || org.OutboundPausedReason != "" {
 		return nil
-	}
-	sentToday, err := s.db.CountMailboxSentSince(ctx, db.CountMailboxSentSinceParams{MailboxID: sql.NullString{String: mb.ID, Valid: true}, Since: sql.NullString{String: startOfDay(now, email.LoadLocation(org.OutboundTimezone)), Valid: true}})
-	if err != nil || sentToday >= allowance(mb, now) {
-		return err
 	}
 	m, err := s.db.NextOutreachForMailbox(ctx, db.NextOutreachForMailboxParams{MailboxID: sql.NullString{String: mb.ID, Valid: true}, Now: ts(now)})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -100,8 +91,10 @@ func (s *Service) sendOne(ctx context.Context, mb db.Mailbox) error {
 		MessageID: m.MessageID.String, InReplyTo: m.InReplyTo.String, References: m.Refs.String,
 		ListUnsubscribe: "mailto:" + mb.Email + "?subject=unsubscribe",
 	})
-	_ = s.db.SetMailboxNextSend(ctx, db.SetMailboxNextSendParams{NextSendAt: sql.NullString{String: ts(now.Add(s.gap())), Valid: true}, ID: mb.ID})
 	switch {
+	case errors.Is(sendErr, email.ErrOverLimit):
+		// Not the mailbox's fault: the email waits until the limit lifts.
+		return s.db.ReleaseOutreachEmail(ctx, db.ReleaseOutreachEmailParams{ErrorMessage: sql.NullString{String: sendErr.Error(), Valid: true}, ScheduledFor: ts(email.RetryAt(sendErr, now.Add(15*time.Minute))), ID: m.ID})
 	case errors.Is(sendErr, email.ErrSuppressed):
 		_, _ = s.db.SkipOutreachEmail(ctx, db.SkipOutreachEmailParams{ID: m.ID, OrgID: sql.NullString{String: org.ID, Valid: true}})
 		_ = s.db.MarkEmailFailed(ctx, db.MarkEmailFailedParams{ID: m.ID, ErrorMessage: sql.NullString{String: "suppressed", Valid: true}})
@@ -146,30 +139,38 @@ func (s *Service) stopContact(ctx context.Context, contactID, reason string) {
 }
 
 // checkHealth pauses a mailbox whose bounces, spam blocks or complaints
-// cross the limits.
+// cross its pool's thresholds.
 func (s *Service) checkHealth(ctx context.Context, mb db.Mailbox) {
-	since := ts(s.now().AddDate(0, 0, -7))
-	sent, err := s.db.CountMailboxSentSince(ctx, db.CountMailboxSentSinceParams{MailboxID: sql.NullString{String: mb.ID, Valid: true}, Since: sql.NullString{String: since, Valid: true}})
+	h, p, err := s.health(ctx, mb)
 	if err != nil {
 		return
 	}
+	if reason := email.HealthPause(p, h); reason != "" {
+		_ = s.db.SetMailboxStatus(ctx, db.SetMailboxStatusParams{Status: "paused", PausedReason: "Health: " + reason, ID: mb.ID})
+	}
+}
+
+// health is a mailbox's last 7 days, and its pool.
+func (s *Service) health(ctx context.Context, mb db.Mailbox) (email.Health, db.SendingPathway, error) {
+	p, err := s.pool(ctx, mb)
+	if err != nil {
+		return email.Health{}, p, err
+	}
+	org, err := s.db.GetOrganizationByID(ctx, mb.OrgID)
+	if err != nil {
+		return email.Health{}, p, err
+	}
+	now := s.now()
+	sent, err := s.mailer.SentSince(ctx, org, p.ID, mb.ID, now.AddDate(0, 0, -7))
+	if err != nil {
+		return email.Health{}, p, err
+	}
+	since := ts(now.AddDate(0, 0, -7))
 	count := func(class string) int64 {
 		n, _ := s.db.CountMailboxRepliesSince(ctx, db.CountMailboxRepliesSinceParams{MailboxID: mb.ID, Classification: class, Since: since})
 		return n
 	}
-	bounces, spam, complaints := count("bounce"), count("spam_block"), count("complaint")
-	reason := ""
-	switch {
-	case spam >= spamBlockLimit:
-		reason = fmt.Sprintf("%d emails rejected as spam in 7 days; limit %d", spam, spamBlockLimit)
-	case bounces >= minBouncesToPause && sent > 0 && float64(bounces)/float64(sent) > bounceRateLimit:
-		reason = fmt.Sprintf("bounce rate %.1f%% in 7 days (%d of %d); limit %.0f%%", 100*float64(bounces)/float64(sent), bounces, sent, 100*bounceRateLimit)
-	case complaints >= complaintLimit:
-		reason = fmt.Sprintf("%d complaints in 7 days; limit %d", complaints, complaintLimit)
-	}
-	if reason != "" {
-		_ = s.db.SetMailboxStatus(ctx, db.SetMailboxStatusParams{Status: "paused", PausedReason: "Health: " + reason, ID: mb.ID})
-	}
+	return email.Health{Sent: sent, Bounces: count("bounce"), SpamBlocks: count("spam_block"), Complaints: count("complaint")}, p, nil
 }
 
 // textHTML is a plain-text email as minimal HTML, for when opens are tracked

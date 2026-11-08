@@ -9,6 +9,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/services/outbound"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -25,7 +26,7 @@ const outboundPrereq = "PREREQUISITE: select the brand first with brand(resource
 // outboundActions lists each outreach tool's actions; the gate has a rule for each.
 var outboundActions = map[string][]string{
 	"outreach_overview": {"get"},
-	"setup_sending":     {"settings", "dns_token", "add_domain", "check_domain", "add_mailboxes", "list"},
+	"setup_sending":     {"settings", "dns_token", "add_domain", "check_domain", "add_mailboxes", "list", "set_limits", "mailbox_limit"},
 	"add_prospects":     {"add"},
 	"draft_outreach":    {"create"},
 	"review_drafts":     {"list", "approve", "edit", "skip"},
@@ -84,7 +85,7 @@ func overviewRun(ctx context.Context, t *mcpctx.ToolContext, in OverviewInput) (
 // ---- setup_sending ----------------------------------------------------------
 
 type SetupSendingInput struct {
-	Action         string                  `json:"action" jsonschema:"required,One of: settings, dns_token, add_domain, check_domain, add_mailboxes, list"`
+	Action         string                  `json:"action" jsonschema:"required,One of: settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit"`
 	MailingAddress string                  `json:"mailing_address,omitempty" jsonschema:"settings: the postal address every first email carries"`
 	OptOutLine     string                  `json:"opt_out_line,omitempty" jsonschema:"settings: the line that tells people how to stop the emails"`
 	Timezone       string                  `json:"timezone,omitempty" jsonschema:"settings: IANA time zone used when a prospect has none"`
@@ -100,6 +101,10 @@ type SetupSendingInput struct {
 	ClickTracking  bool                    `json:"click_tracking,omitempty" jsonschema:"add_domain: set up go.<domain> (a CNAME to this server) so campaigns can track clicks"`
 	DomainID       string                  `json:"domain_id,omitempty" jsonschema:"check_domain: which domain to recheck"`
 	Mailboxes      []outbound.MailboxInput `json:"mailboxes,omitempty" jsonschema:"add_mailboxes: up to 100 mailboxes; each must log in to SMTP and IMAP"`
+	PoolID         string                  `json:"pool_id,omitempty" jsonschema:"set_limits: the mailbox pool to change (default: the pool carrying outreach)"`
+	Limits         *email.Limits           `json:"limits,omitempty" jsonschema:"set_limits: the pool's limits, all of them: daily_limit (per mailbox per day), warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate (0.03 is 3%), pause_min_bounces, pause_spam_blocks, pause_complaints. 0 turns one off"`
+	MailboxID      string                  `json:"mailbox_id,omitempty" jsonschema:"mailbox_limit: which mailbox"`
+	DailyLimit     *int64                  `json:"daily_limit,omitempty" jsonschema:"mailbox_limit: the mailbox's own daily limit; leave it out to use its pool's"`
 }
 
 func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSendingInput) (any, error) {
@@ -146,19 +151,89 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"mailboxes": res, "next": "New mailboxes start at 5 emails a day and add 2 a day up to 30. Use each one normally for about two weeks before outreach."}, nil
+		return map[string]any{"mailboxes": res, "next": "New mailboxes warm up under their pool's limits (setup_sending(action: list) shows them). Use each one normally for about two weeks before outreach."}, nil
 	case "list":
-		mbs, err := t.DB().ListMailboxes(ctx, brand.ID)
+		return listPools(ctx, t)
+	case "set_limits":
+		if in.Limits == nil {
+			return nil, mcpctx.NewValidationError("limits is required", "limits")
+		}
+		pool, err := mailboxPool(ctx, t, in.PoolID)
 		if err != nil {
 			return nil, err
 		}
-		out := make([]map[string]any, 0, len(mbs))
-		for _, mb := range mbs {
-			out = append(out, map[string]any{"id": mb.ID, "email": mb.Email, "from_name": mb.FromName, "status": mb.Status, "paused_reason": mb.PausedReason, "daily_cap": mb.DailyCap, "warmup_started_at": mb.WarmupStartedAt})
+		if _, err := t.Svc().EmailService.UpdatePathway(ctx, brand.ID, pool.ID, email.PathwayInput{Kinds: email.KindsOf(pool), Limits: in.Limits}); err != nil {
+			return nil, err
 		}
-		return map[string]any{"mailboxes": out}, nil
+		return listPools(ctx, t)
+	case "mailbox_limit":
+		if in.MailboxID == "" {
+			return nil, mcpctx.NewValidationError("mailbox_id is required", "mailbox_id")
+		}
+		if err := t.Svc().EmailService.SetMailboxDailyLimit(ctx, brand.ID, in.MailboxID, in.DailyLimit); err != nil {
+			return nil, err
+		}
+		return listPools(ctx, t)
 	}
-	return nil, mcpctx.NewValidationError("action must be settings, dns_token, add_domain, check_domain, add_mailboxes or list", "action")
+	return nil, mcpctx.NewValidationError("action must be settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits or mailbox_limit", "action")
+}
+
+// mailboxPool is the brand's mailbox pool named by id, or the one carrying
+// its outreach, or its only one.
+func mailboxPool(ctx context.Context, t *mcpctx.ToolContext, id string) (db.SendingPathway, error) {
+	brand := t.Brand(ctx)
+	if id != "" {
+		p, err := t.Svc().EmailService.GetPathway(ctx, brand.ID, id)
+		if err == nil && p.Provider != email.ProviderMailboxes {
+			return p, mcpctx.NewValidationError("pool_id is not a mailbox pool", "pool_id")
+		}
+		return p, err
+	}
+	all, err := t.DB().ListSendingPathways(ctx, brand.ID)
+	if err != nil {
+		return db.SendingPathway{}, err
+	}
+	var pools []db.SendingPathway
+	for _, p := range all {
+		if p.Provider == email.ProviderMailboxes {
+			if p.CarriesOutreach == 1 {
+				return p, nil
+			}
+			pools = append(pools, p)
+		}
+	}
+	if len(pools) == 1 {
+		return pools[0], nil
+	}
+	return db.SendingPathway{}, mcpctx.NewValidationError("pass pool_id: the brand has no single mailbox pool", "pool_id")
+}
+
+// listPools is the brand's mailbox pools with their limits, and each
+// mailbox with its own limit and today's sends.
+func listPools(ctx context.Context, t *mcpctx.ToolContext) (any, error) {
+	brand := t.Brand(ctx)
+	all, err := t.DB().ListSendingPathways(ctx, brand.ID)
+	if err != nil {
+		return nil, err
+	}
+	overview, err := t.Svc().Outbound.Overview(ctx, brand)
+	if err != nil {
+		return nil, err
+	}
+	pools := []map[string]any{}
+	for _, p := range all {
+		if p.Provider != email.ProviderMailboxes {
+			continue
+		}
+		mbs := []outbound.MailboxHealth{}
+		for _, mb := range overview.Mailboxes {
+			if mb.PoolID == p.ID {
+				mbs = append(mbs, mb)
+			}
+		}
+		pools = append(pools, map[string]any{"id": p.ID, "name": p.Name, "kinds": email.KindsOf(p), "limits": email.LimitsOf(p), "mailboxes": mbs})
+	}
+	return map[string]any{"pools": pools, "next": "Change a pool's limits with setup_sending(action: set_limits, limits), one mailbox's with setup_sending(action: mailbox_limit, mailbox_id, daily_limit)."}, nil
 }
 
 // ---- add_prospects ----------------------------------------------------------
@@ -331,8 +406,10 @@ var outboundTools = []outboundTool{
 			"- dns_token: store a DigitalOcean token (domain read/write) so add_domain can write DNS\n"+
 			"- add_domain: domain, dns_host (digitalocean|manual), mail_provider (google|other), mx_hosts, spf_include, dkim_selector, dkim_value, dmarc_report, click_tracking. Writes MX, SPF, DMARC and DKIM when on DigitalOcean, otherwise returns records_to_add\n"+
 			"- check_domain: domain_id. Rechecks public DNS (also done daily; failing DNS pauses the domain's mailboxes)\n"+
-			"- add_mailboxes: mailboxes [{email, from_name, signature, provider: google, password (an app password)} or custom smtp_/imap_ hosts]. Each must log in\n"+
-			"- list: the brand's mailboxes",
+			"- add_mailboxes: mailboxes [{email, from_name, signature, provider: google, password (an app password), daily_limit (optional, its own)} or custom smtp_/imap_ hosts]. Each must log in\n"+
+			"- list: the brand's mailbox pools with their limits (daily limit, warm-up, spacing, health pauses), and each mailbox with its own limit and today's sends\n"+
+			"- set_limits: limits (all of them), pool_id (default: the pool carrying outreach). Brand admins only\n"+
+			"- mailbox_limit: mailbox_id, daily_limit (leave it out to use the pool's). Brand admins only",
 		changesOnly(), setupSendingRun),
 	defineOutbound("add_prospects", "Add prospects",
 		"Import up to 100 people to reach into an outreach list (made if missing). They become contacts that never signed up: campaigns and newsletters never reach them. Creator fields (platform, channel_url, audience_size, niche, recent_video, personal_line) and email_source, where the address was published for business. Removes duplicates, checks suppression and verifies every address; risky ones are held and never sent.\n\nExample: add_prospects(action: add, prospects: [{email, first_name, platform: youtube, channel_url, recent_video, personal_line, email_source: \"YouTube About page\"}])",

@@ -3,21 +3,32 @@ package email
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/services/crypto"
 )
 
-// AWSCredentials returns the AWS credentials an organization sends with:
-// its own when it has them, else the platform's (platform settings,
-// decrypted with the credential key).
-func AWSCredentials(ctx context.Context, store *db.Store, cryptoSvc *crypto.Service, orgID string) (region, accessKey, secretKey string, err error) {
-	emailConfig, err := GetOrgEmailConfig(ctx, store, orgID)
-	if err == nil && emailConfig.HasOwnAWSCredentials() {
-		return emailConfig.AWSRegion, emailConfig.AWSAccessKey, emailConfig.AWSSecretKey, nil
+// AWSCredentials returns the AWS credentials a sending pathway uses: an ses
+// pathway's own, the platform's for a platform pathway, and the platform's
+// when pathwayID is empty (platform settings, decrypted with the credential
+// key). A pathway that doesn't send through SES returns an error.
+func AWSCredentials(ctx context.Context, store *db.Store, cryptoSvc *crypto.Service, orgID, pathwayID string) (region, accessKey, secretKey string, err error) {
+	if pathwayID != "" {
+		p, err := store.GetSendingPathway(ctx, db.GetSendingPathwayParams{ID: pathwayID, OrgID: orgID})
+		if err != nil {
+			return "", "", "", err
+		}
+		switch p.Provider {
+		case ProviderSES:
+			return pathwayAWSKeys(cryptoSvc, p)
+		case ProviderPlatform:
+		default:
+			return "", "", "", fmt.Errorf("pathway %q sends through %s, not SES: %w", p.Name, p.Provider, sql.ErrNoRows)
+		}
 	}
 
-	// Fall back to platform credentials
 	awsSettings, err := store.GetPlatformSettingsByCategory(ctx, "aws")
 	if err != nil {
 		return "", "", "", err
@@ -59,4 +70,21 @@ func AWSCredentials(ctx context.Context, store *db.Store, cryptoSvc *crypto.Serv
 	}
 
 	return region, accessKey, secretKey, nil
+}
+
+// pathwayAWSKeys decrypts an ses pathway's own keys.
+func pathwayAWSKeys(cryptoSvc *crypto.Service, p db.SendingPathway) (region, accessKey, secretKey string, err error) {
+	if len(p.AwsAccessKeyEnc) == 0 || len(p.AwsSecretKeyEnc) == 0 {
+		return "", "", "", fmt.Errorf("pathway %q has no AWS keys: %w", p.Name, sql.ErrNoRows)
+	}
+	if cryptoSvc == nil {
+		return "", "", "", errors.New("ENCRYPTION_KEY is not set, so the pathway's AWS keys can't be read")
+	}
+	if accessKey, err = cryptoSvc.DecryptString(p.AwsAccessKeyEnc); err != nil {
+		return "", "", "", err
+	}
+	if secretKey, err = cryptoSvc.DecryptString(p.AwsSecretKeyEnc); err != nil {
+		return "", "", "", err
+	}
+	return firstNonEmpty(p.AwsRegion, "us-east-1"), accessKey, secretKey, nil
 }

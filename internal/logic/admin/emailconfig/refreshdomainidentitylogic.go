@@ -44,18 +44,10 @@ func (l *RefreshDomainIdentityLogic) RefreshDomainIdentity(req *types.RefreshDom
 		return nil, errorx.NewNotFoundError("Domain identity not found")
 	}
 
-	// Get AWS credentials from platform settings
-	region, accessKey, secretKey, err := getAWSCredentials(l.ctx, l.svcCtx)
+	// The AWS account of the domain's pathway
+	region, accessKey, secretKey, err := email.AWSCredentials(l.ctx, l.svcCtx.DB, l.svcCtx.CryptoService, req.OrgId, identity.PathwayID.String)
 	if err != nil {
-		return nil, err
-	}
-
-	// Get email config for org-specific AWS credentials
-	emailConfig, err := email.GetOrgEmailConfig(l.ctx, l.svcCtx.DB, req.OrgId)
-	if err == nil && emailConfig.HasOwnAWSCredentials() {
-		region = emailConfig.AWSRegion
-		accessKey = emailConfig.AWSAccessKey
-		secretKey = emailConfig.AWSSecretKey
+		return nil, errorx.NewBadRequestError("This domain's sending pathway doesn't send through AWS SES, or its AWS credentials aren't set.")
 	}
 
 	// Get the current status from AWS SES
