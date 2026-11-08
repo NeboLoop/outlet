@@ -80,3 +80,16 @@ func TestHostedForm_SaysWhenTheConfirmationWasntSent(t *testing.T) {
 	assert.NotContains(t, body, "sent a confirmation email")
 	assert.Contains(t, body, "couldn&#39;t send your confirmation email")
 }
+
+// Every public page names the app's icon, so browsers don't ask for a
+// /favicon.ico that isn't there.
+func TestPublicPagesNameTheirIcon(t *testing.T) {
+	entries, err := Templates.ReadDir("templates")
+	require.NoError(t, err)
+	require.NotEmpty(t, entries)
+	for _, e := range entries {
+		b, err := Templates.ReadFile("templates/" + e.Name())
+		require.NoError(t, err)
+		assert.Contains(t, string(b), `<link rel="icon" href="/favicon.png">`, e.Name())
+	}
+}
