@@ -68,13 +68,11 @@ function getCurrentOrgId(): string | null {
 export async function request({
     method,
     url,
-    data,
-    config = {}
+    data
 }: {
     method: Method;
     url: string;
     data?: unknown;
-    config?: unknown;
 }) {
     const upperMethod = method.toLocaleUpperCase();
     const hasBody = upperMethod !== 'GET' && upperMethod !== 'HEAD';
@@ -97,9 +95,7 @@ export async function request({
         method: upperMethod,
         credentials: 'include',
         headers,
-        body: hasBody && data ? JSON.stringify(data) : undefined,
-        // @ts-ignore
-        ...config
+        body: hasBody && data ? JSON.stringify(data) : undefined
     });
 
     // Not every failure is JSON (a proxy's HTML 404, an empty 502), so read
@@ -125,41 +121,23 @@ export async function request({
     return result;
 }
 
-function api<T>(
-    method: Method = 'get',
-    url: string,
-    req: any,
-    config?: unknown
-): Promise<T> {
-    // Generated GET and DELETE helpers pass their query parameters as the
-    // request object itself
-    if (url.match(/:/) || method.match(/get|delete/i)) {
-        url = genUrl(url, req.params || req.forms || req);
-    }
-    method = method.toLocaleLowerCase() as Method;
-
-    switch (method) {
-        case 'get':
-            return request({method: 'get', url, data: req, config});
-        case 'delete':
-            return request({method: 'delete', url, data: req, config});
-        case 'put':
-            return request({method: 'put', url, data: req, config});
-        case 'post':
-            return request({method: 'post', url, data: req, config});
-        case 'patch':
-            return request({method: 'patch', url, data: req, config});
-        default:
-            return request({method: 'post', url, data: req, config});
-    }
+function api<T>(method: Method, url: string, query: any, body?: unknown): Promise<T> {
+    // Path parameters are already interpolated by the generated helpers;
+    // query parameters come from the request's form fields
+    url = genUrl(url, query);
+    return request({method: method.toLocaleLowerCase() as Method, url, data: body});
 }
 
 export const webapi = {
-    get<T>(url: string, req?: unknown, config?: unknown): Promise<T> {
-        return api<T>('get', url, req ?? {}, config);
+    get<T>(url: string, params?: unknown): Promise<T> {
+        return api<T>('get', url, params ?? {});
     },
-    delete<T>(url: string, req?: unknown, config?: unknown): Promise<T> {
-        return api<T>('delete', url, req ?? {}, config);
+    // Generated code has two patterns:
+    // - webapi.delete(url, params) - form params, or the body when the
+    //   request has only JSON fields; sent as both query and body
+    // - webapi.delete(url, params, body) - form params in the query + JSON body
+    delete<T>(url: string, params?: unknown, body?: unknown): Promise<T> {
+        return api<T>('delete', url, params ?? {}, body !== undefined ? body : params);
     },
     // Generated code has two patterns:
     // - webapi.put(url, body) - body only
@@ -167,15 +145,15 @@ export const webapi = {
     // If 3rd arg provided, use it as body; otherwise use 2nd arg as body
     put<T>(url: string, paramsOrBody?: unknown, body?: unknown): Promise<T> {
         const requestBody = body !== undefined ? body : paramsOrBody;
-        return api<T>('put', url, requestBody ?? {});
+        return api<T>('put', url, {}, requestBody ?? {});
     },
     post<T>(url: string, paramsOrBody?: unknown, body?: unknown): Promise<T> {
         const requestBody = body !== undefined ? body : paramsOrBody;
-        return api<T>('post', url, requestBody ?? {});
+        return api<T>('post', url, {}, requestBody ?? {});
     },
     patch<T>(url: string, paramsOrBody?: unknown, body?: unknown): Promise<T> {
         const requestBody = body !== undefined ? body : paramsOrBody;
-        return api<T>('patch', url, requestBody ?? {});
+        return api<T>('patch', url, {}, requestBody ?? {});
     }
 };
 
