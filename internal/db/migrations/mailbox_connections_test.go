@@ -13,7 +13,7 @@ import (
 
 // Migration 0027 turns each mailbox pool's one service into a connection:
 // a Maildoso pool keeps its key on a Maildoso connection whose mailboxes
-// default to 15 a day, a manual pool gets a manual connection, and each
+// default to 15 a day warming up from 5 by 1, a manual pool gets a manual connection, and each
 // pool's outreach domains belong to its connection. Down puts the service
 // and key back on the pool.
 func TestMigration0027(t *testing.T) {
@@ -42,18 +42,18 @@ func TestMigration0027(t *testing.T) {
 	require.NoError(t, goose.UpTo(conn, ".", 27))
 
 	type connection struct {
-		id, service, name string
-		key               []byte
-		limit             sql.NullInt64
+		id, service, name  string
+		key                []byte
+		limit, start, step sql.NullInt64
 	}
 	of := func(pool string) []connection {
-		rows, err := conn.Query(`SELECT id, service, name, api_key_enc, daily_limit FROM mailbox_connections WHERE pathway_id = ?`, pool)
+		rows, err := conn.Query(`SELECT id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step FROM mailbox_connections WHERE pathway_id = ?`, pool)
 		require.NoError(t, err)
 		defer rows.Close()
 		var out []connection
 		for rows.Next() {
 			var c connection
-			require.NoError(t, rows.Scan(&c.id, &c.service, &c.name, &c.key, &c.limit))
+			require.NoError(t, rows.Scan(&c.id, &c.service, &c.name, &c.key, &c.limit, &c.start, &c.step))
 			out = append(out, c)
 		}
 		return out
@@ -70,6 +70,8 @@ func TestMigration0027(t *testing.T) {
 	assert.Equal(t, "Maildoso", md[0].name)
 	assert.Equal(t, []byte{0x0a, 0x0b, 0x0c}, md[0].key, "the same encrypted key")
 	assert.Equal(t, sql.NullInt64{Int64: 15, Valid: true}, md[0].limit)
+	assert.Equal(t, sql.NullInt64{Int64: 5, Valid: true}, md[0].start, "Maildoso warms up from 5")
+	assert.Equal(t, sql.NullInt64{Int64: 1, Valid: true}, md[0].step, "by 1 a day")
 	assert.Equal(t, md[0].id, domainConn("d-md").String)
 
 	hand := of("pool-hand")
@@ -77,7 +79,7 @@ func TestMigration0027(t *testing.T) {
 	assert.Equal(t, "manual", hand[0].service)
 	assert.Equal(t, "Added by hand", hand[0].name)
 	assert.Nil(t, hand[0].key)
-	assert.False(t, hand[0].limit.Valid)
+	assert.False(t, hand[0].limit.Valid || hand[0].start.Valid || hand[0].step.Valid, "a manual connection uses the pool's limits")
 	assert.Equal(t, hand[0].id, domainConn("d-hand").String)
 	assert.False(t, domainConn("d-send").Valid, "a sending domain has no connection")
 

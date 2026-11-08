@@ -21,7 +21,7 @@
 	import { Button, Alert, Input, Select, Textarea, Badge, AlertDialog } from '$lib/components/ui';
 	import { formatDate } from '$lib/dates';
 	import { errorMessage } from '../../outbound/shared';
-	import { connectionTargets, limitText, parsePeople, serviceName } from './connections';
+	import { connectionTargets, limitText, limitValue, parsePeople, serviceName } from './connections';
 
 	// One of a pool's connections: its service, key, domains and mailboxes,
 	// and what can be done there. Buying is a quote, then a buy the person
@@ -53,6 +53,8 @@
 	let editName = $state('');
 	let editKey = $state('');
 	let editLimit = $state<number | undefined>(undefined);
+	let editWarmupStart = $state<number | undefined>(undefined);
+	let editWarmupStep = $state<number | undefined>(undefined);
 	let confirmRemove = $state(false);
 	let moveTo = $state<Record<string, string>>({});
 
@@ -79,6 +81,8 @@
 	$effect(() => {
 		editName = connection.name;
 		editLimit = connection.daily_limit;
+		editWarmupStart = connection.warmup_start;
+		editWarmupStep = connection.warmup_step;
 	});
 
 	async function run(name: string, fn: () => Promise<void>) {
@@ -96,10 +100,15 @@
 
 	function save() {
 		return run('save', async () => {
-			const limit = editLimit !== undefined && Number.isFinite(editLimit) && editLimit > 0 ? editLimit : undefined;
 			await updateMailboxConnection(
 				{},
-				{ name: editName.trim() || undefined, api_key: editKey.trim() || undefined, daily_limit: limit },
+				{
+					name: editName.trim() || undefined,
+					api_key: editKey.trim() || undefined,
+					daily_limit: limitValue(editLimit, 1),
+					warmup_start: limitValue(editWarmupStart, 0),
+					warmup_step: limitValue(editWarmupStep, 0)
+				},
 				connection.id
 			);
 			editKey = '';
@@ -244,10 +253,31 @@
 						placeholder="The pool's"
 					/>
 				</div>
+				<div>
+					<label for="mc-edit-wstart-{connection.id}" class="form-label">Warm-up first day</label>
+					<Input
+						id="mc-edit-wstart-{connection.id}"
+						type="number"
+						min={0}
+						bind:value={editWarmupStart}
+						placeholder="The pool's"
+					/>
+				</div>
+				<div>
+					<label for="mc-edit-wstep-{connection.id}" class="form-label">Warm-up added each day</label>
+					<Input
+						id="mc-edit-wstep-{connection.id}"
+						type="number"
+						min={0}
+						bind:value={editWarmupStep}
+						placeholder="The pool's"
+					/>
+				</div>
 			</div>
 			<p class="form-hint">
-				Its mailboxes send under this limit unless one has its own; leave it empty for the pool's. The pool's warm-up
-				and spacing still apply.
+				Its mailboxes start at the first day's number and add the daily step until they reach the daily limit. A
+				mailbox's own daily limit still wins; leave a field empty for the pool's, and a first day of 0 turns warm-up
+				off. The pool's spacing and health pauses still apply.
 			</p>
 			<div class="flex flex-wrap gap-2">
 				<Button type="secondary" size="sm" onclick={save} disabled={busy !== ''}>

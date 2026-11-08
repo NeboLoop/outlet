@@ -45,16 +45,43 @@ const (
 // localPart is a mailbox address's part before the @ that every service takes.
 var localPart = regexp.MustCompile(`^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$`)
 
-// serviceDailyLimit is a new connection's default daily limit for its
-// mailboxes, under its service's terms; nil uses the pool's. Maildoso's
-// terms (updated 2026-10-22) cap cold email at 15 a day per mailbox, to
-// business addresses only. A mailbox's own limit still beats it.
-func serviceDailyLimit(service string) *int64 {
+// ConnectionLimits are the limits a connection's mailboxes send under in
+// place of the pool's; each empty uses the pool's. A mailbox's own daily
+// limit still beats the connection's.
+type ConnectionLimits struct {
+	DailyLimit  *int64 `json:"daily_limit,omitempty"`
+	WarmupStart *int64 `json:"warmup_start,omitempty"` // the first day's allowance
+	WarmupStep  *int64 `json:"warmup_step,omitempty"`  // added each day
+}
+
+// serviceLimits are a new connection's limits under its service's terms;
+// empty uses the pool's. Maildoso's terms (updated 2026-10-22) allow cold
+// email at 15 a day per mailbox only after 14 days of warm-up, to business
+// addresses only: so 15 a day, warming up from 5 by 1 a day.
+func serviceLimits(service string) ConnectionLimits {
 	if service == providers.Maildoso {
-		n := int64(15)
-		return &n
+		return ConnectionLimits{DailyLimit: ptrInt(15), WarmupStart: ptrInt(5), WarmupStep: ptrInt(1)}
+	}
+	return ConnectionLimits{}
+}
+
+func ptrInt(n int64) *int64 { return &n }
+
+func (l ConnectionLimits) check() error {
+	if l.DailyLimit != nil && *l.DailyLimit < 1 {
+		return refuse("A connection's daily limit is at least 1; leave it empty to use the pool's.")
+	}
+	if l.WarmupStart != nil && *l.WarmupStart < 0 || l.WarmupStep != nil && *l.WarmupStep < 0 {
+		return refuse("A connection's warm-up start and step can't be negative; leave them empty to use the pool's.")
 	}
 	return nil
+}
+
+func ptrOf(v sql.NullInt64) *int64 {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Int64
 }
 
 // Connection is one of a pool's mailbox service connections. The key is
@@ -65,12 +92,10 @@ type Connection struct {
 	Service string `json:"service"`
 	Name    string `json:"name"`
 	KeySet  bool   `json:"key_set"`
-	// DailyLimit is the daily limit its mailboxes send under unless one has
-	// its own; empty uses the pool's.
-	DailyLimit *int64             `json:"daily_limit,omitempty"`
-	Domains    []ConnectionDomain `json:"domains"`
-	Mailboxes  int                `json:"mailboxes"`
-	CreatedAt  string             `json:"created_at"`
+	ConnectionLimits
+	Domains   []ConnectionDomain `json:"domains"`
+	Mailboxes int                `json:"mailboxes"`
+	CreatedAt string             `json:"created_at"`
 }
 
 // ConnectionDomain is one of a connection's outreach domains.
@@ -81,16 +106,17 @@ type ConnectionDomain struct {
 
 // ConnectionInput adds a connection, or changes one. Adding: PoolID empty
 // picks the pool carrying outreach (made when the brand has none); Name
-// empty names it after its service; DailyLimit empty takes the service's
-// default (Maildoso's 15, else the pool's). Changing: the service and pool
-// stay; Name empty keeps it; APIKey empty keeps the stored key; DailyLimit
-// is set as given, empty for the pool's.
+// empty names it after its service; limits all empty take the service's
+// terms (Maildoso: 15 a day, warming up from 5 by 1), else are set as given.
+// Changing: the service and pool stay; Name empty keeps it; APIKey empty
+// keeps the stored key; the limits are set as given, each empty for the
+// pool's.
 type ConnectionInput struct {
-	PoolID     string `json:"pool_id,omitempty"`
-	Service    string `json:"service,omitempty"`
-	Name       string `json:"name,omitempty"`
-	APIKey     string `json:"api_key,omitempty"`
-	DailyLimit *int64 `json:"daily_limit,omitempty"`
+	PoolID  string `json:"pool_id,omitempty"`
+	Service string `json:"service,omitempty"`
+	Name    string `json:"name,omitempty"`
+	APIKey  string `json:"api_key,omitempty"`
+	ConnectionLimits
 }
 
 // serviceErr turns a mailbox service's refusal into one the caller acts on.
@@ -157,19 +183,10 @@ func (s *Service) checkedKey(ctx context.Context, service, key string) ([]byte, 
 	return s.crypto.EncryptString(key)
 }
 
-func checkLimit(limit *int64) error {
-	if limit != nil && *limit < 1 {
-		return refuse("A connection's daily limit is at least 1; leave it empty to use the pool's.")
-	}
-	return nil
-}
-
 // connectionView reads a connection with its domains and mailbox count.
 func (s *Service) connectionView(ctx context.Context, c db.MailboxConnection) (Connection, error) {
-	out := Connection{ID: c.ID, PoolID: c.PathwayID, Service: c.Service, Name: c.Name, KeySet: len(c.ApiKeyEnc) > 0, Domains: []ConnectionDomain{}, CreatedAt: c.CreatedAt}
-	if c.DailyLimit.Valid {
-		out.DailyLimit = &c.DailyLimit.Int64
-	}
+	out := Connection{ID: c.ID, PoolID: c.PathwayID, Service: c.Service, Name: c.Name, KeySet: len(c.ApiKeyEnc) > 0, Domains: []ConnectionDomain{}, CreatedAt: c.CreatedAt,
+		ConnectionLimits: ConnectionLimits{DailyLimit: ptrOf(c.DailyLimit), WarmupStart: ptrOf(c.WarmupStart), WarmupStep: ptrOf(c.WarmupStep)}}
 	id := sql.NullString{String: c.ID, Valid: true}
 	domains, err := s.db.ListConnectionDomains(ctx, id)
 	if err != nil {
@@ -219,11 +236,11 @@ func (s *Service) AddConnection(ctx context.Context, org db.Organization, in Con
 	if service != providers.Manual && key == "" {
 		return Connection{}, refuse("Enter the %s API key.", providers.Label(service))
 	}
-	limit := in.DailyLimit
-	if limit == nil {
-		limit = serviceDailyLimit(service)
+	limits := in.ConnectionLimits
+	if limits == (ConnectionLimits{}) {
+		limits = serviceLimits(service)
 	}
-	if err := checkLimit(limit); err != nil {
+	if err := limits.check(); err != nil {
 		return Connection{}, err
 	}
 	var pool db.SendingPathway
@@ -250,7 +267,8 @@ func (s *Service) AddConnection(ctx context.Context, org db.Organization, in Con
 		}
 	}
 	c, err := s.db.CreateMailboxConnection(ctx, db.CreateMailboxConnectionParams{
-		ID: uuid.NewString(), OrgID: org.ID, PathwayID: pool.ID, Service: service, Name: name, ApiKeyEnc: keyEnc, DailyLimit: nullInt(limit),
+		ID: uuid.NewString(), OrgID: org.ID, PathwayID: pool.ID, Service: service, Name: name, ApiKeyEnc: keyEnc,
+		DailyLimit: nullInt(limits.DailyLimit), WarmupStart: nullInt(limits.WarmupStart), WarmupStep: nullInt(limits.WarmupStep),
 	})
 	if err != nil {
 		return Connection{}, err
@@ -259,7 +277,7 @@ func (s *Service) AddConnection(ctx context.Context, org db.Organization, in Con
 }
 
 // UpdateConnection renames a connection, replaces its API key (tried
-// first), and sets its mailboxes' default daily limit. Its service and pool
+// first), and sets its mailboxes' limits: daily limit and warm-up. Its service and pool
 // stay; a different service is another connection.
 func (s *Service) UpdateConnection(ctx context.Context, org db.Organization, id string, in ConnectionInput) (Connection, error) {
 	c, err := s.connection(ctx, org.ID, id)
@@ -269,7 +287,7 @@ func (s *Service) UpdateConnection(ctx context.Context, org db.Organization, id 
 	if svc := strings.ToLower(strings.TrimSpace(in.Service)); svc != "" && svc != c.Service {
 		return Connection{}, refuse("A connection keeps its service; add a %s connection instead.", providers.Label(svc))
 	}
-	if err := checkLimit(in.DailyLimit); err != nil {
+	if err := in.ConnectionLimits.check(); err != nil {
 		return Connection{}, err
 	}
 	key := strings.TrimSpace(in.APIKey)
@@ -284,8 +302,10 @@ func (s *Service) UpdateConnection(ctx context.Context, org db.Organization, id 
 	if name := strings.TrimSpace(in.Name); name != "" {
 		c.Name = name
 	}
-	c.DailyLimit = nullInt(in.DailyLimit)
-	if err := s.db.UpdateMailboxConnection(ctx, db.UpdateMailboxConnectionParams{Name: c.Name, ApiKeyEnc: c.ApiKeyEnc, DailyLimit: c.DailyLimit, ID: c.ID, OrgID: org.ID}); err != nil {
+	c.DailyLimit, c.WarmupStart, c.WarmupStep = nullInt(in.DailyLimit), nullInt(in.WarmupStart), nullInt(in.WarmupStep)
+	if err := s.db.UpdateMailboxConnection(ctx, db.UpdateMailboxConnectionParams{
+		Name: c.Name, ApiKeyEnc: c.ApiKeyEnc, DailyLimit: c.DailyLimit, WarmupStart: c.WarmupStart, WarmupStep: c.WarmupStep, ID: c.ID, OrgID: org.ID,
+	}); err != nil {
 		return Connection{}, err
 	}
 	return s.connectionView(ctx, c)

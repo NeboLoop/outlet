@@ -214,34 +214,54 @@ func TestConnectionsSendTogether(t *testing.T) {
 	}
 }
 
-// Maildoso's mailboxes default to 15 a day in a pool whose limit is 30; a
-// mailbox's own limit beats its connection's, and the send path holds to it.
+// Maildoso's mailboxes follow its terms in a pool with the normal limits:
+// 15 a day, warming up from 5 by 1 a day, while the pool's others warm up
+// from 5 by 2 to 30. A mailbox's own daily limit beats its connection's,
+// and the send path holds to the connection's limits.
 func TestMaildosoDefaultInAMixedPool(t *testing.T) {
 	h := newHarness(t)
 	ctx := h.ctx
 	p := h.mixedPool()
 	pool, err := h.mailer.GetPathway(ctx, h.org.ID, p.maildoso.PoolID)
 	require.NoError(t, err)
-	limits := email.LimitsOf(pool)
-	limits.WarmupStart = 0 // no warm-up, so the allowance is the limit itself
-	_, err = h.mailer.UpdatePathway(ctx, h.org.ID, pool.ID, email.PathwayInput{Kinds: email.KindsOf(pool), Limits: &limits})
+	require.Equal(t, email.SenderLimits{DailyLimit: 30, WarmupStart: 5, WarmupStep: 2}, email.PathwayLimits(pool))
+	require.Equal(t, ConnectionLimits{DailyLimit: ptr(int64(15)), WarmupStart: ptr(int64(5)), WarmupStep: ptr(int64(1))}, p.maildoso.ConnectionLimits)
+	assert.Equal(t, ConnectionLimits{}, p.cheap.ConnectionLimits, "CheapInboxes keeps the pool's")
+	// Day 0 of every mailbox's warm-up is now.
+	_, err = h.conn.Exec(`UPDATE mailboxes SET warmup_started_at = ? WHERE org_id = ?`, ts(h.clock), h.org.ID)
 	require.NoError(t, err)
-	require.EqualValues(t, 30, limits.DailyLimit)
 
-	health := h.health()
-	assert.EqualValues(t, 15, health["sam@getexample.com"].LimitInUse, "Maildoso's terms")
-	assert.EqualValues(t, 15, health["sam@getexample.com"].AllowToday)
-	assert.Nil(t, health["sam@getexample.com"].DailyLimit, "it has no limit of its own")
-	assert.EqualValues(t, 30, health["kim@getother.com"].LimitInUse, "the pool's")
-	assert.EqualValues(t, 30, health["lee@getthird.com"].LimitInUse)
+	for _, day := range []struct {
+		days            int
+		maildoso, other int64
+	}{{0, 5, 5}, {5, 10, 15}, {10, 15, 25}, {20, 15, 30}} {
+		at := time.Duration(day.days) * 24 * time.Hour
+		h.advance(at)
+		health := h.health()
+		h.advance(-at)
+		sam, kim, lee := health["sam@getexample.com"], health["kim@getother.com"], health["lee@getthird.com"]
+		assert.EqualValues(t, day.maildoso, sam.AllowToday, "Maildoso on day %d", day.days)
+		assert.EqualValues(t, day.other, kim.AllowToday, "CheapInboxes on day %d", day.days)
+		assert.EqualValues(t, day.other, lee.AllowToday, "by hand on day %d", day.days)
+		assert.EqualValues(t, 15, sam.LimitInUse)
+		assert.EqualValues(t, 30, kim.LimitInUse)
+		assert.Equal(t, day.days < 10, sam.WarmingUp, "day %d", day.days)
+	}
+	assert.Nil(t, h.health()["sam@getexample.com"].DailyLimit, "it has no limit of its own")
 
+	// Its own daily limit beats the connection's; the connection's warm-up
+	// still climbs to it.
 	require.NoError(t, h.mailer.SetMailboxDailyLimit(ctx, h.org.ID, p.sam.ID, ptr(int64(20))))
-	assert.EqualValues(t, 20, h.health()["sam@getexample.com"].LimitInUse, "its own limit beats its connection's")
+	h.advance(10 * 24 * time.Hour)
+	sam := h.health()["sam@getexample.com"]
+	h.advance(-10 * 24 * time.Hour)
+	assert.EqualValues(t, 20, sam.LimitInUse, "its own limit beats its connection's")
+	assert.EqualValues(t, 15, sam.AllowToday, "day 10 of the 5 + 1 a day ramp")
 	require.NoError(t, h.mailer.SetMailboxDailyLimit(ctx, h.org.ID, p.sam.ID, nil))
 	assert.EqualValues(t, 15, h.health()["sam@getexample.com"].LimitInUse)
 
 	// The send path: at a connection default of 1, sam sends one a day.
-	_, err = h.svc.UpdateConnection(ctx, h.org, p.maildoso.ID, ConnectionInput{DailyLimit: ptr(int64(1))})
+	_, err = h.svc.UpdateConnection(ctx, h.org, p.maildoso.ID, ConnectionInput{ConnectionLimits: ConnectionLimits{DailyLimit: ptr(int64(1)), WarmupStart: ptr(int64(5)), WarmupStep: ptr(int64(1))}})
 	require.NoError(t, err)
 	for _, mb := range []db.Mailbox{p.kim, p.lee} {
 		require.NoError(t, h.store.SetMailboxStatus(ctx, db.SetMailboxStatusParams{Status: "paused", PausedReason: "held for the test", ID: mb.ID}))

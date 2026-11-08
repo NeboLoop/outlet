@@ -16,9 +16,14 @@ CREATE TABLE IF NOT EXISTS mailbox_connections (
     service TEXT NOT NULL, -- manual, maildoso, cheapinboxes, infraforge
     name TEXT NOT NULL,
     api_key_enc BLOB,
-    -- The daily limit its mailboxes send under unless a mailbox has its own;
-    -- NULL uses the pool's. A Maildoso connection starts at 15, its terms.
+    -- The limits its mailboxes send under in place of the pool's: the daily
+    -- limit (unless a mailbox has its own) and the warm-up ramp, its first
+    -- day's allowance and the daily step. Each NULL uses the pool's. A
+    -- Maildoso connection starts at 15 a day, warming up from 5 by 1 a day:
+    -- its terms allow 15 a day only after 14 days of warm-up.
     daily_limit INTEGER,
+    warmup_start INTEGER,
+    warmup_step INTEGER,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_mailbox_connections_pathway ON mailbox_connections(pathway_id);

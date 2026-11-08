@@ -14,7 +14,8 @@ import (
 // reads each pool's one service and key (0026) before the schema drops those
 // columns, then gives the pool one connection carrying them, with the pool's
 // outreach domains attached: a manual pool gets a manual connection. A
-// Maildoso connection's mailboxes default to 15 a day, Maildoso's terms.
+// Maildoso connection's mailboxes default to Maildoso's terms: 15 a day,
+// warming up from 5 by 1 a day.
 
 //go:embed schema/0027_mailbox_connections.sql
 var mailboxConnectionsSchema string
@@ -60,18 +61,18 @@ func upMailboxConnections(ctx context.Context, tx *sql.Tx) error {
 		if !ok {
 			p.service, name = "manual", connectionNames["manual"]
 		}
-		key, limit := any(nil), any(nil)
+		key, limit, warmupStart, warmupStep := any(nil), any(nil), any(nil), any(nil)
 		if p.service != "manual" && len(p.key) > 0 {
 			key = p.key
 		}
 		if p.service == "maildoso" {
-			limit = 15
+			limit, warmupStart, warmupStep = 15, 5, 1
 		}
 		var connID string
 		if err := tx.QueryRowContext(ctx, `
-			INSERT INTO mailbox_connections (id, org_id, pathway_id, service, name, api_key_enc, daily_limit)
-			VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?) RETURNING id`,
-			p.orgID, p.id, p.service, name, key, limit).Scan(&connID); err != nil {
+			INSERT INTO mailbox_connections (id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step)
+			VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+			p.orgID, p.id, p.service, name, key, limit, warmupStart, warmupStep).Scan(&connID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE domain_identities SET connection_id = ? WHERE pathway_id = ? AND purpose = 'outreach'`, connID, p.id); err != nil {

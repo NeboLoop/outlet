@@ -35,7 +35,8 @@ type MailboxHealth struct {
 	// LimitInUse is the daily limit it sends under: its own, else its
 	// connection's default, else its pool's. 0 is no limit.
 	LimitInUse int64 `json:"limit_in_use"`
-	// WarmingUp says the pool's warm-up still holds it below that limit:
+	// WarmingUp says its warm-up (its connection's, else the pool's) still
+	// holds it below that limit:
 	// allowed_today is today's step of the ramp, which climbs to LimitInUse
 	// (with no limit, it keeps climbing).
 	WarmingUp bool   `json:"warming_up"`
@@ -100,15 +101,15 @@ func (s *Service) mailboxHealth(ctx context.Context, mb db.Mailbox, org db.Organ
 	if d, err := s.db.GetDomainIdentity(ctx, mb.DomainID); err == nil {
 		out.ConnectionID = d.ConnectionID.String
 	}
-	override, err := s.mailer.MailboxLimit(ctx, mb)
+	limits, err := s.mailer.MailboxLimits(ctx, p, mb)
 	if err != nil {
 		return out
 	}
 	out.SentToday, _ = s.mailer.SentSince(ctx, org, p.ID, mb.ID, now)
 	start := parseTS(mb.WarmupStartedAt)
-	out.AllowToday, out.Limited = email.Allowance(p, start, override, now)
-	out.LimitInUse = email.DailyLimitOf(p, override)
-	out.WarmingUp = email.WarmingUp(p, start, override, now)
+	out.AllowToday, out.Limited = email.Allowance(limits, start, now)
+	out.LimitInUse = limits.DailyLimit
+	out.WarmingUp = email.WarmingUp(limits, start, now)
 	out.Sent7d, out.Bounces7d, out.SpamBlocks7d, out.Complaints7d = h.Sent, h.Bounces, h.SpamBlocks, h.Complaints
 	return out
 }

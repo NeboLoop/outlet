@@ -463,14 +463,16 @@ type Mailbox struct {
 }
 
 type MailboxConnection struct {
-	ID         string        `json:"id"`
-	OrgID      string        `json:"org_id"`
-	PathwayID  string        `json:"pathway_id"`
-	Service    string        `json:"service"`
-	Name       string        `json:"name"`
-	ApiKeyEnc  []byte        `json:"api_key_enc"`
-	DailyLimit sql.NullInt64 `json:"daily_limit"`
-	CreatedAt  string        `json:"created_at"`
+	ID          string        `json:"id"`
+	OrgID       string        `json:"org_id"`
+	PathwayID   string        `json:"pathway_id"`
+	Service     string        `json:"service"`
+	Name        string        `json:"name"`
+	ApiKeyEnc   []byte        `json:"api_key_enc"`
+	DailyLimit  sql.NullInt64 `json:"daily_limit"`
+	WarmupStart sql.NullInt64 `json:"warmup_start"`
+	WarmupStep  sql.NullInt64 `json:"warmup_step"`
+	CreatedAt   string        `json:"created_at"`
 }
 
 type MailboxServiceQuote struct {

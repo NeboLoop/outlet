@@ -105,7 +105,9 @@ type SetupSendingInput struct {
 	PoolID         string                  `json:"pool_id,omitempty" jsonschema:"set_limits: the mailbox pool to change; connections and add_connection: the pool (default: the pool carrying outreach)"`
 	Limits         *email.Limits           `json:"limits,omitempty" jsonschema:"set_limits: the pool's limits, all of them: daily_limit (per mailbox per day), warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate (0.03 is 3%), pause_min_bounces, pause_spam_blocks, pause_complaints. 0 turns one off"`
 	MailboxID      string                  `json:"mailbox_id,omitempty" jsonschema:"mailbox_limit: which mailbox"`
-	DailyLimit     *int64                  `json:"daily_limit,omitempty" jsonschema:"mailbox_limit: the mailbox's own daily limit, leave it out to use its connection's or pool's; add_connection and update_connection: the daily limit of the connection's mailboxes unless one has its own (add: leave it out for the service's default, Maildoso 15; update: leave it out for the pool's)"`
+	DailyLimit     *int64                  `json:"daily_limit,omitempty" jsonschema:"mailbox_limit: the mailbox's own daily limit, leave it out to use its connection's or pool's; add_connection and update_connection: the daily limit of the connection's mailboxes unless one has its own (leave it out for the pool's)"`
+	WarmupStart    *int64                  `json:"warmup_start,omitempty" jsonschema:"add_connection and update_connection: the warm-up's first-day allowance for the connection's mailboxes (leave it out for the pool's)"`
+	WarmupStep     *int64                  `json:"warmup_step,omitempty" jsonschema:"add_connection and update_connection: added to the allowance each day until the daily limit (leave it out for the pool's)"`
 	ConnectionID   string                  `json:"connection_id,omitempty" jsonschema:"the mailbox service connection: update_connection, remove_connection, move_domain (where the domain goes), service_inventory, connect_domain, quote, buy, sync, delete_mailbox; add_domain: a manual connection (default: the pool's first manual one)"`
 	Service        string                  `json:"service,omitempty" jsonschema:"add_connection: manual, maildoso, cheapinboxes or infraforge"`
 	Name           string                  `json:"name,omitempty" jsonschema:"add_connection and update_connection: the connection's name, e.g. Maildoso main (default: the service's name)"`
@@ -202,6 +204,11 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 	return nil, mcpctx.NewValidationError("action must be settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync or delete_mailbox", "action")
 }
 
+// connectionLimits are a connection's limits from the input.
+func (in SetupSendingInput) connectionLimits() outbound.ConnectionLimits {
+	return outbound.ConnectionLimits{DailyLimit: in.DailyLimit, WarmupStart: in.WarmupStart, WarmupStep: in.WarmupStep}
+}
+
 // mailboxServiceRun runs the actions on a pool's mailbox service
 // connections.
 func mailboxServiceRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSendingInput) (out any, handled bool, err error) {
@@ -225,7 +232,7 @@ func mailboxServiceRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSendi
 		if in.Service == "" {
 			return nil, true, mcpctx.NewValidationError("service is required: manual, maildoso, cheapinboxes or infraforge", "service")
 		}
-		c, err := o.AddConnection(ctx, brand, outbound.ConnectionInput{PoolID: in.PoolID, Service: in.Service, Name: in.Name, APIKey: in.APIKey, DailyLimit: in.DailyLimit})
+		c, err := o.AddConnection(ctx, brand, outbound.ConnectionInput{PoolID: in.PoolID, Service: in.Service, Name: in.Name, APIKey: in.APIKey, ConnectionLimits: in.connectionLimits()})
 		if err != nil {
 			return nil, true, err
 		}
@@ -235,7 +242,7 @@ func mailboxServiceRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSendi
 		}
 		return map[string]any{"connection": c, "next": next}, true, nil
 	case "update_connection":
-		c, err := o.UpdateConnection(ctx, brand, in.ConnectionID, outbound.ConnectionInput{Name: in.Name, APIKey: in.APIKey, DailyLimit: in.DailyLimit})
+		c, err := o.UpdateConnection(ctx, brand, in.ConnectionID, outbound.ConnectionInput{Name: in.Name, APIKey: in.APIKey, ConnectionLimits: in.connectionLimits()})
 		return c, true, err
 	case "remove_connection":
 		if err := o.RemoveConnection(ctx, brand, in.ConnectionID); err != nil {
@@ -521,9 +528,9 @@ var outboundTools = []outboundTool{
 			"- set_limits: limits (all of them), pool_id (default: the pool carrying outreach). Brand admins only\n"+
 			"- mailbox_limit: mailbox_id, daily_limit (leave it out to use its connection's or the pool's). Brand admins only\n"+
 			"Connections: a pool holds any number of mailbox services side by side (several of one service too), each with its own API key, plus manual connections for mailboxes added by hand (Google Workspace, Microsoft 365). Each outreach domain belongs to one connection; the pool sends from all their mailboxes under its limits, one mailbox per prospect for the whole thread:\n"+
-			"- connections: pool_id (optional). Each connection with its service, key status, domains, mailbox count and daily limit\n"+
-			"- add_connection: service (manual|maildoso|cheapinboxes|infraforge), api_key (required for a service, tested first), name, pool_id, daily_limit (default: Maildoso 15, its terms; else the pool's). Brand admins only\n"+
-			"- update_connection: connection_id, name, api_key (leave it out to keep it), daily_limit (leave it out for the pool's). Brand admins only\n"+
+			"- connections: pool_id (optional). Each connection with its service, key status, domains, mailbox count, daily limit and warm-up\n"+
+			"- add_connection: service (manual|maildoso|cheapinboxes|infraforge), api_key (required for a service, tested first), name, pool_id, daily_limit, warmup_start, warmup_step (all left out: the service's terms, Maildoso 15 a day warming up from 5 by 1; else the pool's). Brand admins only\n"+
+			"- update_connection: connection_id, name, api_key (leave it out to keep it), daily_limit, warmup_start, warmup_step (each set as given; left out: the pool's). Brand admins only\n"+
 			"- remove_connection: connection_id. Refused while it holds domains: move them first. Brand admins only\n"+
 			"- move_domain: domain_id, connection_id. Moves an outreach domain and its mailboxes to another connection of the same pool. Brand admins only\n"+
 			"Each of these takes connection_id, a mailbox service connection:\n"+

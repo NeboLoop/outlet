@@ -533,7 +533,11 @@ func TestSafetyLimits(t *testing.T) {
 	assert.Equal(t, email.ProviderMailboxes, pool.Provider)
 	assert.Equal(t, []string{"outreach"}, email.KindsOf(pool))
 	allow := func(days int, own sql.NullInt64) int64 {
-		n, limited := email.Allowance(pool, h.clock, own, h.clock.Add(time.Duration(days)*24*time.Hour))
+		l := email.PathwayLimits(pool)
+		if own.Valid {
+			l.DailyLimit = own.Int64
+		}
+		n, limited := email.Allowance(l, h.clock, h.clock.Add(time.Duration(days)*24*time.Hour))
 		assert.True(t, limited)
 		return n
 	}

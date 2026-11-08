@@ -20,9 +20,20 @@ export function connectionTargets(all: MailboxConnection[], from: MailboxConnect
 	return all.filter((c) => c.pool_id === from.pool_id && c.id !== from.id);
 }
 
-// The daily limit a connection's mailboxes send under, in words.
+// The limits a connection's mailboxes send under, in words.
 export function limitText(c: MailboxConnection): string {
-	return c.daily_limit ? `${c.daily_limit} a day per mailbox` : "The pool's daily limit";
+	const daily = c.daily_limit ? `${c.daily_limit} a day per mailbox` : "The pool's daily limit";
+	if (c.warmup_start === undefined && c.warmup_step === undefined) return `${daily}, the pool's warm-up`;
+	const start = c.warmup_start === undefined ? "the pool's start" : String(c.warmup_start);
+	const step = c.warmup_step === undefined ? "the pool's step" : String(c.warmup_step);
+	if (c.warmup_start === 0) return `${daily}, no warm-up`;
+	return `${daily}, warming up from ${start} by ${step} a day`;
+}
+
+// A limit field's value for the API: a whole number at least min, else
+// empty (the pool's).
+export function limitValue(v: number | undefined, min: number): number | undefined {
+	return v !== undefined && Number.isFinite(v) && v >= min ? Math.floor(v) : undefined;
 }
 
 // Each line is "First Last", or "First Last, local" to choose the address.

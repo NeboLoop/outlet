@@ -182,26 +182,28 @@ func TestMaildoso(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, all, "nothing is saved without a working key")
 
-	// A Maildoso connection's mailboxes default to its terms, 15 a day; the
-	// pool keeps its own limits for its other connections.
+	// A Maildoso connection's mailboxes default to its terms, 15 a day,
+	// warming up from 5 by 1; the pool keeps its own limits for its other
+	// connections.
 	conn, err := h.svc.AddConnection(ctx, h.org, ConnectionInput{Service: providers.Maildoso, APIKey: key})
 	require.NoError(t, err)
 	assert.Equal(t, "Maildoso", conn.Name)
-	require.NotNil(t, conn.DailyLimit)
-	assert.Equal(t, int64(15), *conn.DailyLimit)
+	assert.Equal(t, ConnectionLimits{DailyLimit: ptr(int64(15)), WarmupStart: ptr(int64(5)), WarmupStep: ptr(int64(1))}, conn.ConnectionLimits)
 	assert.True(t, conn.KeySet)
 	pool, err := h.mailer.GetPathway(ctx, h.org.ID, conn.PoolID)
 	require.NoError(t, err)
 	assert.Equal(t, email.DefaultLimits(email.ProviderMailboxes).DailyLimit, pool.DailyLimit)
 	// The brand can change the default; saving with no new key keeps the key.
-	conn, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{Name: "Maildoso main", DailyLimit: ptr(int64(12))})
+	conn, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{Name: "Maildoso main", ConnectionLimits: ConnectionLimits{DailyLimit: ptr(int64(12)), WarmupStart: ptr(int64(5)), WarmupStep: ptr(int64(1))}})
 	require.NoError(t, err)
 	assert.Equal(t, int64(12), *conn.DailyLimit)
 	assert.Equal(t, "Maildoso main", conn.Name)
 	assert.True(t, conn.KeySet)
-	_, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{APIKey: "wrong-key", DailyLimit: ptr(int64(15))})
+	_, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{APIKey: "wrong-key"})
 	assert.ErrorContains(t, err, "API key was refused")
-	conn, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{DailyLimit: ptr(int64(15))})
+	_, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{ConnectionLimits: ConnectionLimits{WarmupStep: ptr(int64(-1))}})
+	assert.ErrorContains(t, err, "can't be negative")
+	conn, err = h.svc.UpdateConnection(ctx, h.org, conn.ID, ConnectionInput{ConnectionLimits: ConnectionLimits{DailyLimit: ptr(int64(15)), WarmupStart: ptr(int64(5)), WarmupStep: ptr(int64(1))}})
 	require.NoError(t, err)
 	views, err := h.mailer.ListPathways(ctx, h.org.ID)
 	require.NoError(t, err)
@@ -421,7 +423,7 @@ func TestCheapInboxes(t *testing.T) {
 		return 0, nil
 	})
 	conn := h.useConnection(providers.CheapInboxes, f, key)
-	assert.Nil(t, conn.DailyLimit, "CheapInboxes' mailboxes keep the pool's limits")
+	assert.Equal(t, ConnectionLimits{}, conn.ConnectionLimits, "CheapInboxes' mailboxes keep the pool's limits")
 
 	// Connect stages the import; nothing is charged.
 	got, err := h.svc.ConnectServiceDomain(ctx, h.org, conn.ID, "getexample.com")
@@ -558,7 +560,7 @@ func TestInfraforge(t *testing.T) {
 		return 0, nil
 	})
 	conn := h.useConnection(providers.Infraforge, f, key)
-	assert.Nil(t, conn.DailyLimit)
+	assert.Equal(t, ConnectionLimits{}, conn.ConnectionLimits)
 
 	// Infraforge invoices connecting a domain, so it is a confirmed buy.
 	_, err := h.svc.ConnectServiceDomain(ctx, h.org, conn.ID, "getexample.com")

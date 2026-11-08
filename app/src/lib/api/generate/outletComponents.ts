@@ -1312,6 +1312,8 @@ export interface MailboxConnection {
 	name: string
 	key_set: boolean
 	daily_limit?: number // its mailboxes' daily limit unless one has its own; empty: the pool's
+	warmup_start?: number // its mailboxes' warm-up, first day's allowance; empty: the pool's
+	warmup_step?: number // added each day until the daily limit; empty: the pool's
 	domains: Array<MailboxConnectionDomain>
 	mailboxes: number
 	created_at: string
@@ -1342,7 +1344,9 @@ export interface MailboxConnectionRequest {
 	service: string // manual, maildoso, cheapinboxes, infraforge
 	name?: string // empty: the service's name
 	api_key?: string // required for a service; tried before it is saved
-	daily_limit?: number // empty: the service's default (Maildoso 15, else the pool's)
+	daily_limit?: number // the three limits all empty: the service's terms (Maildoso 15 a day, warming up from 5 by 1), else the pool's
+	warmup_start?: number
+	warmup_step?: number
 }
 
 export interface MailboxDailyLimitRequest {
@@ -1800,7 +1804,7 @@ export interface OutboundMailboxHealth {
 	last_error?: string
 	pool_id?: string // its mailbox pool (sending pathway)
 	connection_id?: string // the pool's connection its domain belongs to
-	daily_limit?: number // its own daily limit; empty uses its connection's, else the pool's
+	daily_limit?: number // its own daily limit; empty uses its connection's, else the pool's (warm-up: its connection's, else the pool's)
 	limited: boolean // false: no daily limit applies
 	limit_in_use: number // the daily limit it sends under: its own, else its connection's, else its pool's; 0: none
 	warming_up: boolean // the warm-up holds it below limit_in_use; allowed_today is today's step
@@ -2555,6 +2559,8 @@ export interface UpdateMailboxConnectionRequest {
 	name?: string // empty keeps it
 	api_key?: string // empty keeps the stored key
 	daily_limit?: number // set as given; empty: the pool's
+	warmup_start?: number // set as given; empty: the pool's
+	warmup_step?: number // set as given; empty: the pool's
 }
 export interface UpdateMailboxConnectionRequestParams {
 }

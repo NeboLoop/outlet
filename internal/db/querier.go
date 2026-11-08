@@ -369,8 +369,8 @@ type Querier interface {
 	GetMailbox(ctx context.Context, arg GetMailboxParams) (Mailbox, error)
 	GetMailboxByEmail(ctx context.Context, email string) (Mailbox, error)
 	GetMailboxConnection(ctx context.Context, arg GetMailboxConnectionParams) (MailboxConnection, error)
-	// The default daily limit of a mailbox's connection; NULL uses its pool's.
-	GetMailboxConnectionDailyLimit(ctx context.Context, id string) (sql.NullInt64, error)
+	// The limits of a mailbox's connection; each NULL uses its pool's.
+	GetMailboxConnectionLimits(ctx context.Context, id string) (GetMailboxConnectionLimitsRow, error)
 	// The mailbox pool a mailbox belongs to: its domain's pathway.
 	GetMailboxPathway(ctx context.Context, id string) (SendingPathway, error)
 	GetMailboxServiceQuote(ctx context.Context, arg GetMailboxServiceQuoteParams) (MailboxServiceQuote, error)

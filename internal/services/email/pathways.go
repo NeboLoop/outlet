@@ -109,43 +109,48 @@ func (l Limits) validate() error {
 	return nil
 }
 
-// DailyLimitOf is a sender's daily limit: the override when set (a
-// mailbox's, from MailboxLimit), else its pathway's. 0 is no limit.
-func DailyLimitOf(p db.SendingPathway, override sql.NullInt64) int64 {
-	if override.Valid {
-		return override.Int64
-	}
-	return p.DailyLimit
+// SenderLimits are the limits one sender sends under: its daily limit (0
+// is none) and its warm-up ramp, the first day's allowance (0 is no
+// warm-up) and the daily step.
+type SenderLimits struct {
+	DailyLimit  int64
+	WarmupStart int64
+	WarmupStep  int64
+}
+
+// PathwayLimits are the limits a pathway's own senders send under: the
+// pathway itself, or a pool mailbox with no limits of its own or its
+// connection's.
+func PathwayLimits(p db.SendingPathway) SenderLimits {
+	return SenderLimits{DailyLimit: p.DailyLimit, WarmupStart: p.WarmupStart, WarmupStep: p.WarmupStep}
 }
 
 // Allowance is how many emails one sender may send on the day of now: the
-// warm-up ramp from the sender's start, up to the daily limit (the
-// override when set). limited is false when nothing caps it.
-func Allowance(p db.SendingPathway, start time.Time, override sql.NullInt64, now time.Time) (n int64, limited bool) {
-	limit := DailyLimitOf(p, override)
-	if p.WarmupStart <= 0 {
-		return limit, limit > 0
+// warm-up ramp from the sender's start, up to the daily limit. limited is
+// false when nothing caps it.
+func Allowance(l SenderLimits, start time.Time, now time.Time) (n int64, limited bool) {
+	if l.WarmupStart <= 0 {
+		return l.DailyLimit, l.DailyLimit > 0
 	}
 	days := int64(now.Sub(start).Hours() / 24)
 	if days < 0 {
 		days = 0
 	}
-	ramp := p.WarmupStart + p.WarmupStep*days
-	if limit > 0 {
-		return min(limit, ramp), true
+	ramp := l.WarmupStart + l.WarmupStep*days
+	if l.DailyLimit > 0 {
+		return min(l.DailyLimit, ramp), true
 	}
 	return ramp, true
 }
 
 // WarmingUp says whether the warm-up ramp still holds a sender below its
 // daily limit on the day of now. With no daily limit the ramp never ends.
-func WarmingUp(p db.SendingPathway, start time.Time, override sql.NullInt64, now time.Time) bool {
-	if p.WarmupStart <= 0 {
+func WarmingUp(l SenderLimits, start time.Time, now time.Time) bool {
+	if l.WarmupStart <= 0 {
 		return false
 	}
-	limit := DailyLimitOf(p, override)
-	allow, _ := Allowance(p, start, override, now)
-	return limit == 0 || allow < limit
+	allow, _ := Allowance(l, start, now)
+	return l.DailyLimit == 0 || allow < l.DailyLimit
 }
 
 // Health is one sender's last 7 days.
@@ -565,18 +570,29 @@ func ManualConnection(ctx context.Context, q *db.Queries, orgID, poolID string) 
 	})
 }
 
-// MailboxLimit is the daily limit a mailbox sends under in place of its
-// pool's: its own, else its connection's default (a Maildoso connection's
-// 15). Empty uses the pool's.
-func (s *Service) MailboxLimit(ctx context.Context, mb db.Mailbox) (sql.NullInt64, error) {
+// MailboxLimits are the limits a pool mailbox sends under, each resolved
+// on its own: the daily limit is the mailbox's own, else its connection's,
+// else the pool's; the warm-up start and step are its connection's, else
+// the pool's. A Maildoso connection's are 15 a day, warming up from 5 by 1.
+// Sending and the health view both read them here.
+func (s *Service) MailboxLimits(ctx context.Context, p db.SendingPathway, mb db.Mailbox) (SenderLimits, error) {
+	l := PathwayLimits(p)
+	c, err := s.db.GetMailboxConnectionLimits(ctx, mb.ID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return l, err
+	}
+	for _, v := range []struct {
+		to  *int64
+		set sql.NullInt64
+	}{{&l.DailyLimit, c.DailyLimit}, {&l.WarmupStart, c.WarmupStart}, {&l.WarmupStep, c.WarmupStep}} {
+		if v.set.Valid {
+			*v.to = v.set.Int64
+		}
+	}
 	if mb.DailyLimit.Valid {
-		return mb.DailyLimit, nil
+		l.DailyLimit = mb.DailyLimit.Int64
 	}
-	limit, err := s.db.GetMailboxConnectionDailyLimit(ctx, mb.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return sql.NullInt64{}, nil
-	}
-	return limit, err
+	return l, nil
 }
 
 // SetMailboxDailyLimit gives one mailbox its own daily limit, or (nil) puts

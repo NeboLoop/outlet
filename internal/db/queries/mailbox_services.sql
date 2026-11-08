@@ -2,8 +2,8 @@
 -- services' ids for the mailboxes.
 
 -- name: CreateMailboxConnection :one
-INSERT INTO mailbox_connections (id, org_id, pathway_id, service, name, api_key_enc, daily_limit)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO mailbox_connections (id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetMailboxConnection :one
@@ -18,7 +18,7 @@ SELECT * FROM mailbox_connections WHERE org_id = ? ORDER BY created_at, id;
 SELECT * FROM mailbox_connections WHERE pathway_id = ? AND service = 'manual' ORDER BY created_at, id LIMIT 1;
 
 -- name: UpdateMailboxConnection :exec
-UPDATE mailbox_connections SET name = ?, api_key_enc = ?, daily_limit = ?
+UPDATE mailbox_connections SET name = ?, api_key_enc = ?, daily_limit = ?, warmup_start = ?, warmup_step = ?
 WHERE id = ? AND org_id = ?;
 
 -- name: DeleteMailboxConnection :execrows
@@ -41,9 +41,9 @@ WHERE id = ? AND org_id = ? AND purpose = 'outreach';
 -- service's ids mean nothing there; a sync links them again.
 UPDATE mailboxes SET service_ref = '' WHERE domain_id = ?;
 
--- name: GetMailboxConnectionDailyLimit :one
--- The default daily limit of a mailbox's connection; NULL uses its pool's.
-SELECT c.daily_limit FROM mailbox_connections c
+-- name: GetMailboxConnectionLimits :one
+-- The limits of a mailbox's connection; each NULL uses its pool's.
+SELECT c.daily_limit, c.warmup_start, c.warmup_step FROM mailbox_connections c
 JOIN domain_identities d ON d.connection_id = c.id
 JOIN mailboxes m ON m.domain_id = d.id
 WHERE m.id = ?;

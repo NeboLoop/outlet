@@ -34,10 +34,13 @@ func (l *UpdateMailboxConnectionLogic) UpdateMailboxConnection(req *types.Update
 	return UpdateMailboxConnection(l.ctx, l.svcCtx, org, req)
 }
 
-// UpdateMailboxConnection renames a connection, replaces its key and sets its mailboxes' default daily limit, for a brand already resolved: the admin route's
+// UpdateMailboxConnection renames a connection, replaces its key and sets its mailboxes' daily limit and warm-up, for a brand already resolved: the admin route's
 // signed-in person, or the API key of /sdk/v1/outbound.
 func UpdateMailboxConnection(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.UpdateMailboxConnectionRequest) (*types.MailboxConnection, error) {
-	res, err := svcCtx.Outbound.UpdateConnection(ctx, org, req.Id, outbound.ConnectionInput{Name: req.Name, APIKey: req.APIKey, DailyLimit: req.DailyLimit})
+	res, err := svcCtx.Outbound.UpdateConnection(ctx, org, req.Id, outbound.ConnectionInput{
+		Name: req.Name, APIKey: req.APIKey,
+		ConnectionLimits: outbound.ConnectionLimits{DailyLimit: req.DailyLimit, WarmupStart: req.WarmupStart, WarmupStep: req.WarmupStep},
+	})
 	if err != nil {
 		return nil, apiErr(err)
 	}

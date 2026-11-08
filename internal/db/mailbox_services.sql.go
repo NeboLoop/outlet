@@ -23,19 +23,21 @@ func (q *Queries) ClearDomainMailboxServiceRefs(ctx context.Context, domainID st
 
 const createMailboxConnection = `-- name: CreateMailboxConnection :one
 
-INSERT INTO mailbox_connections (id, org_id, pathway_id, service, name, api_key_enc, daily_limit)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, pathway_id, service, name, api_key_enc, daily_limit, created_at
+INSERT INTO mailbox_connections (id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step, created_at
 `
 
 type CreateMailboxConnectionParams struct {
-	ID         string        `json:"id"`
-	OrgID      string        `json:"org_id"`
-	PathwayID  string        `json:"pathway_id"`
-	Service    string        `json:"service"`
-	Name       string        `json:"name"`
-	ApiKeyEnc  []byte        `json:"api_key_enc"`
-	DailyLimit sql.NullInt64 `json:"daily_limit"`
+	ID          string        `json:"id"`
+	OrgID       string        `json:"org_id"`
+	PathwayID   string        `json:"pathway_id"`
+	Service     string        `json:"service"`
+	Name        string        `json:"name"`
+	ApiKeyEnc   []byte        `json:"api_key_enc"`
+	DailyLimit  sql.NullInt64 `json:"daily_limit"`
+	WarmupStart sql.NullInt64 `json:"warmup_start"`
+	WarmupStep  sql.NullInt64 `json:"warmup_step"`
 }
 
 // A mailbox pool's connections to mailbox services, their quotes, and the
@@ -49,6 +51,8 @@ func (q *Queries) CreateMailboxConnection(ctx context.Context, arg CreateMailbox
 		arg.Name,
 		arg.ApiKeyEnc,
 		arg.DailyLimit,
+		arg.WarmupStart,
+		arg.WarmupStep,
 	)
 	var i MailboxConnection
 	err := row.Scan(
@@ -59,6 +63,8 @@ func (q *Queries) CreateMailboxConnection(ctx context.Context, arg CreateMailbox
 		&i.Name,
 		&i.ApiKeyEnc,
 		&i.DailyLimit,
+		&i.WarmupStart,
+		&i.WarmupStep,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -132,7 +138,7 @@ func (q *Queries) DeleteMailboxConnection(ctx context.Context, arg DeleteMailbox
 }
 
 const firstManualConnection = `-- name: FirstManualConnection :one
-SELECT id, org_id, pathway_id, service, name, api_key_enc, daily_limit, created_at FROM mailbox_connections WHERE pathway_id = ? AND service = 'manual' ORDER BY created_at, id LIMIT 1
+SELECT id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step, created_at FROM mailbox_connections WHERE pathway_id = ? AND service = 'manual' ORDER BY created_at, id LIMIT 1
 `
 
 // A pool's oldest manual connection: where a domain added by hand goes.
@@ -147,13 +153,15 @@ func (q *Queries) FirstManualConnection(ctx context.Context, pathwayID string) (
 		&i.Name,
 		&i.ApiKeyEnc,
 		&i.DailyLimit,
+		&i.WarmupStart,
+		&i.WarmupStep,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getMailboxConnection = `-- name: GetMailboxConnection :one
-SELECT id, org_id, pathway_id, service, name, api_key_enc, daily_limit, created_at FROM mailbox_connections WHERE id = ? AND org_id = ?
+SELECT id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step, created_at FROM mailbox_connections WHERE id = ? AND org_id = ?
 `
 
 type GetMailboxConnectionParams struct {
@@ -172,24 +180,32 @@ func (q *Queries) GetMailboxConnection(ctx context.Context, arg GetMailboxConnec
 		&i.Name,
 		&i.ApiKeyEnc,
 		&i.DailyLimit,
+		&i.WarmupStart,
+		&i.WarmupStep,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
-const getMailboxConnectionDailyLimit = `-- name: GetMailboxConnectionDailyLimit :one
-SELECT c.daily_limit FROM mailbox_connections c
+const getMailboxConnectionLimits = `-- name: GetMailboxConnectionLimits :one
+SELECT c.daily_limit, c.warmup_start, c.warmup_step FROM mailbox_connections c
 JOIN domain_identities d ON d.connection_id = c.id
 JOIN mailboxes m ON m.domain_id = d.id
 WHERE m.id = ?
 `
 
-// The default daily limit of a mailbox's connection; NULL uses its pool's.
-func (q *Queries) GetMailboxConnectionDailyLimit(ctx context.Context, id string) (sql.NullInt64, error) {
-	row := q.db.QueryRowContext(ctx, getMailboxConnectionDailyLimit, id)
-	var daily_limit sql.NullInt64
-	err := row.Scan(&daily_limit)
-	return daily_limit, err
+type GetMailboxConnectionLimitsRow struct {
+	DailyLimit  sql.NullInt64 `json:"daily_limit"`
+	WarmupStart sql.NullInt64 `json:"warmup_start"`
+	WarmupStep  sql.NullInt64 `json:"warmup_step"`
+}
+
+// The limits of a mailbox's connection; each NULL uses its pool's.
+func (q *Queries) GetMailboxConnectionLimits(ctx context.Context, id string) (GetMailboxConnectionLimitsRow, error) {
+	row := q.db.QueryRowContext(ctx, getMailboxConnectionLimits, id)
+	var i GetMailboxConnectionLimitsRow
+	err := row.Scan(&i.DailyLimit, &i.WarmupStart, &i.WarmupStep)
+	return i, err
 }
 
 const getMailboxServiceQuote = `-- name: GetMailboxServiceQuote :one
@@ -324,7 +340,7 @@ func (q *Queries) ListConnectionMailboxes(ctx context.Context, connectionID sql.
 }
 
 const listMailboxConnections = `-- name: ListMailboxConnections :many
-SELECT id, org_id, pathway_id, service, name, api_key_enc, daily_limit, created_at FROM mailbox_connections WHERE org_id = ? ORDER BY created_at, id
+SELECT id, org_id, pathway_id, service, name, api_key_enc, daily_limit, warmup_start, warmup_step, created_at FROM mailbox_connections WHERE org_id = ? ORDER BY created_at, id
 `
 
 // The brand's connections, oldest first.
@@ -345,6 +361,8 @@ func (q *Queries) ListMailboxConnections(ctx context.Context, orgID string) ([]M
 			&i.Name,
 			&i.ApiKeyEnc,
 			&i.DailyLimit,
+			&i.WarmupStart,
+			&i.WarmupStep,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -395,16 +413,18 @@ func (q *Queries) SetMailboxServiceRef(ctx context.Context, arg SetMailboxServic
 }
 
 const updateMailboxConnection = `-- name: UpdateMailboxConnection :exec
-UPDATE mailbox_connections SET name = ?, api_key_enc = ?, daily_limit = ?
+UPDATE mailbox_connections SET name = ?, api_key_enc = ?, daily_limit = ?, warmup_start = ?, warmup_step = ?
 WHERE id = ? AND org_id = ?
 `
 
 type UpdateMailboxConnectionParams struct {
-	Name       string        `json:"name"`
-	ApiKeyEnc  []byte        `json:"api_key_enc"`
-	DailyLimit sql.NullInt64 `json:"daily_limit"`
-	ID         string        `json:"id"`
-	OrgID      string        `json:"org_id"`
+	Name        string        `json:"name"`
+	ApiKeyEnc   []byte        `json:"api_key_enc"`
+	DailyLimit  sql.NullInt64 `json:"daily_limit"`
+	WarmupStart sql.NullInt64 `json:"warmup_start"`
+	WarmupStep  sql.NullInt64 `json:"warmup_step"`
+	ID          string        `json:"id"`
+	OrgID       string        `json:"org_id"`
 }
 
 func (q *Queries) UpdateMailboxConnection(ctx context.Context, arg UpdateMailboxConnectionParams) error {
@@ -412,6 +432,8 @@ func (q *Queries) UpdateMailboxConnection(ctx context.Context, arg UpdateMailbox
 		arg.Name,
 		arg.ApiKeyEnc,
 		arg.DailyLimit,
+		arg.WarmupStart,
+		arg.WarmupStep,
 		arg.ID,
 		arg.OrgID,
 	)

@@ -36,7 +36,7 @@ type sender struct {
 	id       string
 	label    string
 	start    time.Time     // where the warm-up ramp starts
-	override sql.NullInt64 // a mailbox's daily limit in place of the pool's (MailboxLimit)
+	limits   SenderLimits // PathwayLimits, or a pool mailbox's MailboxLimits
 	next     string        // its next-send time as stored, for the retry estimate
 	mailbox  bool
 }
@@ -52,7 +52,7 @@ func (s *Service) reserve(ctx context.Context, org db.Organization, p db.Sending
 	l := now.In(loc)
 	tomorrow := time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, loc)
 
-	allow, limited := Allowance(p, snd.start, snd.override, now)
+	allow, limited := Allowance(snd.limits, snd.start, now)
 	if !limited {
 		allow = math.MaxInt64
 	} else if allow <= 0 {

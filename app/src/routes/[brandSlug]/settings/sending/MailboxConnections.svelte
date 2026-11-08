@@ -124,8 +124,9 @@
 			</div>
 			{#if service === 'maildoso'}
 				<p class="form-hint">
-					Maildoso's terms cap cold email at 15 a day per mailbox, to business addresses only, so its mailboxes default
-					to 15 a day. A mailbox's own limit still wins.
+					Maildoso's terms allow cold email at 15 a day per mailbox only after 14 days of warm-up, to business addresses
+					only, so its mailboxes default to 15 a day, warming up from 5 by 1 a day. Change them under Manage; a
+					mailbox's own daily limit still wins.
 				</p>
 			{:else if service !== 'manual'}
 				<p class="form-hint">The key is checked with the service before it is saved, and never shown again.</p>
