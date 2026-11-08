@@ -452,6 +452,76 @@
 	}
 }
 
+/* ===== Help ===== */
+@layer components {
+	/* The "Help" link a screen shows to its guide */
+	.help-link {
+		@apply inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors;
+		color: var(--color-text-muted);
+	}
+
+	.help-link:hover {
+		background-color: var(--color-bg-secondary);
+		color: var(--color-text);
+	}
+
+	.help-page {
+		@apply max-w-3xl mx-auto px-4 sm:px-6 py-6;
+	}
+
+	.help-search {
+		@apply w-full rounded-lg border px-4 py-2.5 text-sm;
+		background-color: var(--color-bg);
+		border-color: var(--color-border);
+		color: var(--color-text);
+	}
+
+	.help-section-title {
+		@apply mt-8 mb-3 text-xs font-medium uppercase tracking-wide;
+		color: var(--color-text-muted);
+	}
+
+	.help-card {
+		@apply block rounded-lg border p-4 transition-colors;
+		background-color: var(--color-bg);
+		border-color: var(--color-border);
+	}
+
+	.help-card:hover {
+		border-color: var(--color-primary);
+	}
+
+	.help-card-title {
+		@apply font-medium;
+		color: var(--color-text);
+	}
+
+	.help-card-summary {
+		@apply mt-1 text-sm;
+		color: var(--color-text-muted);
+	}
+
+	.help-back {
+		@apply inline-flex items-center gap-1 text-sm mb-4;
+		color: var(--color-text-muted);
+	}
+
+	.help-back:hover {
+		color: var(--color-text);
+	}
+
+	.help-article {
+		@apply rounded-lg border p-6 sm:p-8;
+		background-color: var(--color-bg);
+		border-color: var(--color-border);
+	}
+
+	.help-related {
+		@apply mt-6 text-sm;
+		color: var(--color-text-muted);
+	}
+}
+
 /* ===== Reduced Motion ===== */
 @media (prefers-reduced-motion: reduce) {
 	*,
