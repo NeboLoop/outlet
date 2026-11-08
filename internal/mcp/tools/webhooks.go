@@ -18,6 +18,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
+	"github.com/outlet-sh/outlet/internal/services/webhook"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -142,12 +143,10 @@ Actions and Required Fields:
 - test: Send a test event to the webhook (requires: id)
 - logs: Get recent delivery logs (requires: id, optional: limit)
 
-Available Events:
-- contact.created, contact.updated, contact.deleted
-- contact.subscribed, contact.unsubscribed
-- email.sent, email.opened, email.clicked
-- email.bounced, email.complained
-- campaign.sent, campaign.completed
+Available Events ("*" for all):
+- contact.created, contact.unsubscribed
+- email.sent, email.delivered, email.bounced, email.complained
+- email.opened, email.clicked
 
 Examples:
   webhook(action: create, url: "https://example.com/webhook", events: "contact.created,email.sent")
@@ -200,6 +199,10 @@ func handleWebhookCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 	if strings.TrimSpace(input.Events) == "" {
 		return nil, nil, mcpctx.NewValidationError("events is required (comma-separated list)", "events")
 	}
+	events, err := webhook.EncodeEvents(strings.Split(input.Events, ","))
+	if err != nil {
+		return nil, nil, mcpctx.NewValidationError(err.Error(), "events")
+	}
 
 	// Generate a secure secret
 	secretBytes := make([]byte, 32)
@@ -219,7 +222,7 @@ func handleWebhookCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		OrgID:  toolCtx.BrandID(ctx),
 		Url:    input.URL,
 		Secret: secret,
-		Events: input.Events,
+		Events: events,
 		Active: sql.NullInt64{Int64: boolToInt64(active), Valid: true},
 	})
 	if err != nil {
@@ -319,7 +322,13 @@ func handleWebhookUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("webhook %s not found", input.ID))
 	}
 
-	// Use existing values as defaults
+	// Use existing values as defaults; no events keeps the current ones
+	events := ""
+	if strings.TrimSpace(input.Events) != "" {
+		if events, err = webhook.EncodeEvents(strings.Split(input.Events, ",")); err != nil {
+			return nil, nil, mcpctx.NewValidationError(err.Error(), "events")
+		}
+	}
 	active := int64ToBool(existing.Active)
 	if input.Active != nil {
 		active = *input.Active
@@ -329,7 +338,7 @@ func handleWebhookUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		ID:     input.ID,
 		OrgID:  toolCtx.BrandID(ctx),
 		Url:    input.URL,
-		Events: input.Events,
+		Events: events,
 		Active: sql.NullInt64{Int64: boolToInt64(active), Valid: true},
 	})
 	if err != nil {

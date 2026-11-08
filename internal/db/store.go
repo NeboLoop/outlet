@@ -4,12 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/outlet-sh/outlet/internal/events"
 )
 
 // Store provides all database operations with transaction support
 type Store struct {
 	*Queries
-	db *sql.DB
+	db     *sql.DB
+	events *events.Subject // optional; see events.go
 }
 
 // NewStore creates a new Store instance

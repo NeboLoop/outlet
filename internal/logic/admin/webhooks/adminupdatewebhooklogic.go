@@ -3,12 +3,12 @@ package webhooks
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -59,12 +59,9 @@ func (l *AdminUpdateWebhookLogic) AdminUpdateWebhook(req *types.UpdateWebhookReq
 
 	eventsStr := existing.Events
 	if len(req.Events) > 0 {
-		eventsJSON, err := json.Marshal(req.Events)
-		if err != nil {
-			l.Errorf("Failed to encode events: %v", err)
-			return nil, fmt.Errorf("failed to encode events")
+		if eventsStr, err = webhook.EncodeEvents(req.Events); err != nil {
+			return nil, err
 		}
-		eventsStr = string(eventsJSON)
 	}
 
 	activeVal := int64(0)
@@ -84,12 +81,7 @@ func (l *AdminUpdateWebhookLogic) AdminUpdateWebhook(req *types.UpdateWebhookReq
 		return nil, fmt.Errorf("failed to update webhook")
 	}
 
-	// Decode events from JSON string for response
-	var events []string
-	if err := json.Unmarshal([]byte(w.Events), &events); err != nil {
-		l.Errorf("Failed to decode events: %v", err)
-		events = []string{}
-	}
+	events := webhook.DecodeEvents(w.Events)
 
 	info := &types.WebhookInfo{
 		Id:                w.ID,

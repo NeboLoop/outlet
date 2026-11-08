@@ -44,24 +44,15 @@
 	let testingWebhook = $state<string | null>(null);
 	let testResult = $state<api.TestWebhookResponse | null>(null);
 
-	// Available webhook events
+	// Available webhook events: the ones the server delivers
+	// (internal/services/webhook Events)
 	const availableEvents = [
-		{ value: 'checkout.completed', label: 'Checkout Completed', category: 'Orders' },
-		{ value: 'order.created', label: 'Order Created', category: 'Orders' },
-		{ value: 'order.completed', label: 'Order Completed', category: 'Orders' },
-		{ value: 'payment.succeeded', label: 'Payment Succeeded', category: 'Payments' },
-		{ value: 'payment.failed', label: 'Payment Failed', category: 'Payments' },
-		{ value: 'refund.created', label: 'Refund Created', category: 'Payments' },
-		{ value: 'subscription.created', label: 'Subscription Created', category: 'Subscriptions' },
-		{ value: 'subscription.updated', label: 'Subscription Updated', category: 'Subscriptions' },
-		{ value: 'subscription.canceled', label: 'Subscription Canceled', category: 'Subscriptions' },
-		{ value: 'subscription.renewed', label: 'Subscription Renewed', category: 'Subscriptions' },
-		{ value: 'customer.created', label: 'Customer Created', category: 'Customers' },
-		{ value: 'customer.updated', label: 'Customer Updated', category: 'Customers' },
 		{ value: 'contact.created', label: 'Contact Created', category: 'Contacts' },
 		{ value: 'contact.unsubscribed', label: 'Contact Unsubscribed', category: 'Contacts' },
 		{ value: 'email.sent', label: 'Email Sent', category: 'Email' },
+		{ value: 'email.delivered', label: 'Email Delivered', category: 'Email' },
 		{ value: 'email.bounced', label: 'Email Bounced', category: 'Email' },
+		{ value: 'email.complained', label: 'Marked as Spam', category: 'Email' },
 		{ value: 'email.opened', label: 'Email Opened', category: 'Email' },
 		{ value: 'email.clicked', label: 'Email Clicked', category: 'Email' }
 	];

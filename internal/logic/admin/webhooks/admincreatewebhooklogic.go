@@ -5,11 +5,11 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -41,8 +41,9 @@ func (l *AdminCreateWebhookLogic) AdminCreateWebhook(req *types.RegisterWebhookR
 		return nil, fmt.Errorf("webhook URL is required")
 	}
 
-	if len(req.Events) == 0 {
-		return nil, fmt.Errorf("at least one event is required")
+	events, err := webhook.EncodeEvents(req.Events)
+	if err != nil {
+		return nil, err
 	}
 
 	// Generate secret if not provided
@@ -56,13 +57,6 @@ func (l *AdminCreateWebhookLogic) AdminCreateWebhook(req *types.RegisterWebhookR
 		secret = hex.EncodeToString(secretBytes)
 	}
 
-	// Encode events as JSON string
-	eventsJSON, err := json.Marshal(req.Events)
-	if err != nil {
-		l.Errorf("Failed to encode events: %v", err)
-		return nil, fmt.Errorf("failed to encode events")
-	}
-
 	activeVal := int64(1)
 	if !req.Active {
 		activeVal = 0
@@ -73,7 +67,7 @@ func (l *AdminCreateWebhookLogic) AdminCreateWebhook(req *types.RegisterWebhookR
 		OrgID:  orgID,
 		Url:    req.Url,
 		Secret: secret,
-		Events: string(eventsJSON),
+		Events: events,
 		Active: sql.NullInt64{Int64: activeVal, Valid: true},
 	})
 	if err != nil {

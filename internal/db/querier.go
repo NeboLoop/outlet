@@ -251,6 +251,7 @@ type Querier interface {
 	GetCampaignSend(ctx context.Context, id string) (CampaignSend, error)
 	GetCampaignSendByTracking(ctx context.Context, trackingToken sql.NullString) (CampaignSend, error)
 	GetCampaignSendByTrackingToken(ctx context.Context, token sql.NullString) (GetCampaignSendByTrackingTokenRow, error)
+	GetCampaignSendEvent(ctx context.Context, id string) (GetCampaignSendEventRow, error)
 	GetConfirmationTemplate(ctx context.Context, sequenceID sql.NullString) (GetConfirmationTemplateRow, error)
 	GetContact(ctx context.Context, id string) (Contact, error)
 	GetContactByEmail(ctx context.Context, email string) (Contact, error)
@@ -368,6 +369,9 @@ type Querier interface {
 	GetPlatformSettingValue(ctx context.Context, key string) (GetPlatformSettingValueRow, error)
 	GetPlatformSettingsByCategory(ctx context.Context, category string) ([]PlatformSetting, error)
 	GetPlatformSettingsValues(ctx context.Context, category string) ([]GetPlatformSettingsValuesRow, error)
+	// Who and what an email was, for the events published when it is sent,
+	// opened or clicked. One query per table that records a send.
+	GetQueuedEmailEvent(ctx context.Context, id string) (GetQueuedEmailEventRow, error)
 	GetQueuedEmailOrgID(ctx context.Context, id string) (string, error)
 	// Mail sent with the brand's API key (the SDK and SMTP) in the last 7 days.
 	GetRecentAPIKeySends(ctx context.Context, orgID string) (GetRecentAPIKeySendsRow, error)
@@ -409,6 +413,7 @@ type Querier interface {
 	GetTransactionalSendByTracking(ctx context.Context, trackingToken sql.NullString) (TransactionalSend, error)
 	GetTransactionalSendByTrackingAndOrg(ctx context.Context, arg GetTransactionalSendByTrackingAndOrgParams) (GetTransactionalSendByTrackingAndOrgRow, error)
 	GetTransactionalSendByTrackingToken(ctx context.Context, token sql.NullString) (GetTransactionalSendByTrackingTokenRow, error)
+	GetTransactionalSendEvent(ctx context.Context, id string) (GetTransactionalSendEventRow, error)
 	GetTransactionalStats(ctx context.Context, templateID string) (GetTransactionalStatsRow, error)
 	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
 	GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error)

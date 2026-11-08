@@ -122,9 +122,11 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		events.WithReplay(100),
 	)
 	log.Printf("Event bus initialized")
+	// The store publishes contact and email events from the writes that make them
+	store.SetEvents(eventSubject)
 
 	// Initialize Tracking service (publishes opens and clicks on the event bus)
-	trackingService := tracking.New(store.Queries, eventSubject)
+	trackingService := tracking.New(store, eventSubject)
 
 	// Initialize and start Webhook Dispatcher for outbound webhook delivery
 	webhookDispatcher := webhook.NewDispatcher(store.Queries, eventSubject)

@@ -11,12 +11,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/events"
+
+	"github.com/google/uuid"
 )
 
 // Dispatcher delivers webhooks to registered endpoints when events occur.
@@ -60,18 +61,8 @@ func (d *Dispatcher) Start(ctx context.Context) error {
 	ctx, d.cancel = context.WithCancel(ctx)
 	d.mu.Unlock()
 
-	// Subscribe to all webhook-dispatchable events
-	eventTopics := []string{
-		// Contact events
-		events.TopicContactCreated,
-		events.TopicContactUnsubscribed,
-
-		// Email events
-		events.TopicEmailSent,
-		events.TopicEmailBounced,
-		events.TopicEmailOpened,
-		events.TopicEmailClicked,
-	}
+	// Subscribe to every event a webhook can subscribe to
+	eventTopics := Events
 
 	for _, topic := range eventTopics {
 		topic := topic // capture for closure
@@ -119,10 +110,7 @@ func (d *Dispatcher) handleEvent(ctx context.Context, topic string, data interfa
 		if wh.Active.Valid && wh.Active.Int64 == 0 {
 			continue
 		}
-		// Events is stored as comma-separated string in SQLite
-		eventList := strings.Split(wh.Events, ",")
-		for _, event := range eventList {
-			event = strings.TrimSpace(event)
+		for _, event := range DecodeEvents(wh.Events) {
 			if event == topic || event == "*" {
 				matchingWebhooks = append(matchingWebhooks, wh)
 				break
@@ -228,6 +216,7 @@ func (d *Dispatcher) deliverWebhook(ctx context.Context, webhook db.Webhook, eve
 // logDelivery records the webhook delivery attempt.
 func (d *Dispatcher) logDelivery(ctx context.Context, webhookID string, event string, payload []byte, statusCode int, response, errMsg string, durationMs int) {
 	_, err := d.db.CreateWebhookLog(ctx, db.CreateWebhookLogParams{
+		ID:         uuid.NewString(),
 		WebhookID:  webhookID,
 		Event:      event,
 		Payload:    string(payload),

@@ -3,10 +3,8 @@ package sdk
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
-	"github.com/outlet-sh/outlet/internal/events"
 	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -79,16 +77,6 @@ func (l *CreateContactLogic) CreateContact(req *types.ContactRequest) (resp *typ
 	}
 
 	l.Infof("Created contact: org=%s id=%s email=%s", orgID, contact.ID, contact.Email)
-
-	// Emit contact.created event for rules engine
-	if l.svcCtx.Events != nil {
-		_ = events.Emit(l.svcCtx.Events, events.TopicContactCreated, events.ContactEvent{
-			OrgID:     orgID,
-			ContactID: contact.ID,
-			Email:     contact.Email,
-			Timestamp: time.Now(),
-		})
-	}
 
 	return &types.ContactResponse{
 		Id:    contact.ID,
