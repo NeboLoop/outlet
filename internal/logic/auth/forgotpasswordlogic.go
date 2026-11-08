@@ -61,35 +61,9 @@ func (l *ForgotPasswordLogic) ForgotPassword(req *types.ForgotPasswordRequest) (
 		return &types.ForgotPasswordResponse{Message: successMessage}, nil
 	}
 
-	// Delete any existing password reset tokens for this user
-	err = l.svcCtx.DB.DeleteAuthTokensByUser(l.ctx, db.DeleteAuthTokensByUserParams{
-		UserID:    user.ID,
-		TokenType: "password_reset",
-	})
+	resetToken, err := IssuePasswordReset(l.ctx, l.svcCtx.DB, user.ID)
 	if err != nil {
-		l.Errorf("Error deleting existing reset tokens: %v", err)
-		// Continue anyway
-	}
-
-	// Generate secure random token
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		l.Errorf("Error generating reset token: %v", err)
-		return &types.ForgotPasswordResponse{Message: successMessage}, nil
-	}
-	resetToken := hex.EncodeToString(tokenBytes)
-	expiresAt := time.Now().Add(1 * time.Hour) // Token valid for 1 hour
-
-	// Store reset token
-	_, err = l.svcCtx.DB.CreateAuthToken(l.ctx, db.CreateAuthTokenParams{
-		ID:        generateUUID(),
-		UserID:    user.ID,
-		Token:     resetToken,
-		TokenType: "password_reset",
-		ExpiresAt: expiresAt.Format(time.RFC3339),
-	})
-	if err != nil {
-		l.Errorf("Error storing reset token: %v", err)
+		l.Errorf("Error issuing reset token: %v", err)
 		return &types.ForgotPasswordResponse{Message: successMessage}, nil
 	}
 
@@ -111,7 +85,7 @@ func (l *ForgotPasswordLogic) ForgotPassword(req *types.ForgotPasswordRequest) (
 // passwordResetMessage is the email with a person's reset link. The link
 // opens the app's reset page, /auth/reset-password.
 func passwordResetMessage(baseURL, to, name, token string) emailsvc.Message {
-	resetURL := fmt.Sprintf("%s/auth/reset-password?token=%s", strings.TrimSuffix(baseURL, "/"), url.QueryEscape(token))
+	resetURL := ResetURL(baseURL, token)
 	body := fmt.Sprintf(`
 <html>
 <body>
@@ -126,4 +100,30 @@ func passwordResetMessage(baseURL, to, name, token string) emailsvc.Message {
 </body>
 </html>`, html.EscapeString(name), resetURL)
 	return emailsvc.Message{To: to, Subject: "Reset your password", HTML: body}
+}
+
+// IssuePasswordReset replaces a user's reset tokens with a new one, good for
+// an hour and once. It is the one way a reset is issued: "Forgot your
+// password?" emails it, and `outlet reset-link` prints it.
+func IssuePasswordReset(ctx context.Context, q db.Querier, userID string) (string, error) {
+	if err := q.DeleteAuthTokensByUser(ctx, db.DeleteAuthTokensByUserParams{UserID: userID, TokenType: "password_reset"}); err != nil {
+		return "", fmt.Errorf("delete old reset tokens: %w", err)
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(b)
+	if _, err := q.CreateAuthToken(ctx, db.CreateAuthTokenParams{
+		ID: generateUUID(), UserID: userID, Token: token, TokenType: "password_reset",
+		ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339),
+	}); err != nil {
+		return "", fmt.Errorf("store reset token: %w", err)
+	}
+	return token, nil
+}
+
+// ResetURL is the app's reset page for a token.
+func ResetURL(baseURL, token string) string {
+	return fmt.Sprintf("%s/auth/reset-password?token=%s", strings.TrimSuffix(baseURL, "/"), url.QueryEscape(token))
 }
