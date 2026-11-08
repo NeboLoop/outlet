@@ -54,8 +54,10 @@ const DefaultOutreachList = "Outreach"
 var fieldKeyRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
 
 // AddProspects imports a batch into an outreach list (made if missing):
-// it removes duplicates, checks suppression and verifies each address.
-// Addresses that fail verification are kept as held, and never sent to.
+// it removes duplicates and checks suppression. Each address added waits as
+// 'verifying' until VerifyProspects checks it (a check can take seconds, too
+// long to hold the request): it then becomes a prospect, or held if it
+// fails, and a held address is never sent to.
 func (s *Service) AddProspects(ctx context.Context, org db.Organization, listName string, inputs []ProspectInput) ([]ProspectResult, error) {
 	if len(inputs) > maxBatch {
 		return nil, refuse("at most %d prospects per call", maxBatch)
@@ -109,12 +111,7 @@ func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.
 	}
 	res.ID = contact.ID
 
-	status := "prospect"
-	ok, reason := s.verify(ctx, org.ID, address)
-	if !ok {
-		status = "held"
-	}
-	sub, err := s.db.CreateListSubscriber(ctx, db.CreateListSubscriberParams{ID: uuid.NewString(), ListID: list.ID, ContactID: contact.ID, Status: sql.NullString{String: status, Valid: true}})
+	sub, err := s.db.CreateListSubscriber(ctx, db.CreateListSubscriberParams{ID: uuid.NewString(), ListID: list.ID, ContactID: contact.ID, Status: sql.NullString{String: "verifying", Valid: true}})
 	if errors.Is(err, sql.ErrNoRows) {
 		res.Status, res.Reason = "duplicate", "already on "+list.Name
 		return res
@@ -144,12 +141,28 @@ func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.
 			return res
 		}
 	}
-	if status == "held" {
-		res.Status, res.Reason = "held", "failed verification: "+reason
-	} else {
-		res.Status = "added"
-	}
+	res.Status, res.Reason = "verifying", "added; the address is being verified, and becomes a prospect when it passes"
 	return res
+}
+
+// VerifyProspects checks the addresses waiting as 'verifying', a batch at a
+// time: each becomes a prospect, or held when it fails. The outbound worker
+// runs it.
+func (s *Service) VerifyProspects(ctx context.Context) {
+	rows, err := s.db.ListVerifyingProspects(ctx, maxBatch)
+	if err != nil {
+		return
+	}
+	for _, r := range rows {
+		if ctx.Err() != nil {
+			return
+		}
+		status := "prospect"
+		if ok, _ := s.verify(ctx, r.OrgID.String, r.Email); !ok {
+			status = "held"
+		}
+		_ = s.db.SetVerifiedProspectStatus(ctx, db.SetVerifiedProspectStatusParams{Status: sql.NullString{String: status, Valid: true}, ID: r.ID})
+	}
 }
 
 // ProspectQuery picks prospects: those on one list (empty: any), with one

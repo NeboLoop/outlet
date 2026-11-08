@@ -314,11 +314,21 @@ func (h *harness) setup() (sam, pat db.Mailbox) {
 	return sam, pat
 }
 
+// prospects adds a batch, runs the verification pass, and gives each added
+// address its status after it: prospect or held.
 func (h *harness) prospects(in ...ProspectInput) map[string]ProspectResult {
 	res, err := h.svc.AddProspects(h.ctx, h.org, "", in)
 	require.NoError(h.t, err)
+	h.svc.VerifyProspects(h.ctx)
+	list, err := h.svc.outreachList(h.ctx, h.org, "")
+	require.NoError(h.t, err)
 	out := map[string]ProspectResult{}
 	for _, r := range res {
+		if r.Status == "verifying" {
+			sub, err := h.store.GetListSubscriber(h.ctx, db.GetListSubscriberParams{ListID: list.ID, ContactID: r.ID})
+			require.NoError(h.t, err)
+			r.Status = sub.Status.String
+		}
 		if _, seen := out[r.Email]; !seen { // a duplicate later in the batch doesn't hide the first
 			out[r.Email] = r
 		}
@@ -377,8 +387,8 @@ func TestOutreachEndToEnd(t *testing.T) {
 		creator("risky@example.org", "Rae", "x"),
 		creator("ava@example.org", "Ava", "again"),
 	)
-	assert.Equal(t, "added", got["ava@example.org"].Status, got["ava@example.org"].Reason)
-	assert.Equal(t, "added", got["ben@example.org"].Status)
+	assert.Equal(t, "prospect", got["ava@example.org"].Status, got["ava@example.org"].Reason)
+	assert.Equal(t, "prospect", got["ben@example.org"].Status)
 	assert.Equal(t, "suppressed", got["dana@example.org"].Status)
 	assert.Equal(t, "refused", got["eve@example.org"].Status)
 	assert.Equal(t, "held", got["risky@example.org"].Status)
@@ -742,6 +752,8 @@ func TestOperations(t *testing.T) {
 	assert.True(t, o.Enabled)
 	assert.EqualValues(t, 1, o.Messages["draft"])
 	assert.EqualValues(t, 1, o.DraftsWaiting)
+	require.Len(t, o.Campaigns, 1)
+	assert.EqualValues(t, 1, o.Campaigns[0].Waiting, "the campaign's draft to approve")
 	assert.Len(t, o.Mailboxes, 2)
 	assert.Contains(t, strings.Join(o.Next, " "), "drafts wait")
 
@@ -759,6 +771,8 @@ func TestOperations(t *testing.T) {
 	require.NoError(t, err)
 	h.svc.Tick(ctx)
 	assert.Equal(t, 0, h.mail.count())
+	o, _ = h.svc.Overview(ctx, h.org)
+	assert.EqualValues(t, 0, o.Campaigns[0].Waiting, "approved and waiting to send is no draft")
 	require.NoError(t, h.svc.Pause(ctx, h.org, "campaign", camp.CampaignID, true))
 
 	// Everything paused: still nothing.
@@ -869,6 +883,7 @@ func TestListProspects(t *testing.T) {
 		creator("risky@example.org", "Risky", "c"), creator("ola@example.org", "Ola", "d"))
 	_, err := h.svc.AddProspects(ctx, h.org, "Second", []ProspectInput{creator("ivy@example.org", "Ivy", "a")})
 	require.NoError(t, err)
+	h.svc.VerifyProspects(ctx)
 	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "Spring", Steps: threeSteps, ProspectIDs: []string{got["kai@example.org"].ID}})
 	require.NoError(t, err)
 	h.svc.suppress(ctx, h.org.ID, "ola@example.org", "opted out elsewhere")
@@ -1106,4 +1121,31 @@ func TestOverviewOfANewBrand(t *testing.T) {
 	for _, field := range []string{`"domains":[]`, `"mailboxes":[]`, `"campaigns":[]`} {
 		assert.Contains(t, string(raw), field)
 	}
+}
+
+// Adding prospects never waits on verification: each address waits as
+// verifying, can't be enrolled, and the verification pass makes it a
+// prospect or holds it.
+func TestProspectsVerifyAfterAdding(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	h.setup()
+	res, err := h.svc.AddProspects(ctx, h.org, "", []ProspectInput{creator("ava@example.org", "Ava", "a"), creator("risky@example.org", "Rae", "b")})
+	require.NoError(t, err)
+	require.Len(t, res, 2)
+	list, err := h.svc.outreachList(ctx, h.org, "")
+	require.NoError(t, err)
+	for _, r := range res {
+		assert.Equal(t, "verifying", r.Status)
+		_, why := h.svc.enrollable(ctx, h.org, list, r.ID)
+		assert.Contains(t, why, "verifying", "not enrolled before it is verified")
+	}
+	h.svc.VerifyProspects(ctx)
+	status := func(id string) string {
+		sub, err := h.store.GetListSubscriber(ctx, db.GetListSubscriberParams{ListID: list.ID, ContactID: id})
+		require.NoError(t, err)
+		return sub.Status.String
+	}
+	assert.Equal(t, "prospect", status(res[0].ID))
+	assert.Equal(t, "held", status(res[1].ID))
 }

@@ -128,6 +128,19 @@ func (q *Queries) CountMailboxStatesForSequence(ctx context.Context, sequenceID 
 	return items, nil
 }
 
+const countOutreachDraftsInSequence = `-- name: CountOutreachDraftsInSequence :one
+SELECT COUNT(*) FROM email_queue eq JOIN email_templates et ON et.id = eq.template_id
+WHERE et.sequence_id = ? AND eq.kind = 'outreach' AND eq.status = 'draft'
+`
+
+// Emails of one outreach sequence written and waiting for approval.
+func (q *Queries) CountOutreachDraftsInSequence(ctx context.Context, sequenceID sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOutreachDraftsInSequence, sequenceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOutreachEmailsByStatus = `-- name: CountOutreachEmailsByStatus :many
 SELECT eq.status, COUNT(*) AS n FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
@@ -1911,6 +1924,51 @@ func (q *Queries) ListStuckOutreach(ctx context.Context, claimedAt sql.NullStrin
 	return items, nil
 }
 
+const listVerifyingProspects = `-- name: ListVerifyingProspects :many
+SELECT ls.id, ls.contact_id, c.org_id, c.email
+FROM list_subscribers ls
+JOIN contacts c ON c.id = ls.contact_id
+WHERE ls.status = 'verifying'
+ORDER BY ls.subscribed_at
+LIMIT ?1
+`
+
+type ListVerifyingProspectsRow struct {
+	ID        string         `json:"id"`
+	ContactID string         `json:"contact_id"`
+	OrgID     sql.NullString `json:"org_id"`
+	Email     string         `json:"email"`
+}
+
+// Prospects added but not yet verified, oldest first, across brands.
+func (q *Queries) ListVerifyingProspects(ctx context.Context, limitCount int64) ([]ListVerifyingProspectsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listVerifyingProspects, limitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVerifyingProspectsRow
+	for rows.Next() {
+		var i ListVerifyingProspectsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContactID,
+			&i.OrgID,
+			&i.Email,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markOutreachSent = `-- name: MarkOutreachSent :exec
 UPDATE email_queue SET status = 'sent', sent_at = ?, error_message = NULL WHERE id = ?
 `
@@ -2611,6 +2669,22 @@ type SetSequenceStateMailboxParams struct {
 
 func (q *Queries) SetSequenceStateMailbox(ctx context.Context, arg SetSequenceStateMailboxParams) error {
 	_, err := q.db.ExecContext(ctx, setSequenceStateMailbox, arg.MailboxID, arg.ID)
+	return err
+}
+
+const setVerifiedProspectStatus = `-- name: SetVerifiedProspectStatus :exec
+UPDATE list_subscribers SET status = ?1
+WHERE id = ?2 AND status = 'verifying'
+`
+
+type SetVerifiedProspectStatusParams struct {
+	Status sql.NullString `json:"status"`
+	ID     string         `json:"id"`
+}
+
+// A verified prospect becomes 'prospect' (passed) or 'held' (failed).
+func (q *Queries) SetVerifiedProspectStatus(ctx context.Context, arg SetVerifiedProspectStatusParams) error {
+	_, err := q.db.ExecContext(ctx, setVerifiedProspectStatus, arg.Status, arg.ID)
 	return err
 }
 

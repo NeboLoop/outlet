@@ -5,6 +5,7 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	adminapikeys "github.com/outlet-sh/outlet/internal/handler/admin/apikeys"
 	adminauth "github.com/outlet-sh/outlet/internal/handler/admin/auth"
@@ -1054,6 +1055,16 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/check",
 					Handler: adminvalidation.AdminValidateEmailHandler(serverCtx),
 				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin/validation"),
+		rest.WithTimeout(30000*time.Millisecond),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
 				{
 					Method:  http.MethodPost,
 					Path:    "/jobs",
@@ -1604,6 +1615,16 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/",
 					Handler: sdkvalidation.ValidateEmailHandler(serverCtx),
 				},
+			}...,
+		),
+		rest.WithPrefix("/sdk/v1/validate"),
+		rest.WithTimeout(30000*time.Millisecond),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.APIKeyAuth},
+			[]rest.Route{
 				{
 					Method:  http.MethodPost,
 					Path:    "/batch",

@@ -105,6 +105,8 @@ type Querier interface {
 	// SES account, so a second brand holding the same domain could send as it
 	// or delete it from SES.
 	CountOtherBrandsWithDomain(ctx context.Context, arg CountOtherBrandsWithDomainParams) (int64, error)
+	// Emails of one outreach sequence written and waiting for approval.
+	CountOutreachDraftsInSequence(ctx context.Context, sequenceID sql.NullString) (int64, error)
 	CountOutreachEmailsByStatus(ctx context.Context, orgID sql.NullString) ([]CountOutreachEmailsByStatusRow, error)
 	// Whether a From domain belongs to a pathway.
 	CountPathwayDomain(ctx context.Context, arg CountPathwayDomainParams) (int64, error)
@@ -617,6 +619,8 @@ type Querier interface {
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
 	ListValidationJobs(ctx context.Context, arg ListValidationJobsParams) ([]ValidationJob, error)
 	ListValidationResults(ctx context.Context, arg ListValidationResultsParams) ([]EmailValidation, error)
+	// Prospects added but not yet verified, oldest first, across brands.
+	ListVerifyingProspects(ctx context.Context, limitCount int64) ([]ListVerifyingProspectsRow, error)
 	ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeliveriesParams) ([]WebhookDelivery, error)
 	ListWebhookLogs(ctx context.Context, arg ListWebhookLogsParams) ([]WebhookLog, error)
 	// For each webhook of a brand with deliveries waiting: how many, and when
@@ -736,6 +740,8 @@ type Querier interface {
 	SetSequenceActive(ctx context.Context, arg SetSequenceActiveParams) error
 	SetSequenceStateMailbox(ctx context.Context, arg SetSequenceStateMailboxParams) error
 	SetUserEmailVerified(ctx context.Context, id string) error
+	// A verified prospect becomes 'prospect' (passed) or 'held' (failed).
+	SetVerifiedProspectStatus(ctx context.Context, arg SetVerifiedProspectStatusParams) error
 	SkipOutreachEmail(ctx context.Context, arg SkipOutreachEmailParams) (int64, error)
 	StartValidationJob(ctx context.Context, arg StartValidationJobParams) (int64, error)
 	// Ends a person's sequence: a reply, bounce, opt-out or complaint.

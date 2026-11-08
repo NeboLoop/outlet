@@ -87,7 +87,11 @@ func (s *Service) CampaignResults(ctx context.Context, c db.EmailSequence, steps
 		byStep[x.Position] = x
 	}
 	r.Reached = byStep[1].Sent
-	r.Waiting = max(0, r.InProgress-r.Reached)
+	// Drafts waiting are the campaign's emails still to approve; an approved
+	// email waiting for its window or spacing is not one.
+	if r.Waiting, err = s.db.CountOutreachDraftsInSequence(ctx, seqID); err != nil {
+		return r, err
+	}
 	if e, err := s.db.OutreachPeopleEngaged(ctx, seqID); err == nil {
 		r.Opened, r.Clicked = e.Opened, e.Clicked
 	}
