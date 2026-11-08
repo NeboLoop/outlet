@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -120,9 +121,6 @@
 		return of > 0 ? `${((n / of) * 100).toFixed(1)}%` : '–';
 	}
 
-	function when(iso?: string): string {
-		return iso ? new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z').toLocaleString() : '';
-	}
 
 	const statusVariant: Record<string, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
 		draft: 'default',
@@ -169,11 +167,11 @@
 				</div>
 				<p class="mt-1 text-sm text-text-muted truncate">{campaign.subject}</p>
 				{#if campaign.status === 'scheduled' && campaign.scheduled_at}
-					<p class="mt-1 text-sm text-text-muted">Goes out {when(campaign.scheduled_at)}</p>
+					<p class="mt-1 text-sm text-text-muted">Goes out {formatDate(campaign.scheduled_at, 'datetime')}</p>
 				{:else if campaign.completed_at}
-					<p class="mt-1 text-sm text-text-muted">Finished {when(campaign.completed_at)}</p>
+					<p class="mt-1 text-sm text-text-muted">Finished {formatDate(campaign.completed_at, 'datetime')}</p>
 				{:else if campaign.started_at}
-					<p class="mt-1 text-sm text-text-muted">Started {when(campaign.started_at)}</p>
+					<p class="mt-1 text-sm text-text-muted">Started {formatDate(campaign.started_at, 'datetime')}</p>
 				{/if}
 			</div>
 			{#if editable}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -37,8 +38,7 @@
 		jobStatusVariant,
 		parseCSV,
 		detectEmailColumn,
-		extractEmails,
-		formatDate
+		extractEmails
 	} from '$lib/validation';
 
 	let basePath = $derived(`/${$page.params.brandSlug}`);
@@ -363,7 +363,7 @@
 					</div>
 					<div class="flex justify-between gap-4">
 						<dt>Checked</dt>
-						<dd>{formatDate(checkResult.processed_at)}</dd>
+						<dd>{formatDate(checkResult.processed_at, 'datetime') || '-'}</dd>
 					</div>
 				</dl>
 			</div>
@@ -456,7 +456,7 @@
 									<span class="text-text-muted">-</span>
 								{/if}
 							</td>
-							<td class="text-text-muted whitespace-nowrap">{formatDate(job.created_at)}</td>
+							<td class="text-text-muted whitespace-nowrap">{formatDate(job.created_at, 'datetime') || '-'}</td>
 						</tr>
 					{/each}
 				</tbody>

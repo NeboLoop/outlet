@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import {
 		listOutboundReplies,
 		answerOutboundReply,
@@ -8,7 +9,7 @@
 	} from '$lib/api';
 	import { Button, Alert, LoadingSpinner, EmptyState, Badge, DropdownMenu, Textarea } from '$lib/components/ui';
 	import { MessageSquare, ChevronDown } from '@lucide/svelte';
-	import { CLASSIFICATIONS, classificationLabel, errorMessage, when } from '../shared';
+	import { CLASSIFICATIONS, classificationLabel, errorMessage } from '../shared';
 
 	let handled = $state(false);
 	let loading = $state(true);
@@ -120,7 +121,7 @@
 					<div class="min-w-0">
 						<p class="font-medium text-text">{r.from_email}</p>
 						<p class="text-sm text-text">{r.subject}</p>
-						<p class="text-xs text-text-muted">{when(r.received_at)}</p>
+						<p class="text-xs text-text-muted">{formatDate(r.received_at, 'datetime')}</p>
 					</div>
 					<Badge variant={badgeVariant[r.classification] || 'default'} size="sm">
 						{classificationLabel(r.classification)}

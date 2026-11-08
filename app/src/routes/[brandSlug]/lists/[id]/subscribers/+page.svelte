@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import {
 		listListSubscribers,
@@ -239,7 +240,7 @@
 						{/if}
 						<td class="text-text-muted">
 							{#if subscriber.subscribed_at}
-								{new Date(subscriber.subscribed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+								{formatDate(subscriber.subscribed_at)}
 							{:else}
 								-
 							{/if}
@@ -437,7 +438,7 @@
 									<div class="flex justify-between">
 										<dt class="text-base-content/60">Subscribed</dt>
 										<dd class="font-medium">
-											{subscriberDetail.subscribed_at ? new Date(subscriberDetail.subscribed_at).toLocaleDateString() : '-'}
+											{formatDate(subscriberDetail.subscribed_at) || '-'}
 										</dd>
 									</div>
 									<div class="flex justify-between">
@@ -458,9 +459,9 @@
 										<dt class="text-base-content/60">Last Activity</dt>
 										<dd class="font-medium">
 											{subscriberDetail.last_open_at
-												? new Date(subscriberDetail.last_open_at).toLocaleDateString()
+												? formatDate(subscriberDetail.last_open_at)
 												: subscriberDetail.last_email_at
-													? new Date(subscriberDetail.last_email_at).toLocaleDateString()
+													? formatDate(subscriberDetail.last_email_at)
 													: '-'}
 										</dd>
 									</div>
@@ -504,7 +505,7 @@
 													<tr>
 														<td class="font-medium">{activity.campaign_name || activity.campaign_subject || 'Unknown'}</td>
 														<td class="text-center text-base-content/60">
-															{activity.sent_at ? new Date(activity.sent_at).toLocaleDateString() : '-'}
+															{formatDate(activity.sent_at) || '-'}
 														</td>
 														<td class="text-center">
 															{#if activity.opened_at}
@@ -540,7 +541,7 @@
 												<div>
 													<p class="font-medium">{enrollment.sequence_name || 'Unknown Sequence'}</p>
 													<p class="text-xs text-base-content/60">
-														Step {enrollment.current_position} • Started {enrollment.started_at ? new Date(enrollment.started_at).toLocaleDateString() : '-'}
+														Step {enrollment.current_position} • Started {formatDate(enrollment.started_at) || '-'}
 													</p>
 												</div>
 												<div>

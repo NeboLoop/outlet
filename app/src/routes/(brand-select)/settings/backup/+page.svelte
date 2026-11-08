@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import * as api from '$lib/api';
 	import type { BackupInfo, BackupSettingsResponse } from '$lib/api';
 	import { getToken } from '$lib/auth';
@@ -228,10 +229,6 @@
 		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 	}
 
-	function formatDate(dateStr: string): string {
-		if (!dateStr) return '-';
-		return new Date(dateStr).toLocaleString();
-	}
 </script>
 
 <svelte:head>
@@ -327,7 +324,7 @@
 											<Badge type="secondary">{backup.status}</Badge>
 										{/if}
 									</td>
-									<td class="py-2 px-3 text-sm text-text-muted">{formatDate(backup.started_at)}</td>
+									<td class="py-2 px-3 text-sm text-text-muted">{formatDate(backup.started_at, 'datetime') || '-'}</td>
 									<td class="py-2 px-3 text-right">
 										<div class="flex items-center justify-end gap-1">
 											{#if backup.status === 'completed'}
@@ -503,7 +500,7 @@
 					</div>
 					{#if settings?.last_backup_at}
 						<p class="text-sm text-text-muted">
-							Last backup: {formatDate(settings.last_backup_at)}
+							Last backup: {formatDate(settings.last_backup_at, 'datetime') || '-'}
 						</p>
 					{/if}
 				{/if}

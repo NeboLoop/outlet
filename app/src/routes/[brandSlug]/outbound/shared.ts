@@ -9,11 +9,6 @@ export function percent(rate: number): string {
 	return `${(rate || 0).toFixed(1)}%`;
 }
 
-export function when(value?: string): string {
-	if (!value) return '';
-	const d = new Date(value);
-	return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
-}
 
 export const BOUNCE_LIMIT = 3;
 

@@ -4,6 +4,7 @@
 -->
 
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { Check, Hash, Mail, Eye, MousePointerClick } from '@lucide/svelte';
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
@@ -123,13 +124,6 @@
 		}
 	}
 
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		});
-	}
 
 	function getOpenRate(campaign: CampaignInfo): string {
 		if (campaign.sent_count === 0) return '0%';

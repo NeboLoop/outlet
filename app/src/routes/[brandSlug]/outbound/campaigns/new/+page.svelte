@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -10,7 +11,7 @@
 	} from '$lib/api';
 	import { Button, Alert, LoadingSpinner, Input, Textarea, Toggle, Select, Checkbox, EmptyState } from '$lib/components/ui';
 	import { ArrowLeft, Plus, Trash2, Users } from '@lucide/svelte';
-	import { errorMessage, when } from '../../shared';
+	import { errorMessage } from '../../shared';
 
 	const MAX_STEPS = 5;
 	const MAX_PROSPECTS = 100;
@@ -319,7 +320,7 @@
 				{#each preview.drafts || [] as d}
 					<div class="rounded-lg border border-border p-4">
 						<p class="text-xs text-text-muted">
-							From {d.from} to {d.to}{#if d.sends_after}, sends after {when(d.sends_after)}{/if}
+							From {d.from} to {d.to}{#if d.sends_after}, sends after {formatDate(d.sends_after, 'datetime')}{/if}
 						</p>
 						<p class="font-medium text-text mt-1">{d.subject}</p>
 						<p class="text-sm text-text mt-2 whitespace-pre-line">{d.body}</p>

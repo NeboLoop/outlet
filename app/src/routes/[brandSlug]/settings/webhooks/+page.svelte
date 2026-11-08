@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import * as api from '$lib/api';
 	import type { WebhookInfo } from '$lib/api';
 	import {
@@ -180,10 +181,6 @@
 		navigator.clipboard.writeText(createdSecret);
 	}
 
-	function formatDate(dateStr?: string): string {
-		if (!dateStr) return 'Never';
-		return new Date(dateStr).toLocaleString();
-	}
 </script>
 
 <div class="space-y-6">
@@ -262,7 +259,7 @@
 								</div>
 							</td>
 							<td class="text-sm text-text-muted">
-								{formatDate(webhook.last_delivery_at)}
+								{formatDate(webhook.last_delivery_at, 'datetime') || 'Never'}
 							</td>
 							<td>
 								<div class="flex items-center justify-end gap-2">
@@ -447,7 +444,7 @@
 								{log.duration_ms || 0}ms
 							</td>
 							<td class="text-sm text-text-muted">
-								{formatDate(log.delivered_at)}
+								{formatDate(log.delivered_at, 'datetime') || 'Never'}
 							</td>
 						</tr>
 					{/each}

@@ -78,11 +78,6 @@
 		return (rate * 100).toFixed(1) + '%';
 	}
 
-	function formatDate(dateString: string): string {
-		if (!dateString) return 'N/A';
-		const date = new Date(dateString);
-		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-	}
 
 	// Calculate total subscribers across all lists
 	let totalSubscribers = $derived(lists.reduce((sum, list) => sum + (list.subscriber_count || 0), 0));

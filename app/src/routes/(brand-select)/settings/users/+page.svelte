@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { listUsers, createUser, updateUser, deleteUser, type UserInfo } from '$lib/api';
 	import { Button, Card, Input, Select, Badge, Modal, AlertDialog, Alert, LoadingSpinner, SaveButton } from '$lib/components/ui';
 	import { Plus, Users } from '@lucide/svelte';
@@ -160,14 +161,6 @@
 		return roles.find((r) => r.value === role)?.label ?? role;
 	}
 
-	function formatDate(dateString: string): string {
-		if (!dateString) return 'N/A';
-		return new Date(dateString).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		});
-	}
 </script>
 
 <svelte:head>
@@ -231,7 +224,7 @@
 						</div>
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-text-muted mr-4">
-								Added {formatDate(user.created_at)}
+								Added {formatDate(user.created_at) || 'N/A'}
 							</span>
 							<Button type="secondary" size="sm" onclick={() => openEditModal(user)}>
 								Edit
