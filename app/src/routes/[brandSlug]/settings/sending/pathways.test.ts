@@ -10,6 +10,7 @@ function pathway(id: string, provider: string): SendingPathway {
 		kinds: [],
 		aws_keys_set: false,
 		smtp_password_set: false,
+		mailbox_service_key_set: false,
 		limits: {
 			daily_limit: 0,
 			warmup_start: 0,
