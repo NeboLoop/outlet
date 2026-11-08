@@ -35,6 +35,7 @@ type ServiceContext struct {
 	APIKeyMiddleware  *middleware.APIKeyMiddleware
 	AuthRateLimit     rest.Middleware
 	EmailService      *email.Service
+	Sequences         *email.SequenceService
 	CryptoService     *crypto.Service
 	Tracking          *tracking.Service
 	Events            *events.Subject
@@ -150,6 +151,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		signalNet = &signalnet.Client{HubURL: c.SignalNet.HubURL, InstanceKey: c.SignalNet.InstanceKey}
 	}
 	validationService := validation.New(store, c.Validation, signalNet)
+	sequences := email.NewSequenceServiceWithBaseURL(store, emailService, c.App.BaseURL)
 
 	return &ServiceContext{
 		Config:            c,
@@ -159,6 +161,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		APIKeyMiddleware:  apiKeyMiddleware,
 		AuthRateLimit:     authRateLimiter.Handle,
 		EmailService:      emailService,
+		Sequences:         sequences,
 		CryptoService:     cryptoService,
 		Tracking:          trackingService,
 		Events:            eventSubject,
@@ -168,7 +171,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 			ProtectedDomains: strings.Split(c.Outbound.ProtectedDomains, ","),
 			TrackingTarget:   publicHost(c.App.BaseURL),
 			Mailer:           emailService,
-			Sequences:        email.NewSequenceServiceWithBaseURL(store, emailService, c.App.BaseURL),
+			Sequences:        sequences,
 			Verify: func(ctx context.Context, orgID, address string) (bool, string) {
 				res, err := validationService.Validate(ctx, orgID, address, "outbound")
 				if err != nil {

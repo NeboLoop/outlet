@@ -13,10 +13,12 @@ import (
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/utils"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 func int64ToBool(i sql.NullInt64) bool {
@@ -85,7 +87,7 @@ type EmailInput struct {
 
 	// Sequence fields
 	ListID       string `json:"list_id,omitempty" jsonschema:"List ID to attach sequence to (sequence.create) or filter by (sequence.list)"`
-	TriggerEvent string `json:"trigger_event,omitempty" jsonschema:"Event that starts sequence: on_subscribe, on_purchase, manual"`
+	TriggerEvent string `json:"trigger_event,omitempty" jsonschema:"Event that starts sequence: signup (when a subscription to the list becomes active) or manual"`
 	SequenceType string `json:"sequence_type,omitempty" jsonschema:"Type: lifecycle, promotional, transactional"`
 	Active       *bool  `json:"active,omitempty" jsonschema:"Whether resource is active"`
 
@@ -807,7 +809,7 @@ func handleSequenceCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	slug := generateSlug(input.Name)
 	triggerEvent := input.TriggerEvent
 	if triggerEvent == "" {
-		triggerEvent = "on_subscribe"
+		triggerEvent = email.TriggerSignup
 	}
 	sequenceType := input.SequenceType
 	if sequenceType == "" {
@@ -1514,6 +1516,9 @@ func handleListSubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 			Status:    "already_subscribed",
 			Message:   "Contact is already subscribed to this list",
 		}, nil
+	}
+	if err := toolCtx.Svc().Sequences.SubscriptionActivated(ctx, contact.ID, listID); err != nil {
+		logx.Errorf("Failed to start signup sequence for contact %s: %v", contact.ID, err)
 	}
 
 	return nil, ListSubscribeOutput{

@@ -168,6 +168,17 @@ func (s *SequenceService) SendConfirmationEmail(ctx context.Context, contactID s
 	return verificationToken, nil
 }
 
+// TriggerSignup is the trigger of a list's "On signup" autoresponder.
+const TriggerSignup = "signup"
+
+// SubscriptionActivated is called whenever a contact's subscription to a list
+// becomes active: a double opt-in confirmed, or a single opt-in subscribe. It
+// starts the list's signup sequence. A contact already in that sequence stays
+// where they are, so calling it again for the same subscription is safe.
+func (s *SequenceService) SubscriptionActivated(ctx context.Context, contactID string, listID int64) error {
+	return s.StartSequence(ctx, contactID, listID, TriggerSignup)
+}
+
 // StartSequence initiates an email sequence for a contact
 func (s *SequenceService) StartSequence(ctx context.Context, contactID string, listID int64, triggerEvent string) error {
 	// Get the sequence for this trigger
