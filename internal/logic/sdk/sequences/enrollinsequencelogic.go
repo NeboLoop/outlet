@@ -121,7 +121,7 @@ func (l *EnrollInSequenceLogic) EnrollInSequence(req *types.EnrollSequenceReques
 			ID:            uuid.New().String(),
 			ContactID:     sql.NullString{String: contact.ID, Valid: true},
 			TemplateID:    sql.NullString{String: template.ID, Valid: true},
-			ScheduledFor:  scheduledFor.Format(time.RFC3339),
+			ScheduledFor:  scheduledFor.UTC().Format(time.RFC3339),
 			TrackingToken: sql.NullString{String: trackingToken, Valid: true},
 		})
 		if queueErr != nil {

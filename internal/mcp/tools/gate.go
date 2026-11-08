@@ -127,6 +127,9 @@ var policy = map[string]toolPolicy{
 		"domain.list": read(member), "domain.add": write(member), "domain.delete": write(member),
 		"domain.bulk_add": write(member),
 	}},
+	"validation": {resources: true, rules: map[string]rule{
+		"email.validate": read(member), "job.create": write(member), "job.get": read(member),
+	}},
 	"outreach_overview": {rules: map[string]rule{"get": obRead()}},
 	"setup_sending": {rules: map[string]rule{
 		"settings": obWrite(), "dns_token": obAdmin(), "add_domain": obAdmin(), "check_domain": obWrite(),

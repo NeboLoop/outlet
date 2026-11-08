@@ -2,12 +2,15 @@ package emailval
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/textproto"
+	"regexp"
 	"strings"
-	"sync"
+	"syscall"
 	"time"
 )
 
@@ -34,41 +37,6 @@ func (d DefaultSMTPDialer) DialSMTP(ctx context.Context, address string) (*textp
 		return nil, err
 	}
 	return textproto.NewConn(conn), nil
-}
-
-// smtpRateLimiter provides per-domain rate limiting to avoid blacklisting.
-var smtpRateLimiter = &rateLimiter{
-	domains:     make(map[string]time.Time),
-	minInterval: 2 * time.Second, // Minimum 2 seconds between probes to same domain
-}
-
-type rateLimiter struct {
-	mu          sync.Mutex
-	domains     map[string]time.Time
-	minInterval time.Duration
-}
-
-func (r *rateLimiter) wait(ctx context.Context, domain string) error {
-	r.mu.Lock()
-	lastProbe, exists := r.domains[domain]
-	r.mu.Unlock()
-
-	if exists {
-		waitTime := r.minInterval - time.Since(lastProbe)
-		if waitTime > 0 {
-			select {
-			case <-time.After(waitTime):
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-	}
-
-	r.mu.Lock()
-	r.domains[domain] = time.Now()
-	r.mu.Unlock()
-
-	return nil
 }
 
 // SMTPConfig provides configuration for SMTP verification.
@@ -102,193 +70,234 @@ func DefaultSMTPConfig() *SMTPConfig {
 	}
 }
 
-// checkSMTPMailbox verifies if a mailbox exists via SMTP.
-// It connects to the domain's MX servers and checks RCPT TO response.
-// This never sends actual email, only probes deliverability.
-//
-// IMPORTANT: SMTP verification should be used sparingly to avoid blacklisting.
-// Consider:
-// - Rate limiting (built-in, 2s between probes to same domain)
-// - Only checking high-value submissions
-// - Caching results to avoid repeated probes
-// - Using a dedicated IP for verification
+// checkSMTPMailbox resolves the domain's MX hosts and reports whether the mailbox accepts mail.
+// An inconclusive probe is returned as an error. probeMailbox is the probe itself.
 func checkSMTPMailbox(ctx context.Context, domain, fullEmail string, opts *Options) (bool, error) {
 	mxHosts, err := getMXHosts(ctx, domain)
 	if err != nil || len(mxHosts) == 0 {
 		return false, fmt.Errorf("no MX records for SMTP check: %w", err)
 	}
-
-	// Apply rate limiting to prevent blacklisting.
-	if err := smtpRateLimiter.wait(ctx, domain); err != nil {
-		return false, fmt.Errorf("rate limit wait cancelled: %w", err)
+	res := probeMailbox(ctx, domain, fullEmail, mxHosts, opts)
+	if res.Deliverable == nil {
+		return false, fmt.Errorf("SMTP probe inconclusive: %s", res.SubStatus)
 	}
-
-	dialer := opts.SMTPDialer
-	if dialer == nil {
-		dialer = DefaultSMTPDialer{Timeout: opts.Timeout}
-	}
-
-	smtpCfg := DefaultSMTPConfig()
-	maxRetries := smtpCfg.MaxRetries
-	if maxRetries <= 0 {
-		maxRetries = 2
-	}
-
-	// Try MX hosts in order until one responds cleanly.
-	var lastErr error
-	tried := 0
-	for _, host := range mxHosts {
-		if tried >= maxRetries {
-			break
-		}
-		tried++
-
-		// Remove trailing dot from MX host.
-		host = strings.TrimSuffix(host, ".")
-		addr := net.JoinHostPort(host, "25")
-
-		deliverable, err := smtpProbe(ctx, dialer, addr, fullEmail, smtpCfg)
-		if err == nil {
-			return deliverable, nil
-		}
-
-		// Check if this is a greylisting response - don't count as failure.
-		if isGreylistError(err) {
-			// Greylisting means the server is probably valid but wants us to retry later.
-			// Treat as "unknown but likely valid".
-			return true, nil
-		}
-
-		lastErr = err
-	}
-
-	if lastErr != nil {
-		return false, fmt.Errorf("all MX probes failed: %w", lastErr)
-	}
-	return false, errors.New("all MX probes failed")
+	return *res.Deliverable, nil
 }
 
-// isGreylistError checks if an error looks like a greylisting response.
-func isGreylistError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	// Common greylisting indicators.
-	return strings.Contains(msg, "451") ||
-		strings.Contains(msg, "greylist") ||
-		strings.Contains(msg, "try again") ||
-		strings.Contains(msg, "temporarily")
+// smtpStage is the point in the SMTP conversation a reply answers.
+type smtpStage int
+
+const (
+	stageGreeting smtpStage = iota
+	stageHelo
+	stageMail
+	stageRcpt
+)
+
+// smtpReply is one (possibly multi-line) server reply.
+type smtpReply struct {
+	code int
+	msg  string // lines joined with "\n", codes stripped
 }
 
-// smtpProbe performs a single SMTP probe to check if an address is deliverable.
-func smtpProbe(ctx context.Context, dialer SMTPDialer, addr, target string, cfg *SMTPConfig) (bool, error) {
+var enhancedCodeRe = regexp.MustCompile(`^([245]\.\d{1,3}\.\d{1,3})\b`)
+
+// enhanced returns the RFC 3463 enhanced status code (e.g. "5.1.1"), or "".
+func (r smtpReply) enhanced() string {
+	for _, line := range strings.Split(r.msg, "\n") {
+		if m := enhancedCodeRe.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+// probeOutcome is the result of one SMTP session against one MX host.
+type probeOutcome struct {
+	result     ProbeResult
+	blocked    bool  // a reply says the exit IP is blocked
+	connFailed bool  // dial failure or forcible disconnect
+	catchAll   *bool // catch-all verdict learned for the domain, nil when unknown
+}
+
+// smtpProbe runs one SMTP session: greeting, EHLO, MAIL FROM, RCPT target and, when
+// testCatchAll is set and the target was accepted, RSET + RCPT for a random local part.
+// ctx bounds all network I/O. No message is ever sent.
+func smtpProbe(ctx context.Context, dialer SMTPDialer, addr, domain, target string, testCatchAll bool, cfg *SMTPConfig) probeOutcome {
 	conn, err := dialer.DialSMTP(ctx, addr)
 	if err != nil {
-		return false, fmt.Errorf("dial failed: %w", err)
+		return probeOutcome{result: ProbeResult{SubStatus: SubFailedSMTPConnection}, connFailed: true}
 	}
 	defer conn.Close()
+	// Closing the connection unblocks any pending read once ctx is done.
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
 
-	// Read server greeting.
-	if err := expectCode(conn, "220"); err != nil {
-		return false, fmt.Errorf("greeting: %w", err)
+	fail := func(stage smtpStage, r smtpReply, err error) probeOutcome {
+		if err != nil {
+			res := classifyIOError(ctx, stage, err)
+			return probeOutcome{result: res, connFailed: res.SubStatus == SubForcibleDisconnect}
+		}
+		res, blocked := classifyReply(stage, r)
+		return probeOutcome{result: res, blocked: blocked}
 	}
 
-	// Send EHLO first (preferred), fall back to HELO.
 	heloHost := cfg.HeloHostname
 	if heloHost == "" {
 		heloHost = "localhost"
 	}
-
-	if err := conn.PrintfLine("EHLO %s", heloHost); err != nil {
-		return false, fmt.Errorf("EHLO send: %w", err)
-	}
-
-	// EHLO might have multi-line response, read until we get final line.
-	line, err := readFinalResponse(conn)
-	if err != nil {
-		return false, fmt.Errorf("EHLO response: %w", err)
-	}
-
-	// If EHLO failed, try HELO.
-	if !strings.HasPrefix(line, "250") {
-		if err := conn.PrintfLine("HELO %s", heloHost); err != nil {
-			return false, fmt.Errorf("HELO send: %w", err)
-		}
-		if err := expectCode(conn, "250"); err != nil {
-			return false, fmt.Errorf("HELO response: %w", err)
-		}
-	}
-
-	// Send MAIL FROM with a proper address.
 	fromDomain := cfg.FromDomain
 	if fromDomain == "" {
 		fromDomain = heloHost
 	}
-	if err := conn.PrintfLine("MAIL FROM:<verify@%s>", fromDomain); err != nil {
-		return false, fmt.Errorf("MAIL FROM send: %w", err)
-	}
-	if err := expectCode(conn, "250"); err != nil {
-		return false, fmt.Errorf("MAIL FROM response: %w", err)
-	}
 
-	// Send RCPT TO - this is the key check.
-	if err := conn.PrintfLine("RCPT TO:<%s>", target); err != nil {
-		return false, fmt.Errorf("RCPT TO send: %w", err)
+	r, err := smtpCommand(conn, "")
+	if err != nil || r.code != 220 {
+		return fail(stageGreeting, r, err)
 	}
-
-	line, err = conn.ReadLine()
-	if err != nil {
-		return false, fmt.Errorf("RCPT TO response: %w", err)
+	if r, err = smtpCommand(conn, "EHLO %s", heloHost); err != nil {
+		return fail(stageHelo, r, err)
 	}
-
-	// Send QUIT regardless of result.
-	_ = conn.PrintfLine("QUIT")
-
-	// 250, 251 = OK (mailbox exists or will be forwarded).
-	// 252 = Cannot verify, but will attempt delivery.
-	if strings.HasPrefix(line, "250") || strings.HasPrefix(line, "251") || strings.HasPrefix(line, "252") {
-		return true, nil
+	if r.code != 250 {
+		if r, err = smtpCommand(conn, "HELO %s", heloHost); err != nil || r.code != 250 {
+			return fail(stageHelo, r, err)
+		}
 	}
-
-	// 550, 551, 552, 553 = Mailbox does not exist or rejected.
-	if strings.HasPrefix(line, "55") {
-		return false, nil
+	if r, err = smtpCommand(conn, "MAIL FROM:<verify@%s>", fromDomain); err != nil || r.code != 250 {
+		return fail(stageMail, r, err)
+	}
+	if r, err = smtpCommand(conn, "RCPT TO:<%s>", target); err != nil {
+		return fail(stageRcpt, r, err)
+	}
+	res, blocked := classifyReply(stageRcpt, r)
+	out := probeOutcome{result: res, blocked: blocked}
+	defer conn.PrintfLine("QUIT")
+	if !isAccepted(res) || !testCatchAll {
+		return out
 	}
 
-	// 450, 451, 452 = Temporary failures (greylisting, rate limiting).
-	if strings.HasPrefix(line, "45") {
-		return false, fmt.Errorf("temporary rejection (greylist): %s", line)
+	// Catch-all check on the same session. If anything here fails the target's
+	// accept still stands; the domain's verdict is just left uncached.
+	if r, err = smtpCommand(conn, "RSET"); err != nil || r.code != 250 {
+		return out
 	}
-
-	// For other codes, treat as unknown.
-	return false, fmt.Errorf("unexpected RCPT response: %s", line)
+	if r, err = smtpCommand(conn, "MAIL FROM:<verify@%s>", fromDomain); err != nil || r.code != 250 {
+		return out
+	}
+	if r, err = smtpCommand(conn, "RCPT TO:<%s@%s>", randomLocalPart(), domain); err != nil {
+		return out
+	}
+	randRes, _ := classifyReply(stageRcpt, r)
+	switch {
+	case isAccepted(randRes):
+		yes := true
+		out.result.CatchAll = true
+		out.catchAll = &yes
+	case randRes.SubStatus == SubMailboxNotFound:
+		no := false
+		out.catchAll = &no
+	}
+	return out
 }
 
-// readFinalResponse reads SMTP responses until it gets the final line.
-// SMTP multi-line responses have "250-" for continuation and "250 " for final.
-func readFinalResponse(conn *textproto.Conn) (string, error) {
-	for {
-		line, err := conn.ReadLine()
-		if err != nil {
-			return "", err
+// smtpCommand sends a command (an empty format only reads, for the greeting) and reads the reply.
+func smtpCommand(conn *textproto.Conn, format string, args ...any) (smtpReply, error) {
+	if format != "" {
+		if err := conn.PrintfLine(format, args...); err != nil {
+			return smtpReply{}, err
 		}
-		// Check if this is the final line (code followed by space, not hyphen).
-		if len(line) >= 4 && line[3] == ' ' {
-			return line, nil
-		}
-		// Continue reading if it's a continuation line (code followed by hyphen).
 	}
+	code, msg, err := conn.ReadResponse(0)
+	if err != nil {
+		return smtpReply{}, err
+	}
+	return smtpReply{code: code, msg: msg}, nil
 }
 
-// expectCode reads a line and checks if it starts with the expected code.
-func expectCode(conn *textproto.Conn, code string) error {
-	line, err := conn.ReadLine()
-	if err != nil {
-		return err
+// randomLocalPart returns a local part no real mailbox will have.
+func randomLocalPart() string {
+	return strings.ToLower(rand.Text())
+}
+
+func isAccepted(r ProbeResult) bool {
+	return r.Deliverable != nil && *r.Deliverable
+}
+
+// classifyIOError maps an I/O failure on an open session to a sub-status.
+func classifyIOError(ctx context.Context, stage smtpStage, err error) ProbeResult {
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded) && stage == stageGreeting:
+		return ProbeResult{SubStatus: SubMailServerNoResponse}
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return ProbeResult{SubStatus: SubTimeoutExceeded}
+	case ctx.Err() != nil:
+		return ProbeResult{SubStatus: SubExceptionOccurred}
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF),
+		errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE), errors.Is(err, net.ErrClosed):
+		return ProbeResult{SubStatus: SubForcibleDisconnect}
 	}
-	if !strings.HasPrefix(line, code) {
-		return fmt.Errorf("expected %s, got: %s", code, line)
+	return ProbeResult{SubStatus: SubExceptionOccurred}
+}
+
+var (
+	notFoundPhrases = []string{"user unknown", "unknown user", "no such user", "does not exist", "mailbox unavailable",
+		"user not found", "recipient not found", "invalid recipient", "no mailbox"}
+	quotaPhrases  = []string{"quota", "mailbox full", "mailbox is full", "insufficient storage"}
+	blockPhrases  = []string{"block", "blacklist", "spamhaus", " listed", "reputation", "rbl", "dnsbl"}
+	policyIPWords = []string{"your ip", "client ip", "connecting ip", "ip address", "client host", "sending ip"}
+)
+
+// classifyReply maps a non-success reply (or any RCPT reply) to a probe result.
+// blocked reports a block signal against the exit IP.
+func classifyReply(stage smtpStage, r smtpReply) (res ProbeResult, blocked bool) {
+	text := strings.ToLower(r.msg)
+	enh := r.enhanced()
+	no := false
+	blockWording := containsAny(text, blockPhrases) ||
+		(strings.Contains(text, "policy") && containsAny(text, policyIPWords))
+
+	switch {
+	case stage == stageRcpt && (r.code == 250 || r.code == 251):
+		yes := true
+		return ProbeResult{Deliverable: &yes}, false
+	case r.code < 400:
+		// 252 (cannot verify) and stray 2xx/3xx replies prove nothing.
+		return ProbeResult{SubStatus: SubExceptionOccurred}, false
+	case stage == stageRcpt && (enh == "5.1.1" || enh == "5.1.10" || enh == "5.1.0"):
+		return ProbeResult{Deliverable: &no, SubStatus: SubMailboxNotFound}, false
+	case stage == stageRcpt && (r.code == 552 || enh == "5.2.2" || enh == "4.2.2" || containsAny(text, quotaPhrases)):
+		return ProbeResult{Deliverable: &no, SubStatus: SubMailboxQuotaExceeded}, false
+	case blockWording:
+		return ProbeResult{SubStatus: SubAntispamSystem}, true
+	case stage == stageRcpt && r.code >= 500 && containsAny(text, notFoundPhrases):
+		return ProbeResult{Deliverable: &no, SubStatus: SubMailboxNotFound}, false
+	case (r.code == 450 || r.code == 451 || enh == "4.7.1") && isGreylisted(text):
+		return ProbeResult{SubStatus: SubGreylisted}, false
+	case strings.HasPrefix(enh, "5.7."):
+		// 5.7.x before RCPT rejects the connecting host, not a mailbox.
+		return ProbeResult{SubStatus: SubAntispamSystem}, stage != stageRcpt
+	case stage == stageRcpt && (r.code == 550 || r.code == 551 || r.code == 553):
+		// Without block or quota signals, a permanent RCPT rejection means the mailbox is gone.
+		return ProbeResult{Deliverable: &no, SubStatus: SubMailboxNotFound}, false
+	case r.code < 500:
+		return ProbeResult{SubStatus: SubMailServerTempError}, false
+	case stage == stageGreeting && r.code == 554:
+		// 554 greeting: the server refuses to talk to this host.
+		return ProbeResult{SubStatus: SubAntispamSystem}, false
 	}
-	return nil
+	return ProbeResult{SubStatus: SubExceptionOccurred}, false
+}
+
+// isGreylisted reports whether reply text reads like greylisting.
+func isGreylisted(text string) bool {
+	return containsAny(strings.ToLower(text), []string{"greylist", "graylist", "try again", "temporarily", "retry later", "please retry"})
+}
+
+func containsAny(s string, subs []string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }

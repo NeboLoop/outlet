@@ -5,6 +5,7 @@
  */
 
 import { authStore } from '$lib/stores/auth.svelte';
+import { getToken } from '$lib/auth';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -105,7 +106,8 @@ class WebSocketClient {
 		this.setStatus('connecting');
 
 		const baseUrl = getWebSocketUrl();
-		const url = `${baseUrl}?clientId=${this.clientId}&userId=${this.userId}`;
+		const token = encodeURIComponent(getToken() ?? '');
+		const url = `${baseUrl}?clientId=${this.clientId}&token=${token}`;
 		console.log('[WebSocket] Connecting to:', url);
 
 		try {

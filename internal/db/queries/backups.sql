@@ -13,7 +13,7 @@ RETURNING *;
 UPDATE backup_history
 SET status = sqlc.arg(status),
     error_message = sqlc.arg(error_message),
-    completed_at = CASE WHEN sqlc.arg(status) IN ('completed', 'failed') THEN datetime('now') ELSE completed_at END
+    completed_at = CASE WHEN sqlc.arg(status) = 'completed' OR sqlc.arg(status) = 'failed' THEN datetime('now') ELSE completed_at END
 WHERE id = sqlc.arg(id)
 RETURNING *;
 

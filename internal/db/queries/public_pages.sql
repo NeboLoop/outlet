@@ -126,7 +126,7 @@ SELECT
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
-LEFT JOIN email_lists el ON el.id = ec.list_id
+LEFT JOIN email_lists el ON el.id = cs.list_id
 LEFT JOIN organizations o ON o.id = ec.org_id
 WHERE cs.tracking_token = sqlc.arg(token)
 LIMIT 1;

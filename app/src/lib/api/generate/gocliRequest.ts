@@ -45,9 +45,11 @@ export function genUrl(url: string, params: any) {
 
     const path: Array<string> = [];
     for (const key of Object.keys(params)) {
-        if (!ps.find((k) => k === key)) {
-            path.push(`${key}=${params[key]}`);
+        const value = params[key];
+        if (ps.find((k) => k === key) || value === undefined || value === null || value === '') {
+            continue;
         }
+        path.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
     }
 
     return url + (path.length > 0 ? `?${path.join('&')}` : '');
@@ -100,7 +102,20 @@ export async function request({
         ...config
     });
 
-    const result = await response.json();
+    // Not every failure is JSON (a proxy's HTML 404, an empty 502), so read
+    // the text first and report something a person can act on
+    const text = await response.text();
+    let result: any = null;
+    if (text) {
+        try {
+            result = JSON.parse(text);
+        } catch {
+            if (!response.ok) {
+                throw new Error(`Request failed with status ${response.status}`);
+            }
+            throw new Error('The server returned an unexpected response');
+        }
+    }
 
     if (!response.ok) {
         const errorMessage = result?.error || result?.message || `Request failed with status ${response.status}`;
@@ -116,8 +131,10 @@ function api<T>(
     req: any,
     config?: unknown
 ): Promise<T> {
+    // Generated GET and DELETE helpers pass their query parameters as the
+    // request object itself
     if (url.match(/:/) || method.match(/get|delete/i)) {
-        url = genUrl(url, req.params || req.forms);
+        url = genUrl(url, req.params || req.forms || req);
     }
     method = method.toLocaleLowerCase() as Method;
 

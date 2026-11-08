@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	emailsvc "github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -108,12 +109,11 @@ func (l *ForgotPasswordLogic) ForgotPassword(req *types.ForgotPasswordRequest) (
 </body>
 </html>`, user.Name, resetURL)
 
-		err := l.svcCtx.EmailService.SendEmail(
-			context.Background(),
-			email,
-			subject,
-			body,
-		)
+		err := l.svcCtx.EmailService.Send(context.Background(), emailsvc.Message{
+			To:      email,
+			Subject: subject,
+			HTML:    body,
+		})
 		if err != nil {
 			l.Errorf("Error sending password reset email: %v", err)
 		} else {

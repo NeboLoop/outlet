@@ -374,6 +374,84 @@
 	}
 }
 
+/* ===== Email Validation ===== */
+@layer components {
+	/* Stacked status bar (SVG rects sized via width attributes) */
+	.vstatus-bar {
+		@apply block w-full h-3 rounded-full overflow-hidden;
+		background-color: var(--color-bg-secondary);
+	}
+
+	.vstatus-dot {
+		@apply inline-block h-2.5 w-2.5 rounded-full flex-shrink-0;
+	}
+
+	.vstatus-bar-valid {
+		fill: var(--color-success);
+		background-color: var(--color-success);
+	}
+
+	.vstatus-bar-invalid {
+		fill: var(--color-error);
+		background-color: var(--color-error);
+	}
+
+	.vstatus-bar-catch-all {
+		fill: #facc15;
+		background-color: #facc15;
+	}
+
+	.vstatus-bar-unknown {
+		fill: var(--color-base-400);
+		background-color: var(--color-base-400);
+	}
+
+	.vstatus-bar-spamtrap {
+		fill: #991b1b;
+		background-color: #991b1b;
+	}
+
+	.vstatus-bar-abuse {
+		fill: #e11d48;
+		background-color: #e11d48;
+	}
+
+	.vstatus-bar-do-not-mail {
+		fill: #f97316;
+		background-color: #f97316;
+	}
+
+	/* Summary tile per status (clickable filter) */
+	.vstatus-tile {
+		@apply flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors;
+		background-color: var(--color-bg);
+		border-color: var(--color-border);
+	}
+
+	.vstatus-tile:hover {
+		background-color: var(--color-bg-secondary);
+	}
+
+	.vstatus-tile.active {
+		border-color: var(--color-primary);
+		background-color: color-mix(in srgb, var(--color-primary) 6%, transparent);
+	}
+
+	/* Key/value grid for a single check result */
+	.vresult-grid {
+		@apply grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm;
+	}
+
+	.vresult-grid dt {
+		color: var(--color-text-muted);
+	}
+
+	.vresult-grid dd {
+		@apply font-medium break-all;
+		color: var(--color-text);
+	}
+}
+
 /* ===== Reduced Motion ===== */
 @media (prefers-reduced-motion: reduce) {
 	*,

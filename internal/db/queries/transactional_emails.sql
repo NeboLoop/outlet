@@ -30,13 +30,14 @@ ORDER BY created_at DESC;
 UPDATE transactional_emails
 SET name = COALESCE(NULLIF(sqlc.arg(name), ''), name),
     slug = COALESCE(NULLIF(sqlc.arg(slug), ''), slug),
-    description = COALESCE(NULLIF(sqlc.arg(description), ''), description),
     subject = COALESCE(NULLIF(sqlc.arg(subject), ''), subject),
     html_body = COALESCE(NULLIF(sqlc.arg(html_body), ''), html_body),
-    plain_text = COALESCE(NULLIF(sqlc.arg(plain_text), ''), plain_text),
-    from_name = COALESCE(NULLIF(sqlc.arg(from_name), ''), from_name),
-    from_email = COALESCE(NULLIF(sqlc.arg(from_email), ''), from_email),
-    reply_to = COALESCE(NULLIF(sqlc.arg(reply_to), ''), reply_to),
+    -- Optional fields: NULL keeps the current value, '' clears it
+    description = CASE WHEN sqlc.narg(description) IS NULL THEN description ELSE NULLIF(sqlc.narg(description), '') END,
+    plain_text = CASE WHEN sqlc.narg(plain_text) IS NULL THEN plain_text ELSE NULLIF(sqlc.narg(plain_text), '') END,
+    from_name = CASE WHEN sqlc.narg(from_name) IS NULL THEN from_name ELSE NULLIF(sqlc.narg(from_name), '') END,
+    from_email = CASE WHEN sqlc.narg(from_email) IS NULL THEN from_email ELSE NULLIF(sqlc.narg(from_email), '') END,
+    reply_to = CASE WHEN sqlc.narg(reply_to) IS NULL THEN reply_to ELSE NULLIF(sqlc.narg(reply_to), '') END,
     is_active = COALESCE(sqlc.arg(is_active), is_active),
     updated_at = datetime('now')
 WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id)

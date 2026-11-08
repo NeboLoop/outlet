@@ -24,8 +24,10 @@ import (
 	adminsystem "github.com/outlet-sh/outlet/internal/handler/admin/system"
 	admintransactional "github.com/outlet-sh/outlet/internal/handler/admin/transactional"
 	adminusers "github.com/outlet-sh/outlet/internal/handler/admin/users"
+	adminvalidation "github.com/outlet-sh/outlet/internal/handler/admin/validation"
 	adminwebhooks "github.com/outlet-sh/outlet/internal/handler/admin/webhooks"
 	auth "github.com/outlet-sh/outlet/internal/handler/auth"
+	network "github.com/outlet-sh/outlet/internal/handler/network"
 	public "github.com/outlet-sh/outlet/internal/handler/public"
 	sdk "github.com/outlet-sh/outlet/internal/handler/sdk"
 	sdkcontacts "github.com/outlet-sh/outlet/internal/handler/sdk/contacts"
@@ -33,6 +35,7 @@ import (
 	sdksequences "github.com/outlet-sh/outlet/internal/handler/sdk/sequences"
 	sdkstats "github.com/outlet-sh/outlet/internal/handler/sdk/stats"
 	sdktracking "github.com/outlet-sh/outlet/internal/handler/sdk/tracking"
+	sdkvalidation "github.com/outlet-sh/outlet/internal/handler/sdk/validation"
 	sdkwebhooks "github.com/outlet-sh/outlet/internal/handler/sdk/webhooks"
 	"github.com/outlet-sh/outlet/internal/svc"
 
@@ -794,6 +797,65 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			[]rest.Middleware{serverCtx.Auth},
 			[]rest.Route{
 				{
+					Method:  http.MethodPost,
+					Path:    "/check",
+					Handler: adminvalidation.AdminValidateEmailHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs",
+					Handler: adminvalidation.CreateValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/jobs",
+					Handler: adminvalidation.ListValidationJobsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/jobs/:id",
+					Handler: adminvalidation.GetValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs/:id/apply",
+					Handler: adminvalidation.ApplyValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs/:id/cancel",
+					Handler: adminvalidation.CancelValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs/:id/emails",
+					Handler: adminvalidation.AppendValidationJobEmailsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/jobs/:id/results",
+					Handler: adminvalidation.ListValidationResultsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs/:id/start",
+					Handler: adminvalidation.StartValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/usage",
+					Handler: adminvalidation.GetValidationUsageHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin/validation"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
 					Method:  http.MethodGet,
 					Path:    "/",
 					Handler: adminwebhooks.AdminListWebhooksHandler(serverCtx),
@@ -882,6 +944,25 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.NetworkAuth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/lookup",
+					Handler: network.NetworkLookupHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/report",
+					Handler: network.NetworkReportHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/network/v1"),
 	)
 
 	server.AddRoutes(
@@ -1079,6 +1160,25 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			}...,
 		),
 		rest.WithPrefix("/sdk/v1/tracking"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.APIKeyAuth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/",
+					Handler: sdkvalidation.ValidateEmailHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/batch",
+					Handler: sdkvalidation.ValidateBatchHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/sdk/v1/validate"),
 	)
 
 	server.AddRoutes(

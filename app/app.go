@@ -40,7 +40,7 @@ func SetServerHost(host string, port int, useHTTPS bool) {
 	fmt.Printf("Server Host set to: %s\n", ServerHost)
 }
 
-// NotFoundHandler serves index.html for SPA routing
+// NotFoundHandler serves the SPA fallback page for client-side routes
 func NotFoundHandler(spaFS fs.FS) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// if the route is an /api route, return a 404
@@ -59,8 +59,13 @@ func NotFoundHandler(spaFS fs.FS) http.Handler {
 			return
 		}
 
-		// Serve index.html for SPA routing
-		file, err := spaFS.Open("index.html")
+		// Serve the SPA fallback page. 200.html is SvelteKit's fallback with
+		// absolute asset paths; the prerendered index.html uses paths relative
+		// to "/", which break on any deeper URL such as /auth/login.
+		file, err := spaFS.Open("200.html")
+		if err != nil {
+			file, err = spaFS.Open("index.html")
+		}
 		if err != nil {
 			http.Error(w, "Not Found", http.StatusNotFound)
 			return

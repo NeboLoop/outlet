@@ -61,6 +61,20 @@ type AnalyticsResponse struct {
 	Message string `json:"message,optional"`
 }
 
+type AppendValidationJobEmailsRequest struct {
+	Id     string   `path:"id"`
+	Emails []string `json:"emails"` // max 10000 per call
+}
+
+type ApplyValidationJobRequest struct {
+	Id       string   `path:"id"`
+	Statuses []string `json:"statuses"` // results with these statuses are added to the suppression list
+}
+
+type ApplyValidationJobResponse struct {
+	Suppressed int `json:"suppressed"`
+}
+
 type BackupInfo struct {
 	Id           string `json:"id"`
 	Filename     string `json:"filename"`
@@ -412,6 +426,12 @@ type CreateUserRequest struct {
 
 type CreateUserResponse struct {
 	User UserInfo `json:"user"`
+}
+
+type CreateValidationJobRequest struct {
+	Name   string   `json:"name,optional"`
+	ListId string   `json:"list_id,optional"` // validate a list's subscribers; starts immediately
+	Emails []string `json:"emails,optional"`  // upload source; max 10000 per call, append more, then start
 }
 
 type CustomFieldInfo struct {
@@ -1072,13 +1092,15 @@ type ListStatsResponse struct {
 }
 
 type ListSubscriberInfo struct {
-	Id             string `json:"id"`
-	ContactId      string `json:"contact_id"`
-	Email          string `json:"email"`
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	SubscribedAt   string `json:"subscribed_at"`
-	UnsubscribedAt string `json:"unsubscribed_at,omitempty"`
+	Id                  string `json:"id"`
+	ContactId           string `json:"contact_id"`
+	Email               string `json:"email"`
+	Name                string `json:"name"`
+	Status              string `json:"status"`
+	SubscribedAt        string `json:"subscribed_at"`
+	UnsubscribedAt      string `json:"unsubscribed_at,omitempty"`
+	ValidationStatus    string `json:"validation_status,optional"`
+	ValidationSubStatus string `json:"validation_sub_status,optional"`
 }
 
 type ListSubscribersRequest struct {
@@ -1113,6 +1135,32 @@ type ListTransactionalEmailsRequest struct {
 type ListTransactionalEmailsResponse struct {
 	Templates []TransactionalEmailInfo `json:"templates"`
 	Total     int                      `json:"total"`
+}
+
+type ListValidationJobsRequest struct {
+	Page  int `form:"page,optional,default=1"`
+	Limit int `form:"limit,optional,default=20"`
+}
+
+type ListValidationJobsResponse struct {
+	Jobs  []ValidationJobInfo `json:"jobs"`
+	Total int                 `json:"total"`
+	Page  int                 `json:"page"`
+	Limit int                 `json:"limit"`
+}
+
+type ListValidationResultsRequest struct {
+	Id     string `path:"id"`
+	Status string `form:"status,optional"`
+	Page   int    `form:"page,optional,default=1"`
+	Limit  int    `form:"limit,optional,default=50"`
+}
+
+type ListValidationResultsResponse struct {
+	Results []ValidationResult `json:"results"`
+	Total   int                `json:"total"`
+	Page    int                `json:"page"`
+	Limit   int                `json:"limit"`
 }
 
 type ListWebhookLogsRequest struct {
@@ -1156,6 +1204,40 @@ type MarkContactReadRequest struct {
 
 type MarkContactReadResponse struct {
 	Success bool `json:"success"`
+}
+
+type NetworkEvent struct {
+	Hash string `json:"hash"`
+	Kind string `json:"kind"` // delivered, hard_bounce, complaint, open, click
+	At   string `json:"at"`
+}
+
+type NetworkLookupRequest struct {
+	Hashes []string `json:"hashes"` // max 100
+}
+
+type NetworkLookupResponse struct {
+	Signals []NetworkSignal `json:"signals"` // unknown hashes are omitted
+}
+
+type NetworkReportRequest struct {
+	Events []NetworkEvent `json:"events"` // max 1000
+}
+
+type NetworkReportResponse struct {
+	Accepted int `json:"accepted"`
+}
+
+type NetworkSignal struct {
+	Hash          string  `json:"hash"`
+	Senders       int     `json:"senders"`
+	Delivered     int     `json:"delivered"`
+	HardBounces   int     `json:"hard_bounces"`
+	Complaints    int     `json:"complaints"`
+	Engaged       int     `json:"engaged"`
+	LastEngagedAt string  `json:"last_engaged_at"`
+	TrapScore     float64 `json:"trap_score"`
+	Toxic         bool    `json:"toxic"`
 }
 
 type NewsletterResponse struct {
@@ -1499,16 +1581,18 @@ type SubscriberDetailResponse struct {
 }
 
 type SubscriberInfo struct {
-	Id             string `json:"id"`
-	Name           string `json:"name"`
-	Email          string `json:"email"`
-	Status         string `json:"status"`
-	EmailVerified  bool   `json:"email_verified"`
-	Source         string `json:"source"`
-	CreatedAt      string `json:"created_at"`
-	VerifiedAt     string `json:"verified_at,optional"`
-	UnsubscribedAt string `json:"unsubscribed_at,optional"`
-	BlockedAt      string `json:"blocked_at,optional"`
+	Id                  string `json:"id"`
+	Name                string `json:"name"`
+	Email               string `json:"email"`
+	Status              string `json:"status"`
+	EmailVerified       bool   `json:"email_verified"`
+	Source              string `json:"source"`
+	CreatedAt           string `json:"created_at"`
+	VerifiedAt          string `json:"verified_at,optional"`
+	UnsubscribedAt      string `json:"unsubscribed_at,optional"`
+	BlockedAt           string `json:"blocked_at,optional"`
+	ValidationStatus    string `json:"validation_status,optional"`
+	ValidationSubStatus string `json:"validation_sub_status,optional"`
 }
 
 type SuppressedEmailInfo struct {
@@ -1808,6 +1892,18 @@ type UserListResponse struct {
 	Total int        `json:"total"`
 }
 
+type ValidateBatchRequest struct {
+	Emails []string `json:"emails"` // max 100
+}
+
+type ValidateBatchResponse struct {
+	Results []ValidationResult `json:"results"`
+}
+
+type ValidateEmailRequest struct {
+	Email string `json:"email"`
+}
+
 type ValidateInvitationRequest struct {
 	Token string `form:"token"`
 }
@@ -1819,6 +1915,58 @@ type ValidateInvitationResponse struct {
 	HasAccount bool   `json:"has_account"` // the invited address already has an account: sign in as it and accept
 	Valid      bool   `json:"valid"`
 	Message    string `json:"message,omitempty"`
+}
+
+type ValidationJobIdRequest struct {
+	Id string `path:"id"`
+}
+
+type ValidationJobInfo struct {
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	ListId      string `json:"list_id,optional"`
+	Source      string `json:"source"` // list, upload
+	Status      string `json:"status"` // pending, processing, completed, failed, cancelled
+	Total       int    `json:"total"`
+	Processed   int    `json:"processed"`
+	Valid       int    `json:"valid"`
+	Invalid     int    `json:"invalid"`
+	CatchAll    int    `json:"catch_all"`
+	Unknown     int    `json:"unknown"`
+	Spamtrap    int    `json:"spamtrap"`
+	Abuse       int    `json:"abuse"`
+	DoNotMail   int    `json:"do_not_mail"`
+	Error       string `json:"error,optional"`
+	StartedAt   string `json:"started_at,optional"`
+	CompletedAt string `json:"completed_at,optional"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type ValidationResult struct {
+	Address       string `json:"address"`
+	Status        string `json:"status"`
+	SubStatus     string `json:"sub_status"`
+	FreeEmail     bool   `json:"free_email"`
+	DidYouMean    string `json:"did_you_mean"`
+	Account       string `json:"account"`
+	Domain        string `json:"domain"`
+	DomainAgeDays int    `json:"domain_age_days,optional"` // 0 = unknown
+	SmtpProvider  string `json:"smtp_provider"`
+	MxFound       bool   `json:"mx_found"`
+	MxRecord      string `json:"mx_record"`
+	ProcessedAt   string `json:"processed_at"`
+}
+
+type ValidationUsageRequest struct {
+	From string `form:"from,optional"` // YYYY-MM-DD, default first of this month
+	To   string `form:"to,optional"`   // YYYY-MM-DD inclusive, default today
+}
+
+type ValidationUsageResponse struct {
+	From     string         `json:"from"`
+	To       string         `json:"to"`
+	Total    int            `json:"total"`
+	BySource map[string]int `json:"by_source"` // api, admin, job, mcp
 }
 
 type VerifyEmailRequest struct {

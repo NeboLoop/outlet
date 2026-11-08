@@ -17,16 +17,19 @@
 		value = $bindable(''),
 		placeholder = 'Start typing...',
 		class: extraClass = '',
-		minHeight = '300px'
+		minHeight = '300px',
+		initialMode = 'visual'
 	}: {
 		value?: string;
 		placeholder?: string;
 		class?: string;
 		minHeight?: string;
+		initialMode?: 'visual' | 'html';
 	} = $props();
 
 	// Editor mode: 'visual' | 'html'
-	let editorMode = $state<'visual' | 'html'>('visual');
+	// svelte-ignore state_referenced_locally
+	let editorMode = $state<'visual' | 'html'>(initialMode);
 	let shadowHost = $state<HTMLDivElement | null>(null);
 	let shadowRoot: ShadowRoot | null = null;
 	let editableDiv: HTMLDivElement | null = null;
@@ -52,13 +55,13 @@
 					font-family: system-ui, -apple-system, sans-serif;
 					font-size: 15px;
 					line-height: 1.7;
-					color: #e5e5e5;
+					color: inherit;
 					background: transparent;
 				}
 				#editor-root:focus { outline: none; }
 				#editor-root:empty:before {
 					content: attr(data-placeholder);
-					color: #666;
+					opacity: 0.5;
 				}
 				#editor-root p { margin: 0 0 1em 0; }
 				#editor-root h1 { font-size: 1.75em; font-weight: 700; margin: 0 0 0.5em 0; }
@@ -66,7 +69,7 @@
 				#editor-root h3 { font-size: 1.25em; font-weight: 600; margin: 0 0 0.5em 0; }
 				#editor-root ul, #editor-root ol { margin: 0 0 1em 1.5em; padding: 0; }
 				#editor-root li { margin-bottom: 0.25em; }
-				#editor-root a { color: #CEB96E; text-decoration: underline; }
+				#editor-root a { color: inherit; text-decoration: underline; }
 			</style>
 		`;
 

@@ -309,13 +309,15 @@ type (
 		Status string `form:"status,optional"`
 	}
 	ListSubscriberInfo {
-		Id             string `json:"id"`
-		ContactId      string `json:"contact_id"`
-		Email          string `json:"email"`
-		Name           string `json:"name"`
-		Status         string `json:"status"`
-		SubscribedAt   string `json:"subscribed_at"`
-		UnsubscribedAt string `json:"unsubscribed_at,omitempty"`
+		Id                  string `json:"id"`
+		ContactId           string `json:"contact_id"`
+		Email               string `json:"email"`
+		Name                string `json:"name"`
+		Status              string `json:"status"`
+		SubscribedAt        string `json:"subscribed_at"`
+		UnsubscribedAt      string `json:"unsubscribed_at,omitempty"`
+		ValidationStatus    string `json:"validation_status,optional"`
+		ValidationSubStatus string `json:"validation_sub_status,optional"`
 	}
 	ListSubscribersResponse {
 		Subscribers []ListSubscriberInfo `json:"subscribers"`
@@ -459,16 +461,18 @@ type (
 	}
 	// ========== Subscriber Types ==========
 	SubscriberInfo {
-		Id             string `json:"id"`
-		Name           string `json:"name"`
-		Email          string `json:"email"`
-		Status         string `json:"status"`
-		EmailVerified  bool   `json:"email_verified"`
-		Source         string `json:"source"`
-		CreatedAt      string `json:"created_at"`
-		VerifiedAt     string `json:"verified_at,optional"`
-		UnsubscribedAt string `json:"unsubscribed_at,optional"`
-		BlockedAt      string `json:"blocked_at,optional"`
+		Id                  string `json:"id"`
+		Name                string `json:"name"`
+		Email               string `json:"email"`
+		Status              string `json:"status"`
+		EmailVerified       bool   `json:"email_verified"`
+		Source              string `json:"source"`
+		CreatedAt           string `json:"created_at"`
+		VerifiedAt          string `json:"verified_at,optional"`
+		UnsubscribedAt      string `json:"unsubscribed_at,optional"`
+		BlockedAt           string `json:"blocked_at,optional"`
+		ValidationStatus    string `json:"validation_status,optional"`
+		ValidationSubStatus string `json:"validation_sub_status,optional"`
 	}
 	SubscriberActionRequest {
 		Id string `path:"id"`
@@ -1444,6 +1448,132 @@ type (
 	}
 	CancelImportJobRequest {
 		Id string `path:"id"`
+	}
+	// ========== Email Validation Types ==========
+	// Statuses follow the ZeroBounce v2 scheme: valid, invalid, catch-all, unknown, spamtrap, abuse, do_not_mail
+	ValidationResult {
+		Address       string `json:"address"`
+		Status        string `json:"status"`
+		SubStatus     string `json:"sub_status"`
+		FreeEmail     bool   `json:"free_email"`
+		DidYouMean    string `json:"did_you_mean"`
+		Account       string `json:"account"`
+		Domain        string `json:"domain"`
+		DomainAgeDays int    `json:"domain_age_days,optional"` // 0 = unknown
+		SmtpProvider  string `json:"smtp_provider"`
+		MxFound       bool   `json:"mx_found"`
+		MxRecord      string `json:"mx_record"`
+		ProcessedAt   string `json:"processed_at"`
+	}
+	ValidateEmailRequest {
+		Email string `json:"email"`
+	}
+	ValidateBatchRequest {
+		Emails []string `json:"emails"` // max 100
+	}
+	ValidateBatchResponse {
+		Results []ValidationResult `json:"results"`
+	}
+	ValidationJobInfo {
+		Id          string `json:"id"`
+		Name        string `json:"name"`
+		ListId      string `json:"list_id,optional"`
+		Source      string `json:"source"` // list, upload
+		Status      string `json:"status"` // pending, processing, completed, failed, cancelled
+		Total       int    `json:"total"`
+		Processed   int    `json:"processed"`
+		Valid       int    `json:"valid"`
+		Invalid     int    `json:"invalid"`
+		CatchAll    int    `json:"catch_all"`
+		Unknown     int    `json:"unknown"`
+		Spamtrap    int    `json:"spamtrap"`
+		Abuse       int    `json:"abuse"`
+		DoNotMail   int    `json:"do_not_mail"`
+		Error       string `json:"error,optional"`
+		StartedAt   string `json:"started_at,optional"`
+		CompletedAt string `json:"completed_at,optional"`
+		CreatedAt   string `json:"created_at"`
+	}
+	CreateValidationJobRequest {
+		Name   string   `json:"name,optional"`
+		ListId string   `json:"list_id,optional"` // validate a list's subscribers; starts immediately
+		Emails []string `json:"emails,optional"` // upload source; max 10000 per call, append more, then start
+	}
+	ValidationJobIdRequest {
+		Id string `path:"id"`
+	}
+	AppendValidationJobEmailsRequest {
+		Id     string   `path:"id"`
+		Emails []string `json:"emails"` // max 10000 per call
+	}
+	ListValidationJobsRequest {
+		Page  int `form:"page,optional,default=1"`
+		Limit int `form:"limit,optional,default=20"`
+	}
+	ListValidationJobsResponse {
+		Jobs  []ValidationJobInfo `json:"jobs"`
+		Total int                 `json:"total"`
+		Page  int                 `json:"page"`
+		Limit int                 `json:"limit"`
+	}
+	ListValidationResultsRequest {
+		Id     string `path:"id"`
+		Status string `form:"status,optional"`
+		Page   int    `form:"page,optional,default=1"`
+		Limit  int    `form:"limit,optional,default=50"`
+	}
+	ListValidationResultsResponse {
+		Results []ValidationResult `json:"results"`
+		Total   int                `json:"total"`
+		Page    int                `json:"page"`
+		Limit   int                `json:"limit"`
+	}
+	ApplyValidationJobRequest {
+		Id       string   `path:"id"`
+		Statuses []string `json:"statuses"` // results with these statuses are added to the suppression list
+	}
+	ApplyValidationJobResponse {
+		Suppressed int `json:"suppressed"`
+	}
+	ValidationUsageRequest {
+		From string `form:"from,optional"` // YYYY-MM-DD, default first of this month
+		To   string `form:"to,optional"` // YYYY-MM-DD inclusive, default today
+	}
+	ValidationUsageResponse {
+		From     string         `json:"from"`
+		To       string         `json:"to"`
+		Total    int            `json:"total"`
+		BySource map[string]int `json:"by_source"` // api, admin, job, mcp
+	}
+	// ========== Signal Network Hub Types ==========
+	// Hashes are SHA-256 hex (64 chars) of the trimmed, lowercased address. Times are RFC 3339.
+	NetworkLookupRequest {
+		Hashes []string `json:"hashes"` // max 100
+	}
+	NetworkSignal {
+		Hash          string  `json:"hash"`
+		Senders       int     `json:"senders"`
+		Delivered     int     `json:"delivered"`
+		HardBounces   int     `json:"hard_bounces"`
+		Complaints    int     `json:"complaints"`
+		Engaged       int     `json:"engaged"`
+		LastEngagedAt string  `json:"last_engaged_at"`
+		TrapScore     float64 `json:"trap_score"`
+		Toxic         bool    `json:"toxic"`
+	}
+	NetworkLookupResponse {
+		Signals []NetworkSignal `json:"signals"` // unknown hashes are omitted
+	}
+	NetworkEvent {
+		Hash string `json:"hash"`
+		Kind string `json:"kind"` // delivered, hard_bounce, complaint, open, click
+		At   string `json:"at"`
+	}
+	NetworkReportRequest {
+		Events []NetworkEvent `json:"events"` // max 1000
+	}
+	NetworkReportResponse {
+		Accepted int `json:"accepted"`
 	}
 	// ========== CSV Export Types ==========
 	ExportSubscribersRequest {
@@ -2446,5 +2576,71 @@ service outlet {
 
 	@handler TrackConfirm
 	post /confirm (TrackConfirmRequest) returns (TrackConfirmResponse)
+}
+
+// Admin Email Validation
+@server (
+	group:      admin/validation
+	prefix:     /api/admin/validation
+	middleware: Auth
+)
+service outlet {
+	@handler AdminValidateEmail
+	post /check (ValidateEmailRequest) returns (ValidationResult)
+
+	@handler CreateValidationJob
+	post /jobs (CreateValidationJobRequest) returns (ValidationJobInfo)
+
+	@handler ListValidationJobs
+	get /jobs (ListValidationJobsRequest) returns (ListValidationJobsResponse)
+
+	@handler GetValidationJob
+	get /jobs/:id (ValidationJobIdRequest) returns (ValidationJobInfo)
+
+	@handler AppendValidationJobEmails
+	post /jobs/:id/emails (AppendValidationJobEmailsRequest) returns (ValidationJobInfo)
+
+	@handler StartValidationJob
+	post /jobs/:id/start (ValidationJobIdRequest) returns (ValidationJobInfo)
+
+	@handler CancelValidationJob
+	post /jobs/:id/cancel (ValidationJobIdRequest) returns (ValidationJobInfo)
+
+	@handler ListValidationResults
+	get /jobs/:id/results (ListValidationResultsRequest) returns (ListValidationResultsResponse)
+
+	@handler ApplyValidationJob
+	post /jobs/:id/apply (ApplyValidationJobRequest) returns (ApplyValidationJobResponse)
+
+	@handler GetValidationUsage
+	get /usage (ValidationUsageRequest) returns (ValidationUsageResponse)
+}
+
+// SDK Email Validation
+@server (
+	group:      sdk/validation
+	prefix:     /sdk/v1/validate
+	middleware: APIKeyAuth
+)
+service outlet {
+	@handler ValidateEmail
+	post / (ValidateEmailRequest) returns (ValidationResult)
+
+	@handler ValidateBatch
+	post /batch (ValidateBatchRequest) returns (ValidateBatchResponse)
+}
+
+// Signal Network hub (only served when SignalNet.Hub is true; 404 otherwise)
+@server (
+	group:      network
+	prefix:     /network/v1
+	middleware: NetworkAuth
+)
+service outlet {
+	@handler NetworkLookup
+	post /lookup (NetworkLookupRequest) returns (NetworkLookupResponse)
+
+	@handler NetworkReport
+	post /report (NetworkReportRequest) returns (NetworkReportResponse)
 }
 

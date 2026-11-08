@@ -61,6 +61,8 @@ export { default as CampaignSelector } from './CampaignSelector.svelte';
 // New UI Components (Svelte 5)
 export { default as ValidatedInput } from './ValidatedInput.svelte';
 export { default as StatusBadge } from './StatusBadge.svelte';
+export { default as ValidationBadge } from './ValidationBadge.svelte';
+export { default as ValidationBar } from './ValidationBar.svelte';
 export { default as TagInput } from './TagInput.svelte';
 export { default as CollapsibleCard } from './CollapsibleCard.svelte';
 export { default as ThemeToggle } from './ThemeToggle.svelte';

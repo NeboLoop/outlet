@@ -3,7 +3,7 @@ package workers
 import (
 	"context"
 	"database/sql"
-	"strings"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,16 +40,16 @@ type CampaignSchedulerConfig struct {
 	PoolSize int
 }
 
-// DefaultCampaignSchedulerConfig returns sensible defaults 
+// DefaultCampaignSchedulerConfig returns sensible defaults
 func DefaultCampaignSchedulerConfig() CampaignSchedulerConfig {
 	return CampaignSchedulerConfig{
 		ScheduleInterval: 10 * time.Second,
 		SendPollInterval: 2 * time.Second,
-		Workers:          10,             // Increased from 5
-		RateLimit:        14,             // SES sandbox default
-		BatchSize:        1000,           // Increased from 100
-		ErrorThreshold:   100,            // Pause after 100 consecutive errors
-		PoolSize:         20,             // SMTP connection pool size
+		Workers:          10,   // Increased from 5
+		RateLimit:        14,   // SES sandbox default
+		BatchSize:        1000, // Increased from 100
+		ErrorThreshold:   100,  // Pause after 100 consecutive errors
+		PoolSize:         20,   // SMTP connection pool size
 	}
 }
 
@@ -195,10 +195,9 @@ func (s *CampaignScheduler) Start() {
 // Stop gracefully shuts down the scheduler
 func (s *CampaignScheduler) Stop() {
 	logx.Info("Stopping campaign scheduler...")
+	// Cancelling stops every goroutine; the queue stays open because the
+	// batch fetcher may still be sending to it
 	s.cancel()
-
-	// Close message queue to signal workers
-	close(s.msgQueue)
 
 	done := make(chan struct{})
 	go func() {
@@ -269,21 +268,18 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	// Create pipe for this campaign
 	s.getOrCreatePipe(campaign.ID)
 
-	// Update status to sending
-	err := s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
-		ID:     campaign.ID,
-		Status: sql.NullString{String: "sending", Valid: true},
-	})
-	if err != nil {
-		return err
-	}
-
+	// The campaign stays 'scheduled' while its sends are created and only then
+	// becomes 'sending'. Workers claim sends of 'sending' campaigns only, so
+	// none can finish (and mark the campaign sent) while rows are still being
+	// added. If this stops halfway, the next check resumes it; existing sends
+	// are skipped.
 	listIDs := db.DecodeListIDs(campaign.ListIds.String)
 	if len(listIDs) == 0 {
 		logx.Errorf("Campaign %s has no target lists", campaign.ID)
+		// 'failed' is not an allowed campaign status; cancel it instead
 		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
 			ID:     campaign.ID,
-			Status: sql.NullString{String: "paused", Valid: true},
+			Status: sql.NullString{String: "cancelled", Valid: true},
 		})
 	}
 
@@ -337,6 +333,7 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 			continue
 		}
 		if exists > 0 {
+			recipientCount++ // created by an earlier, interrupted run
 			continue
 		}
 
@@ -357,7 +354,7 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	}
 
 	// Update recipient count
-	err = s.store.SetCampaignRecipientsCount(s.ctx, db.SetCampaignRecipientsCountParams{
+	err := s.store.SetCampaignRecipientsCount(s.ctx, db.SetCampaignRecipientsCountParams{
 		ID:              campaign.ID,
 		RecipientsCount: sql.NullInt64{Int64: recipientCount, Valid: true},
 	})
@@ -368,7 +365,15 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	s.totalScheduled.Add(1)
 	logx.Infof("Campaign %s queued with %d recipients", campaign.ID, recipientCount)
 
-	return nil
+	// Release it to the workers; with nothing to send it is finished at once
+	status := "sending"
+	if recipientCount == 0 {
+		status = "sent"
+	}
+	return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
+		ID:     campaign.ID,
+		Status: sql.NullString{String: status, Valid: true},
+	})
 }
 
 // batchFetcher continuously fetches pending sends and queues them
@@ -389,7 +394,17 @@ func (s *CampaignScheduler) batchFetcher() {
 
 // fetchAndQueueSends fetches pending sends and adds them to the worker queue
 func (s *CampaignScheduler) fetchAndQueueSends() {
-	sends, err := s.store.GetPendingCampaignSends(s.ctx, int64(s.config.BatchSize))
+	// Claim the batch first, so polling again while these wait for the rate
+	// limiter cannot queue them twice
+	claim := sql.NullString{String: uuid.NewString(), Valid: true}
+	if err := s.store.ClaimPendingCampaignSends(s.ctx, db.ClaimPendingCampaignSendsParams{
+		ClaimToken: claim,
+		LimitCount: int64(s.config.BatchSize),
+	}); err != nil {
+		logx.Errorf("Failed to claim pending campaign sends: %v", err)
+		return
+	}
+	sends, err := s.store.GetPendingCampaignSends(s.ctx, claim)
 	if err != nil {
 		logx.Errorf("Failed to get pending campaign sends: %v", err)
 		return
@@ -416,12 +431,13 @@ func (s *CampaignScheduler) sendWorker(id int) {
 	defer s.wg.Done()
 	logx.Infof("Campaign send worker %d started", id)
 
-	for send := range s.msgQueue {
+	for {
+		var send db.GetPendingCampaignSendsRow
 		select {
 		case <-s.ctx.Done():
 			logx.Infof("Campaign send worker %d stopped", id)
 			return
-		default:
+		case send = <-s.msgQueue:
 		}
 
 		// Get or create pipe for this campaign
@@ -441,7 +457,12 @@ func (s *CampaignScheduler) sendWorker(id int) {
 		}
 
 		// Send the email
-		if err := s.sendCampaignEmail(send); err != nil {
+		if err := s.sendCampaignEmail(send); errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
+			// The recipient can never be sent to: record it, never retry it,
+			// and don't count it toward auto-pausing the campaign
+			s.markSendFailed(send.ID, err.Error())
+			_ = s.store.MarkCampaignSendPermanentlyFailed(s.ctx, send.ID)
+		} else if err != nil {
 			s.markSendFailed(send.ID, err.Error())
 			s.totalFailed.Add(1)
 
@@ -468,41 +489,20 @@ func (s *CampaignScheduler) sendWorker(id int) {
 
 // sendCampaignEmail sends a single campaign email
 func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow) error {
-	// Build email content
-	htmlBody := send.HtmlBody
-
-	// Process template variables (simple replacement for now)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{.Name}}", send.Name)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{.Email}}", send.Email)
-
-	subject := strings.ReplaceAll(send.Subject, "{{.Name}}", send.Name)
-
-	// Add tracking pixel if enabled
-	if send.TrackOpens.Valid && send.TrackOpens.Int64 == 1 && send.TrackingToken.Valid {
-		trackingPixel := `<img src="` + s.emailService.GetTrackingPixelURL(send.TrackingToken.String) + `" width="1" height="1" style="display:none" />`
-		htmlBody = strings.Replace(htmlBody, "</body>", trackingPixel+"</body>", 1)
-	}
-
-	// Rewrite links for click tracking if enabled
-	if send.TrackClicks.Valid && send.TrackClicks.Int64 == 1 && send.TrackingToken.Valid {
-		htmlBody = s.emailService.RewriteLinksForTracking(htmlBody, send.TrackingToken.String)
-	}
-
-	// Build from address (may be sql.NullString)
-	fromName := ""
-	if send.FromName.Valid {
-		fromName = send.FromName.String
-	}
-	fromEmail := ""
-	if send.FromEmail.Valid {
-		fromEmail = send.FromEmail.String
-	}
-	replyTo := ""
-	if send.ReplyTo.Valid {
-		replyTo = send.ReplyTo.String
-	}
-
-	return s.emailService.SendCampaignEmail(send.Email, subject, htmlBody, fromName, fromEmail, replyTo)
+	return s.emailService.Send(s.ctx, s.emailService.CampaignMessage(email.CampaignEmail{
+		OrgID:         send.OrgID,
+		FromName:      send.FromName.String,
+		FromEmail:     send.FromEmail.String,
+		ReplyTo:       send.ReplyTo.String,
+		To:            send.Email,
+		Name:          send.Name,
+		Subject:       send.Subject,
+		HTML:          send.HtmlBody,
+		Text:          send.PlainText.String,
+		TrackingToken: send.TrackingToken.String,
+		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
+		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
+	}))
 }
 
 // markSendSent marks a campaign send as sent

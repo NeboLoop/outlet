@@ -3,6 +3,7 @@ package workers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,9 +36,9 @@ func DefaultRetryWorkerConfig() RetryWorkerConfig {
 		PollInterval: 30 * time.Second,
 		MaxRetries:   3,
 		RetryIntervals: []time.Duration{
-			5 * time.Minute,   // First retry after 5 min
-			30 * time.Minute,  // Second retry after 30 min
-			2 * time.Hour,     // Third retry after 2 hours
+			5 * time.Minute,  // First retry after 5 min
+			30 * time.Minute, // Second retry after 30 min
+			2 * time.Hour,    // Third retry after 2 hours
 		},
 		BatchSize: 100,
 	}
@@ -175,6 +176,12 @@ func (w *RetryWorker) retrySend(send db.GetFailedCampaignSendsForRetryRow) {
 
 	// Try to send
 	err := w.sendEmail(send)
+	if errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
+		// Retrying cannot help
+		w.markPermanentlyFailed(send.ID)
+		w.exhausted.Add(1)
+		return
+	}
 	if err != nil {
 		logx.Errorf("Retry failed for send %s: %v", send.ID, err)
 		w.store.MarkCampaignSendFailed(w.ctx, db.MarkCampaignSendFailedParams{
@@ -189,29 +196,22 @@ func (w *RetryWorker) retrySend(send db.GetFailedCampaignSendsForRetryRow) {
 	}
 }
 
-// sendEmail sends the email for a retry
+// sendEmail sends the email for a retry, built exactly like the first attempt
 func (w *RetryWorker) sendEmail(send db.GetFailedCampaignSendsForRetryRow) error {
-	fromName := ""
-	if send.FromName.Valid {
-		fromName = send.FromName.String
-	}
-	fromEmail := ""
-	if send.FromEmail.Valid {
-		fromEmail = send.FromEmail.String
-	}
-	replyTo := ""
-	if send.ReplyTo.Valid {
-		replyTo = send.ReplyTo.String
-	}
-
-	return w.emailService.SendCampaignEmail(
-		send.Email,
-		send.Subject,
-		send.HtmlBody,
-		fromName,
-		fromEmail,
-		replyTo,
-	)
+	return w.emailService.Send(w.ctx, w.emailService.CampaignMessage(email.CampaignEmail{
+		OrgID:         send.OrgID,
+		FromName:      send.FromName.String,
+		FromEmail:     send.FromEmail.String,
+		ReplyTo:       send.ReplyTo.String,
+		To:            send.Email,
+		Name:          send.Name,
+		Subject:       send.Subject,
+		HTML:          send.HtmlBody,
+		Text:          send.PlainText.String,
+		TrackingToken: send.TrackingToken.String,
+		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
+		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
+	}))
 }
 
 // markPermanentlyFailed marks a send as permanently failed

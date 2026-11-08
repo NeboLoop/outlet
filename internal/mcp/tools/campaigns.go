@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/access"
@@ -136,18 +136,18 @@ type CampaignSendOutput struct {
 
 // CampaignStatsOutput defines output for campaign stats.
 type CampaignStatsOutput struct {
-	ID               string  `json:"id"`
-	RecipientsCount  int64   `json:"recipients_count"`
-	SentCount        int64   `json:"sent_count"`
-	DeliveredCount   int64   `json:"delivered_count"`
-	OpenedCount      int64   `json:"opened_count"`
-	ClickedCount     int64   `json:"clicked_count"`
-	BouncedCount     int64   `json:"bounced_count"`
-	ComplainedCount  int64   `json:"complained_count"`
-	UnsubscribedCnt  int64   `json:"unsubscribed_count"`
-	OpenRate         float64 `json:"open_rate"`
-	ClickRate        float64 `json:"click_rate"`
-	BounceRate       float64 `json:"bounce_rate"`
+	ID              string  `json:"id"`
+	RecipientsCount int64   `json:"recipients_count"`
+	SentCount       int64   `json:"sent_count"`
+	DeliveredCount  int64   `json:"delivered_count"`
+	OpenedCount     int64   `json:"opened_count"`
+	ClickedCount    int64   `json:"clicked_count"`
+	BouncedCount    int64   `json:"bounced_count"`
+	ComplainedCount int64   `json:"complained_count"`
+	UnsubscribedCnt int64   `json:"unsubscribed_count"`
+	OpenRate        float64 `json:"open_rate"`
+	ClickRate       float64 `json:"click_rate"`
+	BounceRate      float64 `json:"bounce_rate"`
 }
 
 // RegisterCampaignTool registers the campaign tool.

@@ -113,7 +113,8 @@ func TestProcessCampaign_SendsAUICampaignOnceToItsOwnBrand(t *testing.T) {
 	assert.Equal(t, "paused", spoof.Status.String)
 
 	// The workers pick the queued sends up.
-	pending, err := store.GetPendingCampaignSends(ctx, 100)
+	require.NoError(t, store.ClaimPendingCampaignSends(ctx, db.ClaimPendingCampaignSendsParams{ClaimToken: sql.NullString{String: "t1", Valid: true}, LimitCount: 100}))
+	pending, err := store.GetPendingCampaignSends(ctx, sql.NullString{String: "t1", Valid: true})
 	require.NoError(t, err)
 	assert.Len(t, pending, 2)
 

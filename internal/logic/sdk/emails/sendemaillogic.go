@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -72,90 +73,66 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 		})
 	}
 
+	fail := func(message string) (*types.SendEmailResponse, error) {
+		return &types.SendEmailResponse{Success: false, Status: "failed", Message: message}, nil
+	}
+
 	var subject, htmlBody, plainText string
 	var templateID string
+	var tmplFromName, tmplFromEmail, tmplReplyTo string
 
 	if req.TemplateSlug != "" {
-		// Load template by slug
 		template, err := l.svcCtx.DB.GetTransactionalEmailBySlug(l.ctx, db.GetTransactionalEmailBySlugParams{
 			Slug:  req.TemplateSlug,
 			OrgID: org.ID,
 		})
-		if err != nil {
-			// Template not found - fall back to direct body if provided
-			l.Infof("Template '%s' not found, falling back to direct body", req.TemplateSlug)
-			if req.Subject != "" && req.Body != "" {
-				subject = req.Subject
-				htmlBody = req.Body
-				plainText = req.TextBody
-			} else {
-				// No direct body provided either - log warning and use empty content
-				l.Infof("Warning: Template '%s' not found and no direct body provided", req.TemplateSlug)
-				subject = req.Subject
-				htmlBody = req.Body
-				if subject == "" {
-					subject = "(No Subject)"
-				}
-				if htmlBody == "" {
-					htmlBody = "<p>Email content not available</p>"
-				}
-			}
-		} else if template.IsActive.Int64 != 1 {
-			// Template exists but is inactive - fall back to direct body
-			l.Infof("Template '%s' is inactive, falling back to direct body", req.TemplateSlug)
-			if req.Subject != "" && req.Body != "" {
-				subject = req.Subject
-				htmlBody = req.Body
-				plainText = req.TextBody
-			} else {
-				subject = req.Subject
-				htmlBody = req.Body
-				if subject == "" {
-					subject = "(No Subject)"
-				}
-				if htmlBody == "" {
-					htmlBody = "<p>Email content not available</p>"
-				}
-			}
-		} else {
-			templateID = template.ID
-			subject = template.Subject
-			htmlBody = template.HtmlBody
-			if template.PlainText.Valid {
-				plainText = template.PlainText.String
-			}
+		switch {
+		case err != nil:
+			return fail("Template '" + req.TemplateSlug + "' not found")
+		case template.IsActive.Int64 != 1:
+			return fail("Template '" + req.TemplateSlug + "' is inactive")
+		}
+		templateID = template.ID
+		subject = template.Subject
+		htmlBody = template.HtmlBody
+		plainText = template.PlainText.String
+		tmplFromName, tmplFromEmail, tmplReplyTo = template.FromName.String, template.FromEmail.String, template.ReplyTo.String
 
-			// Apply variable substitution if provided
-			if len(req.Variables) > 0 {
-				for key, value := range req.Variables {
-					placeholder := "{{" + key + "}}"
-					subject = strings.ReplaceAll(subject, placeholder, value)
-					htmlBody = strings.ReplaceAll(htmlBody, placeholder, value)
-					if plainText != "" {
-						plainText = strings.ReplaceAll(plainText, placeholder, value)
-					}
-				}
-			}
+		for key, value := range req.Variables {
+			placeholder := "{{" + key + "}}"
+			subject = strings.ReplaceAll(subject, placeholder, value)
+			htmlBody = strings.ReplaceAll(htmlBody, placeholder, value)
+			plainText = strings.ReplaceAll(plainText, placeholder, value)
 		}
 	} else {
-		// Use direct body
 		if req.Subject == "" {
-			return &types.SendEmailResponse{
-				Success: false,
-				Status:  "failed",
-				Message: "Subject is required when not using a template",
-			}, nil
+			return fail("Subject is required when not using a template")
 		}
 		if req.Body == "" {
-			return &types.SendEmailResponse{
-				Success: false,
-				Status:  "failed",
-				Message: "Body is required when not using a template",
-			}, nil
+			return fail("Body is required when not using a template")
 		}
 		subject = req.Subject
 		htmlBody = req.Body
 		plainText = req.TextBody
+	}
+
+	// Request fields override the template's; the email service falls back to
+	// the brand, then the platform, for anything still empty.
+	message := email.Message{
+		OrgID:       org.ID,
+		FromName:    firstNonEmpty(req.FromName, tmplFromName),
+		FromEmail:   firstNonEmpty(req.FromEmail, tmplFromEmail),
+		ReplyTo:     firstNonEmpty(req.ReplyTo, tmplReplyTo),
+		To:          req.To,
+		Subject:     subject,
+		HTML:        htmlBody,
+		Text:        plainText,
+		Attachments: attachments,
+		// Threading headers keep a reply in its conversation (the hub's bot
+		// email answers threads this way).
+		MessageID:  headerValue(req.Headers, "Message-ID"),
+		InReplyTo:  headerValue(req.Headers, "In-Reply-To"),
+		References: headerValue(req.Headers, "References"),
 	}
 
 	trackingToken := generateTrackingToken()
@@ -208,51 +185,7 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 		}, nil
 	}
 
-	// Get org email settings for sending from org's configured address
-	orgSettings, _ := l.svcCtx.DB.GetOrgEmailSettings(l.ctx, org.ID)
-	fromEmail := ""
-	fromName := ""
-	if orgSettings.FromEmail.Valid {
-		fromEmail = orgSettings.FromEmail.String
-	}
-	if orgSettings.FromName.Valid {
-		fromName = orgSettings.FromName.String
-	}
-
-	// Per-message sender overrides: a From address on the brand's own sending
-	// domain (never another domain — the brand is verified for one), a
-	// display name, a Reply-To, a text alternative and threading headers.
-	if req.FromEmail != "" && sameDomain(req.FromEmail, fromEmail) {
-		fromEmail = strings.TrimSpace(req.FromEmail)
-	}
-	if req.FromName != "" {
-		fromName = strings.TrimSpace(req.FromName)
-	}
-
-	// Actually send the email via the email service
-	var sendOpts []email.SendOption
-	if len(attachments) > 0 {
-		sendOpts = append(sendOpts, email.WithAttachments(attachments))
-	}
-	// Reply-To: the message's own, else the brand's configured Reply-To.
-	replyTo := strings.TrimSpace(req.ReplyTo)
-	if replyTo == "" && orgSettings.ReplyTo.Valid {
-		replyTo = strings.TrimSpace(orgSettings.ReplyTo.String)
-	}
-	if replyTo != "" {
-		sendOpts = append(sendOpts, email.WithReplyTo(replyTo))
-	}
-	if plainText != "" {
-		sendOpts = append(sendOpts, email.WithTextBody(plainText))
-	}
-	if len(req.Headers) > 0 {
-		sendOpts = append(sendOpts, email.WithHeaders(req.Headers))
-	}
-	// The brand sends only from its own domains.
-	sendErr := email.CheckSender(l.ctx, l.svcCtx.DB, org.ID, fromEmail)
-	if sendErr == nil {
-		sendErr = l.svcCtx.EmailService.SendEmailFrom(l.ctx, fromEmail, fromName, req.To, subject, htmlBody, sendOpts...)
-	}
+	sendErr := l.svcCtx.EmailService.Send(l.ctx, message)
 
 	if sendErr != nil {
 		// Update status to failed
@@ -263,12 +196,20 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 		})
 
 		l.Errorf("Failed to send email: %v", sendErr)
-		return &types.SendEmailResponse{
+		resp := &types.SendEmailResponse{
 			Success:   false,
 			MessageId: trackingToken,
 			Status:    "failed",
 			Message:   "Failed to send email",
-		}, nil
+		}
+		switch {
+		case errors.Is(sendErr, email.ErrSuppressed):
+			resp.Status = "suppressed"
+			resp.Message = "Not sent: the recipient bounced, complained, or is on the suppression list"
+		case errors.Is(sendErr, email.ErrInvalidMessage):
+			resp.Message = sendErr.Error()
+		}
+		return resp, nil
 	}
 
 	// Update status to sent
@@ -285,6 +226,15 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 		MessageId: trackingToken,
 		Status:    "sent",
 	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // generateTrackingToken creates a unique tracking token for the email
@@ -339,4 +289,14 @@ func domainOf(addr string) string {
 		return ""
 	}
 	return addr[at+1:]
+}
+
+// headerValue reads one header from the request's headers, by any case.
+func headerValue(h map[string]string, name string) string {
+	for k, v := range h {
+		if strings.EqualFold(strings.TrimSpace(k), name) {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }

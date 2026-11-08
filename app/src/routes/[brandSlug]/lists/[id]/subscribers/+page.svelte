@@ -19,7 +19,8 @@
 		SearchInput,
 		Select,
 		Modal,
-		AlertDialog
+		AlertDialog,
+		ValidationBadge
 	} from '$lib/components/ui';
 	import {
 		Users,
@@ -58,6 +59,9 @@
 	let sequences = $state<SequenceInfo[]>([]);
 	let sequencesLoading = $state(false);
 	let sequencesLoaded = $state(false);
+
+	// Show the validation column only once any subscriber has been validated
+	let hasValidation = $derived(subscribers.some(s => !!s.validation_status));
 
 	// Filtered subscribers
 	let filteredSubscribers = $derived(
@@ -196,6 +200,9 @@
 					<th class="text-left">Email</th>
 					<th class="text-left">Name</th>
 					<th class="text-left">Status</th>
+					{#if hasValidation}
+						<th class="text-left">Validation</th>
+					{/if}
 					<th class="text-left">Subscribed</th>
 				</tr>
 			</thead>
@@ -221,6 +228,15 @@
 								<Badge variant="default" size="sm">{subscriber.status}</Badge>
 							{/if}
 						</td>
+						{#if hasValidation}
+							<td>
+								{#if subscriber.validation_status}
+									<ValidationBadge status={subscriber.validation_status} subStatus={subscriber.validation_sub_status} />
+								{:else}
+									<span class="text-text-muted">-</span>
+								{/if}
+							</td>
+						{/if}
 						<td class="text-text-muted">
 							{#if subscriber.subscribed_at}
 								{new Date(subscriber.subscribed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}

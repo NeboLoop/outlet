@@ -943,6 +943,88 @@ export function deleteUser(params: components.DeleteUserRequestParams, id: strin
 
 /**
  * @description 
+ * @param req
+ */
+export function adminValidateEmail(req: components.ValidateEmailRequest) {
+	return webapi.post<components.ValidationResult>(`/api/admin/validation/check`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function createValidationJob(req: components.CreateValidationJobRequest) {
+	return webapi.post<components.ValidationJobInfo>(`/api/admin/validation/jobs`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listValidationJobs(params: components.ListValidationJobsRequestParams) {
+	return webapi.get<components.ListValidationJobsResponse>(`/api/admin/validation/jobs`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getValidationJob(params: components.ValidationJobIdRequestParams, id: string) {
+	return webapi.get<components.ValidationJobInfo>(`/api/admin/validation/jobs/${id}`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function applyValidationJob(params: components.ApplyValidationJobRequestParams, req: components.ApplyValidationJobRequest, id: string) {
+	return webapi.post<components.ApplyValidationJobResponse>(`/api/admin/validation/jobs/${id}/apply`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function cancelValidationJob(params: components.ValidationJobIdRequestParams, id: string) {
+	return webapi.post<components.ValidationJobInfo>(`/api/admin/validation/jobs/${id}/cancel`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function appendValidationJobEmails(params: components.AppendValidationJobEmailsRequestParams, req: components.AppendValidationJobEmailsRequest, id: string) {
+	return webapi.post<components.ValidationJobInfo>(`/api/admin/validation/jobs/${id}/emails`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listValidationResults(params: components.ListValidationResultsRequestParams, id: string) {
+	return webapi.get<components.ListValidationResultsResponse>(`/api/admin/validation/jobs/${id}/results`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function startValidationJob(params: components.ValidationJobIdRequestParams, id: string) {
+	return webapi.post<components.ValidationJobInfo>(`/api/admin/validation/jobs/${id}/start`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getValidationUsage(params: components.ValidationUsageRequestParams) {
+	return webapi.get<components.ValidationUsageResponse>(`/api/admin/validation/usage`, params)
+}
+
+/**
+ * @description 
  */
 export function adminListWebhooks() {
 	return webapi.get<components.ListWebhooksResponse>(`/api/admin/webhooks`)
@@ -1051,6 +1133,22 @@ export function validateInvitation(params: components.ValidateInvitationRequestP
  */
 export function verifyEmail(params: components.VerifyEmailRequestParams) {
 	return webapi.get<components.VerifyEmailResponse>(`/api/v1/auth/verify-email`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function networkLookup(req: components.NetworkLookupRequest) {
+	return webapi.post<components.NetworkLookupResponse>(`/network/v1/lookup`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function networkReport(req: components.NetworkReportRequest) {
+	return webapi.post<components.NetworkReportResponse>(`/network/v1/report`, req)
 }
 
 /**
@@ -1270,6 +1368,22 @@ export function trackOpen(req: components.TrackOpenRequest) {
  */
 export function trackUnsubscribe(req: components.TrackUnsubscribeRequest) {
 	return webapi.post<components.Response>(`/sdk/v1/tracking/unsubscribe`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function validateEmail(req: components.ValidateEmailRequest) {
+	return webapi.post<components.ValidationResult>(`/sdk/v1/validate`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function validateBatch(req: components.ValidateBatchRequest) {
+	return webapi.post<components.ValidateBatchResponse>(`/sdk/v1/validate/batch`, req)
 }
 
 /**

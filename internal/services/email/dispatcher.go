@@ -148,10 +148,10 @@ func (d *Dispatcher) Start() {
 // Stop gracefully shuts down the dispatcher
 func (d *Dispatcher) Stop() {
 	logx.Info("Stopping email dispatcher...")
+	// Cancelling stops every goroutine. The channels stay open: the fetcher
+	// and retry processor may still be sending, and a send on a closed
+	// channel panics.
 	d.cancel()
-
-	// Close job channel to signal workers to stop
-	close(d.jobs)
 
 	// Wait for workers with timeout
 	done := make(chan struct{})
@@ -166,8 +166,6 @@ func (d *Dispatcher) Stop() {
 	case <-time.After(30 * time.Second):
 		logx.Error("Email dispatcher shutdown timed out")
 	}
-
-	close(d.retries)
 }
 
 // worker processes email jobs from the channel
@@ -175,11 +173,13 @@ func (d *Dispatcher) worker(id int) {
 	defer d.wg.Done()
 	logx.Infof("Email worker %d started", id)
 
-	for job := range d.jobs {
+	for {
+		var job EmailJob
 		select {
 		case <-d.ctx.Done():
+			logx.Infof("Email worker %d stopped", id)
 			return
-		default:
+		case job = <-d.jobs:
 		}
 
 		// Check circuit breaker
@@ -212,8 +212,6 @@ func (d *Dispatcher) worker(id int) {
 			d.handleSendSuccess(job)
 		}
 	}
-
-	logx.Infof("Email worker %d stopped", id)
 }
 
 // sendEmail processes and sends a single email
@@ -241,8 +239,8 @@ func (d *Dispatcher) sendEmail(job EmailJob) error {
 	}
 
 	// Process template variables
-	htmlBody := d.sequenceService.processTemplateVariables(email.HtmlBody, tplCtx)
-	subject := d.sequenceService.processTemplateVariables(email.Subject, tplCtx)
+	htmlBody := d.sequenceService.processTemplateVariables(email.HtmlBody, tplCtx, true)
+	subject := d.sequenceService.processTemplateVariables(email.Subject, tplCtx, false)
 
 	// Rewrite links for tracking
 	if email.TrackingToken.Valid && email.TrackingToken.String != "" {
@@ -268,7 +266,7 @@ func (d *Dispatcher) sendEmail(job EmailJob) error {
 	}
 
 	// Send via SMTP
-	return d.sequenceService.sender.sendEmail(email.Email, subject, htmlBody)
+	return d.sequenceService.sender.Send(d.ctx, d.sequenceService.sequenceMessage(email, subject, htmlBody))
 }
 
 // handleSendSuccess processes a successful send
@@ -438,10 +436,7 @@ func (d *Dispatcher) fetchBatch() {
 		return
 	}
 
-	pendingEmails, err := d.db.GetPendingEmails(d.ctx, db.GetPendingEmailsParams{
-		ScheduledBefore: time.Now().Format(time.RFC3339),
-		LimitCount:      int64(d.config.BatchSize),
-	})
+	pendingEmails, err := claimDueEmails(d.ctx, d.db, int64(d.config.BatchSize))
 	if err != nil {
 		logx.Errorf("Failed to fetch pending emails: %v", err)
 		return
@@ -466,44 +461,9 @@ func (d *Dispatcher) fetchBatch() {
 	}
 }
 
-// updateSequenceState updates sequence position and queues next email
+// updateSequenceState advances the sequence after a successful send
 func (d *Dispatcher) updateSequenceState(email db.GetPendingEmailsRow) {
-	if !email.ContactID.Valid || !email.TemplateID.Valid {
-		return
-	}
-
-	template, err := d.db.GetTemplateByID(d.ctx, email.TemplateID.String)
-	if err != nil {
-		return
-	}
-
-	// Update position
-	_ = d.db.UpdateContactSequencePosition(d.ctx, db.UpdateContactSequencePositionParams{
-		ContactID:       email.ContactID,
-		SequenceID:      template.SequenceID,
-		CurrentPosition: sql.NullInt64{Int64: template.Position, Valid: true},
-	})
-
-	// Queue next email
-	if template.SequenceID.Valid {
-		err = d.sequenceService.queueNextEmail(d.ctx, email.ContactID.String, template.SequenceID.String, template.Position+1)
-		if err != nil {
-			logx.Errorf("Failed to queue next email: %v", err)
-		}
-
-		// Check if sequence complete
-		nextTemplate, err := d.db.GetNextTemplate(d.ctx, db.GetNextTemplateParams{
-			SequenceID: template.SequenceID,
-			Position:   template.Position + 1,
-		})
-		if err != nil || nextTemplate.ID == "" {
-			_ = d.db.CompleteContactSequence(d.ctx, db.CompleteContactSequenceParams{
-				ContactID:  email.ContactID,
-				SequenceID: template.SequenceID,
-			})
-			logx.Infof("Completed sequence for contact %s", email.ContactID.String)
-		}
-	}
+	d.sequenceService.advanceSequence(d.ctx, email)
 }
 
 // metricsReporter periodically logs metrics

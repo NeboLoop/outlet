@@ -17,7 +17,9 @@ import (
 	"github.com/outlet-sh/outlet/internal/services/crypto"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/services/outbound"
+	"github.com/outlet-sh/outlet/internal/services/signalnet"
 	"github.com/outlet-sh/outlet/internal/services/tracking"
+	"github.com/outlet-sh/outlet/internal/services/validation"
 	"github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/websocket"
 
@@ -39,6 +41,13 @@ type ServiceContext struct {
 	WebhookDispatcher *webhook.Dispatcher
 	WebSocketHub      *websocket.Hub
 	Outbound          *outbound.Service
+
+	// Signal Network hub (nil unless SignalNet.Hub is true; its routes then 404)
+	NetworkHub  *signalnet.Hub
+	NetworkAuth rest.Middleware
+	// Email validation
+	SignalNet  *signalnet.Client // nil when Signal Network is not configured
+	Validation *validation.Service
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -96,12 +105,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	// Initialize Email service (AWS SES preferred, SMTP fallback - config from platform_settings)
 	emailService := email.NewService(store, cryptoService)
+	emailService.SetLinkSecret(c.Auth.AccessSecret)
 	if c.App.BaseURL != "" {
 		emailService.SetBaseURL(c.App.BaseURL)
 	}
-
-	// Initialize Tracking service
-	trackingService := tracking.New(store.Queries)
 
 	// Initialize rate limit middleware for auth endpoints
 	authRateLimiter := middleware.NewRateLimitMiddleware(middleware.DefaultAuthRateLimitConfig())
@@ -116,6 +123,9 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	)
 	log.Printf("Event bus initialized")
 
+	// Initialize Tracking service (publishes opens and clicks on the event bus)
+	trackingService := tracking.New(store.Queries, eventSubject)
+
 	// Initialize and start Webhook Dispatcher for outbound webhook delivery
 	webhookDispatcher := webhook.NewDispatcher(store.Queries, eventSubject)
 	if err := webhookDispatcher.Start(context.Background()); err != nil {
@@ -128,6 +138,18 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	wsHub := websocket.NewHub()
 	go wsHub.Run()
 	log.Printf("WebSocket hub initialized")
+
+	var networkHub *signalnet.Hub
+	if c.SignalNet.Hub {
+		networkHub = signalnet.NewHub(store)
+		log.Printf("Signal Network hub enabled at /network/v1")
+	}
+	// Email validation, with the Signal Network client when a hub is configured
+	var signalNet *signalnet.Client
+	if c.SignalNet.HubURL != "" {
+		signalNet = &signalnet.Client{HubURL: c.SignalNet.HubURL, InstanceKey: c.SignalNet.InstanceKey}
+	}
+	validationService := validation.New(store, c.Validation, signalNet)
 
 	return &ServiceContext{
 		Config:            c,
@@ -147,6 +169,10 @@ func NewServiceContext(c config.Config) *ServiceContext {
 			ProtectedDomains: strings.Split(c.Outbound.ProtectedDomains, ","),
 			TrackingTarget:   publicHost(c.App.BaseURL),
 		}),
+		NetworkHub:  networkHub,
+		NetworkAuth: middleware.NewNetworkAuthMiddleware(networkHub).Handle,
+		SignalNet:   signalNet,
+		Validation:  validationService,
 	}
 }
 

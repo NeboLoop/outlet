@@ -43,6 +43,7 @@ func TestPolicyCoversEveryToolAction(t *testing.T) {
 		"stats":         byResource(statsActions),
 		"blocklist":     byResource(blocklistActions),
 		"gdpr":          flat(gdprActions),
+		"validation":    byResource(validationActions),
 	}
 	for tool, actions := range outboundActions {
 		tools[tool] = flat(actions)

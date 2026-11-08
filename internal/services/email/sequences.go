@@ -6,9 +6,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"net/url"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -139,14 +136,19 @@ func (s *SequenceService) SendConfirmationEmail(ctx context.Context, contactID s
 		Email:             contact.Email,
 		VerificationToken: verificationToken,
 	}
-	htmlBody := s.processTemplateVariables(confirmationTemplate.HtmlBody, tplCtx)
-	subject := s.processTemplateVariables(confirmationTemplate.Subject, tplCtx)
+	htmlBody := s.processTemplateVariables(confirmationTemplate.HtmlBody, tplCtx, true)
+	subject := s.processTemplateVariables(confirmationTemplate.Subject, tplCtx, false)
 
 	// Confirmation emails don't get link tracking (we want them to click the raw confirmation URL)
 	// Also, confirmation templates use template_type='confirmation' which uses raw HTML from DB
 
 	// Send the email directly (not queued)
-	err = s.sender.sendEmail(contact.Email, subject, htmlBody)
+	err = s.sender.Send(ctx, Message{
+		OrgID:   sequence.OrgID.String,
+		To:      contact.Email,
+		Subject: subject,
+		HTML:    htmlBody,
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to send confirmation email: %w", err)
 	}
@@ -275,7 +277,7 @@ func (s *SequenceService) queueNextEmail(ctx context.Context, contactID string, 
 		ID:            uuid.NewString(),
 		ContactID:     sql.NullString{String: contactID, Valid: true},
 		TemplateID:    sql.NullString{String: template.ID, Valid: true},
-		ScheduledFor:  scheduledFor.Format(time.RFC3339),
+		ScheduledFor:  scheduledFor.UTC().Format(time.RFC3339),
 		TrackingToken: sql.NullString{String: trackingToken, Valid: true},
 	})
 	if err != nil {
@@ -325,10 +327,7 @@ func (s *SequenceService) calculateNextSendTime(sendHour int32, timezone string,
 // ProcessPendingEmails sends all pending emails that are due
 func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize int64) (int, error) {
 	// Get pending emails
-	pendingEmails, err := s.db.GetPendingEmails(ctx, db.GetPendingEmailsParams{
-		ScheduledBefore: time.Now().Format(time.RFC3339),
-		LimitCount:      batchSize,
-	})
+	pendingEmails, err := claimDueEmails(ctx, s.db, batchSize)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get pending emails: %w", err)
 	}
@@ -355,8 +354,8 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 		}
 
 		// Process template variables
-		htmlBody := s.processTemplateVariables(email.HtmlBody, tplCtx)
-		subject := s.processTemplateVariables(email.Subject, tplCtx)
+		htmlBody := s.processTemplateVariables(email.HtmlBody, tplCtx, true)
+		subject := s.processTemplateVariables(email.Subject, tplCtx, false)
 
 		// Rewrite links to go through tracking redirect
 		if email.TrackingToken.Valid && email.TrackingToken.String != "" {
@@ -384,7 +383,7 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 		}
 
 		// Send the email
-		err = s.sender.sendEmail(email.Email, subject, htmlBody)
+		err = s.sender.Send(ctx, s.sequenceMessage(email, subject, htmlBody))
 		if err != nil {
 			logx.Errorf("Failed to send email %s to %s: %v", email.ID, email.Email, err)
 			_ = s.db.MarkEmailFailed(ctx, db.MarkEmailFailedParams{
@@ -404,56 +403,74 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 		sent++
 		logx.Infof("Sent email %s to %s: %s", email.ID, email.Email, subject)
 
-		// Update sequence position and queue next email
-		if email.ContactID.Valid && email.TemplateID.Valid {
-			template, err := s.db.GetTemplateByID(ctx, email.TemplateID.String)
-			if err == nil {
-				// Update position
-				_ = s.db.UpdateContactSequencePosition(ctx, db.UpdateContactSequencePositionParams{
-					ContactID:       email.ContactID,
-					SequenceID:      template.SequenceID,
-					CurrentPosition: sql.NullInt64{Int64: template.Position, Valid: true},
-				})
-
-				// Queue next email
-				if template.SequenceID.Valid {
-					err = s.queueNextEmail(ctx, email.ContactID.String, template.SequenceID.String, template.Position+1)
-					if err != nil {
-						logx.Errorf("Failed to queue next email: %v", err)
-					}
-
-					// Check if sequence is complete
-					nextTemplate, err := s.db.GetNextTemplate(ctx, db.GetNextTemplateParams{
-						SequenceID: template.SequenceID,
-						Position:   template.Position + 1,
-					})
-					if err != nil || nextTemplate.ID == "" {
-						// No more templates - mark sequence complete
-						_ = s.db.CompleteContactSequence(ctx, db.CompleteContactSequenceParams{
-							ContactID:  email.ContactID,
-							SequenceID: template.SequenceID,
-						})
-						logx.Infof("Completed sequence for contact %s", email.ContactID.String)
-
-						// Check for sequence chaining - auto-enroll in next sequence if configured
-						seq, seqErr := s.db.GetSequenceByID(ctx, template.SequenceID.String)
-						if seqErr == nil && seq.OnCompletionSequenceID.Valid && seq.OnCompletionSequenceID.String != "" {
-							chainErr := s.StartSequenceByID(ctx, email.ContactID.String, seq.OnCompletionSequenceID.String)
-							if chainErr != nil {
-								logx.Errorf("Failed to start chained sequence %s for contact %s: %v",
-									seq.OnCompletionSequenceID.String, email.ContactID.String, chainErr)
-							} else {
-								logx.Infof("Chained contact %s from sequence %s to sequence %s",
-									email.ContactID.String, template.SequenceID.String, seq.OnCompletionSequenceID.String)
-							}
-						}
-					}
-				}
-			}
-		}
+		s.advanceSequence(ctx, email)
 	}
 
 	return sent, nil
+}
+
+// claimDueEmails claims up to limit due sequence emails for this worker and
+// returns them. A claimed row is never handed to another worker, so polling
+// again while these wait for the rate limiter cannot send them twice.
+func claimDueEmails(ctx context.Context, store *db.Store, limit int64) ([]db.GetPendingEmailsRow, error) {
+	claim := uuid.NewString()
+	if err := store.ClaimPendingEmails(ctx, db.ClaimPendingEmailsParams{
+		ClaimToken:      sql.NullString{String: claim, Valid: true},
+		ScheduledBefore: time.Now().UTC().Format(time.RFC3339),
+		LimitCount:      limit,
+	}); err != nil {
+		return nil, err
+	}
+	return store.GetPendingEmails(ctx, sql.NullString{String: claim, Valid: true})
+}
+
+// advanceSequence runs after a sequence email is sent: it records the
+// position, queues the next step, and when the sequence is finished marks it
+// complete and starts the chained sequence, if one is configured.
+func (s *SequenceService) advanceSequence(ctx context.Context, email db.GetPendingEmailsRow) {
+	if !email.ContactID.Valid || !email.TemplateID.Valid {
+		return
+	}
+	template, err := s.db.GetTemplateByID(ctx, email.TemplateID.String)
+	if err != nil || !template.SequenceID.Valid {
+		return
+	}
+
+	_ = s.db.UpdateContactSequencePosition(ctx, db.UpdateContactSequencePositionParams{
+		ContactID:       email.ContactID,
+		SequenceID:      template.SequenceID,
+		CurrentPosition: sql.NullInt64{Int64: template.Position, Valid: true},
+	})
+
+	if err := s.queueNextEmail(ctx, email.ContactID.String, template.SequenceID.String, template.Position+1); err != nil {
+		logx.Errorf("Failed to queue next email: %v", err)
+	}
+
+	nextTemplate, err := s.db.GetNextTemplate(ctx, db.GetNextTemplateParams{
+		SequenceID: template.SequenceID,
+		Position:   template.Position + 1,
+	})
+	if err == nil && nextTemplate.ID != "" {
+		return
+	}
+
+	_ = s.db.CompleteContactSequence(ctx, db.CompleteContactSequenceParams{
+		ContactID:  email.ContactID,
+		SequenceID: template.SequenceID,
+	})
+	logx.Infof("Completed sequence for contact %s", email.ContactID.String)
+
+	seq, err := s.db.GetSequenceByID(ctx, template.SequenceID.String)
+	if err != nil || !seq.OnCompletionSequenceID.Valid || seq.OnCompletionSequenceID.String == "" {
+		return
+	}
+	if err := s.StartSequenceByID(ctx, email.ContactID.String, seq.OnCompletionSequenceID.String); err != nil {
+		logx.Errorf("Failed to start chained sequence %s for contact %s: %v",
+			seq.OnCompletionSequenceID.String, email.ContactID.String, err)
+		return
+	}
+	logx.Infof("Chained contact %s from sequence %s to sequence %s",
+		email.ContactID.String, template.SequenceID.String, seq.OnCompletionSequenceID.String)
 }
 
 // TemplateContext holds variables for template processing
@@ -466,40 +483,36 @@ type TemplateContext struct {
 }
 
 // processTemplateVariables replaces placeholders in email content
-func (s *SequenceService) processTemplateVariables(content string, ctx TemplateContext) string {
-	firstName := strings.Split(ctx.Name, " ")[0]
+// processTemplateVariables fills merge tags; escapeHTML is true for HTML bodies
+func (s *SequenceService) processTemplateVariables(content string, ctx TemplateContext, escapeHTML bool) string {
+	return fillMergeTags(content, mergeContext{
+		BaseURL:           s.baseURL,
+		Name:              ctx.Name,
+		Email:             ctx.Email,
+		TrackingToken:     ctx.TrackingToken,
+		VerificationToken: ctx.VerificationToken,
+		CustomFields:      ctx.CustomFields,
+	}, escapeHTML)
+}
 
-	content = strings.ReplaceAll(content, "{{name}}", ctx.Name)
-	content = strings.ReplaceAll(content, "{{first_name}}", firstName)
-	content = strings.ReplaceAll(content, "{{email}}", ctx.Email)
-
-	// Replace confirmation URL for double opt-in emails
-	if ctx.VerificationToken != "" {
-		confirmURL := fmt.Sprintf("%s/api/confirm-email?token=%s", s.baseURL, url.QueryEscape(ctx.VerificationToken))
-		content = strings.ReplaceAll(content, "{{confirm_url}}", confirmURL)
+// sequenceMessage addresses a queued sequence email from its brand. Marketing
+// steps carry the one-click List-Unsubscribe headers; transactional steps and
+// sends without a tracking token do not.
+func (s *SequenceService) sequenceMessage(email db.GetPendingEmailsRow, subject, htmlBody string) Message {
+	m := Message{OrgID: email.OrgID, To: email.Email, Subject: subject, HTML: htmlBody}
+	isTransactional := email.IsTransactional.Valid && email.IsTransactional.Int64 == 1
+	if !isTransactional && email.TrackingToken.String != "" {
+		m.ListUnsubscribe = unsubscribeURL(s.baseURL, email.TrackingToken.String)
 	}
-
-	// Replace unsubscribe URL if tracking token is available
-	if ctx.TrackingToken != "" {
-		unsubscribeURL := fmt.Sprintf("%s/api/e/u/%s", s.baseURL, ctx.TrackingToken)
-		content = strings.ReplaceAll(content, "{{unsubscribe_url}}", unsubscribeURL)
-	}
-
-	// Replace custom field merge tags
-	for fieldKey, value := range ctx.CustomFields {
-		placeholder := "{{" + fieldKey + "}}"
-		content = strings.ReplaceAll(content, placeholder, value)
-	}
-
-	return content
+	return m
 }
 
 // wrapWithSimpleTemplate wraps email content with a simple template (just footer)
 func (s *SequenceService) wrapWithSimpleTemplate(content string, isTransactional bool, trackingToken string) string {
 	unsubscribeSection := ""
 	if !isTransactional && trackingToken != "" {
-		unsubscribeURL := fmt.Sprintf("%s/api/e/u/%s", s.baseURL, trackingToken)
-		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, unsubscribeURL)
+		link := unsubscribeURL(s.baseURL, trackingToken)
+		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, link)
 	}
 
 	// Use baseURL for footer link, fall back to empty if not set
@@ -536,8 +549,8 @@ func (s *SequenceService) wrapWithSimpleTemplate(content string, isTransactional
 func (s *SequenceService) wrapWithBrandedTemplate(content string, isTransactional bool, trackingToken string) string {
 	unsubscribeSection := ""
 	if !isTransactional && trackingToken != "" {
-		unsubscribeURL := fmt.Sprintf("%s/api/e/u/%s", s.baseURL, trackingToken)
-		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, unsubscribeURL)
+		link := unsubscribeURL(s.baseURL, trackingToken)
+		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, link)
 	}
 
 	// Use baseURL for footer link, fall back to empty if not set
@@ -575,40 +588,11 @@ func (s *SequenceService) wrapWithBrandedTemplate(content string, isTransactiona
 </html>`, content, footerLink, unsubscribeSection)
 }
 
-// rewriteLinksForTracking replaces href URLs with tracked redirect URLs
+// rewriteLinksForTracking replaces href URLs with signed click-tracking URLs
 func (s *SequenceService) rewriteLinksForTracking(htmlBody, trackingToken string) string {
-	// Match href="..." patterns
-	linkRegex := regexp.MustCompile(`href="([^"]+)"`)
-
-	return linkRegex.ReplaceAllStringFunc(htmlBody, func(match string) string {
-		// Extract the URL from href="URL"
-		urlMatch := linkRegex.FindStringSubmatch(match)
-		if len(urlMatch) < 2 {
-			return match
-		}
-
-		originalURL := urlMatch[1]
-
-		// Skip mailto:, tel:, and anchor links
-		if strings.HasPrefix(originalURL, "mailto:") ||
-			strings.HasPrefix(originalURL, "tel:") ||
-			strings.HasPrefix(originalURL, "#") ||
-			strings.HasPrefix(originalURL, "{{") {
-			return match
-		}
-
-		// Skip if already a tracking URL
-		if strings.Contains(originalURL, "/api/e/c/") {
-			return match
-		}
-
-		// Build tracked URL (using /api/e/c/:token format)
-		trackedURL := fmt.Sprintf("%s/api/e/c/%s?url=%s",
-			s.baseURL,
-			trackingToken,
-			url.QueryEscape(originalURL),
-		)
-
-		return fmt.Sprintf(`href="%s"`, trackedURL)
-	})
+	var key []byte
+	if s.sender != nil {
+		key = s.sender.linkKey
+	}
+	return rewriteLinks(htmlBody, s.baseURL, key, trackingToken)
 }

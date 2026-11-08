@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -33,7 +34,9 @@ type Config struct {
 		RateBurst   int     `json:",default=50"`  // Max burst size
 		BatchSize   int     `json:",default=100"` // Emails per batch fetch
 	}
-	SMTP SMTPConfig
+	SMTP       SMTPConfig
+	Validation ValidationConfig `json:",optional"`
+	SignalNet  SignalNetConfig  `json:",optional"`
 	Encryption struct {
 		Key string // 32-byte hex-encoded key for AES-256 encryption
 	}
@@ -57,6 +60,20 @@ func (c *Config) Validate() []string {
 		errors = append(errors, "APP_BASE_URL is required")
 	}
 
+	// Admin logins are signed with these; an empty secret means anyone can
+	// forge a login
+	if c.Auth.AccessSecret == "" {
+		errors = append(errors, "JWT_SECRET is required (try: openssl rand -hex 32)")
+	}
+	if c.Auth.RefreshSecret == "" {
+		errors = append(errors, "JWT_REFRESH_SECRET is required (try: openssl rand -hex 32)")
+	}
+
+	// Email provider credentials are stored encrypted with this key
+	if key, err := hex.DecodeString(c.Encryption.Key); err != nil || len(key) != 32 {
+		errors = append(errors, "ENCRYPTION_KEY is required: 64 hex characters (try: openssl rand -hex 32)")
+	}
+
 	// Validate URLs have proper format (not empty after env expansion)
 	if c.App.BaseURL != "" && !strings.HasPrefix(c.App.BaseURL, "http") {
 		errors = append(errors, fmt.Sprintf("APP_BASE_URL must start with http:// or https://, got: %s", c.App.BaseURL))
@@ -77,9 +94,8 @@ func (c *Config) MustValidate() {
 func (c *Config) ValidateAndWarn() []string {
 	var warnings []string
 
-	// Optional but recommended
-	if c.Auth.AccessSecret == "" {
-		warnings = append(warnings, "JWT_SECRET not set - authentication disabled")
+	if c.Auth.AccessSecret != "" && len(c.Auth.AccessSecret) < 32 {
+		warnings = append(warnings, "JWT_SECRET is shorter than 32 characters; use a longer random value (openssl rand -hex 32)")
 	}
 
 	return warnings
@@ -116,4 +132,22 @@ func (c SMTPConfig) GetPort() int {
 // IsAllowInsecureAuth returns true if insecure auth is allowed
 func (c SMTPConfig) IsAllowInsecureAuth() bool {
 	return strings.ToLower(c.AllowInsecureAuth) == "true" || c.AllowInsecureAuth == "1"
+}
+
+// ValidationConfig configures email validation probing.
+type ValidationConfig struct {
+	Proxies      []string `json:",optional"`             // socks5:// URLs of dedicated probe hosts; empty = probe directly
+	HeloHostname string   `json:",optional"`             // EHLO name; must match the probe IPs' reverse DNS
+	FromDomain   string   `json:",optional"`             // MAIL FROM domain (defaults to HeloHostname)
+	SMTPCheck    bool     `json:",optional"`             // enable mailbox probing (needs outbound port 25 or Proxies)
+	Concurrency  int      `json:",default=20"`           // domains probed in parallel by the job worker
+	CacheDays    int      `json:",default=30"`           // reuse a probe result for this many days
+}
+
+// SignalNetConfig configures the Outlet Signal Network: pooled, hashed deliverability
+// signals shared across instances. The hub is run by outlet.sh; an instance key is the subscription.
+type SignalNetConfig struct {
+	HubURL      string `json:",optional"` // e.g. https://signals.outlet.sh; empty = disabled
+	InstanceKey string `json:",optional"` // subscription key issued by the hub
+	Hub         bool   `json:",optional"` // run this instance as the hub (serves /network/v1)
 }
