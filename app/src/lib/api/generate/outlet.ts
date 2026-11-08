@@ -841,6 +841,67 @@ export function updateOutboundSettings(req: components.OutboundSettingsRequest) 
  * @param params
  * @param req
  */
+export function setMailboxService(params: components.MailboxServiceRequestParams, req: components.MailboxServiceRequest, id: string) {
+	return webapi.put<components.MailboxServiceStatus>(`/api/admin/outbound/pools/${id}/service`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function buyMailboxService(params: components.MailboxServiceBuyRequestParams, req: components.MailboxServiceBuyRequest, id: string) {
+	return webapi.post<components.MailboxServiceBuyResponse>(`/api/admin/outbound/pools/${id}/service/buy`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function connectMailboxServiceDomain(params: components.MailboxServiceConnectRequestParams, req: components.MailboxServiceConnectRequest, id: string) {
+	return webapi.post<components.MailboxServiceDomainResponse>(`/api/admin/outbound/pools/${id}/service/domains`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getMailboxServiceInventory(params: components.MailboxServicePoolRequestParams, id: string) {
+	return webapi.get<components.MailboxServiceInventory>(`/api/admin/outbound/pools/${id}/service/inventory`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function deleteMailboxServiceMailbox(params: components.MailboxServiceDeleteRequestParams, id: string, mailbox_id: string) {
+	return webapi.delete<components.Response>(`/api/admin/outbound/pools/${id}/service/mailboxes/${mailbox_id}`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function quoteMailboxService(params: components.MailboxServiceQuoteRequestParams, req: components.MailboxServiceQuoteRequest, id: string) {
+	return webapi.post<components.MailboxServiceQuote>(`/api/admin/outbound/pools/${id}/service/quotes`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function syncMailboxService(params: components.MailboxServiceSyncRequestParams, req: components.MailboxServiceSyncRequest, id: string) {
+	return webapi.post<components.MailboxServiceSyncResponse>(`/api/admin/outbound/pools/${id}/service/sync`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
 export function setMailboxDailyLimit(params: components.MailboxDailyLimitRequestParams, req: components.MailboxDailyLimitRequest, id: string) {
 	return webapi.put<components.Response>(`/api/admin/sending/mailboxes/${id}/daily-limit`, params, req)
 }
@@ -1671,6 +1732,67 @@ export function sdkClassifyOutboundReply(params: components.OutboundClassifyRequ
  */
 export function sdkUpdateOutboundSettings(req: components.OutboundSettingsRequest) {
 	return webapi.put<components.Response>(`/sdk/v1/outbound/settings`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkSetMailboxService(params: components.MailboxServiceRequestParams, req: components.MailboxServiceRequest, id: string) {
+	return webapi.put<components.MailboxServiceStatus>(`/sdk/v1/outbound/pools/${id}/service`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkBuyMailboxService(params: components.MailboxServiceBuyRequestParams, req: components.MailboxServiceBuyRequest, id: string) {
+	return webapi.post<components.MailboxServiceBuyResponse>(`/sdk/v1/outbound/pools/${id}/service/buy`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkConnectMailboxServiceDomain(params: components.MailboxServiceConnectRequestParams, req: components.MailboxServiceConnectRequest, id: string) {
+	return webapi.post<components.MailboxServiceDomainResponse>(`/sdk/v1/outbound/pools/${id}/service/domains`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkGetMailboxServiceInventory(params: components.MailboxServicePoolRequestParams, id: string) {
+	return webapi.get<components.MailboxServiceInventory>(`/sdk/v1/outbound/pools/${id}/service/inventory`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkDeleteMailboxServiceMailbox(params: components.MailboxServiceDeleteRequestParams, id: string, mailbox_id: string) {
+	return webapi.delete<components.Response>(`/sdk/v1/outbound/pools/${id}/service/mailboxes/${mailbox_id}`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkQuoteMailboxService(params: components.MailboxServiceQuoteRequestParams, req: components.MailboxServiceQuoteRequest, id: string) {
+	return webapi.post<components.MailboxServiceQuote>(`/sdk/v1/outbound/pools/${id}/service/quotes`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkSyncMailboxService(params: components.MailboxServiceSyncRequestParams, req: components.MailboxServiceSyncRequest, id: string) {
+	return webapi.post<components.MailboxServiceSyncResponse>(`/sdk/v1/outbound/pools/${id}/service/sync`, params, req)
 }
 
 /**

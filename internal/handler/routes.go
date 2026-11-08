@@ -697,6 +697,50 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			[]rest.Route{
 				{
 					Method:  http.MethodPut,
+					Path:    "/outbound/pools/:id/service",
+					Handler: adminoutbound.SetMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/pools/:id/service/buy",
+					Handler: adminoutbound.BuyMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/pools/:id/service/domains",
+					Handler: adminoutbound.ConnectMailboxServiceDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/pools/:id/service/inventory",
+					Handler: adminoutbound.GetMailboxServiceInventoryHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/outbound/pools/:id/service/mailboxes/:mailbox_id",
+					Handler: adminoutbound.DeleteMailboxServiceMailboxHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/pools/:id/service/quotes",
+					Handler: adminoutbound.QuoteMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/pools/:id/service/sync",
+					Handler: adminoutbound.SyncMailboxServiceHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPut,
 					Path:    "/sending/mailboxes/:id/daily-limit",
 					Handler: adminsending.SetMailboxDailyLimitHandler(serverCtx),
 				},
@@ -1357,6 +1401,50 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodPut,
 					Path:    "/settings",
 					Handler: sdkoutbound.SdkUpdateOutboundSettingsHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/sdk/v1/outbound"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.APIKeyAuth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPut,
+					Path:    "/pools/:id/service",
+					Handler: sdkoutbound.SdkSetMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/pools/:id/service/buy",
+					Handler: sdkoutbound.SdkBuyMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/pools/:id/service/domains",
+					Handler: sdkoutbound.SdkConnectMailboxServiceDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/pools/:id/service/inventory",
+					Handler: sdkoutbound.SdkGetMailboxServiceInventoryHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/pools/:id/service/mailboxes/:mailbox_id",
+					Handler: sdkoutbound.SdkDeleteMailboxServiceMailboxHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/pools/:id/service/quotes",
+					Handler: sdkoutbound.SdkQuoteMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/pools/:id/service/sync",
+					Handler: sdkoutbound.SdkSyncMailboxServiceHandler(serverCtx),
 				},
 			}...,
 		),

@@ -2139,21 +2139,23 @@ type (
 		PauseComplaints int64   `json:"pause_complaints"`
 	}
 	SendingPathway {
-		Id              string        `json:"id"`
-		Name            string        `json:"name"`
-		Provider        string        `json:"provider"` // platform, ses, smtp, mailboxes
-		Kinds           []string      `json:"kinds"` // transactional, marketing, outreach
-		AWSRegion       string        `json:"aws_region,optional"`
-		AWSKeysSet      bool          `json:"aws_keys_set"`
-		SMTPHost        string        `json:"smtp_host,optional"`
-		SMTPPort        int64         `json:"smtp_port,optional"`
-		SMTPUsername    string        `json:"smtp_username,optional"`
-		SMTPPasswordSet bool          `json:"smtp_password_set"`
-		Limits          SendingLimits `json:"limits"`
-		Domains         []string      `json:"domains"`
-		Mailboxes       int64         `json:"mailboxes"`
-		Warning         string        `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
-		CreatedAt       string        `json:"created_at"`
+		Id                   string        `json:"id"`
+		Name                 string        `json:"name"`
+		Provider             string        `json:"provider"` // platform, ses, smtp, mailboxes
+		Kinds                []string      `json:"kinds"` // transactional, marketing, outreach
+		AWSRegion            string        `json:"aws_region,optional"`
+		AWSKeysSet           bool          `json:"aws_keys_set"`
+		SMTPHost             string        `json:"smtp_host,optional"`
+		SMTPPort             int64         `json:"smtp_port,optional"`
+		SMTPUsername         string        `json:"smtp_username,optional"`
+		SMTPPasswordSet      bool          `json:"smtp_password_set"`
+		Limits               SendingLimits `json:"limits"`
+		Domains              []string      `json:"domains"`
+		Mailboxes            int64         `json:"mailboxes"`
+		Warning              string        `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
+		CreatedAt            string        `json:"created_at"`
+		MailboxService       string        `json:"mailbox_service,optional"` // a mailbox pool's: manual, maildoso, cheapinboxes, infraforge
+		MailboxServiceKeySet bool          `json:"mailbox_service_key_set"`
 	}
 	SendingPathwayList {
 		Pathways []SendingPathway `json:"pathways"`
@@ -2190,6 +2192,113 @@ type (
 	MailboxDailyLimitRequest {
 		Id         string `path:"id"`
 		DailyLimit *int64 `json:"daily_limit,optional"` // empty: use the pool's
+	}
+	// ========== Mailbox services (per mailbox pool) ==========
+	// A mailbox pool gets its domains and mailboxes by hand (manual) or from a
+	// mailbox service. The API key is write-only. Buying is a quote, then a
+	// buy with the quote's id and confirm: true; nothing else spends money.
+	MailboxServicePoolRequest {
+		Id string `path:"id"` // the mailbox pool
+	}
+	MailboxServiceRequest {
+		Id      string `path:"id"`
+		Service string `json:"service"` // manual, maildoso, cheapinboxes, infraforge
+		APIKey  string `json:"api_key,optional"` // empty keeps the stored key
+	}
+	MailboxServiceStatus {
+		PoolId  string        `json:"pool_id"`
+		Service string        `json:"service"`
+		KeySet  bool          `json:"key_set"`
+		Limits  SendingLimits `json:"limits"` // picking a service sets them to its terms
+	}
+	MailboxServiceDomain {
+		Id          string   `json:"id"`
+		Name        string   `json:"name"`
+		Status      string   `json:"status"`
+		Nameservers []string `json:"nameservers,optional"`
+	}
+	MailboxServiceMailbox {
+		Id        string `json:"id"`
+		Email     string `json:"email"`
+		FirstName string `json:"first_name,optional"`
+		LastName  string `json:"last_name,optional"`
+		Status    string `json:"status"`
+		Ready     bool   `json:"ready"`
+	}
+	MailboxServiceInventory {
+		Service   string                  `json:"service"`
+		Domains   []MailboxServiceDomain  `json:"domains"`
+		Mailboxes []MailboxServiceMailbox `json:"mailboxes"`
+	}
+	MailboxServiceConnectRequest {
+		Id     string `path:"id"`
+		Domain string `json:"domain"`
+	}
+	MailboxServiceConnection {
+		Domain      string   `json:"domain"`
+		Nameservers []string `json:"nameservers,optional"` // set these at the domain's registrar
+		Status      string   `json:"status,optional"`
+		Note        string   `json:"note"`
+	}
+	MailboxServiceDomainResponse {
+		DomainId   string                   `json:"domain_id,optional"`
+		Connection MailboxServiceConnection `json:"connection"`
+		Check      OutboundDNSCheck         `json:"check"`
+	}
+	MailboxServicePerson {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		Local     string `json:"local,optional"` // before the @; empty: first.last
+	}
+	MailboxServiceQuoteRequest {
+		Id     string                 `path:"id"`
+		Kind   string                 `json:"kind"` // domain, connect, mailboxes
+		Domain string                 `json:"domain"`
+		People []MailboxServicePerson `json:"people,optional"` // for mailboxes
+	}
+	MailboxServiceQuote {
+		Id         string `json:"id"`
+		Service    string `json:"service"`
+		Kind       string `json:"kind"`
+		Domain     string `json:"domain"`
+		Mailboxes  int64  `json:"mailboxes"`
+		PriceCents *int64 `json:"price_cents,optional"` // empty: the service's API gives no price
+		PriceKnown bool   `json:"price_known"`
+		Currency   string `json:"currency,optional"`
+		Summary    string `json:"summary"`
+		ExpiresAt  string `json:"expires_at"`
+	}
+	MailboxServiceBuyRequest {
+		Id      string `path:"id"`
+		QuoteId string `json:"quote_id"`
+		Confirm bool   `json:"confirm"` // must be true: buying spends money
+	}
+	MailboxServiceBuyResponse {
+		Summary      string                   `json:"summary"`
+		ChargedCents *int64                   `json:"charged_cents,optional"`
+		DomainId     string                   `json:"domain_id,optional"`
+		Connection   MailboxServiceConnection `json:"connection"`
+		Check        *OutboundDNSCheck        `json:"check,optional"`
+		Imported     []OutboundMailboxResult  `json:"imported"`
+		Pending      []string                 `json:"pending"` // not finished at the service yet; sync with import later
+	}
+	MailboxServiceSyncRequest {
+		Id     string `path:"id"`
+		Import bool   `json:"import,optional"` // import the service's mailboxes the pool lacks
+	}
+	MailboxServicePoolMailbox {
+		Id    string `json:"id"`
+		Email string `json:"email"`
+	}
+	MailboxServiceSyncResponse {
+		OnlyAtService []MailboxServiceMailbox     `json:"only_at_service"`
+		OnlyInPool    []MailboxServicePoolMailbox `json:"only_in_pool"`
+		Imported      []OutboundMailboxResult     `json:"imported"`
+		Pending       []string                    `json:"pending"`
+	}
+	MailboxServiceDeleteRequest {
+		Id        string `path:"id"`
+		MailboxId string `path:"mailbox_id"`
 	}
 )
 
@@ -3137,6 +3246,37 @@ service outlet {
 	put /sending/mailboxes/:id/daily-limit (MailboxDailyLimitRequest) returns (Response)
 }
 
+// A mailbox pool's mailbox service, for a brand (X-Org-Id): the same outbound
+// service as the MCP tools. Changing the service or key, buying and deleting
+// need the brand's admin.
+@server (
+	group:      admin/outbound
+	prefix:     /api/admin
+	middleware: Auth
+)
+service outlet {
+	@handler SetMailboxService
+	put /outbound/pools/:id/service (MailboxServiceRequest) returns (MailboxServiceStatus)
+
+	@handler GetMailboxServiceInventory
+	get /outbound/pools/:id/service/inventory (MailboxServicePoolRequest) returns (MailboxServiceInventory)
+
+	@handler ConnectMailboxServiceDomain
+	post /outbound/pools/:id/service/domains (MailboxServiceConnectRequest) returns (MailboxServiceDomainResponse)
+
+	@handler QuoteMailboxService
+	post /outbound/pools/:id/service/quotes (MailboxServiceQuoteRequest) returns (MailboxServiceQuote)
+
+	@handler BuyMailboxService
+	post /outbound/pools/:id/service/buy (MailboxServiceBuyRequest) returns (MailboxServiceBuyResponse)
+
+	@handler SyncMailboxService
+	post /outbound/pools/:id/service/sync (MailboxServiceSyncRequest) returns (MailboxServiceSyncResponse)
+
+	@handler DeleteMailboxServiceMailbox
+	delete /outbound/pools/:id/service/mailboxes/:mailbox_id (MailboxServiceDeleteRequest) returns (Response)
+}
+
 // Outbound through a brand's API key, for other systems: the same operations
 // as the admin routes and the MCP tools. Turning outbound on stays with the
 // brand's admin in the app.
@@ -3202,5 +3342,35 @@ service outlet {
 
 	@handler SdkExplainOutbound
 	get /explain (OutboundExplainRequest) returns (OutboundExplainResponse)
+}
+
+// A mailbox pool's mailbox service through a brand's API key: the same
+// operations as the admin routes and the MCP tools.
+@server (
+	group:      sdk/outbound
+	prefix:     /sdk/v1/outbound
+	middleware: APIKeyAuth
+)
+service outlet {
+	@handler SdkSetMailboxService
+	put /pools/:id/service (MailboxServiceRequest) returns (MailboxServiceStatus)
+
+	@handler SdkGetMailboxServiceInventory
+	get /pools/:id/service/inventory (MailboxServicePoolRequest) returns (MailboxServiceInventory)
+
+	@handler SdkConnectMailboxServiceDomain
+	post /pools/:id/service/domains (MailboxServiceConnectRequest) returns (MailboxServiceDomainResponse)
+
+	@handler SdkQuoteMailboxService
+	post /pools/:id/service/quotes (MailboxServiceQuoteRequest) returns (MailboxServiceQuote)
+
+	@handler SdkBuyMailboxService
+	post /pools/:id/service/buy (MailboxServiceBuyRequest) returns (MailboxServiceBuyResponse)
+
+	@handler SdkSyncMailboxService
+	post /pools/:id/service/sync (MailboxServiceSyncRequest) returns (MailboxServiceSyncResponse)
+
+	@handler SdkDeleteMailboxServiceMailbox
+	delete /pools/:id/service/mailboxes/:mailbox_id (MailboxServiceDeleteRequest) returns (Response)
 }
 
