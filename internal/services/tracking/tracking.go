@@ -28,8 +28,8 @@ func New(db db.Querier, bus *events.Subject) *Service {
 	return &Service{db: db, bus: bus}
 }
 
-// RecordOpen records an email open by tracking token: a sequence email, or
-// a campaign send.
+// RecordOpen records an email open by tracking token: a sequence email, a
+// transactional send, or a campaign send.
 func (s *Service) RecordOpen(ctx context.Context, token string) error {
 	if token == "" {
 		return ErrInvalidToken
@@ -52,6 +52,14 @@ func (s *Service) RecordOpen(ctx context.Context, token string) error {
 		return nil
 	}
 
+	if ts, err := s.db.GetTransactionalSendByTracking(ctx, tok); err == nil {
+		if err := s.db.RecordTransactionalOpen(ctx, ts.ID); err != nil {
+			return err
+		}
+		db.PublishEmail(ctx, s.db, s.bus, events.TopicEmailOpened, db.FromTransactional, ts.ID, "")
+		return nil
+	}
+
 	send, err := s.db.GetCampaignSendByTrackingToken(ctx, tok)
 	if err != nil {
 		return ErrNotFound
@@ -69,7 +77,8 @@ func (s *Service) RecordOpen(ctx context.Context, token string) error {
 const scannerWindow = time.Minute
 
 // RecordClick records a click by tracking token: a sequence or outreach
-// email, or a campaign send, where the link is also recorded for per-link stats.
+// email, a transactional send, or a campaign send, where the link is also
+// recorded for per-link stats.
 func (s *Service) RecordClick(ctx context.Context, token, linkURL string) error {
 	if token == "" {
 		return ErrInvalidToken
@@ -89,6 +98,14 @@ func (s *Service) RecordClick(ctx context.Context, token, linkURL string) error 
 			return err
 		}
 		db.PublishEmail(ctx, s.db, s.bus, events.TopicEmailClicked, db.FromQueue, emailRecord.ID, linkURL)
+		return nil
+	}
+
+	if ts, err := s.db.GetTransactionalSendByTracking(ctx, tok); err == nil {
+		if err := s.db.RecordTransactionalClick(ctx, ts.ID); err != nil {
+			return err
+		}
+		db.PublishEmail(ctx, s.db, s.bus, events.TopicEmailClicked, db.FromTransactional, ts.ID, linkURL)
 		return nil
 	}
 

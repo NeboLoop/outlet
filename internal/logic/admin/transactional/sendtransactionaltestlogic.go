@@ -40,10 +40,8 @@ func (l *SendTransactionalTestLogic) SendTransactionalTest(req *types.SendEmailR
 	if err != nil {
 		return nil, err
 	}
-	resp, err = emails.Send(l.ctx, l.svcCtx, org, req)
-	if err != nil {
-		return nil, err
-	}
+	// The response's message says why a send failed, for the page to show.
+	resp, _ = emails.Send(l.ctx, l.svcCtx, org, req, emails.ViaAPI)
 	if !resp.Success {
 		return nil, errorx.NewBadRequestError(resp.Message)
 	}

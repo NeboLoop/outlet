@@ -1079,6 +1079,10 @@ type (
 		Tags         []string          `json:"tags,optional"` // For tracking/filtering
 		Meta         map[string]string `json:"meta,optional"` // Custom metadata
 		Attachments  []EmailAttachment `json:"attachments,optional"` // Optional file attachments
+		Type         string            `json:"type,optional"` // transactional (default) or marketing
+		ListSlug     string            `json:"list_slug,optional"` // Marketing only, and required for it: the list the recipient subscribed to. Sent only to an active subscriber, with an unsubscribe link
+		TrackOpens   bool              `json:"track_opens,optional"` // Add an open pixel
+		TrackClicks  bool              `json:"track_clicks,optional"` // Send links through click tracking
 	}
 	SendEmailResponse {
 		Success   bool   `json:"success"`

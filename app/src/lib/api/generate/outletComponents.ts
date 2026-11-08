@@ -2097,6 +2097,10 @@ export interface SendEmailRequest {
 	tags?: Array<string> // For tracking/filtering
 	meta?: { [key: string]: string } // Custom metadata
 	attachments?: Array<EmailAttachment> // Optional file attachments
+	type?: string // transactional (default) or marketing
+	list_slug?: string // Marketing only, and required for it: the list the recipient subscribed to. Sent only to an active subscriber, with an unsubscribe link
+	track_opens?: boolean // Add an open pixel
+	track_clicks?: boolean // Send links through click tracking
 }
 
 export interface SendEmailResponse {
