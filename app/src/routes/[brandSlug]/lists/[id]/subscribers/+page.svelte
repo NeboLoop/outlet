@@ -4,7 +4,7 @@
 		listListSubscribers,
 		removeListSubscriber,
 		listSequences,
-		enrollInSequence,
+		adminEnrollInSequence,
 		getSubscriberDetail,
 		type ListSubscriberInfo,
 		type SequenceInfo,
@@ -56,6 +56,7 @@
 	let selectedSequenceSlug = $state('');
 	let enrolling = $state(false);
 	let enrollSuccess = $state(false);
+	let enrollError = $state('');
 	let sequences = $state<SequenceInfo[]>([]);
 	let sequencesLoading = $state(false);
 	let sequencesLoaded = $state(false);
@@ -141,6 +142,7 @@
 		enrollingSubscriber = subscriber;
 		selectedSequenceSlug = '';
 		enrollSuccess = false;
+		enrollError = '';
 		showEnrollModal = true;
 		if (!sequencesLoaded) {
 			loadSequences();
@@ -150,9 +152,9 @@
 	async function handleEnrollInSequence() {
 		if (!enrollingSubscriber || !selectedSequenceSlug) return;
 		enrolling = true;
-		error = '';
+		enrollError = '';
 		try {
-			await enrollInSequence({
+			await adminEnrollInSequence({
 				sequence_slug: selectedSequenceSlug,
 				email: enrollingSubscriber.email
 			});
@@ -162,8 +164,8 @@
 				enrollingSubscriber = null;
 				enrollSuccess = false;
 			}, 1500);
-		} catch (err: any) {
-			error = err.message || 'Failed to enroll in sequence';
+		} catch (err) {
+			enrollError = err instanceof Error ? err.message : 'Failed to enroll in sequence';
 		} finally {
 			enrolling = false;
 		}
@@ -283,6 +285,12 @@
 						...sequences.map(s => ({ value: s.slug, label: `${s.name} (${s.trigger_event})` }))
 					]}
 				/>
+			{/if}
+
+			{#if enrollError}
+				<Alert type="error" title="Couldn't enroll">
+					<p>{enrollError}</p>
+				</Alert>
 			{/if}
 
 			{#if enrollSuccess}

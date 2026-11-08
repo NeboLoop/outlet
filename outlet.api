@@ -2446,6 +2446,10 @@ service outlet {
 	@handler DeleteSequence
 	delete /sequences/:id (GetSequenceRequest) returns (Response)
 
+	@doc "Enroll a contact of the brand in one of its sequences, as the signed-in member (the same enrollment as the SDK route)"
+	@handler AdminEnrollInSequence
+	post /sequences/enroll (EnrollSequenceRequest) returns (EnrollSequenceResponse)
+
 	// Entry Rules
 	@handler CreateEntryRule
 	post /entry-rules (CreateEntryRuleRequest) returns (EntryRuleResponse)

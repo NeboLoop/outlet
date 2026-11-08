@@ -729,6 +729,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: adminsequences.GetSequenceStatsHandler(serverCtx),
 				},
 				{
+					// Enroll a contact of the brand in one of its sequences, as the signed-in member (the same enrollment as the SDK route)
+					Method:  http.MethodPost,
+					Path:    "/sequences/enroll",
+					Handler: adminsequences.AdminEnrollInSequenceHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodPost,
 					Path:    "/templates",
 					Handler: adminsequences.CreateTemplateHandler(serverCtx),

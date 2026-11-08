@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -34,37 +35,44 @@ func (l *EnrollInSequenceLogic) EnrollInSequence(req *types.EnrollSequenceReques
 	if !ok {
 		return &types.EnrollSequenceResponse{Success: false}, fmt.Errorf("organization not found")
 	}
+	return Enroll(l.ctx, l.svcCtx, orgID, req)
+}
 
+// Enroll puts one of a brand's contacts into one of its sequences. It is the
+// one way to enroll someone by hand: the SDK route calls it for the brand of
+// the API key, the admin route for the brand the signed-in member works in.
+func Enroll(ctx context.Context, svcCtx *svc.ServiceContext, orgID string, req *types.EnrollSequenceRequest) (*types.EnrollSequenceResponse, error) {
+	l := logx.WithContext(ctx)
 	if req.Email == "" {
-		return &types.EnrollSequenceResponse{Success: false}, fmt.Errorf("email is required")
+		return &types.EnrollSequenceResponse{Success: false}, errorx.NewBadRequestError("email is required")
 	}
 	if req.SequenceSlug == "" {
-		return &types.EnrollSequenceResponse{Success: false}, fmt.Errorf("sequence_slug is required")
+		return &types.EnrollSequenceResponse{Success: false}, errorx.NewBadRequestError("sequence_slug is required")
 	}
 
-	sequence, err := l.svcCtx.DB.GetSequenceByOrgAndSlug(l.ctx, db.GetSequenceByOrgAndSlugParams{
+	sequence, err := svcCtx.DB.GetSequenceByOrgAndSlug(ctx, db.GetSequenceByOrgAndSlugParams{
 		OrgID: sql.NullString{String: orgID, Valid: true},
 		Slug:  req.SequenceSlug,
 	})
 	if err != nil {
 		l.Errorf("Sequence not found: %s, error: %v", req.SequenceSlug, err)
-		return &types.EnrollSequenceResponse{Success: false}, fmt.Errorf("sequence not found")
+		return &types.EnrollSequenceResponse{Success: false}, errorx.NewNotFoundError("sequence not found")
 	}
 
 	if !sequence.IsActive.Valid || sequence.IsActive.Int64 != 1 {
-		return &types.EnrollSequenceResponse{Success: false}, fmt.Errorf("sequence is not active")
+		return &types.EnrollSequenceResponse{Success: false}, errorx.NewBadRequestError("sequence is not active")
 	}
 
-	contact, err := l.svcCtx.DB.GetContactByOrgAndEmail(l.ctx, db.GetContactByOrgAndEmailParams{
+	contact, err := svcCtx.DB.GetContactByOrgAndEmail(ctx, db.GetContactByOrgAndEmailParams{
 		OrgID: sql.NullString{String: orgID, Valid: true},
 		Email: req.Email,
 	})
 	if err != nil {
 		l.Errorf("Contact not found: %s, error: %v", req.Email, err)
-		return &types.EnrollSequenceResponse{Success: false}, fmt.Errorf("contact not found")
+		return &types.EnrollSequenceResponse{Success: false}, errorx.NewNotFoundError("contact not found")
 	}
 
-	existingState, err := l.svcCtx.DB.GetContactSequenceState(l.ctx, db.GetContactSequenceStateParams{
+	existingState, err := svcCtx.DB.GetContactSequenceState(ctx, db.GetContactSequenceStateParams{
 		ContactID:  sql.NullString{String: contact.ID, Valid: true},
 		SequenceID: sql.NullString{String: sequence.ID, Valid: true},
 	})
@@ -86,7 +94,7 @@ func (l *EnrollInSequenceLogic) EnrollInSequence(req *types.EnrollSequenceReques
 		startPosition = int64(req.StartAtStep)
 	}
 
-	state, err := l.svcCtx.DB.CreateContactSequenceState(l.ctx, db.CreateContactSequenceStateParams{
+	state, err := svcCtx.DB.CreateContactSequenceState(ctx, db.CreateContactSequenceStateParams{
 		ID:              uuid.New().String(),
 		ContactID:       sql.NullString{String: contact.ID, Valid: true},
 		SequenceID:      sql.NullString{String: sequence.ID, Valid: true},
@@ -97,7 +105,7 @@ func (l *EnrollInSequenceLogic) EnrollInSequence(req *types.EnrollSequenceReques
 		return &types.EnrollSequenceResponse{Success: false}, fmt.Errorf("failed to enroll in sequence")
 	}
 
-	template, err := l.svcCtx.DB.GetNextTemplate(l.ctx, db.GetNextTemplateParams{
+	template, err := svcCtx.DB.GetNextTemplate(ctx, db.GetNextTemplateParams{
 		SequenceID: sql.NullString{String: sequence.ID, Valid: true},
 		Position:   startPosition,
 	})
@@ -117,7 +125,7 @@ func (l *EnrollInSequenceLogic) EnrollInSequence(req *types.EnrollSequenceReques
 
 		trackingToken := uuid.New().String()
 
-		_, queueErr := l.svcCtx.DB.QueueEmail(l.ctx, db.QueueEmailParams{
+		_, queueErr := svcCtx.DB.QueueEmail(ctx, db.QueueEmailParams{
 			ID:            uuid.New().String(),
 			ContactID:     sql.NullString{String: contact.ID, Valid: true},
 			TemplateID:    sql.NullString{String: template.ID, Valid: true},

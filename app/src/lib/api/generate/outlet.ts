@@ -908,6 +908,14 @@ export function getSequenceStats(params: components.SequenceStatsRequestParams, 
 }
 
 /**
+ * @description "Enroll a contact of the brand in one of its sequences, as the signed-in member (the same enrollment as the SDK route)"
+ * @param req
+ */
+export function adminEnrollInSequence(req: components.EnrollSequenceRequest) {
+	return webapi.post<components.EnrollSequenceResponse>(`/api/admin/sequences/enroll`, req)
+}
+
+/**
  * @description 
  * @param req
  */
