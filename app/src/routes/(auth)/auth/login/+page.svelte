@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { login } from '$lib/api';
+	import { returnPath } from '$lib/auth';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { onDestroy } from 'svelte';
 	import { Card, Input, Button, Alert } from '$lib/components/ui';
@@ -51,7 +53,7 @@
 
 			if (response.token && response.user) {
 				authStore.setSession(response.token, response.user);
-				goto('/');
+				goto(returnPath($page.url.searchParams.get('redirect')));
 			} else {
 				error = 'Invalid response from server';
 			}
