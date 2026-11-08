@@ -24,9 +24,10 @@ type SMTPConfig struct {
 // Service handles email sending via SMTP or AWS SES
 // Configuration is loaded dynamically from the database (platform_settings + org settings)
 type Service struct {
-	db           *db.Store
-	baseURL      string
-	cryptoSvc    *crypto.Service
+	db        *db.Store
+	baseURL   string
+	cryptoSvc *crypto.Service
+	linkKey   []byte // signs click-tracking links
 
 	// Connection pool for high-throughput sending (optional)
 	pool        *SMTPPool
@@ -361,119 +362,4 @@ func getStringOrDefault(value, defaultValue string) string {
 
 
 
-// GetTrackingPixelURL returns the URL for a tracking pixel
-func (s *Service) GetTrackingPixelURL(trackingToken string) string {
-	return fmt.Sprintf("%s/api/e/o/%s", s.baseURL, trackingToken)
-}
 
-// RewriteLinksForTracking replaces href URLs with tracked redirect URLs
-func (s *Service) RewriteLinksForTracking(htmlBody, trackingToken string) string {
-	// Simple link rewriting using string replacement
-	// This is a basic implementation - for production, consider using a proper HTML parser
-
-	result := htmlBody
-	searchStart := 0
-
-	for {
-		// Find next href="
-		hrefIdx := findNextHref(result, searchStart)
-		if hrefIdx == -1 {
-			break
-		}
-
-		// Find the URL start (after href=")
-		urlStart := hrefIdx + 6 // len(`href="`)
-		if urlStart >= len(result) {
-			break
-		}
-
-		// Find the closing quote
-		urlEnd := findClosingQuote(result, urlStart)
-		if urlEnd == -1 {
-			searchStart = urlStart
-			continue
-		}
-
-		originalURL := result[urlStart:urlEnd]
-
-		// Skip special URLs and the unsubscribe page, which must stay a direct link
-		if shouldSkipURL(originalURL) || originalURL == s.UnsubscribeURL(trackingToken) {
-			searchStart = urlEnd
-			continue
-		}
-
-		// Build tracked URL
-		trackedURL := fmt.Sprintf("%s/api/e/c/%s?url=%s",
-			s.baseURL,
-			trackingToken,
-			urlEncode(originalURL),
-		)
-
-		// Replace the URL
-		result = result[:urlStart] + trackedURL + result[urlEnd:]
-		searchStart = urlStart + len(trackedURL)
-	}
-
-	return result
-}
-
-func findNextHref(s string, start int) int {
-	for i := start; i < len(s)-5; i++ {
-		if s[i:i+6] == `href="` {
-			return i
-		}
-	}
-	return -1
-}
-
-func findClosingQuote(s string, start int) int {
-	for i := start; i < len(s); i++ {
-		if s[i] == '"' {
-			return i
-		}
-	}
-	return -1
-}
-
-func shouldSkipURL(url string) bool {
-	return len(url) > 7 && url[:7] == "mailto:" ||
-		len(url) > 4 && url[:4] == "tel:" ||
-		len(url) > 0 && url[0] == '#' ||
-		len(url) > 2 && url[:2] == "{{" ||
-		containsSubstring(url, "/api/e/c/")
-}
-
-func containsSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
-func urlEncode(s string) string {
-	var result []byte
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if isAlphaNum(c) || c == '-' || c == '_' || c == '.' || c == '~' {
-			result = append(result, c)
-		} else {
-			result = append(result, '%')
-			result = append(result, hexDigit(c>>4))
-			result = append(result, hexDigit(c&0xf))
-		}
-	}
-	return string(result)
-}
-
-func isAlphaNum(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-}
-
-func hexDigit(n byte) byte {
-	if n < 10 {
-		return '0' + n
-	}
-	return 'A' + n - 10
-}

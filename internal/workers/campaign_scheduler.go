@@ -195,10 +195,9 @@ func (s *CampaignScheduler) Start() {
 // Stop gracefully shuts down the scheduler
 func (s *CampaignScheduler) Stop() {
 	logx.Info("Stopping campaign scheduler...")
+	// Cancelling stops every goroutine; the queue stays open because the
+	// batch fetcher may still be sending to it
 	s.cancel()
-
-	// Close message queue to signal workers
-	close(s.msgQueue)
 
 	done := make(chan struct{})
 	go func() {
@@ -400,12 +399,13 @@ func (s *CampaignScheduler) sendWorker(id int) {
 	defer s.wg.Done()
 	logx.Infof("Campaign send worker %d started", id)
 
-	for send := range s.msgQueue {
+	for {
+		var send db.GetPendingCampaignSendsRow
 		select {
 		case <-s.ctx.Done():
 			logx.Infof("Campaign send worker %d stopped", id)
 			return
-		default:
+		case send = <-s.msgQueue:
 		}
 
 		// Get or create pipe for this campaign

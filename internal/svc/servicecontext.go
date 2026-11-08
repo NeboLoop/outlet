@@ -99,6 +99,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	// Initialize Email service (AWS SES preferred, SMTP fallback - config from platform_settings)
 	emailService := email.NewService(store, cryptoService)
+	emailService.SetLinkSecret(c.Auth.AccessSecret)
 	if c.App.BaseURL != "" {
 		emailService.SetBaseURL(c.App.BaseURL)
 	}

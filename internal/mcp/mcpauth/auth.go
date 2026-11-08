@@ -76,7 +76,12 @@ type Authenticator struct {
 	keyCache sync.Map // map[string]*cachedKey
 }
 
+// keyCacheTTL bounds how long a cached key is trusted, so a revoked key or a
+// deactivated user stops working within a minute without a restart.
+const keyCacheTTL = time.Minute
+
 type cachedKey struct {
+	cachedAt  time.Time
 	userInfo  *UserInfo
 	user      *db.User
 	expiresAt time.Time
@@ -109,7 +114,7 @@ func (a *Authenticator) verifyAPIKey(ctx context.Context, apiKey string) (*auth.
 	hash := hashToken(apiKey)
 
 	// Check cache first
-	if cached, ok := a.keyCache.Load(hash); ok {
+	if cached, ok := a.keyCache.Load(hash); ok && time.Since(cached.(*cachedKey).cachedAt) < keyCacheTTL {
 		ck := cached.(*cachedKey)
 		// Check if revoked
 		if ck.revokedAt != nil {
@@ -162,6 +167,7 @@ func (a *Authenticator) verifyAPIKey(ctx context.Context, apiKey string) (*auth.
 
 	// Cache the result
 	ck := &cachedKey{
+		cachedAt:  time.Now(),
 		userInfo:  userInfo,
 		user:      user,
 		expiresAt: userInfo.ExpiresAt,

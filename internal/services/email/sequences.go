@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -592,40 +591,11 @@ func (s *SequenceService) wrapWithBrandedTemplate(content string, isTransactiona
 </html>`, content, footerLink, unsubscribeSection)
 }
 
-// rewriteLinksForTracking replaces href URLs with tracked redirect URLs
+// rewriteLinksForTracking replaces href URLs with signed click-tracking URLs
 func (s *SequenceService) rewriteLinksForTracking(htmlBody, trackingToken string) string {
-	// Match href="..." patterns
-	linkRegex := regexp.MustCompile(`href="([^"]+)"`)
-
-	return linkRegex.ReplaceAllStringFunc(htmlBody, func(match string) string {
-		// Extract the URL from href="URL"
-		urlMatch := linkRegex.FindStringSubmatch(match)
-		if len(urlMatch) < 2 {
-			return match
-		}
-
-		originalURL := urlMatch[1]
-
-		// Skip mailto:, tel:, and anchor links
-		if strings.HasPrefix(originalURL, "mailto:") ||
-			strings.HasPrefix(originalURL, "tel:") ||
-			strings.HasPrefix(originalURL, "#") ||
-			strings.HasPrefix(originalURL, "{{") {
-			return match
-		}
-
-		// Skip if already a tracking URL
-		if strings.Contains(originalURL, "/api/e/c/") {
-			return match
-		}
-
-		// Build tracked URL (using /api/e/c/:token format)
-		trackedURL := fmt.Sprintf("%s/api/e/c/%s?url=%s",
-			s.baseURL,
-			trackingToken,
-			url.QueryEscape(originalURL),
-		)
-
-		return fmt.Sprintf(`href="%s"`, trackedURL)
-	})
+	var key []byte
+	if s.sender != nil {
+		key = s.sender.linkKey
+	}
+	return rewriteLinks(htmlBody, s.baseURL, key, trackingToken)
 }

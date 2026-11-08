@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
 
@@ -20,7 +21,17 @@ const (
 
 type APIKeyMiddleware struct {
 	store *db.Store
-	cache sync.Map // map[apiKey]db.Organization
+	cache sync.Map // map[apiKey]cachedOrg
+}
+
+// orgCacheTTL bounds how long a cached brand is trusted, so a deleted brand or
+// a rotated key stops working within a minute even where InvalidateCache is
+// not called.
+const orgCacheTTL = time.Minute
+
+type cachedOrg struct {
+	org      db.Organization
+	cachedAt time.Time
 }
 
 func NewAPIKeyMiddleware(store *db.Store) *APIKeyMiddleware {
@@ -28,11 +39,9 @@ func NewAPIKeyMiddleware(store *db.Store) *APIKeyMiddleware {
 }
 
 // getOrg retrieves an organization by API key, using cache when available.
-// Cache persists until InvalidateCache is called or service restarts.
 func (m *APIKeyMiddleware) getOrg(ctx context.Context, apiKey string) (db.Organization, error) {
-	// Check cache first
-	if cached, ok := m.cache.Load(apiKey); ok {
-		return cached.(db.Organization), nil
+	if cached, ok := m.cache.Load(apiKey); ok && time.Since(cached.(cachedOrg).cachedAt) < orgCacheTTL {
+		return cached.(cachedOrg).org, nil
 	}
 
 	// Lookup from database
@@ -42,7 +51,7 @@ func (m *APIKeyMiddleware) getOrg(ctx context.Context, apiKey string) (db.Organi
 	}
 
 	// Cache the result
-	m.cache.Store(apiKey, org)
+	m.cache.Store(apiKey, cachedOrg{org: org, cachedAt: time.Now()})
 
 	return org, nil
 }

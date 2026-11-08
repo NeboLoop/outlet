@@ -599,12 +599,18 @@ func registerEmailTrackingRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 				}
 			}
 
+			// Only follow links Outlet signed, so this is never an open redirect
+			if !ctx.EmailService.VerifyClickLink(token, redirectUrl, r.URL.Query().Get("sig")) {
+				http.Error(w, "Invalid link", http.StatusBadRequest)
+				return
+			}
+
 			// Track the click (fire and forget)
 			go func(token string) {
 				_ = ctx.Tracking.RecordClick(context.Background(), token)
 			}(token)
 
-			http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
+			http.Redirect(w, r, redirectUrl, http.StatusFound)
 		},
 	})
 

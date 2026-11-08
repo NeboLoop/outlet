@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -138,6 +139,12 @@ func (h *Handler) HandleClientRegistration(w http.ResponseWriter, r *http.Reques
 		h.sendError(w, http.StatusBadRequest, ErrInvalidRequest, "redirect_uris is required")
 		return
 	}
+	for _, uri := range req.RedirectURIs {
+		if !isAllowedRedirectURI(uri) {
+			h.sendError(w, http.StatusBadRequest, ErrInvalidRequest, "redirect_uri must be https, http on localhost, or an app scheme: "+uri)
+			return
+		}
+	}
 
 	// Generate client credentials
 	clientID := generateSecureToken(16)
@@ -210,20 +217,30 @@ func (h *Handler) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		CodeChallengeMethod: query.Get("code_challenge_method"),
 	}
 
-	// Validate response_type
-	if req.ResponseType != "code" {
-		h.sendError(w, http.StatusBadRequest, ErrUnsupportedResponseType, "Only 'code' response type is supported")
+	client, ok := h.validateAuthorizationRequest(w, r, req)
+	if !ok {
 		return
 	}
 
-	// Validate client
+	// Render login page
+	h.renderLoginPage(w, req, client.Name, "")
+}
+
+// validateAuthorizationRequest checks an authorization request: response type,
+// a known client, a redirect_uri the client registered, and S256 PKCE. On
+// failure it writes the error response and returns false.
+func (h *Handler) validateAuthorizationRequest(w http.ResponseWriter, r *http.Request, req AuthorizationRequest) (db.McpOauthClient, bool) {
+	if req.ResponseType != "code" {
+		h.sendError(w, http.StatusBadRequest, ErrUnsupportedResponseType, "Only 'code' response type is supported")
+		return db.McpOauthClient{}, false
+	}
+
 	client, err := h.svc.DB.GetMCPOAuthClientByClientID(r.Context(), req.ClientID)
 	if err != nil {
 		h.sendError(w, http.StatusBadRequest, ErrInvalidClient, "Unknown client_id")
-		return
+		return db.McpOauthClient{}, false
 	}
 
-	// Validate redirect_uri
 	validRedirect := false
 	for _, uri := range strings.Split(client.RedirectUris, ",") {
 		if uri == req.RedirectURI {
@@ -231,23 +248,40 @@ func (h *Handler) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	if !validRedirect {
+	if !validRedirect || !isAllowedRedirectURI(req.RedirectURI) {
 		h.sendError(w, http.StatusBadRequest, ErrInvalidRequest, "Invalid redirect_uri")
-		return
+		return db.McpOauthClient{}, false
 	}
 
-	// Validate PKCE (required for MCP)
+	// PKCE is required for MCP
 	if req.CodeChallenge == "" {
 		h.redirectError(w, req.RedirectURI, req.State, ErrInvalidRequest, "code_challenge is required")
-		return
+		return db.McpOauthClient{}, false
 	}
 	if req.CodeChallengeMethod != "S256" {
 		h.redirectError(w, req.RedirectURI, req.State, ErrInvalidRequest, "Only S256 code_challenge_method is supported")
-		return
+		return db.McpOauthClient{}, false
 	}
+	return client, true
+}
 
-	// Render login page
-	h.renderLoginPage(w, req, client.Name, "")
+// isAllowedRedirectURI accepts https, http on a loopback host (native apps),
+// and custom app schemes, but never script, data or file URLs.
+func isAllowedRedirectURI(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return u.Host != ""
+	case "http":
+		host := u.Hostname()
+		return host == "localhost" || host == "127.0.0.1" || host == "::1"
+	case "javascript", "data", "vbscript", "file", "blob", "about":
+		return false
+	}
+	return true
 }
 
 // handleAuthorizeSubmit processes the login form submission
@@ -271,10 +305,10 @@ func (h *Handler) HandleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) 
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
-	// Validate client again
-	client, err := h.svc.DB.GetMCPOAuthClientByClientID(r.Context(), req.ClientID)
-	if err != nil {
-		h.sendError(w, http.StatusBadRequest, ErrInvalidClient, "Unknown client_id")
+	// The hidden fields come back from the browser, so check them again exactly
+	// as on the first request
+	client, ok := h.validateAuthorizationRequest(w, r, req)
+	if !ok {
 		return
 	}
 
@@ -528,7 +562,7 @@ func (h *Handler) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request
 func (h *Handler) renderSuccessPage(w http.ResponseWriter, redirectURL, clientName string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	page := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -559,15 +593,16 @@ func (h *Handler) renderSuccessPage(w http.ResponseWriter, redirectURL, clientNa
         <p class="subtitle">You've successfully signed in to <span class="client-name">%s</span>.</p>
         <p class="redirect-note"><span class="spinner"></span>Redirecting back to the application...</p>
     </div>
+    <a id="redirect" href="%s" hidden></a>
     <script>
         setTimeout(function() {
-            window.location.href = %q;
+            window.location.href = document.getElementById('redirect').href;
         }, 1500);
     </script>
 </body>
-</html>`, clientName, redirectURL)
+</html>`, html.EscapeString(clientName), html.EscapeString(redirectURL))
 
-	w.Write([]byte(html))
+	w.Write([]byte(page))
 }
 
 // renderLoginPage renders the OAuth login page
@@ -576,10 +611,10 @@ func (h *Handler) renderLoginPage(w http.ResponseWriter, req AuthorizationReques
 
 	errorHTML := ""
 	if errorMsg != "" {
-		errorHTML = fmt.Sprintf(`<div style="color: #dc2626; background: #fef2f2; padding: 12px; border-radius: 6px; margin-bottom: 16px;">%s</div>`, errorMsg)
+		errorHTML = fmt.Sprintf(`<div style="color: #dc2626; background: #fef2f2; padding: 12px; border-radius: 6px; margin-bottom: 16px;">%s</div>`, html.EscapeString(errorMsg))
 	}
 
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	page := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -631,18 +666,18 @@ func (h *Handler) renderLoginPage(w http.ResponseWriter, req AuthorizationReques
     </div>
 </body>
 </html>`,
-		clientName,
+		html.EscapeString(clientName),
 		errorHTML,
-		req.ResponseType,
-		req.ClientID,
-		req.RedirectURI,
-		req.Scope,
-		req.State,
-		req.CodeChallenge,
-		req.CodeChallengeMethod,
+		html.EscapeString(req.ResponseType),
+		html.EscapeString(req.ClientID),
+		html.EscapeString(req.RedirectURI),
+		html.EscapeString(req.Scope),
+		html.EscapeString(req.State),
+		html.EscapeString(req.CodeChallenge),
+		html.EscapeString(req.CodeChallengeMethod),
 	)
 
-	w.Write([]byte(html))
+	w.Write([]byte(page))
 }
 
 func (h *Handler) sendError(w http.ResponseWriter, status int, errCode, errDesc string) {

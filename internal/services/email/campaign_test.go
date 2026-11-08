@@ -1,12 +1,15 @@
 package email
 
 import (
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 )
 
 func TestCampaignMessage(t *testing.T) {
 	s := &Service{baseURL: "https://mail.example.com/"}
+	s.SetLinkSecret("test-secret")
 	link := "https://mail.example.com/u/tok"
 
 	t.Run("personalizes and adds footer link and headers", func(t *testing.T) {
@@ -47,4 +50,31 @@ func TestCampaignMessage(t *testing.T) {
 			t.Errorf("message = %+v", m)
 		}
 	})
+}
+
+func TestClickLinksAreSigned(t *testing.T) {
+	s := &Service{baseURL: "https://mail.example.com"}
+	s.SetLinkSecret("test-secret")
+	out := s.RewriteLinksForTracking(`<a href="https://shop.example/a?x=1&amp;y=2">Buy</a>`, "tok")
+
+	m := regexp.MustCompile(`url=([^&]+)&amp;sig=([0-9a-f]+)`).FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("no signed link in %q", out)
+	}
+	target, _ := url.QueryUnescape(m[1])
+	if target != "https://shop.example/a?x=1&y=2" {
+		t.Errorf("target = %q", target)
+	}
+	if !s.VerifyClickLink("tok", target, m[2]) {
+		t.Error("own link should verify")
+	}
+	for name, ok := range map[string]bool{
+		"other target": s.VerifyClickLink("tok", "https://evil.example", m[2]),
+		"other token":  s.VerifyClickLink("tok2", target, m[2]),
+		"no signature": s.VerifyClickLink("tok", target, ""),
+	} {
+		if ok {
+			t.Errorf("%s verified", name)
+		}
+	}
 }

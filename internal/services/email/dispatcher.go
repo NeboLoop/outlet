@@ -148,10 +148,10 @@ func (d *Dispatcher) Start() {
 // Stop gracefully shuts down the dispatcher
 func (d *Dispatcher) Stop() {
 	logx.Info("Stopping email dispatcher...")
+	// Cancelling stops every goroutine. The channels stay open: the fetcher
+	// and retry processor may still be sending, and a send on a closed
+	// channel panics.
 	d.cancel()
-
-	// Close job channel to signal workers to stop
-	close(d.jobs)
 
 	// Wait for workers with timeout
 	done := make(chan struct{})
@@ -166,8 +166,6 @@ func (d *Dispatcher) Stop() {
 	case <-time.After(30 * time.Second):
 		logx.Error("Email dispatcher shutdown timed out")
 	}
-
-	close(d.retries)
 }
 
 // worker processes email jobs from the channel
@@ -175,11 +173,13 @@ func (d *Dispatcher) worker(id int) {
 	defer d.wg.Done()
 	logx.Infof("Email worker %d started", id)
 
-	for job := range d.jobs {
+	for {
+		var job EmailJob
 		select {
 		case <-d.ctx.Done():
+			logx.Infof("Email worker %d stopped", id)
 			return
-		default:
+		case job = <-d.jobs:
 		}
 
 		// Check circuit breaker
@@ -212,8 +212,6 @@ func (d *Dispatcher) worker(id int) {
 			d.handleSendSuccess(job)
 		}
 	}
-
-	logx.Infof("Email worker %d stopped", id)
 }
 
 // sendEmail processes and sends a single email
