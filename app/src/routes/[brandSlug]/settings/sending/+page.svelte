@@ -10,6 +10,7 @@
 	import { Button, Alert, LoadingSpinner, Badge, Input, Select, Checkbox, SlideForm } from '$lib/components/ui';
 	import { Plus, Pencil, Trash2, TriangleAlert } from '@lucide/svelte';
 	import { errorMessage } from '../../outbound/shared';
+	import MailboxService from './MailboxService.svelte';
 
 	const OUTREACH_WARNING =
 		'Amazon SES and most email platforms forbid cold email in their terms and can suspend the account.';
@@ -66,6 +67,11 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	// refresh rereads the pathways in place, keeping each pool's open forms.
+	async function refresh() {
+		pathways = (await listSendingPathways()).pathways || [];
 	}
 
 	function providerLabel(value: string): string {
@@ -434,6 +440,10 @@
 							No domains yet.
 						{/if}
 					</p>
+
+					{#if p.provider === 'mailboxes'}
+						<MailboxService pool={p} onchange={refresh} />
+					{/if}
 				</section>
 			{/each}
 		</div>
