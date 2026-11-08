@@ -60,6 +60,9 @@ func (l *CreateDomainIdentityLogic) CreateDomainIdentity(req *types.CreateDomain
 		Domain: domain,
 	})
 	if err == nil && existing.ID != "" {
+		if existing.Purpose == "outreach" {
+			return nil, errorx.NewBadRequestError(domain + " is one of this brand's outreach domains; outreach domains never send through SES.")
+		}
 		return nil, errorx.NewBadRequestError("Domain identity already exists for this domain")
 	}
 	if err := email.ClaimDomain(l.ctx, l.svcCtx.DB, req.OrgId, domain); err != nil {

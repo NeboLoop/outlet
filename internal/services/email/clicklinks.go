@@ -28,6 +28,22 @@ func (s *Service) RewriteLinksForTracking(htmlBody, trackingToken string) string
 	return rewriteLinks(htmlBody, s.baseURL, s.linkKey, trackingToken)
 }
 
+// ClickLink is the signed click-tracking URL for one target, on host (a full
+// origin like https://go.example.com), or this server's own URL when host is
+// empty. The click endpoint verifies the signature, so it only ever redirects
+// where the email pointed.
+func (s *Service) ClickLink(host, trackingToken, target string) string {
+	if host == "" {
+		host = s.baseURL
+	}
+	return clickLink(host, s.linkKey, trackingToken, target)
+}
+
+func clickLink(base string, key []byte, trackingToken, target string) string {
+	sig := hex.EncodeToString(clickSignature(key, trackingToken, target))
+	return fmt.Sprintf("%s/api/e/c/%s?url=%s&sig=%s", strings.TrimRight(base, "/"), trackingToken, url.QueryEscape(target), sig)
+}
+
 // VerifyClickLink reports whether sig is the signature Outlet made for this
 // token and target URL.
 func (s *Service) VerifyClickLink(trackingToken, target, sig string) bool {
@@ -63,7 +79,6 @@ func rewriteLinks(htmlBody, baseURL string, key []byte, trackingToken string) st
 			strings.Contains(target, "/api/e/c/") || target == unsubscribe {
 			return match
 		}
-		sig := hex.EncodeToString(clickSignature(key, trackingToken, target))
-		return fmt.Sprintf(`href="%s/api/e/c/%s?url=%s&amp;sig=%s"`, base, trackingToken, url.QueryEscape(target), sig)
+		return `href="` + html.EscapeString(clickLink(base, key, trackingToken, target)) + `"`
 	})
 }

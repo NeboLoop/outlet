@@ -165,9 +165,21 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		WebhookDispatcher: webhookDispatcher,
 		WebSocketHub:      wsHub,
 		Outbound: outbound.New(store, cryptoService, outbound.Config{
-			Brands:           strings.Split(c.Outbound.Brands, ","),
 			ProtectedDomains: strings.Split(c.Outbound.ProtectedDomains, ","),
 			TrackingTarget:   publicHost(c.App.BaseURL),
+			Mailer:           emailService,
+			Sequences:        email.NewSequenceServiceWithBaseURL(store, emailService, c.App.BaseURL),
+			Verify: func(ctx context.Context, orgID, address string) (bool, string) {
+				res, err := validationService.Validate(ctx, orgID, address, "outbound")
+				if err != nil {
+					return false, err.Error()
+				}
+				// Only a confirmed address is sent to; catch-all and unknown are held.
+				if res.Status != "valid" {
+					return false, strings.TrimSpace(res.Status + " " + res.SubStatus)
+				}
+				return true, "valid"
+			},
 		}),
 		NetworkHub:  networkHub,
 		NetworkAuth: middleware.NewNetworkAuthMiddleware(networkHub).Handle,

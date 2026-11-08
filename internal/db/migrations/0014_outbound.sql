@@ -1,44 +1,36 @@
 -- +goose Up
--- Outbound: one-to-one outreach from connected mailboxes on outreach domains.
--- It never sends through SES or the brand's transactional path. Prospects are
--- not contacts: they never asked to hear from the brand, so they stay apart
--- from lists and subscribers.
+-- Outbound: a brand's one-to-one outreach. It runs on Outlet's own lists,
+-- contacts, sequences and email queue; what it adds is a second way to
+-- deliver (the brand's connected mailboxes, never SES or any other email
+-- platform), the rules cold email needs, and reading replies.
 
--- One row per brand: its outreach settings. Outbound runs only for brands
--- named in the server's config (Outbound.Brands), never by a tool call.
-CREATE TABLE IF NOT EXISTS outbound_settings (
-    org_id TEXT PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
-    mailing_address TEXT NOT NULL DEFAULT '',
-    opt_out_line TEXT NOT NULL DEFAULT 'If this isn''t for you, reply "no thanks" and I won''t email again.',
-    timezone TEXT NOT NULL DEFAULT 'America/Denver',
-    dns_token_enc BLOB,
-    paused INTEGER NOT NULL DEFAULT 0,
-    paused_reason TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
-);
+-- The brand's outreach settings. Off until the brand's admin turns it on in
+-- the admin app; no MCP tool can. The mailing address goes in every
+-- outreach email (CAN-SPAM).
+ALTER TABLE organizations ADD COLUMN outbound_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE organizations ADD COLUMN outbound_paused_reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE organizations ADD COLUMN mailing_address TEXT NOT NULL DEFAULT '';
+ALTER TABLE organizations ADD COLUMN outbound_opt_out_line TEXT NOT NULL DEFAULT 'If this isn''t for you, reply "no thanks" and I won''t email again.';
+ALTER TABLE organizations ADD COLUMN outbound_timezone TEXT NOT NULL DEFAULT 'America/Denver';
+ALTER TABLE organizations ADD COLUMN dns_token_enc BLOB;
 
-CREATE TABLE IF NOT EXISTS outbound_domains (
+-- A domain is for sending through the platform provider (SES), or for
+-- outreach through mailboxes. A brand's transactional and campaign mail
+-- never sends from an outreach domain, and outreach never uses a sending one.
+ALTER TABLE domain_identities ADD COLUMN purpose TEXT NOT NULL DEFAULT 'sending';
+ALTER TABLE domain_identities ADD COLUMN dns_host TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE domain_identities ADD COLUMN dkim_selector TEXT NOT NULL DEFAULT '';
+-- go.<domain>, a CNAME to this server, when click and open tracking is set up.
+ALTER TABLE domain_identities ADD COLUMN tracking_host TEXT NOT NULL DEFAULT '';
+-- The last public-DNS check of an outreach domain (MX, SPF, DKIM, DMARC).
+ALTER TABLE domain_identities ADD COLUMN dns_check TEXT NOT NULL DEFAULT '';
+
+-- A connected mailbox: outreach leaves only through these.
+CREATE TABLE IF NOT EXISTS mailboxes (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    domain TEXT NOT NULL,
-    dns_host TEXT NOT NULL DEFAULT 'manual', -- digitalocean or manual
-    dkim_selector TEXT NOT NULL DEFAULT 'google',
-    -- go.<domain>, a CNAME to this server, when click tracking is set up.
-    -- Never a shared host: one sender's reputation must not touch another's.
-    tracking_host TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'pending', -- pending, ok, failing
-    check_result TEXT NOT NULL DEFAULT '',
-    checked_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    UNIQUE (domain)
-);
-
-CREATE TABLE IF NOT EXISTS outbound_mailboxes (
-    id TEXT PRIMARY KEY,
-    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    domain_id TEXT NOT NULL REFERENCES outbound_domains(id) ON DELETE CASCADE,
-    email TEXT NOT NULL,
+    domain_id TEXT NOT NULL REFERENCES domain_identities(id) ON DELETE CASCADE,
+    email TEXT NOT NULL UNIQUE,
     from_name TEXT NOT NULL,
     signature TEXT NOT NULL DEFAULT '',
     smtp_host TEXT NOT NULL,
@@ -57,109 +49,52 @@ CREATE TABLE IF NOT EXISTS outbound_mailboxes (
     imap_uid_validity INTEGER NOT NULL DEFAULT 0,
     imap_last_uid INTEGER NOT NULL DEFAULT 0,
     last_error TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    UNIQUE (email)
-);
-
-CREATE TABLE IF NOT EXISTS outbound_prospects (
-    id TEXT PRIMARY KEY,
-    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    email TEXT NOT NULL,
-    first_name TEXT NOT NULL DEFAULT '',
-    name TEXT NOT NULL DEFAULT '',
-    timezone TEXT NOT NULL DEFAULT '',
-    platform TEXT NOT NULL DEFAULT '',
-    channel_url TEXT NOT NULL DEFAULT '',
-    audience_size INTEGER NOT NULL DEFAULT 0,
-    niche TEXT NOT NULL DEFAULT '',
-    recent_video TEXT NOT NULL DEFAULT '',
-    personal_line TEXT NOT NULL DEFAULT '',
-    email_source TEXT NOT NULL,
-    custom_fields TEXT NOT NULL DEFAULT '{}',
-    -- new, in_sequence, replied, interested, not_interested, partner,
-    -- bounced, unsubscribed, held
-    status TEXT NOT NULL DEFAULT 'new',
-    verify_result TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    UNIQUE (org_id, email)
-);
-
-CREATE TABLE IF NOT EXISTS outbound_campaigns (
-    id TEXT PRIMARY KEY,
-    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active', -- active, paused, done
-    approval_mode TEXT NOT NULL DEFAULT 'every', -- every, first, automatic
-    track_clicks INTEGER NOT NULL DEFAULT 0,
-    window_start_hour INTEGER NOT NULL DEFAULT 8,
-    window_end_hour INTEGER NOT NULL DEFAULT 17,
-    idempotency_key TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_campaigns_idem
-    ON outbound_campaigns(org_id, idempotency_key) WHERE idempotency_key <> '';
+CREATE INDEX IF NOT EXISTS idx_mailboxes_org ON mailboxes(org_id);
 
-CREATE TABLE IF NOT EXISTS outbound_steps (
-    id TEXT PRIMARY KEY,
-    campaign_id TEXT NOT NULL REFERENCES outbound_campaigns(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL,
-    delay_days INTEGER NOT NULL DEFAULT 0, -- business days after the previous step
-    subject TEXT NOT NULL DEFAULT '', -- empty: a reply in the same thread
-    body TEXT NOT NULL,
-    UNIQUE (campaign_id, position)
-);
+-- An outreach list holds prospects: people found for outreach, who never
+-- signed up. They are list subscribers with status 'prospect', so campaigns
+-- and sign-up mail (which go to 'active' subscribers) never reach them, and
+-- the list's custom fields carry their details (platform, recent video...).
+ALTER TABLE email_lists ADD COLUMN kind TEXT NOT NULL DEFAULT 'subscribers'; -- subscribers, outreach
 
--- One prospect in one campaign. The mailbox is chosen once and kept, so
--- every step goes from the same sender in the same thread.
-CREATE TABLE IF NOT EXISTS outbound_enrollments (
-    id TEXT PRIMARY KEY,
-    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    campaign_id TEXT NOT NULL REFERENCES outbound_campaigns(id) ON DELETE CASCADE,
-    prospect_id TEXT NOT NULL REFERENCES outbound_prospects(id) ON DELETE CASCADE,
-    mailbox_id TEXT NOT NULL REFERENCES outbound_mailboxes(id),
-    -- active, replied, bounced, unsubscribed, done, stopped, paused
-    status TEXT NOT NULL DEFAULT 'active',
-    next_position INTEGER NOT NULL DEFAULT 1,
-    next_at TEXT,
-    thread_subject TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    UNIQUE (campaign_id, prospect_id)
-);
-CREATE INDEX IF NOT EXISTS idx_outbound_enrollments_due ON outbound_enrollments(status, next_at);
+-- An outreach sequence (sequence_type 'outreach') sends through the brand's
+-- mailboxes, one mailbox per person, and stops at the first reply.
+ALTER TABLE email_sequences ADD COLUMN approval_mode TEXT NOT NULL DEFAULT 'automatic'; -- every, first, automatic
+ALTER TABLE email_sequences ADD COLUMN window_start_hour INTEGER NOT NULL DEFAULT 8;
+ALTER TABLE email_sequences ADD COLUMN window_end_hour INTEGER NOT NULL DEFAULT 17;
+ALTER TABLE email_sequences ADD COLUMN track_opens INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE email_sequences ADD COLUMN track_clicks INTEGER NOT NULL DEFAULT 1;
 
--- One email: drafted, approved, then claimed and sent exactly once.
-CREATE TABLE IF NOT EXISTS outbound_messages (
-    id TEXT PRIMARY KEY,
-    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    enrollment_id TEXT REFERENCES outbound_enrollments(id) ON DELETE CASCADE,
-    mailbox_id TEXT NOT NULL REFERENCES outbound_mailboxes(id),
-    prospect_id TEXT NOT NULL REFERENCES outbound_prospects(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL DEFAULT 0, -- 0: a reply written in a conversation
-    to_email TEXT NOT NULL,
-    subject TEXT NOT NULL,
-    body TEXT NOT NULL,
-    -- draft, approved, sending, sent, skipped, failed
-    status TEXT NOT NULL DEFAULT 'draft',
-    message_id TEXT NOT NULL,
-    in_reply_to TEXT NOT NULL DEFAULT '',
-    refs TEXT NOT NULL DEFAULT '',
-    not_before TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    claimed_at TEXT,
-    sent_at TEXT,
-    error TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
-);
-CREATE INDEX IF NOT EXISTS idx_outbound_messages_due ON outbound_messages(mailbox_id, status, not_before);
-CREATE INDEX IF NOT EXISTS idx_outbound_messages_msgid ON outbound_messages(message_id);
-CREATE INDEX IF NOT EXISTS idx_outbound_messages_org_status ON outbound_messages(org_id, status);
+-- The mailbox a person's outreach comes from, kept for the whole thread, and
+-- why the sequence stopped (replied, bounced, unsubscribed, complained).
+ALTER TABLE contact_sequence_state ADD COLUMN mailbox_id TEXT REFERENCES mailboxes(id);
+ALTER TABLE contact_sequence_state ADD COLUMN stopped_reason TEXT NOT NULL DEFAULT '';
 
-CREATE TABLE IF NOT EXISTS outbound_replies (
+-- Every queued email has a kind, and the kind decides the route: outreach
+-- goes only through its mailbox; marketing and transactional through the
+-- brand's provider. Outreach is written when it is queued (subject and body
+-- here), so a person can review and edit the exact email; status 'draft'
+-- waits for that approval.
+ALTER TABLE email_queue ADD COLUMN kind TEXT NOT NULL DEFAULT 'marketing'; -- marketing, outreach
+ALTER TABLE email_queue ADD COLUMN mailbox_id TEXT REFERENCES mailboxes(id);
+ALTER TABLE email_queue ADD COLUMN subject TEXT;
+ALTER TABLE email_queue ADD COLUMN body TEXT;
+ALTER TABLE email_queue ADD COLUMN message_id TEXT;
+ALTER TABLE email_queue ADD COLUMN in_reply_to TEXT;
+ALTER TABLE email_queue ADD COLUMN refs TEXT;
+CREATE INDEX IF NOT EXISTS idx_email_queue_mailbox ON email_queue(mailbox_id, status, scheduled_for);
+CREATE INDEX IF NOT EXISTS idx_email_queue_message_id ON email_queue(message_id);
+
+-- Replies read from the brand's mailboxes, matched to the email they answer.
+CREATE TABLE IF NOT EXISTS email_replies (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    mailbox_id TEXT NOT NULL REFERENCES outbound_mailboxes(id) ON DELETE CASCADE,
-    enrollment_id TEXT REFERENCES outbound_enrollments(id) ON DELETE SET NULL,
-    prospect_id TEXT REFERENCES outbound_prospects(id) ON DELETE SET NULL,
+    mailbox_id TEXT NOT NULL REFERENCES mailboxes(id) ON DELETE CASCADE,
+    contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+    queue_id TEXT REFERENCES email_queue(id) ON DELETE SET NULL,
+    sequence_id TEXT REFERENCES email_sequences(id) ON DELETE SET NULL,
     from_email TEXT NOT NULL,
     subject TEXT NOT NULL DEFAULT '',
     body TEXT NOT NULL DEFAULT '',
@@ -167,34 +102,43 @@ CREATE TABLE IF NOT EXISTS outbound_replies (
     in_reply_to TEXT NOT NULL DEFAULT '',
     refs TEXT NOT NULL DEFAULT '',
     -- interested, not_interested, question, out_of_office, wrong_person,
-    -- unsubscribe, bounce, complaint, needs_review
+    -- unsubscribe, complaint, bounce, spam_block, needs_review
     classification TEXT NOT NULL DEFAULT 'needs_review',
     handled INTEGER NOT NULL DEFAULT 0,
-    received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+    received_at TEXT NOT NULL,
     UNIQUE (mailbox_id, message_id)
 );
-CREATE INDEX IF NOT EXISTS idx_outbound_replies_org ON outbound_replies(org_id, handled, received_at);
-
--- A tracked link in a sent email. The token is random and the address is
--- stored here, so the redirect can only go where the email pointed.
-CREATE TABLE IF NOT EXISTS outbound_links (
-    token TEXT PRIMARY KEY,
-    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    message_id TEXT NOT NULL REFERENCES outbound_messages(id) ON DELETE CASCADE,
-    url TEXT NOT NULL,
-    clicks INTEGER NOT NULL DEFAULT 0,
-    first_clicked_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_outbound_links_message ON outbound_links(message_id);
+CREATE INDEX IF NOT EXISTS idx_email_replies_org ON email_replies(org_id, handled, received_at);
+CREATE INDEX IF NOT EXISTS idx_email_replies_mailbox ON email_replies(mailbox_id, classification, received_at);
 
 -- +goose Down
-DROP TABLE IF EXISTS outbound_links;
-DROP TABLE IF EXISTS outbound_replies;
-DROP TABLE IF EXISTS outbound_messages;
-DROP TABLE IF EXISTS outbound_enrollments;
-DROP TABLE IF EXISTS outbound_steps;
-DROP TABLE IF EXISTS outbound_campaigns;
-DROP TABLE IF EXISTS outbound_prospects;
-DROP TABLE IF EXISTS outbound_mailboxes;
-DROP TABLE IF EXISTS outbound_domains;
-DROP TABLE IF EXISTS outbound_settings;
+DROP TABLE IF EXISTS email_replies;
+DROP INDEX IF EXISTS idx_email_queue_message_id;
+DROP INDEX IF EXISTS idx_email_queue_mailbox;
+ALTER TABLE email_queue DROP COLUMN refs;
+ALTER TABLE email_queue DROP COLUMN in_reply_to;
+ALTER TABLE email_queue DROP COLUMN message_id;
+ALTER TABLE email_queue DROP COLUMN body;
+ALTER TABLE email_queue DROP COLUMN subject;
+ALTER TABLE email_queue DROP COLUMN mailbox_id;
+ALTER TABLE email_queue DROP COLUMN kind;
+ALTER TABLE contact_sequence_state DROP COLUMN stopped_reason;
+ALTER TABLE contact_sequence_state DROP COLUMN mailbox_id;
+ALTER TABLE email_sequences DROP COLUMN track_clicks;
+ALTER TABLE email_sequences DROP COLUMN track_opens;
+ALTER TABLE email_sequences DROP COLUMN window_end_hour;
+ALTER TABLE email_sequences DROP COLUMN window_start_hour;
+ALTER TABLE email_sequences DROP COLUMN approval_mode;
+ALTER TABLE email_lists DROP COLUMN kind;
+DROP TABLE IF EXISTS mailboxes;
+ALTER TABLE domain_identities DROP COLUMN dns_check;
+ALTER TABLE domain_identities DROP COLUMN tracking_host;
+ALTER TABLE domain_identities DROP COLUMN dkim_selector;
+ALTER TABLE domain_identities DROP COLUMN dns_host;
+ALTER TABLE domain_identities DROP COLUMN purpose;
+ALTER TABLE organizations DROP COLUMN dns_token_enc;
+ALTER TABLE organizations DROP COLUMN outbound_timezone;
+ALTER TABLE organizations DROP COLUMN outbound_opt_out_line;
+ALTER TABLE organizations DROP COLUMN mailing_address;
+ALTER TABLE organizations DROP COLUMN outbound_paused_reason;
+ALTER TABLE organizations DROP COLUMN outbound_enabled;

@@ -2,39 +2,47 @@ package outbound
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/outlet-sh/outlet/internal/db"
 )
 
-// StepResult is how one step of a sequence did.
+// StepResult is how one step of a campaign did.
 type StepResult struct {
 	Step      int64   `json:"step"`
 	Sent      int64   `json:"sent"`
-	Replies   int64   `json:"replies"`           // people whose first reply came after this step
-	ReplyRate float64 `json:"reply_rate"`        // replies / sent, in percent
-	Clicked   int64   `json:"clicked,omitempty"` // people who clicked this step's link
+	Replies   int64   `json:"replies"`    // people whose first reply came after this step
+	ReplyRate float64 `json:"reply_rate"` // replies / sent, percent
+	Opened    int64   `json:"opened,omitempty"`
+	Clicked   int64   `json:"clicked,omitempty"`
 }
 
 // CampaignResults is how a campaign is doing. Reply rate is the measure:
-// people who wrote back, out of people who got the first email.
+// people who wrote back, out of people who got the first email. Opens are
+// inflated by Apple Mail and count only when the campaign tracks them.
 type CampaignResults struct {
 	ID         string           `json:"id"`
 	Name       string           `json:"name"`
 	Status     string           `json:"status"`
 	Enrolled   int64            `json:"enrolled"`
-	Reached    int64            `json:"reached"`     // got the first email
-	Replied    int64            `json:"replied"`     // wrote back (not bounces or auto-replies)
-	ReplyRate  float64          `json:"reply_rate"`  // replied / reached, percent
-	Clicked    int64            `json:"clicked"`     // people who clicked a link (campaigns with track_clicks)
-	ClickRate  float64          `json:"click_rate"`  // clicked / reached, percent
-	Interested int64            `json:"interested"`  // classified interested, or now a partner
-	Partners   int64            `json:"partners"`    // said yes
-	Bounced    int64            `json:"bounced"`     //
-	BounceRate float64          `json:"bounce_rate"` // bounced / reached, percent
-	OptedOut   int64            `json:"opted_out"`   // unsubscribed or complained
-	InProgress int64            `json:"in_progress"` // still in the sequence
+	Reached    int64            `json:"reached"`
+	Replied    int64            `json:"replied"`
+	ReplyRate  float64          `json:"reply_rate"`
+	Opened     int64            `json:"opened"`
+	OpenRate   float64          `json:"open_rate"`
+	Clicked    int64            `json:"clicked"`
+	ClickRate  float64          `json:"click_rate"`
+	Interested int64            `json:"interested"`
+	Partners   int64            `json:"partners"`
+	Bounced    int64            `json:"bounced"`
+	BounceRate float64          `json:"bounce_rate"`
+	SpamBlocks int64            `json:"spam_blocks"`
+	OptedOut   int64            `json:"opted_out"`
+	InProgress int64            `json:"in_progress"`
 	NoReply    int64            `json:"finished_no_reply"`
-	Waiting    int64            `json:"drafts_waiting"` // first emails not yet approved or sent
+	Waiting    int64            `json:"drafts_waiting"`
+	TrackOpens bool             `json:"track_opens"`
+	TrackClick bool             `json:"track_clicks"`
 	Steps      []StepResult     `json:"steps,omitempty"`
 	Replies    map[string]int64 `json:"replies_by_kind,omitempty"`
 }
@@ -46,41 +54,50 @@ func pct(n, d int64) float64 {
 	return float64(int64(1000*float64(n)/float64(d)+0.5)) / 10
 }
 
-// CampaignResults measures one campaign; steps adds the per-step breakdown.
-func (s *Service) CampaignResults(ctx context.Context, c db.OutboundCampaign, steps bool) (CampaignResults, error) {
-	r := CampaignResults{ID: c.ID, Name: c.Name, Status: c.Status, Replies: map[string]int64{}}
-	enr, err := s.db.OutboundCampaignEnrollmentCounts(ctx, c.ID)
+// CampaignResults measures one outreach sequence; steps adds the per-step view.
+func (s *Service) CampaignResults(ctx context.Context, c db.EmailSequence, steps bool) (CampaignResults, error) {
+	r := CampaignResults{ID: c.ID, Name: c.Name, Status: "active", Replies: map[string]int64{}, TrackOpens: c.TrackOpens == 1, TrackClick: c.TrackClicks == 1}
+	if c.IsActive.Int64 != 1 {
+		r.Status = "paused"
+	}
+	seqID := sql.NullString{String: c.ID, Valid: true}
+	states, err := s.db.OutreachSequenceStates(ctx, seqID)
 	if err != nil {
 		return r, err
 	}
-	for _, e := range enr {
-		r.Enrolled += e.N
-		switch e.Status {
-		case "active", "paused":
-			r.InProgress += e.N
+	for _, st := range states {
+		r.Enrolled += st.N
+		switch st.State {
+		case "active":
+			r.InProgress += st.N
 		case "done":
-			r.NoReply += e.N
+			r.NoReply += st.N
 		}
 	}
-	sent, err := s.db.OutboundCampaignSentByStep(ctx, c.ID)
+	sent, err := s.db.OutreachSentByStep(ctx, seqID)
 	if err != nil {
 		return r, err
 	}
-	sentBy := map[int64]int64{}
+	byStep := map[int64]db.OutreachSentByStepRow{}
 	for _, x := range sent {
-		sentBy[x.Position] = x.N
+		byStep[x.Position] = x
 	}
-	r.Reached = sentBy[1]
-	r.Waiting = r.Enrolled - r.Reached
-	classes, err := s.db.OutboundCampaignRepliesByClass(ctx, c.ID)
+	r.Reached = byStep[1].Sent
+	r.Waiting = max(0, r.InProgress-r.Reached)
+	if e, err := s.db.OutreachPeopleEngaged(ctx, seqID); err == nil {
+		r.Opened, r.Clicked = e.Opened, e.Clicked
+	}
+	kinds, err := s.db.OutreachRepliesByKind(ctx, seqID)
 	if err != nil {
 		return r, err
 	}
-	for _, x := range classes {
+	for _, x := range kinds {
 		r.Replies[x.Classification] = x.N
 		switch x.Classification {
 		case "bounce":
 			r.Bounced = x.N
+		case "spam_block":
+			r.SpamBlocks = x.N
 		case "out_of_office":
 		case "unsubscribe", "complaint":
 			r.OptedOut += x.N
@@ -92,38 +109,28 @@ func (s *Service) CampaignResults(ctx context.Context, c db.OutboundCampaign, st
 			r.Replied += x.N
 		}
 	}
-	r.Partners, _ = s.db.OutboundCampaignPartners(ctx, c.ID)
+	r.Partners, _ = s.db.OutreachPartners(ctx, seqID)
 	r.Interested = max(r.Interested, r.Partners)
-	r.ReplyRate = pct(r.Replied, r.Reached)
-	r.Clicked, _ = s.db.OutboundCampaignClickers(ctx, c.ID)
-	r.ClickRate = pct(r.Clicked, r.Reached)
-	r.BounceRate = pct(r.Bounced, r.Reached)
+	r.ReplyRate, r.OpenRate, r.ClickRate, r.BounceRate = pct(r.Replied, r.Reached), pct(r.Opened, r.Reached), pct(r.Clicked, r.Reached), pct(r.Bounced, r.Reached)
 	if !steps {
 		r.Replies = nil
 		return r, nil
 	}
-	byStep, err := s.db.OutboundCampaignRepliesByStep(ctx, c.ID)
+	replies, err := s.db.OutreachRepliesByStep(ctx, seqID)
 	if err != nil {
 		return r, err
 	}
 	repliesBy := map[int64]int64{}
-	for _, x := range byStep {
+	for _, x := range replies {
 		repliesBy[x.Step] = x.N
 	}
-	clicks, err := s.db.OutboundCampaignClicksByStep(ctx, c.ID)
-	if err != nil {
-		return r, err
-	}
-	clicksBy := map[int64]int64{}
-	for _, x := range clicks {
-		clicksBy[x.Position] = x.N
-	}
-	all, err := s.db.ListOutboundSteps(ctx, c.ID)
+	all, err := s.db.ListSequenceSteps(ctx, seqID)
 	if err != nil {
 		return r, err
 	}
 	for _, st := range all {
-		r.Steps = append(r.Steps, StepResult{Step: st.Position, Sent: sentBy[st.Position], Replies: repliesBy[st.Position], ReplyRate: pct(repliesBy[st.Position], sentBy[st.Position]), Clicked: clicksBy[st.Position]})
+		x := byStep[st.Position]
+		r.Steps = append(r.Steps, StepResult{Step: st.Position, Sent: x.Sent, Replies: repliesBy[st.Position], ReplyRate: pct(repliesBy[st.Position], x.Sent), Opened: x.Opened, Clicked: x.Clicked})
 	}
 	return r, nil
 }

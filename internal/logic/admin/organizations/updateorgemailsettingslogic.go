@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -33,6 +34,12 @@ func NewUpdateOrgEmailSettingsLogic(ctx context.Context, svcCtx *svc.ServiceCont
 func (l *UpdateOrgEmailSettingsLogic) UpdateOrgEmailSettings(req *types.UpdateOrgEmailSettingsRequest) (resp *types.OrgInfo, err error) {
 	if _, err := access.Require(l.ctx, l.svcCtx.DB, req.Id, access.Admin); err != nil {
 		return nil, err
+	}
+	// The brand's own mail never sends from an outreach domain.
+	if d := email.ExtractDomainFromEmail(req.FromEmail); d != "" {
+		if existing, err := l.svcCtx.DB.GetAnyDomainIdentity(l.ctx, d); err == nil && existing.Purpose == "outreach" {
+			return nil, errorx.NewBadRequestError(d + " is an outreach domain; it sends only through outreach mailboxes. Use the brand's sending domain.")
+		}
 	}
 
 	// Update email settings (from_name, from_email, reply_to)

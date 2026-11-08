@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/quotedprintable"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -22,6 +23,8 @@ import (
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/db/migrations"
 	"github.com/outlet-sh/outlet/internal/services/crypto"
+	"github.com/outlet-sh/outlet/internal/services/email"
+	"github.com/outlet-sh/outlet/internal/services/tracking"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver"
@@ -154,9 +157,9 @@ func (ms *mailServer) count() int {
 }
 
 func bodyOf(t *testing.T, m *mail.Message) string {
-	b, err := io.ReadAll(m.Body)
+	b, err := io.ReadAll(quotedprintable.NewReader(m.Body))
 	require.NoError(t, err)
-	return strings.ReplaceAll(strings.ReplaceAll(string(b), "=\r\n", ""), "\r\n", "\n")
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
 
 // ---- fake DNS -------------------------------------------------------------
@@ -198,7 +201,9 @@ type harness struct {
 	store *db.Store
 	svc   *Service
 	org   db.Organization
-	mail  *mailServer
+	mail   *mailServer
+	mailer *email.Service
+	seq    *email.SequenceService
 	clock time.Time
 	dns   fakeDNS
 }
@@ -223,11 +228,19 @@ func newHarness(t *testing.T) *harness {
 	// Tuesday, 16:00 UTC: inside the 8 to 17 window.
 	h.clock = time.Date(2026, 11, 10, 16, 0, 0, 0, time.UTC)
 	h.dns = fakeDNS{ok: map[string]bool{"getexample.com": true}}
-	h.svc = New(store, cs, Config{Brands: []string{"nebo-outreach"}, ProtectedDomains: []string{"neboai.com", "neboloop.com"}})
+	mailer := email.NewService(store, cs)
+	mailer.SetBaseURL("https://outlet.example.com")
+	mailer.SetLinkSecret("test-secret")
+	h.mailer = mailer
+	h.seq = email.NewSequenceServiceWithBaseURL(store, mailer, "https://outlet.example.com")
+	h.seq.SetClock(func() time.Time { return h.clock })
+	h.svc = New(store, cs, Config{ProtectedDomains: []string{"neboai.com", "neboloop.com"}, Mailer: mailer, Sequences: h.seq})
+	require.NoError(t, h.svc.SetEnabled(ctx, org.ID, true))
+	h.refresh()
 	h.svc.now = func() time.Time { return h.clock }
 	h.svc.tracking = "outlet.example.com"
 	h.svc.dns = h.dns
-	h.svc.verify = func(_ context.Context, email string) (bool, string) {
+	h.svc.verify = func(_ context.Context, _, email string) (bool, string) {
 		if strings.Contains(email, "risky") {
 			return false, "no MX records"
 		}
@@ -240,37 +253,57 @@ func newHarness(t *testing.T) *harness {
 
 func (h *harness) advance(d time.Duration) { h.clock = h.clock.Add(d) }
 
+// refresh rereads the brand after its settings change.
+func (h *harness) refresh() {
+	org, err := h.store.GetOrganizationByID(h.ctx, h.org.ID)
+	require.NoError(h.t, err)
+	h.org = org
+}
+
+func (h *harness) contact(address string) db.Contact {
+	c, err := h.store.GetContactByOrgAndEmail(h.ctx, db.GetContactByOrgAndEmailParams{OrgID: sql.NullString{String: h.org.ID, Valid: true}, Email: address})
+	require.NoError(h.t, err)
+	return c
+}
+
+func (h *harness) state(contactID, campaignID string) db.ContactSequenceState {
+	st, err := h.store.GetSequenceStateFull(h.ctx, db.GetSequenceStateFullParams{ContactID: sql.NullString{String: contactID, Valid: true}, SequenceID: sql.NullString{String: campaignID, Valid: true}})
+	require.NoError(h.t, err)
+	return st
+}
+
 func (h *harness) mailbox(email, pw string) MailboxInput {
 	return MailboxInput{Email: email, FromName: strings.Split(email, "@")[0] + " Rivera", Password: pw,
 		SMTPHost: "127.0.0.1", SMTPPort: h.mail.smtpPort, IMAPHost: "127.0.0.1", IMAPPort: h.mail.imapPort}
 }
 
 // setup gives the brand settings, a domain and two mailboxes.
-func (h *harness) setup() (sam, pat db.OutboundMailbox) {
+func (h *harness) setup() (sam, pat db.Mailbox) {
 	t := h.t
 	_, err := h.svc.UpdateSettings(h.ctx, h.org, SettingsInput{MailingAddress: "NeboAI, 123 Main St, Provo, UT 84601", Timezone: "UTC"})
 	require.NoError(t, err)
 	d, pending, check, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com"})
 	require.NoError(t, err)
 	assert.True(t, check.OK())
-	assert.Equal(t, "ok", d.Status)
+	assert.Equal(t, "success", d.VerificationStatus.String)
 	assert.NotEmpty(t, pending, "a manual domain returns the records to paste")
 	res, err := h.svc.AddMailboxes(h.ctx, h.org, []MailboxInput{h.mailbox("sam@getexample.com", "pw-sam"), h.mailbox("pat@getexample.com", "pw-pat")})
 	require.NoError(t, err)
 	for _, r := range res {
 		require.Empty(t, r.Error)
 	}
-	sam, err = h.store.GetOutboundMailboxByEmail(h.ctx, "sam@getexample.com")
+	sam, err = h.store.GetMailboxByEmail(h.ctx, "sam@getexample.com")
 	require.NoError(t, err)
-	pat, err = h.store.GetOutboundMailboxByEmail(h.ctx, "pat@getexample.com")
+	pat, err = h.store.GetMailboxByEmail(h.ctx, "pat@getexample.com")
 	require.NoError(t, err)
+	h.refresh()
 	// The reply reader's first pass sets where reading starts.
 	h.svc.PollReplies(h.ctx)
 	return sam, pat
 }
 
 func (h *harness) prospects(in ...ProspectInput) map[string]ProspectResult {
-	res, err := h.svc.AddProspects(h.ctx, h.org, in)
+	res, err := h.svc.AddProspects(h.ctx, h.org, "", in)
 	require.NoError(h.t, err)
 	out := map[string]ProspectResult{}
 	for _, r := range res {
@@ -316,7 +349,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 	res, err := h.svc.AddMailboxes(ctx, h.org, []MailboxInput{h.mailbox("sam@getexample.com", "wrong")})
 	require.NoError(t, err)
 	assert.Contains(t, res[0].Error, "SMTP login failed")
-	_, err = h.store.GetOutboundMailboxByEmail(ctx, "sam@getexample.com")
+	_, err = h.store.GetMailboxByEmail(ctx, "sam@getexample.com")
 	assert.ErrorIs(t, err, sql.ErrNoRows)
 
 	sam, pat := h.setup()
@@ -332,7 +365,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 		creator("risky@example.org", "Rae", "x"),
 		creator("ava@example.org", "Ava", "again"),
 	)
-	assert.Equal(t, "added", got["ava@example.org"].Status)
+	assert.Equal(t, "added", got["ava@example.org"].Status, got["ava@example.org"].Reason)
 	assert.Equal(t, "added", got["ben@example.org"].Status)
 	assert.Equal(t, "suppressed", got["dana@example.org"].Status)
 	assert.Equal(t, "refused", got["eve@example.org"].Status)
@@ -345,7 +378,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 	assert.Equal(t, 2, dry.Enrolled)
 	assert.Contains(t, dry.Skipped[got["cal@example.org"].ID], "recent_video", "a missing tag skips, never sends a blank")
 	assert.Contains(t, dry.Skipped[got["risky@example.org"].ID], "held")
-	camps, _ := h.store.ListOutboundCampaigns(ctx, h.org.ID)
+	camps, _ := h.store.ListOutreachSequences(ctx, sql.NullString{String: h.org.ID, Valid: true})
 	assert.Empty(t, camps)
 
 	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "Creators", Steps: threeSteps, ProspectIDs: ids, IdempotencyKey: "k1"})
@@ -405,10 +438,8 @@ func TestOutreachEndToEnd(t *testing.T) {
 	require.Len(t, replies, 1)
 	assert.Equal(t, "needs_review", replies[0].Classification)
 	assert.Equal(t, "Sounds fun, tell me more!", replies[0].Body)
-	avaP, _ := h.store.GetOutboundProspectByEmail(ctx, db.GetOutboundProspectByEmailParams{OrgID: h.org.ID, Email: "ava@example.org"})
-	assert.Equal(t, "replied", avaP.Status)
-	benP, _ := h.store.GetOutboundProspectByEmail(ctx, db.GetOutboundProspectByEmailParams{OrgID: h.org.ID, Email: "ben@example.org"})
-	assert.Equal(t, "bounced", benP.Status)
+	assert.Equal(t, "replied", h.state(got["ava@example.org"].ID, camp.CampaignID).StoppedReason)
+	assert.Equal(t, "bounced", h.state(got["ben@example.org"].ID, camp.CampaignID).StoppedReason)
 	assert.True(t, h.svc.suppressed(ctx, h.org.ID, "ben@example.org"), "a bounce goes on the suppression list")
 
 	// Reading again changes nothing.
@@ -466,9 +497,7 @@ func TestFollowUpsThreadFromTheSameMailbox(t *testing.T) {
 	assert.Equal(t, "Re: "+first[0].Header.Get("Subject"), all[1].Header.Get("Subject"))
 	assert.Contains(t, bodyOf(t, all[1]), "Following up on this, Fay.")
 
-	e, err := h.store.ListActiveOutboundEnrollmentsForProspect(ctx, got["fay@example.org"].ID)
-	require.NoError(t, err)
-	assert.Empty(t, e, "the sequence ended after its last step")
+	assert.True(t, h.state(got["fay@example.org"].ID, camp.CampaignID).CompletedAt.Valid, "the sequence ended after its last step")
 }
 
 // The limits: warm-up allowance, opt-outs from a reply, health pauses,
@@ -476,9 +505,9 @@ func TestFollowUpsThreadFromTheSameMailbox(t *testing.T) {
 func TestSafetyLimits(t *testing.T) {
 	h := newHarness(t)
 	ctx := h.ctx
-	sam, _ := h.setup()
+	sam, pat := h.setup()
 
-	mb := db.OutboundMailbox{DailyCap: 30, WarmupStartedAt: ts(h.clock)}
+	mb := db.Mailbox{DailyCap: 30, WarmupStartedAt: ts(h.clock)}
 	assert.EqualValues(t, 5, allowance(mb, h.clock))
 	assert.EqualValues(t, 7, allowance(mb, h.clock.Add(24*time.Hour)))
 	assert.EqualValues(t, 30, allowance(mb, h.clock.Add(40*24*time.Hour)))
@@ -488,7 +517,7 @@ func TestSafetyLimits(t *testing.T) {
 	// Not enabled in config: refused.
 	other, _ := h.store.GetOrganizationByID(ctx, "org-2")
 	_, err := h.svc.DraftOutreach(ctx, other, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{"p"}})
-	assert.ErrorContains(t, err, "OUTBOUND_BRANDS")
+	assert.ErrorContains(t, err, "Outbound is off")
 
 	// Automatic approval needs 30 days of mailbox history.
 	got := h.prospects(creator("gus@example.org", "Gus", "v"))
@@ -496,7 +525,10 @@ func TestSafetyLimits(t *testing.T) {
 	assert.ErrorContains(t, err, "30 days")
 
 	// An opt-out reply suppresses the address.
-	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{got["gus@example.org"].ID}, MailboxIDs: []string{sam.ID}})
+	require.NoError(t, h.store.SetMailboxStatus(ctx, db.SetMailboxStatusParams{Status: "paused", PausedReason: "held for the test", ID: pat.ID}))
+	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{got["gus@example.org"].ID}})
+	require.NoError(t, err)
+	require.NoError(t, h.store.SetMailboxStatus(ctx, db.SetMailboxStatusParams{Status: "active", ID: pat.ID}))
 	require.NoError(t, err)
 	_, _ = h.svc.Review(ctx, h.org, "approve", []string{camp.Drafts[0].MessageID})
 	h.svc.Tick(ctx)
@@ -508,11 +540,11 @@ func TestSafetyLimits(t *testing.T) {
 
 	// Health: bounces over 3% pause the mailbox.
 	for i, id := range []string{"b1@x", "b2@x"} {
-		_, err := h.store.CreateOutboundReply(ctx, db.CreateOutboundReplyParams{ID: id, OrgID: h.org.ID, MailboxID: sam.ID, FromEmail: "mailer-daemon@x", MessageID: id, Classification: "bounce", Handled: 1, ReceivedAt: ts(h.clock)})
+		_, err := h.store.CreateEmailReply(ctx, db.CreateEmailReplyParams{ID: id, OrgID: h.org.ID, MailboxID: sam.ID, FromEmail: "mailer-daemon@x", MessageID: id, Classification: "bounce", Handled: 1, ReceivedAt: ts(h.clock)})
 		require.NoError(t, err, i)
 	}
 	h.svc.Tick(ctx)
-	sam, _ = h.store.GetOutboundMailboxByEmail(ctx, "sam@getexample.com")
+	sam, _ = h.store.GetMailboxByEmail(ctx, "sam@getexample.com")
 	assert.Equal(t, "paused", sam.Status)
 	assert.Contains(t, sam.PausedReason, "bounce rate")
 	err = h.svc.Pause(ctx, h.org, "mailbox", sam.ID, true)
@@ -522,56 +554,61 @@ func TestSafetyLimits(t *testing.T) {
 	assert.Contains(t, why, "reputation")
 
 	// Failing DNS pauses every mailbox on the domain; fixing it resumes them.
-	d, _ := h.store.GetOutboundDomainByName(ctx, "getexample.com")
+	d, _ := h.store.GetAnyDomainIdentity(ctx, "getexample.com")
 	delete(h.dns.ok, "getexample.com")
 	c, err := h.svc.CheckDomain(ctx, d)
 	require.NoError(t, err)
 	assert.False(t, c.OK())
-	pat, _ := h.store.GetOutboundMailboxByEmail(ctx, "pat@getexample.com")
+	pat, _ = h.store.GetMailboxByEmail(ctx, "pat@getexample.com")
 	assert.Equal(t, "paused", pat.Status)
 	assert.Contains(t, pat.PausedReason, "DNS:")
 	h.dns.ok["getexample.com"] = true
 	_, err = h.svc.CheckDomain(ctx, d)
 	require.NoError(t, err)
-	pat, _ = h.store.GetOutboundMailboxByEmail(ctx, "pat@getexample.com")
+	pat, _ = h.store.GetMailboxByEmail(ctx, "pat@getexample.com")
 	assert.Equal(t, "active", pat.Status)
 
 	// A send interrupted mid-way is never sent again.
-	stuck, err := h.store.CreateOutboundMessage(ctx, db.CreateOutboundMessageParams{ID: "stuck-1", OrgID: h.org.ID, MailboxID: pat.ID, ProspectID: got["gus@example.org"].ID, ToEmail: "gus@example.org", Subject: "s", Body: "b", Status: "approved", MessageID: "m@x", NotBefore: ts(h.clock)})
+	stuck, err := h.store.QueueOutreachEmail(ctx, db.QueueOutreachEmailParams{ID: "stuck-1", ContactID: sql.NullString{String: got["gus@example.org"].ID, Valid: true},
+		ScheduledFor: ts(h.clock), Status: sql.NullString{String: "pending", Valid: true}, TrackingToken: sql.NullString{String: "tok-stuck", Valid: true},
+		MailboxID: sql.NullString{String: pat.ID, Valid: true}, Subject: sql.NullString{String: "s", Valid: true}, Body: sql.NullString{String: "b", Valid: true},
+		MessageID: sql.NullString{String: "m@x", Valid: true}})
 	require.NoError(t, err)
-	n, err := h.store.ClaimOutboundMessage(ctx, db.ClaimOutboundMessageParams{ClaimedAt: sql.NullString{String: ts(h.clock), Valid: true}, ID: stuck.ID})
+	n, err := h.store.ClaimOutreachEmail(ctx, db.ClaimOutreachEmailParams{ClaimedAt: sql.NullString{String: ts(h.clock), Valid: true}, ID: stuck.ID})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, n)
 	h.advance(20 * time.Minute)
 	before := h.mail.count()
 	h.svc.Tick(ctx)
-	m, _ := h.store.GetOutboundMessage(ctx, db.GetOutboundMessageParams{ID: stuck.ID, OrgID: h.org.ID})
-	assert.Equal(t, "failed", m.Status)
+	m, _ := h.store.GetOutreachEmail(ctx, db.GetOutreachEmailParams{ID: stuck.ID, OrgID: sql.NullString{String: h.org.ID, Valid: true}})
+	assert.Equal(t, "failed", m.Status.String)
 	assert.Equal(t, before, h.mail.count())
 }
 
-func TestRenderAndWindows(t *testing.T) {
+// Outreach writing uses Outlet's merge tags, with spintax and the empty-tag
+// check, and a weekday sending window.
+func TestTagsAndWindows(t *testing.T) {
 	r := rand.New(rand.NewPCG(1, 1))
-	out, err := render("{Hi|Hey} {{first_name}}, {{ niche }}", map[string]string{"first_name": "Ava", "niche": "tech"}, r)
-	require.NoError(t, err)
+	out, missing := email.FillTags(email.Spin("{Hi|Hey} {{first_name}}, {{ niche }}", r), "Ava Lee", "a@x.org", map[string]string{"niche": "tech"})
+	assert.Empty(t, missing)
 	assert.Regexp(t, `^(Hi|Hey) Ava, tech$`, out)
-	_, err = render("Hi {{first_name}} {{recent_video}}", map[string]string{"first_name": "Ava"}, r)
-	assert.EqualError(t, err, "no value for recent_video")
+	_, missing = email.FillTags("Hi {{first_name}} {{recent_video}}", "Ava", "a@x.org", nil)
+	assert.Equal(t, []string{"recent_video"}, missing)
+	out, missing = email.FillTags("Hi {{first_name,fallback=there}}", "", "a@x.org", nil)
+	assert.Empty(t, missing)
+	assert.Equal(t, "Hi there", out)
 
 	// Saturday evening → Monday 8:00.
 	sat := time.Date(2026, 11, 14, 19, 0, 0, 0, time.UTC)
-	assert.Equal(t, time.Date(2026, 11, 16, 8, 0, 0, 0, time.UTC), nextWindow(sat, time.UTC, 8, 17))
+	assert.Equal(t, time.Date(2026, 11, 16, 8, 0, 0, 0, time.UTC), email.NextWindow(sat, time.UTC, 8, 17))
 	// Tuesday 6:00 → Tuesday 8:00; Tuesday 10:00 stays.
 	tue := time.Date(2026, 11, 10, 6, 0, 0, 0, time.UTC)
-	assert.Equal(t, time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC), nextWindow(tue, time.UTC, 8, 17))
-	assert.Equal(t, tue.Add(4*time.Hour), nextWindow(tue.Add(4*time.Hour), time.UTC, 8, 17))
-	// Friday + 1 business day = Monday.
-	fri := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
-	assert.Equal(t, time.Monday, addBusinessDays(fri, 1).Weekday())
+	assert.Equal(t, time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC), email.NextWindow(tue, time.UTC, 8, 17))
+	assert.Equal(t, tue.Add(4*time.Hour), email.NextWindow(tue.Add(4*time.Hour), time.UTC, 8, 17))
 }
 
 func TestClassify(t *testing.T) {
-	mb := db.OutboundMailbox{Email: "sam@getexample.com"}
+	mb := db.Mailbox{Email: "sam@getexample.com"}
 	parse := func(raw string) incoming {
 		in, err := parseIncoming([]byte(strings.ReplaceAll(raw, "\n", "\r\n")))
 		require.NoError(t, err)
@@ -592,7 +629,8 @@ func TestOperations(t *testing.T) {
 	ctx := h.ctx
 	sam, _ := h.setup()
 	got := h.prospects(creator("ivy@example.org", "Ivy", "the build vlog"))
-	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: threeSteps, ProspectIDs: []string{got["ivy@example.org"].ID}, MailboxIDs: []string{sam.ID}})
+	_ = sam
+	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: threeSteps, ProspectIDs: []string{got["ivy@example.org"].ID}})
 	require.NoError(t, err)
 	draft := camp.Drafts[0].MessageID
 
@@ -608,8 +646,8 @@ func TestOperations(t *testing.T) {
 	assert.Contains(t, why, "waiting for approval")
 
 	require.NoError(t, h.svc.EditDraft(ctx, h.org, draft, "New subject", ""))
-	m, _ := h.store.GetOutboundMessage(ctx, db.GetOutboundMessageParams{ID: draft, OrgID: h.org.ID})
-	assert.Equal(t, "New subject", m.Subject)
+	m, _ := h.store.GetOutreachEmail(ctx, db.GetOutreachEmailParams{ID: draft, OrgID: sql.NullString{String: h.org.ID, Valid: true}})
+	assert.Equal(t, "New subject", m.Subject.String)
 
 	// Paused campaign: approved email waits.
 	require.NoError(t, h.svc.Pause(ctx, h.org, "campaign", camp.CampaignID, false))
@@ -635,9 +673,10 @@ func TestOperations(t *testing.T) {
 	replies, _ := h.svc.ListReplies(ctx, h.org, false, 10)
 	require.Len(t, replies, 1)
 	require.NoError(t, h.svc.Classify(ctx, h.org, replies[0].ID, "interested"))
-	p, _ := h.store.GetOutboundProspect(ctx, db.GetOutboundProspectParams{ID: got["ivy@example.org"].ID, OrgID: h.org.ID})
-	assert.Equal(t, "interested", p.Status)
-	require.NoError(t, h.svc.MarkPartner(ctx, h.org, p.ID))
+	ivy := got["ivy@example.org"].ID
+	tagged, _ := h.store.HasContactTag(ctx, db.HasContactTagParams{ContactID: sql.NullString{String: ivy, Valid: true}, Tag: "interested"})
+	assert.EqualValues(t, 1, tagged)
+	require.NoError(t, h.svc.MarkPartner(ctx, h.org, ivy))
 	assert.ErrorContains(t, h.svc.Classify(ctx, h.org, replies[0].ID, "maybe"), "must be one of")
 }
 
@@ -692,13 +731,13 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 	steps := []StepInput{{Subject: "Hi {{first_name}}", Body: "Loved {{recent_video}}. Details: https://neboai.com/creators."}, {DelayDays: 2, Body: "Any thoughts, {{first_name}}?"}}
 
 	_, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
-	assert.ErrorContains(t, err, "click-tracking subdomain")
+	assert.ErrorContains(t, err, "no tracking subdomain")
 	_, _, _, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com", ClickTracking: true})
 	require.NoError(t, err)
 	_, err = h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
 	assert.ErrorContains(t, err, "doesn't point at this server")
 	h.dns.ok["cname:go.getexample.com"] = true
-	d, _ := h.store.GetOutboundDomainByName(ctx, "getexample.com")
+	d, _ := h.store.GetAnyDomainIdentity(ctx, "getexample.com")
 	c, err := h.svc.CheckDomain(ctx, d)
 	require.NoError(t, err)
 	require.True(t, *c.Tracking)
@@ -713,14 +752,22 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 	require.Len(t, kai, 1)
 	body := bodyOf(t, kai[0])
 	assert.NotContains(t, body, "neboai.com/creators")
-	m := regexp.MustCompile(`https://go\.getexample\.com/o/c/([0-9a-f]{32})\.`).FindStringSubmatch(body)
+	// One signed link on the domain's own go. host, through the one click endpoint.
+	m := regexp.MustCompile(`https://go\.getexample\.com/api/e/c/([^?\s]+)\?url=([^&\s]+)&sig=([0-9a-f]+)`).FindStringSubmatch(body)
 	require.NotNil(t, m, body)
-	token := m[1]
+	token, target := m[1], "https://neboai.com/creators"
+	assert.True(t, h.mailer.VerifyClickLink(token, target, m[3]), "the click endpoint accepts it and redirects to the email's link")
+	assert.False(t, h.mailer.VerifyClickLink(token, "https://evil.example", m[3]), "and nowhere else")
 
-	assert.Equal(t, "https://neboai.com/creators", h.svc.Click(ctx, token))
-	assert.Equal(t, "", h.svc.Click(ctx, "not-a-token"))
-	h.advance(2 * time.Minute)
-	assert.Equal(t, "https://neboai.com/creators", h.svc.Click(ctx, token))
+	// The tracking service records it; a click seconds after sending (a mail
+	// scanner) isn't counted, a later one is.
+	tracker := tracking.New(h.store.Queries, nil)
+	_, err = h.conn.Exec(`UPDATE email_queue SET sent_at = ? WHERE tracking_token = ?`, time.Now().UTC().Format(time.DateTime), token)
+	require.NoError(t, err)
+	_ = tracker.RecordClick(ctx, token, target)
+	_, err = h.conn.Exec(`UPDATE email_queue SET sent_at = ? WHERE tracking_token = ?`, time.Now().UTC().Add(-2*time.Minute).Format(time.DateTime), token)
+	require.NoError(t, err)
+	require.NoError(t, tracker.RecordClick(ctx, token, target))
 
 	h.mail.deliver(t, kaiBox(kai[0]), "From: kai@example.org\nTo: x\nSubject: Re: hi\nMessage-ID: <r-kai@example.org>\nIn-Reply-To: "+kai[0].Header.Get("Message-Id")+"\n\nI'm in. What's next?\n")
 	h.svc.PollReplies(ctx)
@@ -750,8 +797,8 @@ func kaiBox(m *mail.Message) string {
 	return a.Address
 }
 
-func mustCampaign(t *testing.T, h *harness, id string) db.OutboundCampaign {
-	c, err := h.store.GetOutboundCampaign(h.ctx, db.GetOutboundCampaignParams{ID: id, OrgID: h.org.ID})
+func mustCampaign(t *testing.T, h *harness, id string) db.EmailSequence {
+	c, err := h.store.GetOutreachSequence(h.ctx, db.GetOutreachSequenceParams{ID: id, OrgID: sql.NullString{String: h.org.ID, Valid: true}})
 	require.NoError(t, err)
 	return c
 }

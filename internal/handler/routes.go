@@ -18,6 +18,7 @@ import (
 	adminimports "github.com/outlet-sh/outlet/internal/handler/admin/imports"
 	adminlists "github.com/outlet-sh/outlet/internal/handler/admin/lists"
 	adminorganizations "github.com/outlet-sh/outlet/internal/handler/admin/organizations"
+	adminoutbound "github.com/outlet-sh/outlet/internal/handler/admin/outbound"
 	adminsequences "github.com/outlet-sh/outlet/internal/handler/admin/sequences"
 	adminsettings "github.com/outlet-sh/outlet/internal/handler/admin/settings"
 	adminsubscribers "github.com/outlet-sh/outlet/internal/handler/admin/subscribers"
@@ -547,6 +548,115 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodGet,
 					Path:    "/organizations/slug/:slug",
 					Handler: adminorganizations.GetOrganizationBySlugHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound",
+					Handler: adminoutbound.GetOutboundOverviewHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/campaigns",
+					Handler: adminoutbound.CreateOutboundCampaignHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/campaigns/:id",
+					Handler: adminoutbound.GetOutboundCampaignHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/dns-token",
+					Handler: adminoutbound.SetOutboundDNSTokenHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/domains",
+					Handler: adminoutbound.AddOutboundDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/domains/:id/check",
+					Handler: adminoutbound.CheckOutboundDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/drafts",
+					Handler: adminoutbound.ListOutboundDraftsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/drafts/:id",
+					Handler: adminoutbound.EditOutboundDraftHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/drafts/review",
+					Handler: adminoutbound.ReviewOutboundDraftsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/enabled",
+					Handler: adminoutbound.SetOutboundEnabledHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/explain",
+					Handler: adminoutbound.ExplainOutboundHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/mailboxes",
+					Handler: adminoutbound.AddOutboundMailboxesHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/pause",
+					Handler: adminoutbound.PauseOutboundHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/prospects",
+					Handler: adminoutbound.ListOutboundProspectsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/prospects",
+					Handler: adminoutbound.AddOutboundProspectsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/prospects/:id/partner",
+					Handler: adminoutbound.MarkOutboundPartnerHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/replies",
+					Handler: adminoutbound.ListOutboundRepliesHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/replies/:id/answer",
+					Handler: adminoutbound.AnswerOutboundReplyHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/replies/:id/classify",
+					Handler: adminoutbound.ClassifyOutboundReplyHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/settings",
+					Handler: adminoutbound.UpdateOutboundSettingsHandler(serverCtx),
 				},
 			}...,
 		),

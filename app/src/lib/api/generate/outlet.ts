@@ -650,6 +650,168 @@ export function getOrganizationBySlug(params: components.GetOrgBySlugRequestPara
 
 /**
  * @description 
+ */
+export function getOutboundOverview() {
+	return webapi.get<components.OutboundOverview>(`/api/admin/outbound`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function createOutboundCampaign(req: components.OutboundCampaignRequest) {
+	return webapi.post<components.OutboundCampaignResponse>(`/api/admin/outbound/campaigns`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getOutboundCampaign(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.get<components.OutboundCampaignResults>(`/api/admin/outbound/campaigns/${id}`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function setOutboundDNSToken(req: components.OutboundDNSTokenRequest) {
+	return webapi.put<components.Response>(`/api/admin/outbound/dns-token`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function addOutboundDomain(req: components.OutboundDomainRequest) {
+	return webapi.post<components.OutboundDomainResponse>(`/api/admin/outbound/domains`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function checkOutboundDomain(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.post<components.OutboundDomainInfo>(`/api/admin/outbound/domains/${id}/check`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listOutboundDrafts(params: components.OutboundListRequestParams) {
+	return webapi.get<components.OutboundDraftList>(`/api/admin/outbound/drafts`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function editOutboundDraft(params: components.OutboundEditDraftRequestParams, req: components.OutboundEditDraftRequest, id: string) {
+	return webapi.put<components.Response>(`/api/admin/outbound/drafts/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function reviewOutboundDrafts(req: components.OutboundReviewRequest) {
+	return webapi.post<components.OutboundReviewResponse>(`/api/admin/outbound/drafts/review`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function setOutboundEnabled(req: components.OutboundEnabledRequest) {
+	return webapi.put<components.Response>(`/api/admin/outbound/enabled`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function explainOutbound(params: components.OutboundExplainRequestParams) {
+	return webapi.get<components.OutboundExplainResponse>(`/api/admin/outbound/explain`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function addOutboundMailboxes(req: components.OutboundAddMailboxesRequest) {
+	return webapi.post<components.OutboundAddMailboxesResponse>(`/api/admin/outbound/mailboxes`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function pauseOutbound(req: components.OutboundPauseRequest) {
+	return webapi.post<components.Response>(`/api/admin/outbound/pause`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listOutboundProspects(params: components.OutboundListProspectsRequestParams) {
+	return webapi.get<components.OutboundProspectList>(`/api/admin/outbound/prospects`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function addOutboundProspects(req: components.OutboundAddProspectsRequest) {
+	return webapi.post<components.OutboundAddProspectsResponse>(`/api/admin/outbound/prospects`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function markOutboundPartner(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.post<components.Response>(`/api/admin/outbound/prospects/${id}/partner`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listOutboundReplies(params: components.OutboundListRepliesRequestParams) {
+	return webapi.get<components.OutboundReplyList>(`/api/admin/outbound/replies`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function answerOutboundReply(params: components.OutboundAnswerRequestParams, req: components.OutboundAnswerRequest, id: string) {
+	return webapi.post<components.Response>(`/api/admin/outbound/replies/${id}/answer`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function classifyOutboundReply(params: components.OutboundClassifyRequestParams, req: components.OutboundClassifyRequest, id: string) {
+	return webapi.post<components.Response>(`/api/admin/outbound/replies/${id}/classify`, params, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function updateOutboundSettings(req: components.OutboundSettingsRequest) {
+	return webapi.put<components.Response>(`/api/admin/outbound/settings`, req)
+}
+
+/**
+ * @description 
  * @param params
  */
 export function listEmailQueue(params: components.EmailQueueListRequestParams) {

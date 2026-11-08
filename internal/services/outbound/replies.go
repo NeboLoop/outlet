@@ -23,7 +23,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func dialIMAP(mb db.OutboundMailbox, password string) (*imapclient.Client, error) {
+func dialIMAP(mb db.Mailbox, password string) (*imapclient.Client, error) {
 	addr := net.JoinHostPort(mb.ImapHost, fmt.Sprint(mb.ImapPort))
 	var c *imapclient.Client
 	var err error
@@ -42,7 +42,7 @@ func dialIMAP(mb db.OutboundMailbox, password string) (*imapclient.Client, error
 	return c, nil
 }
 
-func testIMAP(mb db.OutboundMailbox, password string) error {
+func testIMAP(mb db.Mailbox, password string) error {
 	c, err := dialIMAP(mb, password)
 	if err != nil {
 		return err
@@ -56,20 +56,20 @@ func testIMAP(mb db.OutboundMailbox, password string) error {
 
 // PollReplies reads new mail in every connected mailbox, paused ones too.
 func (s *Service) PollReplies(ctx context.Context) {
-	mailboxes, err := s.db.ListAllOutboundMailboxes(ctx)
+	mailboxes, err := s.db.ListAllMailboxes(ctx)
 	if err != nil {
 		return
 	}
 	for _, mb := range mailboxes {
 		if err := s.pollMailbox(ctx, mb); err != nil {
 			log.Printf("outbound: read %s: %v", mb.Email, err)
-			_ = s.db.SetOutboundMailboxError(ctx, db.SetOutboundMailboxErrorParams{LastError: "IMAP: " + err.Error(), ID: mb.ID})
+			_ = s.db.SetMailboxError(ctx, db.SetMailboxErrorParams{LastError: "IMAP: " + err.Error(), ID: mb.ID})
 		}
 	}
 }
 
-func (s *Service) pollMailbox(ctx context.Context, mb db.OutboundMailbox) error {
-	_, pass, err := s.passwords(mb)
+func (s *Service) pollMailbox(ctx context.Context, mb db.Mailbox) error {
+	pass, err := s.imapPassword(mb)
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func (s *Service) pollMailbox(ctx context.Context, mb db.OutboundMailbox) error 
 	// The first read, or a mailbox whose UIDs were reset, starts from now:
 	// mail from before outreach began is never classified.
 	if mb.ImapUidValidity == 0 || int64(sel.UIDValidity) != mb.ImapUidValidity {
-		return s.db.SetOutboundMailboxIMAPState(ctx, db.SetOutboundMailboxIMAPStateParams{
+		return s.db.SetMailboxIMAPState(ctx, db.SetMailboxIMAPStateParams{
 			ImapUidValidity: int64(sel.UIDValidity), ImapLastUid: int64(sel.UIDNext) - 1, ID: mb.ID,
 		})
 	}
@@ -113,7 +113,7 @@ func (s *Service) pollMailbox(ctx context.Context, mb db.OutboundMailbox) error 
 			last = int64(m.UID)
 		}
 	}
-	return s.db.SetOutboundMailboxIMAPState(ctx, db.SetOutboundMailboxIMAPStateParams{ImapUidValidity: mb.ImapUidValidity, ImapLastUid: last, ID: mb.ID})
+	return s.db.SetMailboxIMAPState(ctx, db.SetMailboxIMAPStateParams{ImapUidValidity: mb.ImapUidValidity, ImapLastUid: last, ID: mb.ID})
 }
 
 // incoming is the part of a received email outbound reads.
@@ -215,6 +215,7 @@ func newText(text string) string {
 }
 
 var (
+	spamBlockRe  = regexp.MustCompile(`(?i)(\b5\.7\.\d+\b|\bspam\b|blocked|blacklist|blocklist|policy|reputation|not accepted for policy)`)
 	oooSubjectRe = regexp.MustCompile(`(?i)\b(out of (the )?office|automatic reply|auto-?reply|autoreply|on vacation|away from)\b`)
 	optOutRe     = regexp.MustCompile(`(?i)\b(unsubscribe|remove me|take me off|stop (emailing|e-mailing|contacting)|don'?t (email|contact) me|no thanks|no, thanks|not interested)\b`)
 	notInterRe   = regexp.MustCompile(`(?i)\bnot interested\b`)
@@ -223,9 +224,14 @@ var (
 
 // classify applies the simple rules. Everything they don't settle is
 // needs_review, which the AI classifies through the conversations tool.
-func classify(mb db.OutboundMailbox, in incoming) string {
+func classify(mb db.Mailbox, in incoming) string {
 	from := in.From
 	if in.Report || strings.HasPrefix(from, "mailer-daemon@") || strings.HasPrefix(from, "postmaster@") {
+		// A rejection for spam or policy says the mailbox (or its domain) is
+		// being blocked, not that the address is bad.
+		if spamBlockRe.MatchString(in.Text) {
+			return "spam_block"
+		}
 		return "bounce"
 	}
 	if as := strings.ToLower(in.Header.Get("Auto-Submitted")); (as != "" && as != "no") || in.Header.Get("X-Autoreply") != "" ||
@@ -249,57 +255,55 @@ func classify(mb db.OutboundMailbox, in incoming) string {
 
 // handleIncoming matches one received email to the outreach it answers and
 // applies its effects. Mail that answers no outreach is left alone.
-func (s *Service) handleIncoming(ctx context.Context, mb db.OutboundMailbox, raw []byte) {
+func (s *Service) handleIncoming(ctx context.Context, mb db.Mailbox, raw []byte) {
 	in, err := parseIncoming(raw)
 	if err != nil || in.From == normEmail(mb.Email) {
 		return
 	}
 	class := classify(mb, in)
+	isBounce := class == "bounce" || class == "spam_block"
 
-	// Match: threading headers first, then the failed recipient of a
-	// bounce, then the sender's address.
-	var sent *db.OutboundMessage
-	for _, id := range append([]string{in.InReplyTo}, in.References...) {
+	// Match: threading headers first, then a message id inside a bounce,
+	// then the failed recipient of a bounce, then the sender's address.
+	var sent *db.GetOutreachEmailByMessageIDRow
+	ids := append([]string{in.InReplyTo}, in.References...)
+	if isBounce {
+		ids = append(ids, msgIDsIn(in.Text)...)
+	}
+	for _, id := range ids {
 		if id == "" {
 			continue
 		}
-		if m, err := s.db.GetOutboundMessageByMessageID(ctx, id); err == nil && m.MailboxID == mb.ID {
+		if m, err := s.db.GetOutreachEmailByMessageID(ctx, sql.NullString{String: id, Valid: true}); err == nil && m.MailboxID.String == mb.ID {
 			sent = &m
 			break
 		}
 	}
-	if sent == nil && class == "bounce" {
-		for _, m := range msgIDsIn(in.Text) {
-			if found, err := s.db.GetOutboundMessageByMessageID(ctx, m); err == nil && found.MailboxID == mb.ID {
-				sent = &found
-				break
-			}
-		}
-	}
-	var prospect db.OutboundProspect
+	var contact db.Contact
 	switch {
 	case sent != nil:
-		prospect, err = s.db.GetOutboundProspect(ctx, db.GetOutboundProspectParams{ID: sent.ProspectID, OrgID: mb.OrgID})
-	case class == "bounce" && in.FailedRecipient != "":
-		prospect, err = s.db.GetOutboundProspectByEmail(ctx, db.GetOutboundProspectByEmailParams{OrgID: mb.OrgID, Email: in.FailedRecipient})
-	case class != "bounce":
-		prospect, err = s.db.GetOutboundProspectByEmail(ctx, db.GetOutboundProspectByEmailParams{OrgID: mb.OrgID, Email: in.From})
+		contact, err = s.db.GetContactByID(ctx, sent.ContactID.String)
+	case isBounce && in.FailedRecipient != "":
+		contact, err = s.db.GetContactByOrgAndEmail(ctx, db.GetContactByOrgAndEmailParams{OrgID: sql.NullString{String: mb.OrgID, Valid: true}, Email: in.FailedRecipient})
+	case !isBounce:
+		contact, err = s.db.GetContactByOrgAndEmail(ctx, db.GetContactByOrgAndEmailParams{OrgID: sql.NullString{String: mb.OrgID, Valid: true}, Email: in.From})
 	default:
 		return
 	}
-	if err != nil {
-		return // not a reply to outreach
+	if err != nil || contact.OrgID.String != mb.OrgID {
+		return // not an answer to outreach
 	}
-	if class == "bounce" && in.FailedRecipient != "" && in.FailedRecipient != prospect.Email {
+	if isBounce && in.FailedRecipient != "" && in.FailedRecipient != normEmail(contact.Email) {
 		return // a bounce for some other mail
 	}
-	// The reply counts for the campaign it answers: the thread's, or else the
-	// prospect's latest, so a reply from a new thread still shows in results.
-	enrollment := sql.NullString{}
-	if sent != nil && sent.EnrollmentID.Valid {
-		enrollment = sent.EnrollmentID
-	} else if e, err := s.db.LatestOutboundEnrollmentForProspect(ctx, prospect.ID); err == nil {
-		enrollment = sql.NullString{String: e.ID, Valid: true}
+	queueID, sequenceID := sql.NullString{}, sql.NullString{}
+	if sent != nil {
+		queueID, sequenceID = sql.NullString{String: sent.ID, Valid: true}, sent.SequenceID
+	} else if states, err := s.db.ListActiveOutreachStatesForContact(ctx, sql.NullString{String: contact.ID, Valid: true}); err == nil && len(states) > 0 {
+		sequenceID = states[0].SequenceID
+	}
+	if sent == nil && !sequenceID.Valid && !isBounce {
+		return // mail from a contact with no outreach going on is ordinary mail
 	}
 	handled := int64(1)
 	if class == "needs_review" || class == "complaint" {
@@ -308,52 +312,47 @@ func (s *Service) handleIncoming(ctx context.Context, mb db.OutboundMailbox, raw
 	if in.MessageID == "" {
 		in.MessageID = uuid.NewString() + "@missing"
 	}
-	if _, err := s.db.CreateOutboundReply(ctx, db.CreateOutboundReplyParams{
-		ID: uuid.NewString(), OrgID: mb.OrgID, MailboxID: mb.ID, EnrollmentID: enrollment,
-		ProspectID: sql.NullString{String: prospect.ID, Valid: true}, FromEmail: in.From, Subject: in.Subject,
-		Body: truncate(newTextOrAll(in.Text), 20000), MessageID: in.MessageID, InReplyTo: in.InReplyTo,
-		Refs: strings.Join(in.References, " "), Classification: class, Handled: handled, ReceivedAt: ts(s.now()),
+	if _, err := s.db.CreateEmailReply(ctx, db.CreateEmailReplyParams{
+		ID: uuid.NewString(), OrgID: mb.OrgID, MailboxID: mb.ID,
+		ContactID: sql.NullString{String: contact.ID, Valid: true}, QueueID: queueID, SequenceID: sequenceID,
+		FromEmail: in.From, Subject: in.Subject, Body: truncate(newTextOrAll(in.Text), 20000),
+		MessageID: in.MessageID, InReplyTo: in.InReplyTo, Refs: strings.Join(in.References, " "),
+		Classification: class, Handled: handled, ReceivedAt: ts(s.now()),
 	}); err != nil {
 		return // already recorded (ON CONFLICT) or failed; effects ran the first time
 	}
-	s.applyClassification(ctx, mb.OrgID, prospect, class)
+	s.applyClassification(ctx, mb.OrgID, contact, class)
 }
 
-// applyClassification stops the prospect's sequences and records what the
-// reply means. Any human reply stops them; opt-outs, bounces and complaints
-// also go on the brand's suppression list.
-func (s *Service) applyClassification(ctx context.Context, orgID string, p db.OutboundProspect, class string) {
-	enrollStatus, prospectStatus, suppressReason := "replied", "replied", ""
+// applyClassification records what a reply means. Any human reply ends the
+// person's outreach. Opt-outs go on the brand's suppression list; bounces and
+// complaints into Outlet's bounce and complaint records, which stop every
+// kind of mail to the address. A spam block stops the person's outreach but
+// says nothing about the address; it counts against the mailbox's health.
+func (s *Service) applyClassification(ctx context.Context, orgID string, c db.Contact, class string) {
+	reason := "replied"
 	switch class {
 	case "out_of_office":
 		return // the sequence carries on; its follow-up arrives after they're back
 	case "bounce":
-		enrollStatus, prospectStatus, suppressReason = "bounced", "bounced", "outbound bounce"
+		reason = "bounced"
+		_, _ = s.db.CreateEmailBounce(ctx, db.CreateEmailBounceParams{ID: uuid.NewString(), Email: c.Email, EmailForLower: c.Email, BounceType: "Permanent",
+			BounceSubtype: sql.NullString{String: "outreach", Valid: true}})
+	case "spam_block":
+		reason = "spam_blocked"
 	case "unsubscribe":
-		enrollStatus, prospectStatus, suppressReason = "unsubscribed", "unsubscribed", "outbound opt-out"
+		reason = "unsubscribed"
+		s.suppress(ctx, orgID, c.Email, "outreach opt-out")
 	case "complaint":
-		enrollStatus, prospectStatus, suppressReason = "unsubscribed", "unsubscribed", "outbound complaint"
-	case "not_interested":
-		prospectStatus = "not_interested"
+		reason = "complained"
+		_, _ = s.db.CreateEmailComplaint(ctx, db.CreateEmailComplaintParams{ID: uuid.NewString(), Email: c.Email, EmailForLower: c.Email,
+			ComplaintType: sql.NullString{String: "outreach", Valid: true}})
+	case "not_interested", "wrong_person":
+		reason = class
 	case "interested":
-		prospectStatus = "interested"
-	case "wrong_person":
-		prospectStatus = "not_interested"
+		_, _ = s.db.AddContactTag(ctx, db.AddContactTagParams{ContactID: sql.NullString{String: c.ID, Valid: true}, Tag: "interested"})
 	}
-	if suppressReason != "" {
-		s.suppress(ctx, orgID, p.Email, suppressReason)
-	}
-	if p.Status != "partner" {
-		_ = s.db.SetOutboundProspectStatus(ctx, db.SetOutboundProspectStatusParams{Status: prospectStatus, ID: p.ID})
-	}
-	enrollments, err := s.db.ListActiveOutboundEnrollmentsForProspect(ctx, p.ID)
-	if err != nil {
-		return
-	}
-	for _, e := range enrollments {
-		_ = s.db.SkipOpenOutboundMessagesForEnrollment(ctx, sql.NullString{String: e.ID, Valid: true})
-		_ = s.db.SetOutboundEnrollmentStatus(ctx, db.SetOutboundEnrollmentStatusParams{Status: enrollStatus, ID: e.ID})
-	}
+	s.stopContact(ctx, c.ID, reason)
 }
 
 var msgIDRe = regexp.MustCompile(`<([^<>@\s]+@[^<>\s]+)>`)
@@ -378,4 +377,12 @@ func truncate(s string, n int) string {
 		return s[:n]
 	}
 	return s
+}
+
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

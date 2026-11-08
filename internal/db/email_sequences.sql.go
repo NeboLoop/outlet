@@ -93,7 +93,7 @@ WHERE id IN (
     JOIN contacts c ON c.id = eq.contact_id
     LEFT JOIN email_sequences es ON es.id = et.sequence_id
     LEFT JOIN contact_sequence_state css ON css.contact_id = eq.contact_id AND css.sequence_id = es.id
-    WHERE eq.status = 'pending' AND eq.scheduled_for <= ?2
+    WHERE eq.status = 'pending' AND eq.kind = 'marketing' AND eq.scheduled_for <= ?2
       AND (eq.claimed_at IS NULL OR eq.claimed_at < datetime('now', '-15 minutes'))
       AND c.unsubscribed_at IS NULL AND c.blocked_at IS NULL
       AND (css.id IS NULL OR css.is_active = 1)
@@ -151,7 +151,7 @@ func (q *Queries) CountTemplatesBySequence(ctx context.Context, sequenceID sql.N
 const createContactSequenceState = `-- name: CreateContactSequenceState :one
 INSERT INTO contact_sequence_state (id, contact_id, sequence_id, current_position, started_at)
 VALUES (?1, ?2, ?3, ?4, datetime('now'))
-RETURNING id, contact_id, sequence_id, current_position, is_active, started_at, completed_at, unsubscribed_at, paused_at
+RETURNING id, contact_id, sequence_id, current_position, is_active, started_at, completed_at, unsubscribed_at, paused_at, mailbox_id, stopped_reason
 `
 
 type CreateContactSequenceStateParams struct {
@@ -179,6 +179,8 @@ func (q *Queries) CreateContactSequenceState(ctx context.Context, arg CreateCont
 		&i.CompletedAt,
 		&i.UnsubscribedAt,
 		&i.PausedAt,
+		&i.MailboxID,
+		&i.StoppedReason,
 	)
 	return i, err
 }
@@ -226,7 +228,7 @@ func (q *Queries) CreateEmailClick(ctx context.Context, arg CreateEmailClickPara
 const createSequence = `-- name: CreateSequence :one
 INSERT INTO email_sequences (id, org_id, list_id, slug, name, trigger_event, is_active, sequence_type, created_at)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, COALESCE(?8, 'lifecycle'), datetime('now'))
-RETURNING id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id
+RETURNING id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks
 `
 
 type CreateSequenceParams struct {
@@ -265,6 +267,11 @@ func (q *Queries) CreateSequence(ctx context.Context, arg CreateSequenceParams) 
 		&i.SequenceType,
 		&i.CreatedAt,
 		&i.OnCompletionSequenceID,
+		&i.ApprovalMode,
+		&i.WindowStartHour,
+		&i.WindowEndHour,
+		&i.TrackOpens,
+		&i.TrackClicks,
 	)
 	return i, err
 }
@@ -526,7 +533,7 @@ func (q *Queries) GetContactSequenceStateWithDetails(ctx context.Context, arg Ge
 }
 
 const getEmailByTrackingToken = `-- name: GetEmailByTrackingToken :one
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.claim_token, eq.claimed_at, c.email, c.name
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email, c.name
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
 WHERE eq.tracking_token = ?1
@@ -546,6 +553,13 @@ type GetEmailByTrackingTokenRow struct {
 	OpenCount     int64          `json:"open_count"`
 	ClickedAt     sql.NullString `json:"clicked_at"`
 	ClickCount    int64          `json:"click_count"`
+	Kind          string         `json:"kind"`
+	MailboxID     sql.NullString `json:"mailbox_id"`
+	Subject       sql.NullString `json:"subject"`
+	Body          sql.NullString `json:"body"`
+	MessageID     sql.NullString `json:"message_id"`
+	InReplyTo     sql.NullString `json:"in_reply_to"`
+	Refs          sql.NullString `json:"refs"`
 	ClaimToken    sql.NullString `json:"claim_token"`
 	ClaimedAt     sql.NullString `json:"claimed_at"`
 	Email         string         `json:"email"`
@@ -569,6 +583,13 @@ func (q *Queries) GetEmailByTrackingToken(ctx context.Context, trackingToken sql
 		&i.OpenCount,
 		&i.ClickedAt,
 		&i.ClickCount,
+		&i.Kind,
+		&i.MailboxID,
+		&i.Subject,
+		&i.Body,
+		&i.MessageID,
+		&i.InReplyTo,
+		&i.Refs,
 		&i.ClaimToken,
 		&i.ClaimedAt,
 		&i.Email,
@@ -578,7 +599,7 @@ func (q *Queries) GetEmailByTrackingToken(ctx context.Context, trackingToken sql
 }
 
 const getEmailQueueForContact = `-- name: GetEmailQueueForContact :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.claim_token, eq.claimed_at, et.subject, et.position
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, et.subject, et.position
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 WHERE eq.contact_id = ?1
@@ -599,9 +620,16 @@ type GetEmailQueueForContactRow struct {
 	OpenCount     int64          `json:"open_count"`
 	ClickedAt     sql.NullString `json:"clicked_at"`
 	ClickCount    int64          `json:"click_count"`
+	Kind          string         `json:"kind"`
+	MailboxID     sql.NullString `json:"mailbox_id"`
+	Subject       sql.NullString `json:"subject"`
+	Body          sql.NullString `json:"body"`
+	MessageID     sql.NullString `json:"message_id"`
+	InReplyTo     sql.NullString `json:"in_reply_to"`
+	Refs          sql.NullString `json:"refs"`
 	ClaimToken    sql.NullString `json:"claim_token"`
 	ClaimedAt     sql.NullString `json:"claimed_at"`
-	Subject       string         `json:"subject"`
+	Subject_2     string         `json:"subject_2"`
 	Position      int64          `json:"position"`
 }
 
@@ -628,9 +656,16 @@ func (q *Queries) GetEmailQueueForContact(ctx context.Context, contactID sql.Nul
 			&i.OpenCount,
 			&i.ClickedAt,
 			&i.ClickCount,
+			&i.Kind,
+			&i.MailboxID,
+			&i.Subject,
+			&i.Body,
+			&i.MessageID,
+			&i.InReplyTo,
+			&i.Refs,
 			&i.ClaimToken,
 			&i.ClaimedAt,
-			&i.Subject,
+			&i.Subject_2,
 			&i.Position,
 		); err != nil {
 			return nil, err
@@ -1566,7 +1601,7 @@ func (q *Queries) PauseContactSequence(ctx context.Context, arg PauseContactSequ
 const queueEmail = `-- name: QueueEmail :one
 INSERT INTO email_queue (id, contact_id, template_id, scheduled_for, status, tracking_token, created_at)
 VALUES (?1, ?2, ?3, ?4, 'pending', ?5, datetime('now'))
-RETURNING id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, claim_token, claimed_at
+RETURNING id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at
 `
 
 type QueueEmailParams struct {
@@ -1600,6 +1635,13 @@ func (q *Queries) QueueEmail(ctx context.Context, arg QueueEmailParams) (EmailQu
 		&i.OpenCount,
 		&i.ClickedAt,
 		&i.ClickCount,
+		&i.Kind,
+		&i.MailboxID,
+		&i.Subject,
+		&i.Body,
+		&i.MessageID,
+		&i.InReplyTo,
+		&i.Refs,
 		&i.ClaimToken,
 		&i.ClaimedAt,
 	)
@@ -1610,7 +1652,7 @@ const queueEmailWithTracking = `-- name: QueueEmailWithTracking :one
 
 INSERT INTO email_queue (id, contact_id, template_id, scheduled_for, status, tracking_token, created_at)
 VALUES (?1, ?2, ?3, ?4, 'pending', ?5, datetime('now'))
-RETURNING id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, claim_token, claimed_at
+RETURNING id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at
 `
 
 type QueueEmailWithTrackingParams struct {
@@ -1645,6 +1687,13 @@ func (q *Queries) QueueEmailWithTracking(ctx context.Context, arg QueueEmailWith
 		&i.OpenCount,
 		&i.ClickedAt,
 		&i.ClickCount,
+		&i.Kind,
+		&i.MailboxID,
+		&i.Subject,
+		&i.Body,
+		&i.MessageID,
+		&i.InReplyTo,
+		&i.Refs,
 		&i.ClaimToken,
 		&i.ClaimedAt,
 	)

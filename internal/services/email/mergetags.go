@@ -27,8 +27,21 @@ var mergeTagPattern = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_]+)\s*(?:,\s*fallba
 // subscriber-supplied values are escaped for an HTML body; subjects and plain
 // text pass false. Unknown tags are left as they are.
 func fillMergeTags(content string, c mergeContext, escapeHTML bool) string {
+	out, _ := fill(content, c, escapeHTML)
+	return out
+}
+
+// FillTags fills merge tags in plain text for one person and reports the tags
+// that came out empty (no value and no fallback). One-to-one outreach refuses
+// to send those rather than write "Hi ,".
+func FillTags(content, name, address string, fields map[string]string) (string, []string) {
+	return fill(content, mergeContext{Name: name, Email: address, CustomFields: fields}, false)
+}
+
+func fill(content string, c mergeContext, escapeHTML bool) (string, []string) {
 	base := strings.TrimRight(c.BaseURL, "/")
-	return mergeTagPattern.ReplaceAllStringFunc(content, func(tag string) string {
+	var empty []string
+	out := mergeTagPattern.ReplaceAllStringFunc(content, func(tag string) string {
 		m := mergeTagPattern.FindStringSubmatch(tag)
 		key, fallback := strings.ToLower(m[1]), strings.TrimSpace(m[2])
 
@@ -59,6 +72,7 @@ func fillMergeTags(content string, c mergeContext, escapeHTML bool) string {
 		default:
 			v, ok := c.CustomFields[m[1]]
 			if !ok && fallback == "" {
+				empty = append(empty, m[1])
 				return tag
 			}
 			value = v
@@ -66,9 +80,13 @@ func fillMergeTags(content string, c mergeContext, escapeHTML bool) string {
 		if value == "" {
 			value = fallback
 		}
+		if strings.TrimSpace(value) == "" {
+			empty = append(empty, m[1])
+		}
 		if escapeHTML && !isURL {
 			value = html.EscapeString(value)
 		}
 		return value
 	})
+	return out, empty
 }

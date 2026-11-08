@@ -50,6 +50,14 @@ func (s *Service) RecordOpen(ctx context.Context, token string) error {
 	tok := sql.NullString{String: token, Valid: true}
 
 	if emailRecord, err := s.db.GetEmailByTrackingToken(ctx, tok); err == nil {
+		if emailRecord.Kind == "outreach" {
+			now := time.Now().UTC()
+			_, err := s.db.RecordOutreachOpen(ctx, db.RecordOutreachOpenParams{
+				At: sql.NullString{String: now.Format(time.DateTime), Valid: true}, Token: tok,
+				CountedAfter: sql.NullString{String: now.Add(-scannerWindow).Format(time.DateTime), Valid: true},
+			})
+			return err
+		}
 		if err := s.db.RecordEmailOpen(ctx, emailRecord.ID); err != nil {
 			return err
 		}
@@ -67,8 +75,13 @@ func (s *Service) RecordOpen(ctx context.Context, token string) error {
 	return s.db.RefreshCampaignEngagement(ctx, send.CampaignID)
 }
 
-// RecordClick records a click by tracking token: a sequence email, or a
-// campaign send, where the link is also recorded for per-link stats.
+// scannerWindow: mail scanners open links and images within seconds of
+// delivery. On outreach (cold) email, where a click or an open is a signal
+// worth trusting, one this soon after sending isn't counted.
+const scannerWindow = time.Minute
+
+// RecordClick records a click by tracking token: a sequence or outreach
+// email, or a campaign send, where the link is also recorded for per-link stats.
 func (s *Service) RecordClick(ctx context.Context, token, linkURL string) error {
 	if token == "" {
 		return ErrInvalidToken
@@ -76,6 +89,14 @@ func (s *Service) RecordClick(ctx context.Context, token, linkURL string) error 
 	tok := sql.NullString{String: token, Valid: true}
 
 	if emailRecord, err := s.db.GetEmailByTrackingToken(ctx, tok); err == nil {
+		if emailRecord.Kind == "outreach" {
+			now := time.Now().UTC()
+			_, err := s.db.RecordOutreachClick(ctx, db.RecordOutreachClickParams{
+				At: sql.NullString{String: now.Format(time.DateTime), Valid: true}, Token: tok,
+				CountedAfter: sql.NullString{String: now.Add(-scannerWindow).Format(time.DateTime), Valid: true},
+			})
+			return err
+		}
 		if err := s.db.RecordEmailClick(ctx, emailRecord.ID); err != nil {
 			return err
 		}

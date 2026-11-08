@@ -24,6 +24,12 @@ type Message struct {
 	// password resets.
 	OrgID string
 
+	// Kind decides the route. Outreach (cold email) goes only through the
+	// mailbox named by MailboxID, never through SES or any other provider;
+	// transactional and marketing go through the brand's provider.
+	Kind      Kind
+	MailboxID string
+
 	// From and Reply-To. Empty fields fall back to the brand's settings, then
 	// the platform's.
 	FromName  string
@@ -45,11 +51,21 @@ type Message struct {
 	InReplyTo  string
 	References string
 
-	// ListUnsubscribe adds RFC 2369 List-Unsubscribe and RFC 8058
-	// List-Unsubscribe-Post headers. The URL must accept a POST with the body
-	// "List-Unsubscribe=One-Click". Set it on marketing mail only.
+	// ListUnsubscribe adds an RFC 2369 List-Unsubscribe header. An https URL
+	// also gets RFC 8058's List-Unsubscribe-Post, and must accept a POST with
+	// the body "List-Unsubscribe=One-Click"; a mailto: address asks for a
+	// reply instead (one-to-one outreach). Set it on marketing mail only.
 	ListUnsubscribe string
 }
+
+// Kind is what an email is, which decides how it is sent.
+type Kind string
+
+const (
+	KindTransactional Kind = "" // the default
+	KindMarketing     Kind = "marketing"
+	KindOutreach      Kind = "outreach"
+)
 
 // ErrInvalidMessage wraps every validation failure, so callers can tell a bad
 // request from a delivery failure.
@@ -135,7 +151,9 @@ func (e envelope) build() ([]byte, error) {
 	}
 	if m.ListUnsubscribe != "" {
 		header("List-Unsubscribe", "<"+m.ListUnsubscribe+">")
-		header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+		if strings.HasPrefix(m.ListUnsubscribe, "https://") {
+			header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+		}
 	}
 	header("MIME-Version", "1.0")
 
@@ -214,6 +232,9 @@ func writeAlternative(w *bytes.Buffer, m Message) (string, error) {
 	const htmlType = "text/html; charset=UTF-8"
 	if m.Text == "" {
 		return htmlType, writeQP(w, m.HTML)
+	}
+	if m.HTML == "" {
+		return "text/plain; charset=UTF-8", writeQP(w, m.Text)
 	}
 
 	alt := multipart.NewWriter(w)

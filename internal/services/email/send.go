@@ -21,6 +21,12 @@ var ErrSuppressed = errors.New("recipient is suppressed")
 // platform), builds a safe MIME message, and delivers through SES when it is
 // configured, otherwise SMTP.
 func (s *Service) Send(ctx context.Context, m Message) error {
+	if m.Kind == KindOutreach {
+		return s.sendThroughMailbox(ctx, m)
+	}
+	if m.MailboxID != "" {
+		return invalid("only outreach sends through a mailbox")
+	}
 	env, err := s.resolve(ctx, m)
 	if err != nil {
 		return err

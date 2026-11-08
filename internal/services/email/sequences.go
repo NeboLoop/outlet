@@ -19,7 +19,18 @@ type SequenceService struct {
 	db      *db.Store
 	sender  *Service
 	baseURL string
+	clock   func() time.Time // time.Now; outreach tests move it
 }
+
+func (s *SequenceService) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return time.Now()
+}
+
+// SetClock replaces the clock outreach scheduling reads (tests).
+func (s *SequenceService) SetClock(now func() time.Time) { s.clock = now }
 
 // NewSequenceService creates a new sequence service
 func NewSequenceService(db *db.Store, sender *Service) *SequenceService {
@@ -243,6 +254,9 @@ func (s *SequenceService) StartSequenceByID(ctx context.Context, contactID strin
 
 // queueNextEmail queues the next email in the sequence
 func (s *SequenceService) queueNextEmail(ctx context.Context, contactID string, sequenceID string, position int64) error {
+	if seq, err := s.db.GetSequenceOptions(ctx, sequenceID); err == nil && seq.SequenceType.String == "outreach" {
+		return s.queueOutreach(ctx, seq, contactID, position)
+	}
 	// Get the template at this position
 	template, err := s.db.GetNextTemplate(ctx, db.GetNextTemplateParams{
 		SequenceID: sql.NullString{String: sequenceID, Valid: true},

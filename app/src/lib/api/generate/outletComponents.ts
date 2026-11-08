@@ -1388,6 +1388,338 @@ export interface OrgStats {
 	list_count: number
 }
 
+export interface OutboundAddMailboxesRequest {
+	mailboxes: Array<OutboundMailboxInput>
+}
+
+export interface OutboundAddMailboxesResponse {
+	mailboxes: Array<OutboundMailboxResult>
+}
+
+export interface OutboundAddProspectsRequest {
+	list?: string
+	prospects: Array<OutboundProspectInput>
+}
+
+export interface OutboundAddProspectsResponse {
+	prospects: Array<OutboundProspectResult>
+}
+
+export interface OutboundAnswerRequest {
+	body: string
+}
+export interface OutboundAnswerRequestParams {
+}
+
+export interface OutboundCampaignRequest {
+	name: string
+	list?: string
+	steps: Array<OutboundStepInput>
+	prospect_ids: Array<string>
+	approval_mode?: string
+	track_opens?: boolean
+	track_clicks?: boolean
+	window_start_hour?: number
+	window_end_hour?: number
+	idempotency_key?: string
+	dry_run?: boolean
+}
+
+export interface OutboundCampaignResponse {
+	campaign_id?: string
+	enrolled: number
+	drafts?: Array<OutboundDraft>
+	skipped?: { [key: string]: string }
+	next: string
+}
+
+export interface OutboundCampaignResults {
+	id: string
+	name: string
+	status: string
+	enrolled: number
+	reached: number
+	replied: number
+	reply_rate: number
+	opened: number
+	open_rate: number
+	clicked: number
+	click_rate: number
+	interested: number
+	partners: number
+	bounced: number
+	bounce_rate: number
+	spam_blocks: number
+	opted_out: number
+	in_progress: number
+	finished_no_reply: number
+	drafts_waiting: number
+	track_opens: boolean
+	track_clicks: boolean
+	steps?: Array<OutboundStepResult>
+	replies_by_kind?: { [key: string]: number }
+}
+
+export interface OutboundClassifyRequest {
+	classification: string
+}
+export interface OutboundClassifyRequestParams {
+}
+
+export interface OutboundDNSCheck {
+	mx: boolean
+	spf: boolean
+	dkim: boolean
+	dmarc: boolean
+	missing?: Array<string>
+	tracking?: boolean
+}
+
+export interface OutboundDNSRecord {
+	type: string
+	name: string
+	data: string
+	priority?: number
+}
+
+export interface OutboundDNSTokenRequest {
+	token: string
+}
+
+export interface OutboundDomainInfo {
+	id: string
+	domain: string
+	status: string
+	tracking_host?: string
+	check: OutboundDNSCheck
+	checked_at?: string
+}
+
+export interface OutboundDomainRequest {
+	domain: string
+	dns_host?: string
+	mail_provider?: string
+	mx_hosts?: Array<string>
+	spf_include?: string
+	dkim_selector?: string
+	dkim_value?: string
+	dmarc_report?: string
+	click_tracking?: boolean
+}
+
+export interface OutboundDomainResponse {
+	domain: OutboundDomainInfo
+	records_to_add: Array<OutboundDNSRecord>
+}
+
+export interface OutboundDraft {
+	message_id?: string
+	prospect_id: string
+	to: string
+	from: string
+	subject: string
+	body: string
+	sends_after?: string
+}
+
+export interface OutboundDraftList {
+	drafts: Array<OutboundDraft>
+}
+
+export interface OutboundEditDraftRequest {
+	subject?: string
+	body?: string
+}
+export interface OutboundEditDraftRequestParams {
+}
+
+export interface OutboundEnabledRequest {
+	enabled: boolean
+}
+
+export interface OutboundExplainRequest {
+}
+export interface OutboundExplainRequestParams {
+	message_id?: string
+	mailbox_id?: string
+	prospect_id?: string
+}
+
+export interface OutboundExplainResponse {
+	answer: string
+}
+
+export interface OutboundIDRequest {
+}
+export interface OutboundIDRequestParams {
+}
+
+export interface OutboundListProspectsRequest {
+}
+export interface OutboundListProspectsRequestParams {
+	list_id?: number
+	limit?: number
+}
+
+export interface OutboundListRepliesRequest {
+}
+export interface OutboundListRepliesRequestParams {
+	handled?: boolean
+	limit?: number
+}
+
+export interface OutboundListRequest {
+}
+export interface OutboundListRequestParams {
+	limit?: number
+}
+
+export interface OutboundMailboxHealth {
+	id: string
+	email: string
+	from_name: string
+	status: string
+	reason?: string
+	sent_today: number
+	allowed_today: number
+	sent_7d: number
+	bounces_7d: number
+	spam_blocks_7d: number
+	complaints_7d: number
+	last_error?: string
+}
+
+export interface OutboundMailboxInput {
+	email: string
+	from_name: string
+	signature?: string
+	provider?: string
+	password?: string
+	smtp_host?: string
+	smtp_port?: number
+	smtp_username?: string
+	smtp_password?: string
+	imap_host?: string
+	imap_port?: number
+	imap_username?: string
+	imap_password?: string
+	daily_cap?: number
+}
+
+export interface OutboundMailboxResult {
+	email: string
+	id?: string
+	error?: string
+}
+
+export interface OutboundOverview {
+	enabled: boolean
+	paused?: string
+	mailing_address: string
+	opt_out_line: string
+	timezone: string
+	dns_token_set: boolean
+	domains: Array<OutboundDomainInfo>
+	mailboxes: Array<OutboundMailboxHealth>
+	prospects: { [key: string]: number }
+	messages: { [key: string]: number }
+	replies_waiting: number
+	campaigns: Array<OutboundCampaignResults>
+	next: Array<string>
+}
+
+export interface OutboundPauseRequest {
+	scope: string
+	id?: string
+	resume?: boolean
+}
+
+export interface OutboundProspectInfo {
+	id: string
+	email: string
+	name: string
+	email_source: string
+	validation_status: string
+	list_id: number
+	list_name: string
+	status: string
+	created_at: string
+}
+
+export interface OutboundProspectInput {
+	email: string
+	first_name?: string
+	name?: string
+	timezone?: string
+	platform?: string
+	channel_url?: string
+	audience_size?: number
+	niche?: string
+	recent_video?: string
+	personal_line?: string
+	email_source: string
+	fields?: { [key: string]: string }
+}
+
+export interface OutboundProspectList {
+	prospects: Array<OutboundProspectInfo>
+}
+
+export interface OutboundProspectResult {
+	email: string
+	id?: string
+	status: string
+	reason?: string
+}
+
+export interface OutboundReplyInfo {
+	id: string
+	mailbox_id: string
+	contact_id: string
+	sequence_id: string
+	from_email: string
+	subject: string
+	body: string
+	classification: string
+	handled: boolean
+	received_at: string
+}
+
+export interface OutboundReplyList {
+	replies: Array<OutboundReplyInfo>
+}
+
+export interface OutboundReviewRequest {
+	action: string
+	ids: Array<string>
+}
+
+export interface OutboundReviewResponse {
+	done: number
+	refused?: { [key: string]: string }
+}
+
+export interface OutboundSettingsRequest {
+	mailing_address?: string
+	opt_out_line?: string
+	timezone?: string
+}
+
+export interface OutboundStepInput {
+	delay_days?: number
+	subject?: string
+	body: string
+}
+
+export interface OutboundStepResult {
+	step: number
+	sent: number
+	replies: number
+	reply_rate: number
+	opened?: number
+	clicked?: number
+}
+
 export interface PauseSequenceRequest {
 	email: string
 	sequence_slug: string

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/email"
 
 	"github.com/google/uuid"
 )
@@ -89,11 +90,11 @@ func (s *Service) AddMailboxes(ctx context.Context, org db.Organization, inputs 
 	if s.crypto == nil {
 		return nil, refuse("ENCRYPTION_KEY is not set on this server, so it can't store mailbox passwords")
 	}
-	domains, err := s.db.ListOutboundDomains(ctx, org.ID)
+	domains, err := s.db.ListOutreachDomains(ctx, org.ID)
 	if err != nil {
 		return nil, err
 	}
-	byName := map[string]db.OutboundDomain{}
+	byName := map[string]db.DomainIdentity{}
 	for _, d := range domains {
 		byName[d.Domain] = d
 	}
@@ -111,40 +112,40 @@ func (s *Service) AddMailboxes(ctx context.Context, org db.Organization, inputs 
 	return out, nil
 }
 
-func (s *Service) addMailbox(ctx context.Context, org db.Organization, domains map[string]db.OutboundDomain, in MailboxInput) (db.OutboundMailbox, error) {
+func (s *Service) addMailbox(ctx context.Context, org db.Organization, domains map[string]db.DomainIdentity, in MailboxInput) (db.Mailbox, error) {
 	if err := in.fill(); err != nil {
-		return db.OutboundMailbox{}, err
+		return db.Mailbox{}, err
 	}
 	d, ok := domains[domainOf(in.Email)]
 	if !ok {
-		return db.OutboundMailbox{}, refuse("%s is not on one of this brand's outreach domains; add the domain first with setup_sending(action: add_domain)", in.Email)
+		return db.Mailbox{}, refuse("%s is not on one of this brand's outreach domains; add the domain first with setup_sending(action: add_domain)", in.Email)
 	}
-	if existing, err := s.db.GetOutboundMailboxByEmail(ctx, in.Email); err == nil {
+	if existing, err := s.db.GetMailboxByEmail(ctx, in.Email); err == nil {
 		if existing.OrgID != org.ID {
-			return db.OutboundMailbox{}, refuse("%s is connected to another brand", in.Email)
+			return db.Mailbox{}, refuse("%s is connected to another brand", in.Email)
 		}
 		return existing, nil
 	}
-	mb := db.OutboundMailbox{
+	mb := db.Mailbox{
 		Email: in.Email, FromName: in.FromName,
 		SmtpHost: in.SMTPHost, SmtpPort: int64(in.SMTPPort), SmtpUsername: in.SMTPUsername,
 		ImapHost: in.IMAPHost, ImapPort: int64(in.IMAPPort), ImapUsername: in.IMAPUsername,
 	}
-	if err := testSMTP(ctx, mb, in.SMTPPassword); err != nil {
-		return db.OutboundMailbox{}, refuse("SMTP login failed for %s: %v. For Google, turn on 2-step verification and use an app password.", in.Email, err)
+	if err := email.CheckMailboxLogin(email.MailboxLogin{Email: in.Email, Host: in.SMTPHost, Port: in.SMTPPort, Username: in.SMTPUsername, Password: in.SMTPPassword}); err != nil {
+		return db.Mailbox{}, refuse("SMTP login failed for %s: %v. For Google, turn on 2-step verification and use an app password.", in.Email, err)
 	}
 	if err := testIMAP(mb, in.IMAPPassword); err != nil {
-		return db.OutboundMailbox{}, refuse("IMAP login failed for %s: %v", in.Email, err)
+		return db.Mailbox{}, refuse("IMAP login failed for %s: %v", in.Email, err)
 	}
 	smtpEnc, err := s.crypto.EncryptString(in.SMTPPassword)
 	if err != nil {
-		return db.OutboundMailbox{}, err
+		return db.Mailbox{}, err
 	}
 	imapEnc, err := s.crypto.EncryptString(in.IMAPPassword)
 	if err != nil {
-		return db.OutboundMailbox{}, err
+		return db.Mailbox{}, err
 	}
-	created, err := s.db.CreateOutboundMailbox(ctx, db.CreateOutboundMailboxParams{
+	created, err := s.db.CreateMailbox(ctx, db.CreateMailboxParams{
 		ID: uuid.NewString(), OrgID: org.ID, DomainID: d.ID, Email: in.Email,
 		FromName: strings.TrimSpace(in.FromName), Signature: in.Signature,
 		SmtpHost: in.SMTPHost, SmtpPort: int64(in.SMTPPort), SmtpUsername: in.SMTPUsername, SmtpPasswordEnc: smtpEnc,
@@ -155,21 +156,19 @@ func (s *Service) addMailbox(ctx context.Context, org db.Organization, domains m
 		return created, err
 	}
 	// Start on the domain's DNS state: a failing domain keeps it paused.
-	if d.Status == "failing" {
-		_ = s.db.SetOutboundMailboxStatus(ctx, db.SetOutboundMailboxStatusParams{
+	if d.VerificationStatus.String == "failed" {
+		_ = s.db.SetMailboxStatus(ctx, db.SetMailboxStatusParams{
 			Status: "paused", PausedReason: "DNS: " + d.Domain + " records are failing", ID: created.ID,
 		})
 	}
 	return created, nil
 }
 
-func (s *Service) passwords(mb db.OutboundMailbox) (smtpPass, imapPass string, err error) {
+// imapPassword reads a mailbox's IMAP password. (SMTP sending reads its own,
+// inside email.Send.)
+func (s *Service) imapPassword(mb db.Mailbox) (string, error) {
 	if s.crypto == nil {
-		return "", "", fmt.Errorf("ENCRYPTION_KEY is not set")
+		return "", fmt.Errorf("ENCRYPTION_KEY is not set")
 	}
-	if smtpPass, err = s.crypto.DecryptString(mb.SmtpPasswordEnc); err != nil {
-		return "", "", err
-	}
-	imapPass, err = s.crypto.DecryptString(mb.ImapPasswordEnc)
-	return smtpPass, imapPass, err
+	return s.crypto.DecryptString(mb.ImapPasswordEnc)
 }

@@ -1,6 +1,7 @@
 package outbound
 
 import (
+	"database/sql"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -53,7 +54,7 @@ type DNSCheck struct {
 
 func (c DNSCheck) OK() bool { return len(c.Missing) == 0 }
 
-func (s *Service) checkDNS(ctx context.Context, d db.OutboundDomain) DNSCheck {
+func (s *Service) checkDNS(ctx context.Context, d db.DomainIdentity) DNSCheck {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var c DNSCheck
@@ -92,20 +93,20 @@ func hasTXT(ctx context.Context, r Resolver, name, prefix string) bool {
 }
 
 // CheckDomain rechecks one domain and pauses or resumes its mailboxes.
-func (s *Service) CheckDomain(ctx context.Context, d db.OutboundDomain) (DNSCheck, error) {
+func (s *Service) CheckDomain(ctx context.Context, d db.DomainIdentity) (DNSCheck, error) {
 	c := s.checkDNS(ctx, d)
 	raw, _ := json.Marshal(c)
-	status := "ok"
+	status := "success"
 	if !c.OK() {
-		status = "failing"
+		status = "failed"
 	}
-	if err := s.db.SetOutboundDomainCheck(ctx, db.SetOutboundDomainCheckParams{Status: status, CheckResult: string(raw), ID: d.ID}); err != nil {
+	if err := s.db.SetOutreachDomainCheck(ctx, db.SetOutreachDomainCheckParams{VerificationStatus: sql.NullString{String: status, Valid: true}, DnsCheck: string(raw), ID: d.ID}); err != nil {
 		return c, err
 	}
 	if c.OK() {
-		return c, s.db.ResumeOutboundMailboxesPausedForDNS(ctx, d.ID)
+		return c, s.db.ResumeMailboxesPausedForDNS(ctx, d.ID)
 	}
-	return c, s.db.PauseOutboundMailboxesOnDomain(ctx, db.PauseOutboundMailboxesOnDomainParams{
+	return c, s.db.PauseMailboxesOnDomain(ctx, db.PauseMailboxesOnDomainParams{
 		PausedReason: "DNS: " + d.Domain + " is missing " + strings.Join(c.Missing, ", "),
 		DomainID:     d.ID,
 	})
@@ -113,7 +114,7 @@ func (s *Service) CheckDomain(ctx context.Context, d db.OutboundDomain) (DNSChec
 
 // CheckAllDomains is the daily recheck.
 func (s *Service) CheckAllDomains(ctx context.Context) {
-	domains, err := s.db.ListAllOutboundDomains(ctx)
+	domains, err := s.db.ListAllOutreachDomains(ctx)
 	if err != nil {
 		return
 	}
@@ -182,7 +183,7 @@ func wantedRecords(in DomainInput) ([]DNSRecord, error) {
 // AddDomain registers an outreach domain, refusing the brand's own and
 // protected domains. With dns_host digitalocean it writes the missing mail
 // records; otherwise it returns them to paste.
-func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainInput) (db.OutboundDomain, []DNSRecord, DNSCheck, error) {
+func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainInput) (db.DomainIdentity, []DNSRecord, DNSCheck, error) {
 	in.Domain = normDomain(in.Domain)
 	if in.DKIMSelector == "" {
 		in.DKIMSelector = "google"
@@ -191,28 +192,28 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 		in.DNSHost = "manual"
 	}
 	if in.DNSHost != "manual" && in.DNSHost != "digitalocean" {
-		return db.OutboundDomain{}, nil, DNSCheck{}, refuse("dns_host must be digitalocean or manual.")
+		return db.DomainIdentity{}, nil, DNSCheck{}, refuse("dns_host must be digitalocean or manual.")
 	}
 	if err := s.allowedDomain(ctx, org, in.Domain); err != nil {
-		return db.OutboundDomain{}, nil, DNSCheck{}, err
+		return db.DomainIdentity{}, nil, DNSCheck{}, err
 	}
 	trackingHost := ""
 	if in.ClickTracking {
 		if s.tracking == "" {
-			return db.OutboundDomain{}, nil, DNSCheck{}, refuse("Click tracking needs this server's public host (APP_DOMAIN) in its config.")
+			return db.DomainIdentity{}, nil, DNSCheck{}, refuse("Click tracking needs this server's public host (APP_DOMAIN) in its config.")
 		}
 		in.trackingTarget, trackingHost = s.tracking, "go."+in.Domain
 	}
 	recs, err := wantedRecords(in)
 	if err != nil {
-		return db.OutboundDomain{}, nil, DNSCheck{}, err
+		return db.DomainIdentity{}, nil, DNSCheck{}, err
 	}
-	d, err := s.db.GetOutboundDomainByName(ctx, in.Domain)
+	d, err := s.db.GetAnyDomainIdentity(ctx, in.Domain)
 	switch {
-	case err == nil && d.OrgID != org.ID:
-		return db.OutboundDomain{}, nil, DNSCheck{}, refuse("%s is already an outreach domain of another brand.", in.Domain)
+	case err == nil && (d.OrgID != org.ID || d.Purpose != "outreach"):
+		return db.DomainIdentity{}, nil, DNSCheck{}, refuse("%s is already in use (another brand's, or this brand's sending domain); outreach needs a domain of its own.", in.Domain)
 	case err != nil:
-		d, err = s.db.CreateOutboundDomain(ctx, db.CreateOutboundDomainParams{
+		d, err = s.db.CreateOutreachDomain(ctx, db.CreateOutreachDomainParams{
 			ID: uuid.NewString(), OrgID: org.ID, Domain: in.Domain, DnsHost: in.DNSHost, DkimSelector: in.DKIMSelector,
 			TrackingHost: trackingHost,
 		})
@@ -221,7 +222,7 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 		}
 	}
 	if trackingHost != "" && d.TrackingHost != trackingHost {
-		if err := s.db.SetOutboundDomainTrackingHost(ctx, db.SetOutboundDomainTrackingHostParams{TrackingHost: trackingHost, ID: d.ID}); err != nil {
+		if err := s.db.SetOutreachDomainTrackingHost(ctx, db.SetOutreachDomainTrackingHostParams{TrackingHost: trackingHost, ID: d.ID}); err != nil {
 			return d, nil, DNSCheck{}, err
 		}
 		d.TrackingHost = trackingHost
@@ -237,7 +238,7 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 	}
 	c, err := s.CheckDomain(ctx, d)
 	if err == nil {
-		d, err = s.db.GetOutboundDomain(ctx, db.GetOutboundDomainParams{ID: d.ID, OrgID: org.ID})
+		d, err = s.db.GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: d.ID, OrgID: org.ID})
 	}
 	return d, pending, c, err
 }
@@ -256,13 +257,6 @@ func (s *Service) allowedDomain(ctx context.Context, org db.Organization, domain
 	if org.FromEmail.Valid && domainOf(org.FromEmail.String) == domain {
 		return refuse("%s is this brand's own sending domain; outreach must use a separate domain so its reputation never touches the brand's mail.", domain)
 	}
-	if names, err := s.db.ListTransactionalDomains(ctx); err == nil {
-		for _, n := range names {
-			if normDomain(n) == domain {
-				return refuse("%s sends transactional mail on this server; outreach must use a separate domain.", domain)
-			}
-		}
-	}
 	return nil
 }
 
@@ -276,7 +270,7 @@ func (s *Service) SetDNSToken(ctx context.Context, orgID, token string) error {
 	if err != nil {
 		return err
 	}
-	return s.db.SetOutboundDNSToken(ctx, db.SetOutboundDNSTokenParams{OrgID: orgID, DnsTokenEnc: enc})
+	return s.db.SetOrganizationDNSToken(ctx, db.SetOrganizationDNSTokenParams{DnsTokenEnc: enc, ID: orgID})
 }
 
 type doRecord struct {
@@ -291,14 +285,14 @@ type doRecord struct {
 // SPF or DMARC record, and never touches records it didn't ask for. It
 // returns the records it could not write (none, when all went in).
 func (s *Service) writeDigitalOcean(ctx context.Context, orgID, domain string, want []DNSRecord) ([]DNSRecord, error) {
-	st, err := s.settings(ctx, orgID)
+	org, err := s.db.GetOrganizationByID(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
-	if len(st.DnsTokenEnc) == 0 || s.crypto == nil {
+	if len(org.DnsTokenEnc) == 0 || s.crypto == nil {
 		return want, refuse("No DigitalOcean token is set. Call setup_sending(action: dns_token, token: ...) with a token limited to domain read and write, or use dns_host: manual.")
 	}
-	token, err := s.crypto.DecryptString(st.DnsTokenEnc)
+	token, err := s.crypto.DecryptString(org.DnsTokenEnc)
 	if err != nil {
 		return want, err
 	}

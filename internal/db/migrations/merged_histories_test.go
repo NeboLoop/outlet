@@ -60,7 +60,7 @@ func TestBothHistoriesEndComplete(t *testing.T) {
 
 			require.NoError(t, Run(conn))
 
-			for _, table := range []string{"mcp_audit_log", "outbound_messages", "outbound_links", "validation_jobs", "network_signals"} {
+			for _, table := range []string{"mcp_audit_log", "mailboxes", "email_replies", "validation_jobs", "network_signals"} {
 				var n int
 				require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n))
 				assert.Equal(t, 1, n, table)

@@ -145,7 +145,7 @@ func (q *Queries) GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiv
 }
 
 const getActiveSequenceForContact = `-- name: GetActiveSequenceForContact :one
-SELECT css.id, css.contact_id, css.sequence_id, css.current_position, css.is_active, css.started_at, css.completed_at, css.unsubscribed_at, css.paused_at, es.name as sequence_name, es.sequence_type
+SELECT css.id, css.contact_id, css.sequence_id, css.current_position, css.is_active, css.started_at, css.completed_at, css.unsubscribed_at, css.paused_at, css.mailbox_id, css.stopped_reason, es.name as sequence_name, es.sequence_type
 FROM contact_sequence_state css
 JOIN email_sequences es ON es.id = css.sequence_id
 WHERE css.contact_id = ?1
@@ -166,6 +166,8 @@ type GetActiveSequenceForContactRow struct {
 	CompletedAt     sql.NullString `json:"completed_at"`
 	UnsubscribedAt  sql.NullString `json:"unsubscribed_at"`
 	PausedAt        sql.NullString `json:"paused_at"`
+	MailboxID       sql.NullString `json:"mailbox_id"`
+	StoppedReason   string         `json:"stopped_reason"`
 	SequenceName    string         `json:"sequence_name"`
 	SequenceType    sql.NullString `json:"sequence_type"`
 }
@@ -183,6 +185,8 @@ func (q *Queries) GetActiveSequenceForContact(ctx context.Context, contactID sql
 		&i.CompletedAt,
 		&i.UnsubscribedAt,
 		&i.PausedAt,
+		&i.MailboxID,
+		&i.StoppedReason,
 		&i.SequenceName,
 		&i.SequenceType,
 	)

@@ -104,7 +104,7 @@ WHERE id IN (
     JOIN contacts c ON c.id = eq.contact_id
     LEFT JOIN email_sequences es ON es.id = et.sequence_id
     LEFT JOIN contact_sequence_state css ON css.contact_id = eq.contact_id AND css.sequence_id = es.id
-    WHERE eq.status = 'pending' AND eq.scheduled_for <= sqlc.arg(scheduled_before)
+    WHERE eq.status = 'pending' AND eq.kind = 'marketing' AND eq.scheduled_for <= sqlc.arg(scheduled_before)
       AND (eq.claimed_at IS NULL OR eq.claimed_at < datetime('now', '-15 minutes'))
       AND c.unsubscribed_at IS NULL AND c.blocked_at IS NULL
       AND (css.id IS NULL OR css.is_active = 1)

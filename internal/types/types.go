@@ -1296,6 +1296,326 @@ type OrgStats struct {
 	ListCount     int64 `json:"list_count"`
 }
 
+type OutboundAddMailboxesRequest struct {
+	Mailboxes []OutboundMailboxInput `json:"mailboxes"`
+}
+
+type OutboundAddMailboxesResponse struct {
+	Mailboxes []OutboundMailboxResult `json:"mailboxes"`
+}
+
+type OutboundAddProspectsRequest struct {
+	List      string                  `json:"list,optional"`
+	Prospects []OutboundProspectInput `json:"prospects"`
+}
+
+type OutboundAddProspectsResponse struct {
+	Prospects []OutboundProspectResult `json:"prospects"`
+}
+
+type OutboundAnswerRequest struct {
+	Id   string `path:"id"`
+	Body string `json:"body"`
+}
+
+type OutboundCampaignRequest struct {
+	Name            string              `json:"name"`
+	List            string              `json:"list,optional"`
+	Steps           []OutboundStepInput `json:"steps"`
+	ProspectIDs     []string            `json:"prospect_ids"`
+	ApprovalMode    string              `json:"approval_mode,optional"`
+	TrackOpens      bool                `json:"track_opens,optional"`
+	TrackClicks     bool                `json:"track_clicks,optional"`
+	WindowStartHour int                 `json:"window_start_hour,optional"`
+	WindowEndHour   int                 `json:"window_end_hour,optional"`
+	IdempotencyKey  string              `json:"idempotency_key,optional"`
+	DryRun          bool                `json:"dry_run,optional"`
+}
+
+type OutboundCampaignResponse struct {
+	CampaignId string            `json:"campaign_id,optional"`
+	Enrolled   int               `json:"enrolled"`
+	Drafts     []OutboundDraft   `json:"drafts,optional"`
+	Skipped    map[string]string `json:"skipped,optional"`
+	Next       string            `json:"next"`
+}
+
+type OutboundCampaignResults struct {
+	Id         string               `json:"id"`
+	Name       string               `json:"name"`
+	Status     string               `json:"status"`
+	Enrolled   int64                `json:"enrolled"`
+	Reached    int64                `json:"reached"`
+	Replied    int64                `json:"replied"`
+	ReplyRate  float64              `json:"reply_rate"`
+	Opened     int64                `json:"opened"`
+	OpenRate   float64              `json:"open_rate"`
+	Clicked    int64                `json:"clicked"`
+	ClickRate  float64              `json:"click_rate"`
+	Interested int64                `json:"interested"`
+	Partners   int64                `json:"partners"`
+	Bounced    int64                `json:"bounced"`
+	BounceRate float64              `json:"bounce_rate"`
+	SpamBlocks int64                `json:"spam_blocks"`
+	OptedOut   int64                `json:"opted_out"`
+	InProgress int64                `json:"in_progress"`
+	NoReply    int64                `json:"finished_no_reply"`
+	Waiting    int64                `json:"drafts_waiting"`
+	TrackOpens bool                 `json:"track_opens"`
+	TrackClick bool                 `json:"track_clicks"`
+	Steps      []OutboundStepResult `json:"steps,optional"`
+	Replies    map[string]int64     `json:"replies_by_kind,optional"`
+}
+
+type OutboundClassifyRequest struct {
+	Id             string `path:"id"`
+	Classification string `json:"classification"`
+}
+
+type OutboundDNSCheck struct {
+	Mx       bool     `json:"mx"`
+	Spf      bool     `json:"spf"`
+	Dkim     bool     `json:"dkim"`
+	Dmarc    bool     `json:"dmarc"`
+	Missing  []string `json:"missing,optional"`
+	Tracking *bool    `json:"tracking,optional"`
+}
+
+type OutboundDNSRecord struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Data     string `json:"data"`
+	Priority int    `json:"priority,optional"`
+}
+
+type OutboundDNSTokenRequest struct {
+	Token string `json:"token"`
+}
+
+type OutboundDomainInfo struct {
+	Id           string           `json:"id"`
+	Domain       string           `json:"domain"`
+	Status       string           `json:"status"`
+	TrackingHost string           `json:"tracking_host,optional"`
+	Check        OutboundDNSCheck `json:"check"`
+	CheckedAt    string           `json:"checked_at,optional"`
+}
+
+type OutboundDomainRequest struct {
+	Domain        string   `json:"domain"`
+	DNSHost       string   `json:"dns_host,optional"`
+	MailProvider  string   `json:"mail_provider,optional"`
+	MXHosts       []string `json:"mx_hosts,optional"`
+	SPFInclude    string   `json:"spf_include,optional"`
+	DKIMSelector  string   `json:"dkim_selector,optional"`
+	DKIMValue     string   `json:"dkim_value,optional"`
+	DMARCReport   string   `json:"dmarc_report,optional"`
+	ClickTracking bool     `json:"click_tracking,optional"`
+}
+
+type OutboundDomainResponse struct {
+	Domain       OutboundDomainInfo  `json:"domain"`
+	RecordsToAdd []OutboundDNSRecord `json:"records_to_add"`
+}
+
+type OutboundDraft struct {
+	MessageId  string `json:"message_id,optional"`
+	ProspectId string `json:"prospect_id"`
+	To         string `json:"to"`
+	From       string `json:"from"`
+	Subject    string `json:"subject"`
+	Body       string `json:"body"`
+	SendsAfter string `json:"sends_after,optional"`
+}
+
+type OutboundDraftList struct {
+	Drafts []OutboundDraft `json:"drafts"`
+}
+
+type OutboundEditDraftRequest struct {
+	Id      string `path:"id"`
+	Subject string `json:"subject,optional"`
+	Body    string `json:"body,optional"`
+}
+
+type OutboundEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+type OutboundExplainRequest struct {
+	MessageId  string `form:"message_id,optional"`
+	MailboxId  string `form:"mailbox_id,optional"`
+	ProspectId string `form:"prospect_id,optional"`
+}
+
+type OutboundExplainResponse struct {
+	Answer string `json:"answer"`
+}
+
+type OutboundIDRequest struct {
+	Id string `path:"id"`
+}
+
+type OutboundListProspectsRequest struct {
+	ListId int64 `form:"list_id,optional"`
+	Limit  int   `form:"limit,optional,default=100"`
+}
+
+type OutboundListRepliesRequest struct {
+	Handled bool `form:"handled,optional"`
+	Limit   int  `form:"limit,optional,default=25"`
+}
+
+type OutboundListRequest struct {
+	Limit int `form:"limit,optional,default=25"`
+}
+
+type OutboundMailboxHealth struct {
+	Id           string `json:"id"`
+	Email        string `json:"email"`
+	FromName     string `json:"from_name"`
+	Status       string `json:"status"`
+	Reason       string `json:"reason,optional"`
+	SentToday    int64  `json:"sent_today"`
+	AllowToday   int64  `json:"allowed_today"`
+	Sent7d       int64  `json:"sent_7d"`
+	Bounces7d    int64  `json:"bounces_7d"`
+	SpamBlocks7d int64  `json:"spam_blocks_7d"`
+	Complaints7d int64  `json:"complaints_7d"`
+	LastError    string `json:"last_error,optional"`
+}
+
+type OutboundMailboxInput struct {
+	Email        string `json:"email"`
+	FromName     string `json:"from_name"`
+	Signature    string `json:"signature,optional"`
+	Provider     string `json:"provider,optional"`
+	Password     string `json:"password,optional"`
+	SMTPHost     string `json:"smtp_host,optional"`
+	SMTPPort     int    `json:"smtp_port,optional"`
+	SMTPUsername string `json:"smtp_username,optional"`
+	SMTPPassword string `json:"smtp_password,optional"`
+	IMAPHost     string `json:"imap_host,optional"`
+	IMAPPort     int    `json:"imap_port,optional"`
+	IMAPUsername string `json:"imap_username,optional"`
+	IMAPPassword string `json:"imap_password,optional"`
+	DailyCap     int    `json:"daily_cap,optional"`
+}
+
+type OutboundMailboxResult struct {
+	Email string `json:"email"`
+	Id    string `json:"id,optional"`
+	Error string `json:"error,optional"`
+}
+
+type OutboundOverview struct {
+	Enabled        bool                      `json:"enabled"`
+	Paused         string                    `json:"paused,optional"`
+	MailingAddress string                    `json:"mailing_address"`
+	OptOutLine     string                    `json:"opt_out_line"`
+	Timezone       string                    `json:"timezone"`
+	DNSTokenSet    bool                      `json:"dns_token_set"`
+	Domains        []OutboundDomainInfo      `json:"domains"`
+	Mailboxes      []OutboundMailboxHealth   `json:"mailboxes"`
+	Prospects      map[string]int64          `json:"prospects"`
+	Messages       map[string]int64          `json:"messages"`
+	RepliesWaiting int64                     `json:"replies_waiting"`
+	Campaigns      []OutboundCampaignResults `json:"campaigns"`
+	Next           []string                  `json:"next"`
+}
+
+type OutboundPauseRequest struct {
+	Scope  string `json:"scope"`
+	Id     string `json:"id,optional"`
+	Resume bool   `json:"resume,optional"`
+}
+
+type OutboundProspectInfo struct {
+	Id               string `json:"id"`
+	Email            string `json:"email"`
+	Name             string `json:"name"`
+	EmailSource      string `json:"email_source"`
+	ValidationStatus string `json:"validation_status"`
+	ListId           int64  `json:"list_id"`
+	ListName         string `json:"list_name"`
+	Status           string `json:"status"`
+	CreatedAt        string `json:"created_at"`
+}
+
+type OutboundProspectInput struct {
+	Email        string            `json:"email"`
+	FirstName    string            `json:"first_name,optional"`
+	Name         string            `json:"name,optional"`
+	Timezone     string            `json:"timezone,optional"`
+	Platform     string            `json:"platform,optional"`
+	ChannelURL   string            `json:"channel_url,optional"`
+	AudienceSize int64             `json:"audience_size,optional"`
+	Niche        string            `json:"niche,optional"`
+	RecentVideo  string            `json:"recent_video,optional"`
+	PersonalLine string            `json:"personal_line,optional"`
+	EmailSource  string            `json:"email_source"`
+	Fields       map[string]string `json:"fields,optional"`
+}
+
+type OutboundProspectList struct {
+	Prospects []OutboundProspectInfo `json:"prospects"`
+}
+
+type OutboundProspectResult struct {
+	Email  string `json:"email"`
+	Id     string `json:"id,optional"`
+	Status string `json:"status"`
+	Reason string `json:"reason,optional"`
+}
+
+type OutboundReplyInfo struct {
+	Id             string `json:"id"`
+	MailboxId      string `json:"mailbox_id"`
+	ContactId      string `json:"contact_id"`
+	SequenceId     string `json:"sequence_id"`
+	FromEmail      string `json:"from_email"`
+	Subject        string `json:"subject"`
+	Body           string `json:"body"`
+	Classification string `json:"classification"`
+	Handled        bool   `json:"handled"`
+	ReceivedAt     string `json:"received_at"`
+}
+
+type OutboundReplyList struct {
+	Replies []OutboundReplyInfo `json:"replies"`
+}
+
+type OutboundReviewRequest struct {
+	Action string   `json:"action"`
+	Ids    []string `json:"ids"`
+}
+
+type OutboundReviewResponse struct {
+	Done    int               `json:"done"`
+	Refused map[string]string `json:"refused,optional"`
+}
+
+type OutboundSettingsRequest struct {
+	MailingAddress string `json:"mailing_address,optional"`
+	OptOutLine     string `json:"opt_out_line,optional"`
+	Timezone       string `json:"timezone,optional"`
+}
+
+type OutboundStepInput struct {
+	DelayDays int    `json:"delay_days,optional"`
+	Subject   string `json:"subject,optional"`
+	Body      string `json:"body"`
+}
+
+type OutboundStepResult struct {
+	Step      int64   `json:"step"`
+	Sent      int64   `json:"sent"`
+	Replies   int64   `json:"replies"`
+	ReplyRate float64 `json:"reply_rate"`
+	Opened    int64   `json:"opened,optional"`
+	Clicked   int64   `json:"clicked,optional"`
+}
+
 type PauseSequenceRequest struct {
 	Email        string `json:"email"`
 	SequenceSlug string `json:"sequence_slug"`

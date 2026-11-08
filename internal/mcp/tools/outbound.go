@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,7 +72,7 @@ type OverviewInput struct {
 func overviewRun(ctx context.Context, t *mcpctx.ToolContext, in OverviewInput) (any, error) {
 	if in.CampaignID != "" {
 		brand := t.Brand(ctx)
-		c, err := t.DB().GetOutboundCampaign(ctx, db.GetOutboundCampaignParams{ID: in.CampaignID, OrgID: brand.ID})
+		c, err := t.DB().GetOutreachSequence(ctx, db.GetOutreachSequenceParams{ID: in.CampaignID, OrgID: sql.NullString{String: brand.ID, Valid: true}})
 		if err != nil {
 			return nil, mcpctx.NewNotFoundError("no such campaign")
 		}
@@ -109,7 +110,7 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"mailing_address": st.MailingAddress, "opt_out_line": st.OptOutLine, "timezone": st.Timezone, "dns_token_set": len(st.DnsTokenEnc) > 0}, nil
+		return map[string]any{"mailing_address": st.MailingAddress, "opt_out_line": st.OutboundOptOutLine, "timezone": st.OutboundTimezone, "dns_token_set": len(st.DnsTokenEnc) > 0}, nil
 	case "dns_token":
 		if in.Token == "" {
 			return nil, mcpctx.NewValidationError("token is required", "token")
@@ -133,9 +134,9 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 		if !check.OK() {
 			next = "Missing in public DNS: " + fmt.Sprint(check.Missing) + ". Add records_to_add (DKIM comes from the mail provider's admin console), then check_domain. New records can take minutes to appear."
 		}
-		return map[string]any{"domain_id": d.ID, "status": d.Status, "check": check, "records_to_add": pending, "next": next}, nil
+		return map[string]any{"domain_id": d.ID, "status": d.VerificationStatus.String, "tracking_host": d.TrackingHost, "check": check, "records_to_add": pending, "next": next}, nil
 	case "check_domain":
-		d, err := t.DB().GetOutboundDomain(ctx, db.GetOutboundDomainParams{ID: in.DomainID, OrgID: brand.ID})
+		d, err := t.DB().GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: in.DomainID, OrgID: brand.ID})
 		if err != nil {
 			return nil, mcpctx.NewNotFoundError("no such domain")
 		}
@@ -147,7 +148,7 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 		}
 		return map[string]any{"mailboxes": res, "next": "New mailboxes start at 5 emails a day and add 2 a day up to 30. Use each one normally for about two weeks before outreach."}, nil
 	case "list":
-		mbs, err := t.DB().ListOutboundMailboxes(ctx, brand.ID)
+		mbs, err := t.DB().ListMailboxes(ctx, brand.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -164,11 +165,12 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 
 type AddProspectsInput struct {
 	Action    string                   `json:"action" jsonschema:"required,add"`
+	List      string                   `json:"list,omitempty" jsonschema:"The outreach list to add them to (made if missing; default Outreach)"`
 	Prospects []outbound.ProspectInput `json:"prospects" jsonschema:"required,Up to 100 people. email_source (where the address was published for business) is required for each"`
 }
 
 func addProspectsRun(ctx context.Context, t *mcpctx.ToolContext, in AddProspectsInput) (any, error) {
-	res, err := t.Svc().Outbound.AddProspects(ctx, t.Brand(ctx), in.Prospects)
+	res, err := t.Svc().Outbound.AddProspects(ctx, t.Brand(ctx), in.List, in.Prospects)
 	if err != nil {
 		return nil, err
 	}
@@ -333,10 +335,10 @@ var outboundTools = []outboundTool{
 			"- list: the brand's mailboxes",
 		changesOnly(), setupSendingRun),
 	defineOutbound("add_prospects", "Add prospects",
-		"Import up to 100 people to reach, with creator fields (platform, channel_url, audience_size, niche, recent_video, personal_line) and email_source, where the address was published for business. Removes duplicates, checks suppression and verifies every address; risky ones are held and never sent.\n\nExample: add_prospects(action: add, prospects: [{email, first_name, platform: youtube, channel_url, recent_video, personal_line, email_source: \"YouTube About page\"}])",
+		"Import up to 100 people to reach into an outreach list (made if missing). They become contacts that never signed up: campaigns and newsletters never reach them. Creator fields (platform, channel_url, audience_size, niche, recent_video, personal_line) and email_source, where the address was published for business. Removes duplicates, checks suppression and verifies every address; risky ones are held and never sent.\n\nExample: add_prospects(action: add, prospects: [{email, first_name, platform: youtube, channel_url, recent_video, personal_line, email_source: \"YouTube About page\"}])",
 		changesOnly(), addProspectsRun),
 	defineOutbound("draft_outreach", "Draft outreach",
-		"Create a campaign of 1 to 5 steps and draft every first email for its prospects. Templates use {{first_name}}, {{name}}, {{channel_url}}, {{recent_video}}, {{personal_line}}, {{sender_first}} and custom fields, and {a|b} variants. A missing value skips that prospect rather than sending a blank. Each prospect gets one mailbox for the whole sequence, and follow-ups reply in the same thread. The opt-out line and mailing address are added. track_clicks sends links through each domain's go. subdomain and counts clicks (off by default; reply rate is the main measure). dry_run renders without saving. Nothing sends until approved (approval_mode every by default).",
+		"Create a campaign of 1 to 5 steps and draft every first email for its prospects. Templates use {{first_name}}, {{name}}, {{channel_url}}, {{recent_video}}, {{personal_line}}, {{sender_first}} and custom fields, and {a|b} variants. A missing value skips that prospect rather than sending a blank. Each prospect gets one mailbox for the whole sequence, and follow-ups reply in the same thread. The opt-out line and mailing address are added. track_clicks and track_opens send links and an open pixel through each domain's go. subdomain (both off by default: reply rate is the main measure, pixels hurt cold delivery, and Apple Mail inflates opens). dry_run renders without saving. Nothing sends until approved (approval_mode every by default).",
 		changesOnly(), draftOutreachRun),
 	defineOutbound("review_drafts", "Review drafts",
 		"List emails waiting for approval, then approve, edit or skip them by id (up to 100 at a time). Approving lets them send, paced per mailbox inside the sending window.",

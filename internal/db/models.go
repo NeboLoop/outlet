@@ -125,6 +125,8 @@ type ContactSequenceState struct {
 	CompletedAt     sql.NullString `json:"completed_at"`
 	UnsubscribedAt  sql.NullString `json:"unsubscribed_at"`
 	PausedAt        sql.NullString `json:"paused_at"`
+	MailboxID       sql.NullString `json:"mailbox_id"`
+	StoppedReason   string         `json:"stopped_reason"`
 }
 
 type ContactTag struct {
@@ -172,6 +174,11 @@ type DomainIdentity struct {
 	LastCheckedAt      sql.NullString `json:"last_checked_at"`
 	CreatedAt          sql.NullString `json:"created_at"`
 	UpdatedAt          sql.NullString `json:"updated_at"`
+	Purpose            string         `json:"purpose"`
+	DnsHost            string         `json:"dns_host"`
+	DkimSelector       string         `json:"dkim_selector"`
+	TrackingHost       string         `json:"tracking_host"`
+	DnsCheck           string         `json:"dns_check"`
 }
 
 type EmailBounce struct {
@@ -283,6 +290,7 @@ type EmailList struct {
 	GoodbyeEmailBody         sql.NullString `json:"goodbye_email_body"`
 	UnsubscribeBehavior      sql.NullString `json:"unsubscribe_behavior"`
 	UnsubscribeScope         sql.NullString `json:"unsubscribe_scope"`
+	Kind                     string         `json:"kind"`
 }
 
 type EmailQueue struct {
@@ -299,8 +307,33 @@ type EmailQueue struct {
 	OpenCount     int64          `json:"open_count"`
 	ClickedAt     sql.NullString `json:"clicked_at"`
 	ClickCount    int64          `json:"click_count"`
+	Kind          string         `json:"kind"`
+	MailboxID     sql.NullString `json:"mailbox_id"`
+	Subject       sql.NullString `json:"subject"`
+	Body          sql.NullString `json:"body"`
+	MessageID     sql.NullString `json:"message_id"`
+	InReplyTo     sql.NullString `json:"in_reply_to"`
+	Refs          sql.NullString `json:"refs"`
 	ClaimToken    sql.NullString `json:"claim_token"`
 	ClaimedAt     sql.NullString `json:"claimed_at"`
+}
+
+type EmailReply struct {
+	ID             string         `json:"id"`
+	OrgID          string         `json:"org_id"`
+	MailboxID      string         `json:"mailbox_id"`
+	ContactID      sql.NullString `json:"contact_id"`
+	QueueID        sql.NullString `json:"queue_id"`
+	SequenceID     sql.NullString `json:"sequence_id"`
+	FromEmail      string         `json:"from_email"`
+	Subject        string         `json:"subject"`
+	Body           string         `json:"body"`
+	MessageID      string         `json:"message_id"`
+	InReplyTo      string         `json:"in_reply_to"`
+	Refs           string         `json:"refs"`
+	Classification string         `json:"classification"`
+	Handled        int64          `json:"handled"`
+	ReceivedAt     string         `json:"received_at"`
 }
 
 type EmailSequence struct {
@@ -316,6 +349,11 @@ type EmailSequence struct {
 	SequenceType           sql.NullString `json:"sequence_type"`
 	CreatedAt              sql.NullString `json:"created_at"`
 	OnCompletionSequenceID sql.NullString `json:"on_completion_sequence_id"`
+	ApprovalMode           string         `json:"approval_mode"`
+	WindowStartHour        int64          `json:"window_start_hour"`
+	WindowEndHour          int64          `json:"window_end_hour"`
+	TrackOpens             int64          `json:"track_opens"`
+	TrackClicks            int64          `json:"track_clicks"`
 }
 
 type EmailTemplate struct {
@@ -392,6 +430,32 @@ type ListSubscriber struct {
 	VerifiedAt         sql.NullString `json:"verified_at"`
 	SubscribedAt       sql.NullString `json:"subscribed_at"`
 	UnsubscribedAt     sql.NullString `json:"unsubscribed_at"`
+}
+
+type Mailbox struct {
+	ID              string         `json:"id"`
+	OrgID           string         `json:"org_id"`
+	DomainID        string         `json:"domain_id"`
+	Email           string         `json:"email"`
+	FromName        string         `json:"from_name"`
+	Signature       string         `json:"signature"`
+	SmtpHost        string         `json:"smtp_host"`
+	SmtpPort        int64          `json:"smtp_port"`
+	SmtpUsername    string         `json:"smtp_username"`
+	SmtpPasswordEnc []byte         `json:"smtp_password_enc"`
+	ImapHost        string         `json:"imap_host"`
+	ImapPort        int64          `json:"imap_port"`
+	ImapUsername    string         `json:"imap_username"`
+	ImapPasswordEnc []byte         `json:"imap_password_enc"`
+	Status          string         `json:"status"`
+	PausedReason    string         `json:"paused_reason"`
+	DailyCap        int64          `json:"daily_cap"`
+	WarmupStartedAt string         `json:"warmup_started_at"`
+	NextSendAt      sql.NullString `json:"next_send_at"`
+	ImapUidValidity int64          `json:"imap_uid_validity"`
+	ImapLastUid     int64          `json:"imap_last_uid"`
+	LastError       string         `json:"last_error"`
+	CreatedAt       string         `json:"created_at"`
 }
 
 type McpApiKey struct {
@@ -539,173 +603,25 @@ type OrgUser struct {
 }
 
 type Organization struct {
-	ID              string         `json:"id"`
-	Name            string         `json:"name"`
-	Slug            string         `json:"slug"`
-	ApiKey          string         `json:"api_key"`
-	ApiKeyCreatedAt sql.NullString `json:"api_key_created_at"`
-	FromName        sql.NullString `json:"from_name"`
-	FromEmail       sql.NullString `json:"from_email"`
-	ReplyTo         sql.NullString `json:"reply_to"`
-	MaxContacts     sql.NullInt64  `json:"max_contacts"`
-	Settings        sql.NullString `json:"settings"`
-	AppUrl          sql.NullString `json:"app_url"`
-	CreatedAt       sql.NullString `json:"created_at"`
-	UpdatedAt       sql.NullString `json:"updated_at"`
-}
-
-type OutboundCampaign struct {
-	ID              string `json:"id"`
-	OrgID           string `json:"org_id"`
-	Name            string `json:"name"`
-	Status          string `json:"status"`
-	ApprovalMode    string `json:"approval_mode"`
-	TrackClicks     int64  `json:"track_clicks"`
-	WindowStartHour int64  `json:"window_start_hour"`
-	WindowEndHour   int64  `json:"window_end_hour"`
-	IdempotencyKey  string `json:"idempotency_key"`
-	CreatedAt       string `json:"created_at"`
-}
-
-type OutboundDomain struct {
-	ID           string         `json:"id"`
-	OrgID        string         `json:"org_id"`
-	Domain       string         `json:"domain"`
-	DnsHost      string         `json:"dns_host"`
-	DkimSelector string         `json:"dkim_selector"`
-	TrackingHost string         `json:"tracking_host"`
-	Status       string         `json:"status"`
-	CheckResult  string         `json:"check_result"`
-	CheckedAt    sql.NullString `json:"checked_at"`
-	CreatedAt    string         `json:"created_at"`
-}
-
-type OutboundEnrollment struct {
-	ID            string         `json:"id"`
-	OrgID         string         `json:"org_id"`
-	CampaignID    string         `json:"campaign_id"`
-	ProspectID    string         `json:"prospect_id"`
-	MailboxID     string         `json:"mailbox_id"`
-	Status        string         `json:"status"`
-	NextPosition  int64          `json:"next_position"`
-	NextAt        sql.NullString `json:"next_at"`
-	ThreadSubject string         `json:"thread_subject"`
-	CreatedAt     string         `json:"created_at"`
-}
-
-type OutboundLink struct {
-	Token          string         `json:"token"`
-	OrgID          string         `json:"org_id"`
-	MessageID      string         `json:"message_id"`
-	Url            string         `json:"url"`
-	Clicks         int64          `json:"clicks"`
-	FirstClickedAt sql.NullString `json:"first_clicked_at"`
-}
-
-type OutboundMailbox struct {
-	ID              string         `json:"id"`
-	OrgID           string         `json:"org_id"`
-	DomainID        string         `json:"domain_id"`
-	Email           string         `json:"email"`
-	FromName        string         `json:"from_name"`
-	Signature       string         `json:"signature"`
-	SmtpHost        string         `json:"smtp_host"`
-	SmtpPort        int64          `json:"smtp_port"`
-	SmtpUsername    string         `json:"smtp_username"`
-	SmtpPasswordEnc []byte         `json:"smtp_password_enc"`
-	ImapHost        string         `json:"imap_host"`
-	ImapPort        int64          `json:"imap_port"`
-	ImapUsername    string         `json:"imap_username"`
-	ImapPasswordEnc []byte         `json:"imap_password_enc"`
-	Status          string         `json:"status"`
-	PausedReason    string         `json:"paused_reason"`
-	DailyCap        int64          `json:"daily_cap"`
-	WarmupStartedAt string         `json:"warmup_started_at"`
-	NextSendAt      sql.NullString `json:"next_send_at"`
-	ImapUidValidity int64          `json:"imap_uid_validity"`
-	ImapLastUid     int64          `json:"imap_last_uid"`
-	LastError       string         `json:"last_error"`
-	CreatedAt       string         `json:"created_at"`
-}
-
-type OutboundMessage struct {
-	ID           string         `json:"id"`
-	OrgID        string         `json:"org_id"`
-	EnrollmentID sql.NullString `json:"enrollment_id"`
-	MailboxID    string         `json:"mailbox_id"`
-	ProspectID   string         `json:"prospect_id"`
-	Position     int64          `json:"position"`
-	ToEmail      string         `json:"to_email"`
-	Subject      string         `json:"subject"`
-	Body         string         `json:"body"`
-	Status       string         `json:"status"`
-	MessageID    string         `json:"message_id"`
-	InReplyTo    string         `json:"in_reply_to"`
-	Refs         string         `json:"refs"`
-	NotBefore    string         `json:"not_before"`
-	ClaimedAt    sql.NullString `json:"claimed_at"`
-	SentAt       sql.NullString `json:"sent_at"`
-	Error        string         `json:"error"`
-	CreatedAt    string         `json:"created_at"`
-}
-
-type OutboundProspect struct {
-	ID           string `json:"id"`
-	OrgID        string `json:"org_id"`
-	Email        string `json:"email"`
-	FirstName    string `json:"first_name"`
-	Name         string `json:"name"`
-	Timezone     string `json:"timezone"`
-	Platform     string `json:"platform"`
-	ChannelUrl   string `json:"channel_url"`
-	AudienceSize int64  `json:"audience_size"`
-	Niche        string `json:"niche"`
-	RecentVideo  string `json:"recent_video"`
-	PersonalLine string `json:"personal_line"`
-	EmailSource  string `json:"email_source"`
-	CustomFields string `json:"custom_fields"`
-	Status       string `json:"status"`
-	VerifyResult string `json:"verify_result"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
-}
-
-type OutboundReply struct {
-	ID             string         `json:"id"`
-	OrgID          string         `json:"org_id"`
-	MailboxID      string         `json:"mailbox_id"`
-	EnrollmentID   sql.NullString `json:"enrollment_id"`
-	ProspectID     sql.NullString `json:"prospect_id"`
-	FromEmail      string         `json:"from_email"`
-	Subject        string         `json:"subject"`
-	Body           string         `json:"body"`
-	MessageID      string         `json:"message_id"`
-	InReplyTo      string         `json:"in_reply_to"`
-	Refs           string         `json:"refs"`
-	Classification string         `json:"classification"`
-	Handled        int64          `json:"handled"`
-	ReceivedAt     string         `json:"received_at"`
-}
-
-type OutboundSetting struct {
-	OrgID          string `json:"org_id"`
-	MailingAddress string `json:"mailing_address"`
-	OptOutLine     string `json:"opt_out_line"`
-	Timezone       string `json:"timezone"`
-	DnsTokenEnc    []byte `json:"dns_token_enc"`
-	Paused         int64  `json:"paused"`
-	PausedReason   string `json:"paused_reason"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
-}
-
-type OutboundStep struct {
-	ID         string `json:"id"`
-	CampaignID string `json:"campaign_id"`
-	Position   int64  `json:"position"`
-	DelayDays  int64  `json:"delay_days"`
-	Subject    string `json:"subject"`
-	Body       string `json:"body"`
+	ID                   string         `json:"id"`
+	Name                 string         `json:"name"`
+	Slug                 string         `json:"slug"`
+	ApiKey               string         `json:"api_key"`
+	ApiKeyCreatedAt      sql.NullString `json:"api_key_created_at"`
+	FromName             sql.NullString `json:"from_name"`
+	FromEmail            sql.NullString `json:"from_email"`
+	ReplyTo              sql.NullString `json:"reply_to"`
+	MaxContacts          sql.NullInt64  `json:"max_contacts"`
+	Settings             sql.NullString `json:"settings"`
+	AppUrl               sql.NullString `json:"app_url"`
+	CreatedAt            sql.NullString `json:"created_at"`
+	UpdatedAt            sql.NullString `json:"updated_at"`
+	OutboundEnabled      int64          `json:"outbound_enabled"`
+	OutboundPausedReason string         `json:"outbound_paused_reason"`
+	MailingAddress       string         `json:"mailing_address"`
+	OutboundOptOutLine   string         `json:"outbound_opt_out_line"`
+	OutboundTimezone     string         `json:"outbound_timezone"`
+	DnsTokenEnc          []byte         `json:"dns_token_enc"`
 }
 
 type PlatformSetting struct {

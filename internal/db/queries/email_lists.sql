@@ -147,8 +147,8 @@ SELECT COUNT(*) as count FROM list_subscribers
 WHERE list_id = sqlc.arg(list_id) AND contact_id = sqlc.arg(contact_id);
 
 -- name: CreateListSubscriber :one
-INSERT INTO list_subscribers (list_id, contact_id, status, subscribed_at)
-VALUES (sqlc.arg(list_id), sqlc.arg(contact_id), sqlc.arg(status), datetime('now'))
+INSERT INTO list_subscribers (id, list_id, contact_id, status, subscribed_at)
+VALUES (sqlc.arg(id), sqlc.arg(list_id), sqlc.arg(contact_id), sqlc.arg(status), datetime('now'))
 ON CONFLICT (list_id, contact_id) DO NOTHING
 RETURNING *;
 

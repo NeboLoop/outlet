@@ -1,350 +1,365 @@
--- Outbound: times are UTC text, 'YYYY-MM-DD HH:MM:SS', so they compare as text.
+-- Outbound runs on Outlet's lists, contacts, sequences and email queue.
+-- These are the queries only outreach needs. Times are UTC text,
+-- 'YYYY-MM-DD HH:MM:SS', so they compare in order.
 
--- name: GetOutboundSettings :one
-SELECT * FROM outbound_settings WHERE org_id = ?;
+-- ---- brand settings --------------------------------------------------------
 
--- name: UpsertOutboundSettings :one
-INSERT INTO outbound_settings (org_id, mailing_address, opt_out_line, timezone)
-VALUES (?, ?, ?, ?)
-ON CONFLICT (org_id) DO UPDATE SET
-    mailing_address = excluded.mailing_address,
-    opt_out_line = excluded.opt_out_line,
-    timezone = excluded.timezone,
-    updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now')
-RETURNING *;
+-- name: SetOutboundEnabled :exec
+UPDATE organizations SET outbound_enabled = ?, updated_at = datetime('now') WHERE id = ?;
 
--- name: SetOutboundDNSToken :exec
-INSERT INTO outbound_settings (org_id, dns_token_enc) VALUES (?, ?)
-ON CONFLICT (org_id) DO UPDATE SET dns_token_enc = excluded.dns_token_enc,
-    updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now');
+-- name: SetOutboundPausedReason :exec
+UPDATE organizations SET outbound_paused_reason = ?, updated_at = datetime('now') WHERE id = ?;
 
--- name: SetOutboundPaused :exec
-INSERT INTO outbound_settings (org_id, paused, paused_reason) VALUES (?, ?, ?)
-ON CONFLICT (org_id) DO UPDATE SET paused = excluded.paused, paused_reason = excluded.paused_reason,
-    updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now');
-
--- name: CreateOutboundDomain :one
-INSERT INTO outbound_domains (id, org_id, domain, dns_host, dkim_selector, tracking_host)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING *;
-
--- name: GetOutboundDomain :one
-SELECT * FROM outbound_domains WHERE id = ? AND org_id = ?;
-
--- name: GetOutboundDomainByName :one
-SELECT * FROM outbound_domains WHERE domain = ?;
-
--- name: ListOutboundDomains :many
-SELECT * FROM outbound_domains WHERE org_id = ? ORDER BY domain;
-
--- name: ListAllOutboundDomains :many
-SELECT * FROM outbound_domains ORDER BY domain;
-
--- name: SetOutboundDomainCheck :exec
-UPDATE outbound_domains
-SET status = ?, check_result = ?, checked_at = strftime('%Y-%m-%d %H:%M:%S', 'now')
+-- name: UpdateOutboundSettings :exec
+UPDATE organizations
+SET mailing_address = ?, outbound_opt_out_line = ?, outbound_timezone = ?, updated_at = datetime('now')
 WHERE id = ?;
 
--- name: CreateOutboundMailbox :one
-INSERT INTO outbound_mailboxes (
+-- name: SetOrganizationDNSToken :exec
+UPDATE organizations SET dns_token_enc = ?, updated_at = datetime('now') WHERE id = ?;
+
+-- ---- outreach domains (domain_identities with purpose 'outreach') -------------
+
+-- name: CreateOutreachDomain :one
+INSERT INTO domain_identities (id, org_id, domain, verification_status, dkim_status, purpose, dns_host, dkim_selector, tracking_host)
+VALUES (?, ?, ?, 'pending', 'pending', 'outreach', ?, ?, ?)
+RETURNING *;
+
+-- name: GetOutreachDomain :one
+SELECT * FROM domain_identities WHERE id = ? AND org_id = ? AND purpose = 'outreach';
+
+-- name: GetAnyDomainIdentity :one
+-- A domain belongs to one brand and one purpose.
+SELECT * FROM domain_identities WHERE LOWER(domain) = LOWER(?) LIMIT 1;
+
+-- name: ListOutreachDomains :many
+SELECT * FROM domain_identities WHERE org_id = ? AND purpose = 'outreach' ORDER BY domain;
+
+-- name: ListAllOutreachDomains :many
+SELECT * FROM domain_identities WHERE purpose = 'outreach' ORDER BY domain;
+
+-- name: SetOutreachDomainCheck :exec
+UPDATE domain_identities
+SET verification_status = ?, dns_check = ?, last_checked_at = datetime('now'), updated_at = datetime('now')
+WHERE id = ? AND purpose = 'outreach';
+
+-- name: SetOutreachDomainTrackingHost :exec
+UPDATE domain_identities SET tracking_host = ?, updated_at = datetime('now') WHERE id = ? AND purpose = 'outreach';
+
+-- ---- mailboxes ----------------------------------------------------------------
+
+-- name: CreateMailbox :one
+INSERT INTO mailboxes (
     id, org_id, domain_id, email, from_name, signature,
     smtp_host, smtp_port, smtp_username, smtp_password_enc,
     imap_host, imap_port, imap_username, imap_password_enc, daily_cap
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
--- name: GetOutboundMailbox :one
-SELECT * FROM outbound_mailboxes WHERE id = ? AND org_id = ?;
+-- name: GetMailbox :one
+SELECT * FROM mailboxes WHERE id = ? AND org_id = ?;
 
--- name: GetOutboundMailboxByEmail :one
-SELECT * FROM outbound_mailboxes WHERE email = ?;
+-- name: GetMailboxByEmail :one
+SELECT * FROM mailboxes WHERE email = ?;
 
--- name: ListOutboundMailboxes :many
-SELECT * FROM outbound_mailboxes WHERE org_id = ? ORDER BY email;
+-- name: ListMailboxes :many
+SELECT * FROM mailboxes WHERE org_id = ? ORDER BY email;
 
--- name: ListActiveOutboundMailboxes :many
--- Every mailbox the sender and the reply reader work, across brands.
-SELECT * FROM outbound_mailboxes WHERE status = 'active' ORDER BY email;
+-- name: ListActiveMailboxes :many
+-- Every mailbox the sender works, across brands.
+SELECT * FROM mailboxes WHERE status = 'active' ORDER BY email;
 
--- name: ListAllOutboundMailboxes :many
-SELECT * FROM outbound_mailboxes ORDER BY email;
+-- name: ListAllMailboxes :many
+SELECT * FROM mailboxes ORDER BY email;
 
--- name: SetOutboundMailboxStatus :exec
-UPDATE outbound_mailboxes SET status = ?, paused_reason = ? WHERE id = ?;
+-- name: SetMailboxStatus :exec
+UPDATE mailboxes SET status = ?, paused_reason = ? WHERE id = ?;
 
--- name: PauseOutboundMailboxesOnDomain :exec
-UPDATE outbound_mailboxes SET status = 'paused', paused_reason = ?
-WHERE domain_id = ? AND status = 'active';
+-- name: PauseMailboxesOnDomain :exec
+UPDATE mailboxes SET status = 'paused', paused_reason = ? WHERE domain_id = ? AND status = 'active';
 
--- name: ResumeOutboundMailboxesPausedForDNS :exec
-UPDATE outbound_mailboxes SET status = 'active', paused_reason = ''
+-- name: ResumeMailboxesPausedForDNS :exec
+UPDATE mailboxes SET status = 'active', paused_reason = ''
 WHERE domain_id = ? AND status = 'paused' AND paused_reason LIKE 'DNS:%';
 
--- name: SetOutboundMailboxNextSend :exec
-UPDATE outbound_mailboxes SET next_send_at = ? WHERE id = ?;
+-- name: SetMailboxNextSend :exec
+UPDATE mailboxes SET next_send_at = ? WHERE id = ?;
 
--- name: SetOutboundMailboxError :exec
-UPDATE outbound_mailboxes SET last_error = ? WHERE id = ?;
+-- name: SetMailboxError :exec
+UPDATE mailboxes SET last_error = ? WHERE id = ?;
 
--- name: SetOutboundMailboxIMAPState :exec
-UPDATE outbound_mailboxes SET imap_uid_validity = ?, imap_last_uid = ? WHERE id = ?;
+-- name: SetMailboxIMAPState :exec
+UPDATE mailboxes SET imap_uid_validity = ?, imap_last_uid = ? WHERE id = ?;
 
--- name: CountOutboundSentSince :one
-SELECT COUNT(*) FROM outbound_messages
-WHERE mailbox_id = ? AND status = 'sent' AND sent_at >= ?;
+-- name: CountMailboxSentSince :one
+SELECT COUNT(*) FROM email_queue
+WHERE mailbox_id = sqlc.arg(mailbox_id) AND status = 'sent' AND sent_at >= sqlc.arg(since);
 
--- name: CountOutboundBouncesSince :one
-SELECT COUNT(*) FROM outbound_replies
-WHERE mailbox_id = ? AND classification = 'bounce' AND received_at >= ?;
+-- name: CountMailboxRepliesSince :one
+-- Bounces, spam blocks or complaints on one mailbox since a time.
+SELECT COUNT(*) FROM email_replies
+WHERE mailbox_id = sqlc.arg(mailbox_id) AND classification = sqlc.arg(classification) AND received_at >= sqlc.arg(since);
 
--- name: CountOutboundComplaintsSince :one
-SELECT COUNT(*) FROM outbound_replies
-WHERE mailbox_id = ? AND classification = 'complaint' AND received_at >= ?;
+-- ---- outreach lists, prospects and sequences ----------------------------------
 
--- name: CreateOutboundProspect :one
-INSERT INTO outbound_prospects (
-    id, org_id, email, first_name, name, timezone, platform, channel_url,
-    audience_size, niche, recent_video, personal_line, email_source,
-    custom_fields, status, verify_result
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (org_id, email) DO NOTHING
-RETURNING *;
+-- name: SetListKind :exec
+UPDATE email_lists SET kind = ?, updated_at = datetime('now') WHERE id = ? AND org_id = ?;
 
--- name: GetOutboundProspect :one
-SELECT * FROM outbound_prospects WHERE id = ? AND org_id = ?;
+-- name: ListOutreachLists :many
+SELECT * FROM email_lists WHERE org_id = ? AND kind = 'outreach' ORDER BY created_at;
 
--- name: GetOutboundProspectByEmail :one
-SELECT * FROM outbound_prospects WHERE org_id = ? AND email = ?;
+-- name: ListProspects :many
+-- Prospects on a brand's outreach lists, newest first.
+SELECT c.id, c.email, c.name, c.source, c.validation_status, c.created_at, ls.list_id, el.name AS list_name, ls.status
+FROM list_subscribers ls
+JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'
+JOIN contacts c ON c.id = ls.contact_id
+WHERE el.org_id = sqlc.arg(org_id) AND (sqlc.arg(list_id) = 0 OR ls.list_id = sqlc.arg(list_id))
+ORDER BY ls.subscribed_at DESC
+LIMIT sqlc.arg(limit_count);
 
--- name: ListOutboundProspectsByIDs :many
-SELECT * FROM outbound_prospects WHERE org_id = sqlc.arg(org_id) AND id IN (sqlc.slice(ids));
+-- name: SetOutreachSequenceOptions :exec
+UPDATE email_sequences
+SET sequence_type = 'outreach', approval_mode = ?, window_start_hour = ?, window_end_hour = ?,
+    track_opens = ?, track_clicks = ?, send_timezone = ?
+WHERE id = ? AND org_id = ?;
 
--- name: SetOutboundProspectStatus :exec
-UPDATE outbound_prospects SET status = ?, updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now')
+-- name: GetOutreachSequence :one
+SELECT * FROM email_sequences WHERE id = ? AND org_id = ? AND sequence_type = 'outreach';
+
+-- name: GetSequenceOptions :one
+SELECT * FROM email_sequences WHERE id = ?;
+
+-- name: ListOutreachSequences :many
+SELECT * FROM email_sequences WHERE org_id = ? AND sequence_type = 'outreach' ORDER BY created_at DESC;
+
+-- name: SetSequenceActive :exec
+UPDATE email_sequences SET is_active = ? WHERE id = ? AND org_id = ?;
+
+-- name: ListSequenceSteps :many
+SELECT * FROM email_templates WHERE sequence_id = ? ORDER BY position;
+
+-- name: GetSequenceStateFull :one
+SELECT * FROM contact_sequence_state WHERE contact_id = ? AND sequence_id = ?;
+
+-- name: SetSequenceStateMailbox :exec
+UPDATE contact_sequence_state SET mailbox_id = ? WHERE id = ?;
+
+-- name: StopSequenceState :exec
+-- Ends a person's sequence: a reply, bounce, opt-out or complaint.
+UPDATE contact_sequence_state
+SET is_active = 0, stopped_reason = ?, completed_at = COALESCE(completed_at, datetime('now'))
 WHERE id = ?;
 
--- name: CountOutboundProspectsByStatus :many
-SELECT status, COUNT(*) AS n FROM outbound_prospects WHERE org_id = ? GROUP BY status;
+-- name: ListActiveOutreachStatesForContact :many
+SELECT css.* FROM contact_sequence_state css
+JOIN email_sequences es ON es.id = css.sequence_id AND es.sequence_type = 'outreach'
+WHERE css.contact_id = ? AND css.is_active = 1;
 
--- name: CreateOutboundCampaign :one
-INSERT INTO outbound_campaigns (id, org_id, name, approval_mode, track_clicks, window_start_hour, window_end_hour, idempotency_key)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+-- name: CountMailboxStatesForSequence :many
+SELECT mailbox_id, COUNT(*) AS n FROM contact_sequence_state
+WHERE sequence_id = ? AND mailbox_id IS NOT NULL GROUP BY mailbox_id;
+
+-- ---- the outreach queue (email_queue rows of kind 'outreach') -----------------
+
+-- name: QueueOutreachEmail :one
+INSERT INTO email_queue (
+    id, contact_id, template_id, scheduled_for, status, tracking_token,
+    kind, mailbox_id, subject, body, message_id, in_reply_to, refs
+) VALUES (?, ?, ?, ?, ?, ?, 'outreach', ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
--- name: GetOutboundCampaign :one
-SELECT * FROM outbound_campaigns WHERE id = ? AND org_id = ?;
+-- name: GetOutreachEmail :one
+-- One outreach email of a brand, with its person and sequence.
+SELECT eq.*, c.email AS to_email, c.name AS to_name, c.org_id AS org_id,
+       COALESCE(et.position, 0) AS position, et.sequence_id AS sequence_id
+FROM email_queue eq
+JOIN contacts c ON c.id = eq.contact_id
+LEFT JOIN email_templates et ON et.id = eq.template_id
+WHERE eq.id = sqlc.arg(id) AND c.org_id = sqlc.arg(org_id) AND eq.kind = 'outreach';
 
--- name: GetOutboundCampaignByKey :one
-SELECT * FROM outbound_campaigns WHERE org_id = ? AND idempotency_key = ?;
+-- name: GetOutreachEmailByMessageID :one
+SELECT eq.*, c.org_id AS org_id, et.sequence_id AS sequence_id
+FROM email_queue eq
+JOIN contacts c ON c.id = eq.contact_id
+LEFT JOIN email_templates et ON et.id = eq.template_id
+WHERE eq.message_id = ? AND eq.kind = 'outreach' LIMIT 1;
 
--- name: ListOutboundCampaigns :many
-SELECT * FROM outbound_campaigns WHERE org_id = ? ORDER BY created_at DESC;
+-- name: ListOutreachEmails :many
+-- A brand's outreach emails with one status, oldest first.
+SELECT eq.*, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email
+FROM email_queue eq
+JOIN contacts c ON c.id = eq.contact_id
+JOIN mailboxes m ON m.id = eq.mailbox_id
+LEFT JOIN email_templates et ON et.id = eq.template_id
+WHERE c.org_id = sqlc.arg(org_id) AND eq.kind = 'outreach' AND eq.status = sqlc.arg(status)
+ORDER BY eq.scheduled_for
+LIMIT sqlc.arg(limit_count);
 
--- name: SetOutboundCampaignStatus :exec
-UPDATE outbound_campaigns SET status = ? WHERE id = ? AND org_id = ?;
+-- name: CountOutreachEmailsByStatus :many
+SELECT eq.status, COUNT(*) AS n FROM email_queue eq
+JOIN contacts c ON c.id = eq.contact_id
+WHERE c.org_id = ? AND eq.kind = 'outreach'
+GROUP BY eq.status;
 
--- name: CreateOutboundStep :one
-INSERT INTO outbound_steps (id, campaign_id, position, delay_days, subject, body)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING *;
+-- name: ListOutreachThread :many
+-- The sent emails of one person's outreach sequence, oldest first.
+SELECT eq.* FROM email_queue eq
+JOIN email_templates et ON et.id = eq.template_id
+WHERE eq.contact_id = ? AND et.sequence_id = ? AND eq.kind = 'outreach' AND eq.status = 'sent'
+ORDER BY eq.sent_at;
 
--- name: ListOutboundSteps :many
-SELECT * FROM outbound_steps WHERE campaign_id = ? ORDER BY position;
-
--- name: CreateOutboundEnrollment :one
-INSERT INTO outbound_enrollments (id, org_id, campaign_id, prospect_id, mailbox_id, next_position, next_at, thread_subject)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (campaign_id, prospect_id) DO NOTHING
-RETURNING *;
-
--- name: GetOutboundEnrollment :one
-SELECT * FROM outbound_enrollments WHERE id = ?;
-
--- name: ListActiveOutboundEnrollmentsForProspect :many
-SELECT * FROM outbound_enrollments WHERE prospect_id = ? AND status IN ('active', 'paused');
-
--- name: ListDueOutboundEnrollments :many
--- Enrollments whose next step is due and has no draft yet. A step's draft
--- is written once; next_at is cleared when it is.
-SELECT e.* FROM outbound_enrollments e
-JOIN outbound_campaigns c ON c.id = e.campaign_id
-WHERE e.status = 'active' AND c.status = 'active'
-  AND e.next_at IS NOT NULL AND e.next_at <= ?
-ORDER BY e.next_at
-LIMIT ?;
-
--- name: SetOutboundEnrollmentNext :exec
-UPDATE outbound_enrollments SET next_position = ?, next_at = ? WHERE id = ?;
-
--- name: SetOutboundEnrollmentStatus :exec
-UPDATE outbound_enrollments SET status = ?, next_at = NULL WHERE id = ?;
-
--- name: CreateOutboundMessage :one
-INSERT INTO outbound_messages (
-    id, org_id, enrollment_id, mailbox_id, prospect_id, position, to_email,
-    subject, body, status, message_id, in_reply_to, refs, not_before
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING *;
-
--- name: GetOutboundMessage :one
-SELECT * FROM outbound_messages WHERE id = ? AND org_id = ?;
-
--- name: GetOutboundMessageByMessageID :one
-SELECT * FROM outbound_messages WHERE message_id = ? LIMIT 1;
-
--- name: ListOutboundMessagesByStatus :many
-SELECT * FROM outbound_messages WHERE org_id = ? AND status = ? ORDER BY created_at LIMIT ?;
-
--- name: ListOutboundThread :many
-SELECT * FROM outbound_messages
-WHERE enrollment_id = ? AND status = 'sent'
-ORDER BY sent_at;
-
--- name: CountOutboundMessagesByStatus :many
-SELECT status, COUNT(*) AS n FROM outbound_messages WHERE org_id = ? GROUP BY status;
-
--- name: ApproveOutboundMessage :execrows
-UPDATE outbound_messages SET status = 'approved'
-WHERE id = ? AND org_id = ? AND status = 'draft';
-
--- name: EditOutboundMessage :execrows
-UPDATE outbound_messages SET subject = ?, body = ?
-WHERE id = ? AND org_id = ? AND status IN ('draft', 'approved');
-
--- name: SkipOutboundMessage :execrows
-UPDATE outbound_messages SET status = 'skipped'
-WHERE id = ? AND org_id = ? AND status IN ('draft', 'approved');
-
--- name: SkipOpenOutboundMessagesForEnrollment :exec
-UPDATE outbound_messages SET status = 'skipped'
-WHERE enrollment_id = ? AND status IN ('draft', 'approved');
-
--- name: NextOutboundMessageForMailbox :one
--- The oldest approved email due on this mailbox whose enrollment, if any, is
--- still running.
-SELECT m.* FROM outbound_messages m
-LEFT JOIN outbound_enrollments e ON e.id = m.enrollment_id
-LEFT JOIN outbound_campaigns c ON c.id = e.campaign_id
-WHERE m.mailbox_id = ? AND m.status = 'approved' AND m.not_before <= ?
-  AND (m.enrollment_id IS NULL OR (e.status = 'active' AND c.status = 'active'))
-ORDER BY m.not_before
+-- name: NextOutreachForMailbox :one
+-- The oldest approved outreach email due on this mailbox, whose person is
+-- still in an active sequence (or which answers a reply).
+SELECT eq.*, c.email AS to_email, c.org_id AS org_id, COALESCE(et.position, 0) AS position, et.sequence_id AS sequence_id
+FROM email_queue eq
+JOIN contacts c ON c.id = eq.contact_id
+LEFT JOIN email_templates et ON et.id = eq.template_id
+LEFT JOIN email_sequences es ON es.id = et.sequence_id
+LEFT JOIN contact_sequence_state css ON css.contact_id = eq.contact_id AND css.sequence_id = es.id
+WHERE eq.mailbox_id = sqlc.arg(mailbox_id) AND eq.kind = 'outreach' AND eq.status = 'pending'
+  AND eq.scheduled_for <= sqlc.arg(now)
+  AND (eq.template_id IS NULL OR (es.is_active = 1 AND css.is_active = 1))
+ORDER BY eq.scheduled_for
 LIMIT 1;
 
--- name: ClaimOutboundMessage :execrows
--- Claimed once: only one sender can move a row from approved to sending.
-UPDATE outbound_messages SET status = 'sending', claimed_at = ?
-WHERE id = ? AND status = 'approved';
+-- name: ClaimOutreachEmail :execrows
+-- Claimed once: only one sender moves a row from pending to sending.
+UPDATE email_queue SET status = 'sending', claimed_at = ? WHERE id = ? AND status = 'pending' AND kind = 'outreach';
 
--- name: MarkOutboundMessageSent :exec
-UPDATE outbound_messages SET status = 'sent', sent_at = ?, error = '' WHERE id = ?;
-
--- name: MarkOutboundMessageFailed :exec
-UPDATE outbound_messages SET status = 'failed', error = ? WHERE id = ?;
-
--- name: ReleaseOutboundMessage :exec
--- A transient failure: back to approved, tried again later from the same mailbox.
-UPDATE outbound_messages SET status = 'approved', claimed_at = NULL, error = ?, not_before = ?
+-- name: ReleaseOutreachEmail :exec
+-- A transient failure: back to pending, tried again later from the same mailbox.
+UPDATE email_queue SET status = 'pending', claimed_at = NULL, error_message = ?, scheduled_for = ?
 WHERE id = ? AND status = 'sending';
 
--- name: ListStuckOutboundMessages :many
--- Rows left in sending by a crash. We can't know whether they went, so they
--- are marked failed and never sent again.
-SELECT * FROM outbound_messages WHERE status = 'sending' AND claimed_at < ?;
+-- name: SetOutreachSchedule :exec
+UPDATE email_queue SET scheduled_for = ? WHERE id = ? AND status = 'pending' AND kind = 'outreach';
 
--- name: CreateOutboundReply :one
-INSERT INTO outbound_replies (
-    id, org_id, mailbox_id, enrollment_id, prospect_id, from_email, subject,
+-- name: MarkOutreachSent :exec
+UPDATE email_queue SET status = 'sent', sent_at = ?, error_message = NULL WHERE id = ?;
+
+-- name: ListStuckOutreach :many
+-- Rows left in sending by a crash. Nobody knows whether they went, so they
+-- are marked failed and never sent again.
+SELECT * FROM email_queue WHERE kind = 'outreach' AND status = 'sending' AND claimed_at < ?;
+
+-- name: ApproveOutreachDraft :execrows
+UPDATE email_queue SET status = 'pending'
+WHERE email_queue.id = sqlc.arg(id) AND status = 'draft' AND kind = 'outreach'
+  AND contact_id IN (SELECT c.id FROM contacts c WHERE c.org_id = sqlc.arg(org_id));
+
+-- name: EditOutreachEmail :execrows
+UPDATE email_queue SET subject = sqlc.arg(subject), body = sqlc.arg(body)
+WHERE email_queue.id = sqlc.arg(id) AND status IN ('draft', 'pending') AND kind = 'outreach'
+  AND contact_id IN (SELECT c.id FROM contacts c WHERE c.org_id = sqlc.arg(org_id));
+
+-- name: SkipOutreachEmail :execrows
+UPDATE email_queue SET status = 'cancelled'
+WHERE email_queue.id = sqlc.arg(id) AND status IN ('draft', 'pending') AND kind = 'outreach'
+  AND contact_id IN (SELECT c.id FROM contacts c WHERE c.org_id = sqlc.arg(org_id));
+
+-- name: CancelOpenOutreachForContact :exec
+-- A reply, bounce or opt-out cancels everything still waiting for the person.
+UPDATE email_queue SET status = 'cancelled'
+WHERE contact_id = ? AND kind = 'outreach' AND status IN ('draft', 'pending');
+
+-- ---- replies ------------------------------------------------------------------
+
+-- name: CreateEmailReply :one
+INSERT INTO email_replies (
+    id, org_id, mailbox_id, contact_id, queue_id, sequence_id, from_email, subject,
     body, message_id, in_reply_to, refs, classification, handled, received_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (mailbox_id, message_id) DO NOTHING
 RETURNING *;
 
--- name: GetOutboundReply :one
-SELECT * FROM outbound_replies WHERE id = ? AND org_id = ?;
+-- name: GetEmailReply :one
+SELECT * FROM email_replies WHERE id = ? AND org_id = ?;
 
--- name: ListOutboundReplies :many
-SELECT * FROM outbound_replies WHERE org_id = ? AND handled = ? ORDER BY received_at DESC LIMIT ?;
+-- name: ListEmailReplies :many
+SELECT * FROM email_replies WHERE org_id = ? AND handled = ? ORDER BY received_at DESC LIMIT ?;
 
--- name: SetOutboundReplyClassification :exec
-UPDATE outbound_replies SET classification = ?, handled = ? WHERE id = ? AND org_id = ?;
+-- name: SetEmailReplyClassification :exec
+UPDATE email_replies SET classification = ?, handled = ? WHERE id = ? AND org_id = ?;
 
--- name: SetOutboundReplyHandled :exec
-UPDATE outbound_replies SET handled = 1 WHERE id = ? AND org_id = ?;
+-- name: SetEmailReplyHandled :exec
+UPDATE email_replies SET handled = 1 WHERE id = ? AND org_id = ?;
 
--- name: CountUnhandledOutboundReplies :one
-SELECT COUNT(*) FROM outbound_replies WHERE org_id = ? AND handled = 0;
+-- name: CountUnhandledEmailReplies :one
+SELECT COUNT(*) FROM email_replies WHERE org_id = ? AND handled = 0;
 
--- name: ListTransactionalDomains :many
--- Every domain any brand sends transactional mail from; outreach may use none.
-SELECT domain FROM domain_identities;
+-- ---- results ------------------------------------------------------------------
+-- Reply rate is the main measure; opens and clicks count when the sequence
+-- tracks them. People, not emails: each counts once.
 
--- name: SetOutboundMessageNotBefore :exec
-UPDATE outbound_messages SET not_before = ? WHERE id = ? AND status = 'approved';
+-- name: OutreachSequenceStates :many
+SELECT CAST(CASE WHEN stopped_reason <> '' THEN stopped_reason WHEN completed_at IS NOT NULL THEN 'done'
+                 WHEN is_active = 1 THEN 'active' ELSE 'done' END AS TEXT) AS state,
+       COUNT(*) AS n
+FROM contact_sequence_state WHERE sequence_id = ? GROUP BY state;
 
--- Campaign results. Reply rate is the measure: opens aren't tracked (pixels
--- hurt cold delivery and Apple Mail fakes them).
+-- name: OutreachSentByStep :many
+SELECT et.position, COUNT(*) AS sent,
+       CAST(SUM(CASE WHEN eq.open_count > 0 THEN 1 ELSE 0 END) AS INTEGER) AS opened,
+       CAST(SUM(CASE WHEN eq.click_count > 0 THEN 1 ELSE 0 END) AS INTEGER) AS clicked
+FROM email_queue eq JOIN email_templates et ON et.id = eq.template_id
+WHERE et.sequence_id = ? AND eq.kind = 'outreach' AND eq.status = 'sent'
+GROUP BY et.position;
 
--- name: OutboundCampaignEnrollmentCounts :many
-SELECT status, COUNT(*) AS n FROM outbound_enrollments WHERE campaign_id = ? GROUP BY status;
+-- name: OutreachPeopleEngaged :one
+SELECT COUNT(DISTINCT CASE WHEN eq.open_count > 0 THEN eq.contact_id END) AS opened,
+       COUNT(DISTINCT CASE WHEN eq.click_count > 0 THEN eq.contact_id END) AS clicked
+FROM email_queue eq JOIN email_templates et ON et.id = eq.template_id
+WHERE et.sequence_id = ? AND eq.kind = 'outreach' AND eq.status = 'sent';
 
--- name: OutboundCampaignSentByStep :many
-SELECT m.position, COUNT(*) AS n FROM outbound_messages m
-JOIN outbound_enrollments e ON e.id = m.enrollment_id
-WHERE e.campaign_id = ? AND m.status = 'sent' AND m.position > 0
-GROUP BY m.position;
+-- name: OutreachRepliesByKind :many
+SELECT classification, COUNT(DISTINCT contact_id) AS n FROM email_replies
+WHERE sequence_id = ? GROUP BY classification;
 
--- name: OutboundCampaignRepliesByClass :many
-SELECT r.classification, COUNT(DISTINCT r.prospect_id) AS n FROM outbound_replies r
-JOIN outbound_enrollments e ON e.id = r.enrollment_id
-WHERE e.campaign_id = ?
-GROUP BY r.classification;
-
--- name: OutboundCampaignRepliesByStep :many
--- Which step each person answered: the last one sent to them before their
--- first human reply.
-SELECT CAST(COALESCE((SELECT MAX(m.position) FROM outbound_messages m
-        WHERE m.enrollment_id = r.enrollment_id AND m.status = 'sent' AND m.position > 0
-          AND m.sent_at <= r.received_at), 0) AS INTEGER) AS step,
-    COUNT(DISTINCT r.prospect_id) AS n
-FROM outbound_replies r
-JOIN outbound_enrollments e ON e.id = r.enrollment_id
-WHERE e.campaign_id = ? AND r.classification NOT IN ('bounce', 'out_of_office')
+-- name: OutreachRepliesByStep :many
+-- The step each person answered: the last one sent to them before their reply.
+SELECT CAST(COALESCE((SELECT MAX(et.position) FROM email_queue eq JOIN email_templates et ON et.id = eq.template_id
+        WHERE eq.contact_id = r.contact_id AND et.sequence_id = r.sequence_id AND eq.status = 'sent'
+          AND eq.sent_at <= r.received_at), 0) AS INTEGER) AS step,
+       COUNT(DISTINCT r.contact_id) AS n
+FROM email_replies r
+WHERE r.sequence_id = sqlc.arg(sequence_id) AND r.classification NOT IN ('bounce', 'spam_block', 'out_of_office')
 GROUP BY step;
 
--- name: OutboundCampaignPartners :one
-SELECT COUNT(*) FROM outbound_enrollments e
-JOIN outbound_prospects p ON p.id = e.prospect_id
-WHERE e.campaign_id = ? AND p.status = 'partner';
+-- name: OutreachPartners :one
+SELECT COUNT(*) FROM contact_sequence_state css
+JOIN contact_tags ct ON ct.contact_id = css.contact_id AND ct.tag = 'partner'
+WHERE css.sequence_id = ?;
 
--- name: LatestOutboundEnrollmentForProspect :one
-SELECT * FROM outbound_enrollments WHERE prospect_id = ? ORDER BY created_at DESC LIMIT 1;
+-- ---- opens and clicks ---------------------------------------------------------
+-- Recorded by the one tracking endpoint (/api/e/o, /api/e/c) by tracking
+-- token. Mail scanners open links and images within seconds of delivery, so
+-- nothing before counted_after is counted.
 
--- name: SetOutboundDomainTrackingHost :exec
-UPDATE outbound_domains SET tracking_host = ? WHERE id = ?;
+-- name: RecordOutreachClick :execrows
+UPDATE email_queue
+SET click_count = click_count + 1, clicked_at = COALESCE(clicked_at, sqlc.arg(at))
+WHERE tracking_token = sqlc.arg(token) AND kind = 'outreach' AND status = 'sent' AND sent_at <= sqlc.arg(counted_after);
 
--- name: CreateOutboundLink :exec
-INSERT INTO outbound_links (token, org_id, message_id, url) VALUES (?, ?, ?, ?);
+-- name: RecordOutreachOpen :execrows
+UPDATE email_queue
+SET open_count = open_count + 1, opened_at = COALESCE(opened_at, sqlc.arg(at))
+WHERE tracking_token = sqlc.arg(token) AND kind = 'outreach' AND status = 'sent' AND sent_at <= sqlc.arg(counted_after);
 
--- name: GetOutboundLinkForClick :one
-SELECT l.token, l.url, m.sent_at FROM outbound_links l
-JOIN outbound_messages m ON m.id = l.message_id
-WHERE l.token = ?;
+-- name: ListOutreachEmailsForSequence :many
+SELECT eq.*, c.email AS to_email, m.email AS from_email
+FROM email_queue eq
+JOIN email_templates et ON et.id = eq.template_id
+JOIN contacts c ON c.id = eq.contact_id
+JOIN mailboxes m ON m.id = eq.mailbox_id
+WHERE et.sequence_id = ? AND eq.kind = 'outreach'
+ORDER BY eq.created_at;
 
--- name: RecordOutboundClick :exec
-UPDATE outbound_links SET clicks = clicks + 1,
-    first_clicked_at = COALESCE(first_clicked_at, ?)
-WHERE token = ?;
+-- name: CountProspectsByStatus :many
+SELECT ls.status, COUNT(*) AS n FROM list_subscribers ls
+JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'
+WHERE el.org_id = ? GROUP BY ls.status;
 
--- name: OutboundCampaignClicksByStep :many
--- People who clicked, by the step whose link they clicked.
-SELECT m.position, COUNT(DISTINCT m.prospect_id) AS n FROM outbound_links l
-JOIN outbound_messages m ON m.id = l.message_id
-JOIN outbound_enrollments e ON e.id = m.enrollment_id
-WHERE e.campaign_id = ? AND l.clicks > 0
-GROUP BY m.position;
-
--- name: OutboundCampaignClickers :one
-SELECT COUNT(DISTINCT m.prospect_id) FROM outbound_links l
-JOIN outbound_messages m ON m.id = l.message_id
-JOIN outbound_enrollments e ON e.id = m.enrollment_id
-WHERE e.campaign_id = ? AND l.clicks > 0;
+-- name: GetOutreachSequenceBySlug :one
+SELECT * FROM email_sequences WHERE org_id = ? AND slug = ? AND sequence_type = 'outreach';

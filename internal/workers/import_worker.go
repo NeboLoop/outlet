@@ -362,6 +362,7 @@ func (w *ImportWorker) importSubscriber(job db.ImportJob, record []string, colMa
 		}
 		if exists == 0 {
 			_, err = w.store.CreateListSubscriber(w.ctx, db.CreateListSubscriberParams{
+				ID:        uuid.NewString(),
 				ListID:    job.ListID.Int64,
 				ContactID: contactID,
 				Status:    sql.NullString{String: "active", Valid: true},

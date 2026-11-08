@@ -16,8 +16,8 @@ type OutboundWorker struct {
 	wg     sync.WaitGroup
 }
 
-// StartOutboundWorker starts the engine. Outbound does nothing for brands
-// that aren't in the server's Outbound.Brands config.
+// StartOutboundWorker starts the engine. It sends only for brands whose
+// admin turned outbound on.
 func StartOutboundWorker(svcCtx *svc.ServiceContext) *OutboundWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &OutboundWorker{svcCtx: svcCtx, cancel: cancel}
