@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"mime/quotedprintable"
 	"math/rand/v2"
+	"mime/quotedprintable"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -195,17 +195,17 @@ func (f fakeDNS) LookupTXT(_ context.Context, name string) ([]string, error) {
 // ---- the harness ----------------------------------------------------------
 
 type harness struct {
-	t     *testing.T
-	ctx   context.Context
-	conn  *sql.DB
-	store *db.Store
-	svc   *Service
-	org   db.Organization
+	t      *testing.T
+	ctx    context.Context
+	conn   *sql.DB
+	store  *db.Store
+	svc    *Service
+	org    db.Organization
 	mail   *mailServer
 	mailer *email.Service
 	seq    *email.SequenceService
-	clock time.Time
-	dns   fakeDNS
+	clock  time.Time
+	dns    fakeDNS
 }
 
 const testKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

@@ -136,7 +136,9 @@ func boolInt(b bool) int64 {
 	return 0
 }
 
-func normDomain(d string) string { return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(d)), ".") }
+func normDomain(d string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(d)), ".")
+}
 
 func domainOf(address string) string {
 	_, d, _ := strings.Cut(address, "@")

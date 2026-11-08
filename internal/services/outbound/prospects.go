@@ -202,7 +202,9 @@ func (s *Service) setField(ctx context.Context, listID int64, subscriberID, key,
 
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
 
-func slugify(s string) string { return strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(s), "-"), "-") }
+func slugify(s string) string {
+	return strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(s), "-"), "-")
+}
 
 // suppress records an opt-out on the brand's suppression list, which every
 // kind of mail checks.

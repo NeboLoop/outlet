@@ -1,9 +1,9 @@
 package outbound
 
 import (
-	"database/sql"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
