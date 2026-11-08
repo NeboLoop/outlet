@@ -48,6 +48,10 @@ type ServiceContext struct {
 	// Email validation
 	SignalNet  *signalnet.Client // nil when Signal Network is not configured
 	Validation *validation.Service
+
+	// UploadDir holds uploaded files waiting for a worker (CSV imports), next
+	// to the database
+	UploadDir string
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -156,6 +160,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	return &ServiceContext{
 		Config:            c,
 		DB:                store,
+		UploadDir:         filepath.Join(dbDir, "uploads"),
 		Auth:              middleware.NewAuthMiddleware(c.Auth.AccessSecret, store).Handle,
 		APIKeyAuth:        apiKeyMiddleware.Handle,
 		APIKeyMiddleware:  apiKeyMiddleware,

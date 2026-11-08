@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,7 +16,6 @@ import (
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 
-	"github.com/google/uuid"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -161,12 +162,13 @@ func (w *ImportWorker) processImportJob(job db.ImportJob) error {
 		return err
 	}
 
-	// Open CSV file
-	filePath := w.config.UploadDir + "/" + job.Filename
+	// Open CSV file; it holds people's addresses, so it goes when the job ends
+	filePath := ImportFile(w.config.UploadDir, job.ID)
 	file, err := os.Open(filePath)
 	if err != nil {
 		return w.failJob(job.ID, "Failed to open file: "+err.Error())
 	}
+	defer os.Remove(filePath)
 	defer file.Close()
 
 	// Parse CSV
@@ -317,62 +319,9 @@ func (w *ImportWorker) importSubscriber(job db.ImportJob, record []string, colMa
 		name = strings.TrimSpace(record[nameIdx])
 	}
 
-	// Check if contact exists
-	existingContact, err := w.store.GetContactByOrgAndEmail(w.ctx, db.GetContactByOrgAndEmailParams{
-		OrgID: sql.NullString{String: job.OrgID, Valid: true},
-		Email: email,
-	})
-	if err != nil && err != sql.ErrNoRows {
-		return err
+	if _, err := w.store.AddSubscriber(w.ctx, job.OrgID, job.ListID.Int64, email, name, "import"); err != nil {
+		return fmt.Errorf("%s: %w", email, err)
 	}
-
-	var contactID string
-	if existingContact.ID != "" {
-		contactID = existingContact.ID
-		// Update name if provided
-		if name != "" && name != existingContact.Name {
-			w.store.UpdateContactName(w.ctx, db.UpdateContactNameParams{
-				ID:   contactID,
-				Name: name,
-			})
-		}
-	} else {
-		// Create new contact
-		contactID = uuid.NewString()
-		_, err = w.store.CreateContact(w.ctx, db.CreateContactParams{
-			ID:    contactID,
-			OrgID: sql.NullString{String: job.OrgID, Valid: true},
-			Email: email,
-			Name:  name,
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// Add to list if list_id is specified
-	if job.ListID.Valid {
-		// Check if already subscribed
-		exists, err := w.store.CheckListSubscription(w.ctx, db.CheckListSubscriptionParams{
-			ListID:    job.ListID.Int64,
-			ContactID: contactID,
-		})
-		if err != nil {
-			return err
-		}
-		if exists == 0 {
-			_, err = w.store.CreateListSubscriber(w.ctx, db.CreateListSubscriberParams{
-				ID:        uuid.NewString(),
-				ListID:    job.ListID.Int64,
-				ContactID: contactID,
-				Status:    sql.NullString{String: "active", Valid: true},
-			})
-			if err != nil {
-				return err
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -460,9 +409,15 @@ func (w *ImportWorker) Stats() (processed, failed int64) {
 	return w.processed.Load(), w.failed.Load()
 }
 
+// ImportFile is where an import job's CSV waits for the worker.
+func ImportFile(uploadDir, jobID string) string {
+	return filepath.Join(uploadDir, jobID+".csv")
+}
+
 // StartImportWorker starts the import worker from service context
 func StartImportWorker(svcCtx *svc.ServiceContext) *ImportWorker {
 	config := DefaultImportWorkerConfig()
+	config.UploadDir = svcCtx.UploadDir
 
 	worker := NewImportWorker(svcCtx.DB, config)
 	worker.Start()

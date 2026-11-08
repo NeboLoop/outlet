@@ -12,6 +12,12 @@ type AddContactTagsRequest struct {
 	Tags []string `json:"tags"`
 }
 
+type AddListSubscriberRequest struct {
+	Id    string `path:"id"` // list ID
+	Email string `json:"email"`
+	Name  string `json:"name,optional"`
+}
+
 type AddSuppressedEmailRequest struct {
 	Email  string `json:"email"`
 	Reason string `json:"reason,optional"`
@@ -949,6 +955,12 @@ type ImportJobInfo struct {
 	StartedAt     string `json:"started_at,optional"`
 	CompletedAt   string `json:"completed_at,optional"`
 	CreatedAt     string `json:"created_at"`
+}
+
+type ImportListSubscribersRequest struct {
+	Id       string `path:"id"` // list ID
+	Filename string `json:"filename"`
+	Csv      string `json:"csv"`
 }
 
 type ListBackupsRequest struct {

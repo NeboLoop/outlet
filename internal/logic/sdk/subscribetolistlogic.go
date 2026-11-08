@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"strings"
@@ -57,6 +58,15 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
 	if err != nil {
 		l.Errorf("List not found: %s, error: %v", req.Slug, err)
 		return &types.Response{Success: false, Message: "List not found"}, nil
+	}
+
+	// An address at a domain the brand blocked doesn't subscribe
+	if err := l.svcCtx.DB.RefuseBlockedDomain(l.ctx, orgID, req.Email); err != nil {
+		if errors.Is(err, db.ErrBlockedDomain) {
+			return &types.Response{Success: false, Message: "This email address's domain is blocked"}, nil
+		}
+		l.Errorf("Failed to check blocked domains: %v", err)
+		return &types.Response{Success: false, Message: "Failed to subscribe"}, nil
 	}
 
 	// Get or create contact

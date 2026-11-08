@@ -7,6 +7,10 @@
 		listSequences,
 		enrollInSequence,
 		getSubscriberDetail,
+		addListSubscriber,
+		importListSubscribers,
+		getImportJob,
+		type ImportJobInfo,
 		type ListSubscriberInfo,
 		type SequenceInfo,
 		type SubscriberDetailResponse
@@ -21,7 +25,9 @@
 		Select,
 		Modal,
 		AlertDialog,
-		ValidationBadge
+		ValidationBadge,
+		Input,
+		ProgressBar
 	} from '$lib/components/ui';
 	import {
 		Users,
@@ -31,6 +37,7 @@
 		MousePointer,
 		Shield,
 		UserPlus,
+		Upload,
 		X
 	} from '@lucide/svelte';
 	import { getListContext } from '../listContext';
@@ -60,6 +67,81 @@
 	let sequences = $state<SequenceInfo[]>([]);
 	let sequencesLoading = $state(false);
 	let sequencesLoaded = $state(false);
+
+	// Add subscriber modal
+	let showAddModal = $state(false);
+	let addEmail = $state('');
+	let addName = $state('');
+	let adding = $state(false);
+	let notice = $state('');
+
+	// CSV import: the file goes to an import job the server runs
+	let importInput = $state<HTMLInputElement | null>(null);
+	let importJob = $state<ImportJobInfo | null>(null);
+	let importing = $derived(!!importJob && (importJob.status === 'pending' || importJob.status === 'processing'));
+
+	function openAddModal() {
+		addEmail = '';
+		addName = '';
+		showAddModal = true;
+	}
+
+	async function submitAdd() {
+		if (!addEmail) return;
+		adding = true;
+		error = '';
+		notice = '';
+		try {
+			const res = await addListSubscriber({}, { email: addEmail.trim(), name: addName.trim() }, listId);
+			notice = res.message || 'Subscriber added';
+			showAddModal = false;
+			await loadSubscribers();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to add subscriber';
+		} finally {
+			adding = false;
+		}
+	}
+
+	async function handleImportFile(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+		error = '';
+		notice = '';
+		try {
+			importJob = await importListSubscribers({}, { filename: file.name, csv: await file.text() }, listId);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to import the file';
+		}
+	}
+
+	// Follow the import job until it finishes, then show the result
+	$effect(() => {
+		if (!importing || !importJob) return;
+		const id = importJob.id;
+		const timer = setInterval(async () => {
+			try {
+				importJob = await getImportJob({}, id);
+			} catch (err) {
+				error = err instanceof Error ? err.message : 'Failed to read the import';
+				importJob = null;
+				return;
+			}
+			if (importJob.status === 'completed') {
+				notice =
+					`Imported ${importJob.success_count.toLocaleString()} of ${importJob.processed_rows.toLocaleString()} rows` +
+					(importJob.error_count ? ` (${importJob.error_count.toLocaleString()} refused or invalid)` : '');
+				importJob = null;
+				await loadSubscribers();
+			} else if (importJob.status === 'failed' || importJob.status === 'cancelled') {
+				error = importJob.status === 'failed' ? 'The import failed.' : 'The import was cancelled.';
+				importJob = null;
+			}
+		}, 2000);
+		return () => clearInterval(timer);
+	});
 
 	// Show the validation column only once any subscriber has been validated
 	let hasValidation = $derived(subscribers.some(s => !!s.validation_status));
@@ -171,10 +253,38 @@
 	}
 </script>
 
+<div class="flex justify-end gap-2 mb-4">
+	<input bind:this={importInput} type="file" accept=".csv,text/csv" class="hidden" onchange={handleImportFile} />
+	<Button type="secondary" size="sm" onclick={() => importInput?.click()} disabled={importing}>
+		<Upload class="mr-2 h-4 w-4" />
+		Import CSV
+	</Button>
+	<Button type="primary" size="sm" onclick={openAddModal}>
+		<UserPlus class="mr-2 h-4 w-4" />
+		Add subscriber
+	</Button>
+</div>
+
 {#if error}
 	<Alert type="error" title="Error" class="mb-4">
 		<p>{error}</p>
 	</Alert>
+{/if}
+
+{#if notice}
+	<Alert type="success" class="mb-4">
+		<p>{notice}</p>
+	</Alert>
+{/if}
+
+{#if importJob}
+	<div class="mb-4">
+		<ProgressBar
+			value={importJob.processed_rows}
+			max={importJob.total_rows || 1}
+			label="Importing {importJob.filename}: {importJob.processed_rows.toLocaleString()} / {importJob.total_rows.toLocaleString()}"
+		/>
+	</div>
 {/if}
 
 {#if subscribersLoading}
@@ -185,7 +295,7 @@
 	<EmptyState
 		icon={Users}
 		title="No subscribers yet"
-		description="Subscribers will appear here when they join this list."
+		description="Subscribers appear here when they join this list. Add them by hand or import a CSV with an email column."
 	/>
 {:else}
 	{#if subscribers.length > 5}
@@ -251,6 +361,30 @@
 		</table>
 	</div>
 {/if}
+
+<!-- Add Subscriber Modal -->
+<Modal bind:show={showAddModal} title="Add subscriber">
+	<div class="space-y-4">
+		<p class="text-sm text-text-muted">They join the list right away, with no confirmation email. Add only people who asked to hear from you.</p>
+		<div>
+			<label for="add-email" class="form-label">Email</label>
+			<Input id="add-email" type="email" bind:value={addEmail} placeholder="name@example.com" />
+		</div>
+		<div>
+			<label for="add-name" class="form-label">Name (optional)</label>
+			<Input id="add-name" type="text" bind:value={addName} />
+		</div>
+	</div>
+
+	{#snippet footer()}
+		<div class="flex justify-end gap-3">
+			<Button type="secondary" onclick={() => (showAddModal = false)} disabled={adding}>Cancel</Button>
+			<Button type="primary" onclick={submitAdd} disabled={!addEmail || adding}>
+				{adding ? 'Adding...' : 'Add subscriber'}
+			</Button>
+		</div>
+	{/snippet}
+</Modal>
 
 <!-- Enroll in Sequence Modal -->
 <Modal

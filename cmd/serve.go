@@ -221,6 +221,10 @@ func runServe(cmd *cobra.Command, args []string) {
 	validationWorker := workers.StartValidationWorker(ctx)
 	fmt.Println("Validation worker started")
 
+	// Start CSV import worker in background
+	importWorker := workers.StartImportWorker(ctx)
+	fmt.Println("Import worker started")
+
 	// Start MCP session cleanup job (runs every hour, cleans sessions older than 30 days)
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
 	go func() {
@@ -303,6 +307,8 @@ func runServe(cmd *cobra.Command, args []string) {
 				validationWorker.Stop()
 				fmt.Println("Validation worker stopped")
 			}
+			importWorker.Stop()
+			fmt.Println("Import worker stopped")
 			if smtpServer != nil {
 				smtpServer.Stop()
 				fmt.Println("SMTP server stopped")
@@ -543,6 +549,8 @@ func runServe(cmd *cobra.Command, args []string) {
 		validationWorker.Stop()
 		fmt.Println("Validation worker stopped")
 	}
+	importWorker.Stop()
+	fmt.Println("Import worker stopped")
 	if smtpServer != nil {
 		smtpServer.Stop()
 		fmt.Println("SMTP server stopped")

@@ -329,6 +329,19 @@ type (
 		Id           string `path:"id"`
 		SubscriberId string `path:"subscriberId"`
 	}
+	// An admin adds one person to a list: active at once, no confirmation email
+	AddListSubscriberRequest {
+		Id    string `path:"id"` // list ID
+		Email string `json:"email"`
+		Name  string `json:"name,optional"`
+	}
+	// A CSV with an email column (and optionally name) to add to a list; the
+	// import worker runs it as an import job
+	ImportListSubscribersRequest {
+		Id       string `path:"id"` // list ID
+		Filename string `json:"filename"`
+		Csv      string `json:"csv"`
+	}
 	// Subscriber Detail for modal view
 	GetSubscriberDetailRequest {
 		Id           string `path:"id"` // list ID
@@ -2309,6 +2322,9 @@ service outlet {
 	@handler ListListSubscribers
 	get /lists/:id/subscribers (ListSubscribersRequest) returns (ListSubscribersResponse)
 
+	@handler AddListSubscriber
+	post /lists/:id/subscribers (AddListSubscriberRequest) returns (Response)
+
 	@handler RemoveListSubscriber
 	delete /lists/:id/subscribers/:subscriberId (RemoveSubscriberRequest) returns (Response)
 
@@ -2391,8 +2407,18 @@ service outlet {
 
 	@handler CancelImportJob
 	post /import-jobs/:id/cancel (CancelImportJobRequest) returns (Response)
-// Note: Actual CSV upload endpoints are registered manually in outlet.go
-// because they require multipart/form-data handling
+}
+
+// CSV import upload: the file comes as JSON text, up to 50 MB
+@server (
+	group:      admin/imports
+	prefix:     /api/admin
+	middleware: Auth
+	maxBytes:   52428800
+)
+service outlet {
+	@handler ImportListSubscribers
+	post /lists/:id/import (ImportListSubscribersRequest) returns (ImportJobInfo)
 }
 
 // Admin Housekeeping
@@ -2993,7 +3019,6 @@ service outlet {
 	get /outbound/explain (OutboundExplainRequest) returns (OutboundExplainResponse)
 }
 
-
 // Outbound through a brand's API key, for other systems: the same operations
 // as the admin routes and the MCP tools. Turning outbound on stays with the
 // brand's admin in the app.
@@ -3060,3 +3085,4 @@ service outlet {
 	@handler SdkExplainOutbound
 	get /explain (OutboundExplainRequest) returns (OutboundExplainResponse)
 }
+

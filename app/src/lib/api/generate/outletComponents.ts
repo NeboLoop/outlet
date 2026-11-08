@@ -11,6 +11,13 @@ export interface AddContactTagsRequest {
 export interface AddContactTagsRequestParams {
 }
 
+export interface AddListSubscriberRequest {
+	email: string
+	name?: string
+}
+export interface AddListSubscriberRequestParams {
+}
+
 export interface AddSuppressedEmailRequest {
 	email: string
 	reason?: string
@@ -1015,6 +1022,13 @@ export interface ImportJobInfo {
 	started_at?: string
 	completed_at?: string
 	created_at: string
+}
+
+export interface ImportListSubscribersRequest {
+	filename: string
+	csv: string
+}
+export interface ImportListSubscribersRequestParams {
 }
 
 export interface ListBackupsRequest {

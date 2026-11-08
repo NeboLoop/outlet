@@ -108,8 +108,12 @@ func publishFailed(topic, id string, err error) {
 	slog.Error("publish event: look up the record", "topic", topic, "id", id, "error", err)
 }
 
-// CreateContact creates a contact and publishes contact.created.
+// CreateContact creates a contact and publishes contact.created. An address at
+// a domain the brand blocked is refused with ErrBlockedDomain.
 func (s *Store) CreateContact(ctx context.Context, arg CreateContactParams) (Contact, error) {
+	if err := s.RefuseBlockedDomain(ctx, arg.OrgID.String, arg.Email); err != nil {
+		return Contact{}, err
+	}
 	c, err := s.Queries.CreateContact(ctx, arg)
 	if err == nil && s.events != nil {
 		publish(s.events, events.TopicContactCreated, contactEvent(c, ""))
