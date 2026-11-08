@@ -74,9 +74,9 @@ func (l *GetPlatformSESQuotaLogic) GetPlatformSESQuota() (resp *types.SESQuotaRe
 		}
 	}
 
-	// If no credentials configured, return an error
+	// No SES credentials: the platform sends through SMTP, which is no error
 	if accessKey == "" || secretKey == "" {
-		return nil, errorx.NewBadRequestError("AWS credentials not configured. Please configure AWS SES in settings.")
+		return &types.SESQuotaResponse{Configured: false}, nil
 	}
 
 	// Default region if not set
@@ -99,6 +99,7 @@ func (l *GetPlatformSESQuotaLogic) GetPlatformSESQuota() (resp *types.SESQuotaRe
 	}
 
 	return &types.SESQuotaResponse{
+		Configured:      true,
 		Max24HourSend:   quota.Max24HourSend,
 		MaxSendRate:     quota.MaxSendRate,
 		SentLast24Hours: quota.SentLast24Hours,

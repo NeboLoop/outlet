@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { listOutboundDrafts, reviewOutboundDrafts, editOutboundDraft, type OutboundDraft } from '$lib/api';
 	import { Button, Alert, LoadingSpinner, EmptyState, Input, Textarea, Checkbox } from '$lib/components/ui';
 	import { FileText } from '@lucide/svelte';
-	import { errorMessage, when } from '../shared';
+	import { errorMessage } from '../shared';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -139,7 +140,7 @@
 					{/if}
 					<div class="flex-1 min-w-0">
 						<p class="text-xs text-text-muted">
-							To {d.to} from {d.from}{#if d.sends_after}, sends after {when(d.sends_after)}{/if}
+							To {d.to} from {d.from}{#if d.sends_after}, sends after {formatDate(d.sends_after, 'datetime')}{/if}
 						</p>
 						{#if editing === id && id}
 							<div class="mt-2 space-y-3">

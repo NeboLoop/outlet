@@ -26,14 +26,21 @@ RETURNING id, email, password_hash, role, name, status, email_verified, phone, a
           last_login_at, password_changed_at, failed_login_attempts, locked_until,
           created_at, updated_at;
 
--- name: UpdateUser :exec
+-- name: UpdateUser :execrows
+-- The last active super admin keeps the role and stays active: with none
+-- left, nobody runs the platform and the first-run setup would open to anyone.
 UPDATE users
 SET name = COALESCE(sqlc.arg(name), name),
+    email = sqlc.arg(email),
+    role = sqlc.arg(role),
     phone = COALESCE(sqlc.arg(phone), phone),
     avatar_url = COALESCE(sqlc.arg(avatar_url), avatar_url),
     status = COALESCE(sqlc.arg(status), status),
     updated_at = datetime('now')
-WHERE id = sqlc.arg(id);
+WHERE users.id = sqlc.arg(id)
+  AND NOT (users.role = 'super_admin' AND users.status = 'active'
+           AND (sqlc.arg(role) <> 'super_admin' OR sqlc.arg(status) <> 'active')
+           AND (SELECT COUNT(*) FROM users AS admins WHERE admins.role = 'super_admin' AND admins.status = 'active') <= 1);
 
 -- name: DeleteUser :execrows
 -- The last active super admin is never deleted: with none left, nobody runs

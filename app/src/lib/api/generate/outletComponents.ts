@@ -11,6 +11,13 @@ export interface AddContactTagsRequest {
 export interface AddContactTagsRequestParams {
 }
 
+export interface AddListSubscriberRequest {
+	email: string
+	name?: string
+}
+export interface AddListSubscriberRequestParams {
+}
+
 export interface AddSuppressedEmailRequest {
 	email: string
 	reason?: string
@@ -1019,6 +1026,13 @@ export interface ImportJobInfo {
 	created_at: string
 }
 
+export interface ImportListSubscribersRequest {
+	filename: string
+	csv: string
+}
+export interface ImportListSubscribersRequestParams {
+}
+
 export interface ListBackupsRequest {
 }
 export interface ListBackupsRequestParams {
@@ -1850,6 +1864,7 @@ export interface SDKContactInfo {
 }
 
 export interface SESQuotaResponse {
+	configured: boolean // false: the platform sends through SMTP, not SES
 	max_24_hour_send: number
 	max_send_rate: number
 	sent_last_24_hours: number

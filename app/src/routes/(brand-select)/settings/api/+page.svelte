@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { Card, Button, Input, Alert, LoadingSpinner, Badge, Modal, Tabs, CodeBlock, AlertDialog } from '$lib/components/ui';
 	import { Copy, Plus, Trash2, Key, CheckCircle, ExternalLink, Code, Package } from '@lucide/svelte';
 	import { listMCPAPIKeys, createMCPAPIKey, revokeMCPAPIKey, type MCPAPIKeyInfo } from '$lib/api';
@@ -219,14 +220,6 @@ Optional headers:
 		newKeyValue = '';
 	}
 
-	function formatDate(dateStr: string | null | undefined): string {
-		if (!dateStr) return 'Never';
-		return new Date(dateStr).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		});
-	}
 </script>
 
 <svelte:head>
@@ -286,8 +279,8 @@ Optional headers:
 							<tr class="border-b border-border/50">
 								<td class="py-3 font-medium">{key.name}</td>
 								<td class="py-3 font-mono text-text-muted">{key.key_prefix}...</td>
-								<td class="py-3 text-text-muted">{formatDate(key.last_used)}</td>
-								<td class="py-3 text-text-muted">{formatDate(key.created_at)}</td>
+								<td class="py-3 text-text-muted">{formatDate(key.last_used) || 'Never'}</td>
+								<td class="py-3 text-text-muted">{formatDate(key.created_at) || 'Never'}</td>
 								<td class="py-3 text-right">
 									<Button type="danger" size="icon" onclick={() => confirmRevokeKey(key.id)}>
 										<Trash2 class="h-4 w-4" />

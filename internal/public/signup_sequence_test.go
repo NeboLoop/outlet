@@ -4,9 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -50,11 +48,7 @@ func newSignupFixture(t *testing.T) (*Handler, *db.Store) {
 
 func subscribe(t *testing.T, h *Handler, publicID, address string) {
 	t.Helper()
-	form := url.Values{"email": {address}}
-	r := httptest.NewRequest(http.MethodPost, "/s/"+publicID, strings.NewReader(form.Encode()))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	h.HandleSubscribe(w, r)
+	w := postSubscribe(h, publicID, address)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 

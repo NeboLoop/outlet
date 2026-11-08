@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import * as api from '$lib/api';
 	import type { GDPRConsentInfo, GDPRExportResponse, GDPRDeleteResponse } from '$lib/api';
 	import { Button, Card, Input, Alert, LoadingSpinner, Badge, Toggle, AlertDialog } from '$lib/components/ui';
@@ -132,10 +133,6 @@
 		}
 	}
 
-	function formatDate(dateStr?: string): string {
-		if (!dateStr) return 'Never';
-		return new Date(dateStr).toLocaleString();
-	}
 </script>
 
 <svelte:head>
@@ -206,7 +203,7 @@
 				</div>
 				<div class="flex items-center justify-between py-2 border-b border-border">
 					<span class="text-sm text-text-muted">Account Created</span>
-					<span class="text-sm text-text">{formatDate(consentInfo.created_at)}</span>
+					<span class="text-sm text-text">{formatDate(consentInfo.created_at, 'datetime') || 'Never'}</span>
 				</div>
 				{#if consentInfo.data_retention_policy}
 					<div class="flex items-center justify-between py-2 border-b border-border">
@@ -224,7 +221,7 @@
 					<div>
 						<p class="text-sm font-medium text-text">GDPR Consent</p>
 						<p class="text-xs text-text-muted">
-							Consented: {formatDate(consentInfo.gdpr_consent_at)}
+							Consented: {formatDate(consentInfo.gdpr_consent_at, 'datetime') || 'Never'}
 						</p>
 					</div>
 					<div class="flex items-center gap-3">
@@ -242,7 +239,7 @@
 					<div>
 						<p class="text-sm font-medium text-text">Marketing Consent</p>
 						<p class="text-xs text-text-muted">
-							Consented: {formatDate(consentInfo.marketing_consent_at)}
+							Consented: {formatDate(consentInfo.marketing_consent_at, 'datetime') || 'Never'}
 						</p>
 					</div>
 					<div class="flex items-center gap-3">
@@ -295,7 +292,7 @@
 						<p class="text-xs text-text-muted mb-3">
 							Format: {exportResult.format}
 							{#if exportResult.expires_at}
-								<br />Expires: {formatDate(exportResult.expires_at)}
+								<br />Expires: {formatDate(exportResult.expires_at, 'datetime') || 'Never'}
 							{/if}
 						</p>
 						{#if exportResult.download_url}

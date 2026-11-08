@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -121,16 +122,6 @@
 		}
 	}
 
-	function formatDate(dateString?: string): string {
-		if (!dateString) return '';
-		const date = new Date(dateString);
-		return date.toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			hour: 'numeric',
-			minute: '2-digit'
-		});
-	}
 
 	function formatNumber(num: number): string {
 		if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -237,11 +228,11 @@
 									</Badge>
 									{#if campaign.scheduled_at && campaign.status === 'scheduled'}
 										<span class="text-xs text-text-muted">
-											{formatDate(campaign.scheduled_at)}
+											{formatDate(campaign.scheduled_at, 'short')}
 										</span>
 									{:else if campaign.completed_at && campaign.status === 'sent'}
 										<span class="text-xs text-text-muted">
-											{formatDate(campaign.completed_at)}
+											{formatDate(campaign.completed_at, 'short')}
 										</span>
 									{/if}
 								</div>

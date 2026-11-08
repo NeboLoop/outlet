@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import * as api from '$lib/api';
 	import type { CreateInvitationResponse, OrgInfo } from '$lib/api';
@@ -69,7 +70,7 @@
 		{#if result}
 			{#if result.email_sent}
 				<Alert type="success" title="Invitation sent">
-					<p>We emailed an invitation to {result.email}. It works once and expires {result.expires_at} UTC.</p>
+					<p>We emailed an invitation to {result.email}. It works once and expires {formatDate(result.expires_at, 'datetime')}.</p>
 				</Alert>
 			{:else}
 				<Alert type="warning" title="Invitation email did not go out">

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"html"
 	"html/template"
 	"log"
@@ -142,6 +143,18 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An address at a domain the brand blocked doesn't subscribe
+	if err := h.svcCtx.DB.RefuseBlockedDomain(r.Context(), list.OrgID, emailAddr); err != nil {
+		if errors.Is(err, db.ErrBlockedDomain) {
+			data["Error"] = "This email address can't subscribe to this list."
+		} else {
+			log.Printf("Error checking blocked domains: %v", err)
+			data["Error"] = "Something went wrong. Please try again."
+		}
+		h.renderTemplate(w, "subscribe.html", data)
+		return
+	}
+
 	// Check if contact already exists for this org
 	existingContact, err := h.svcCtx.DB.GetContactByOrgAndEmail(r.Context(), db.GetContactByOrgAndEmailParams{
 		OrgID: sql.NullString{String: list.OrgID, Valid: true},
@@ -215,10 +228,13 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		}
 		subscriberID = subscriber.ID
 
-		// Send confirmation email
+		// Send confirmation email. Without it the subscription can't be
+		// confirmed, so the person is told rather than sent to check their inbox.
 		if err := h.sendConfirmationEmail(r.Context(), list, emailAddr, name, verificationToken); err != nil {
 			log.Printf("Error sending confirmation email: %v", err)
-			// Still show success - the subscription was created
+			data["Error"] = "We couldn't send your confirmation email. Please try again in a few minutes."
+			h.renderTemplate(w, "subscribe.html", data)
+			return
 		}
 	} else {
 		// Direct subscription (no double opt-in)

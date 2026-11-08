@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import {
 		listOutboundProspects,
 		addOutboundProspects,
@@ -8,7 +9,7 @@
 	} from '$lib/api';
 	import { Button, Alert, LoadingSpinner, EmptyState, Badge, Input, Textarea, SlideForm } from '$lib/components/ui';
 	import { Plus, Users } from '@lucide/svelte';
-	import { errorMessage, when } from '../shared';
+	import { errorMessage } from '../shared';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -190,7 +191,7 @@
 						</td>
 						<td class="hidden sm:table-cell text-text-muted">{p.validation_status || 'Not yet'}</td>
 						<td class="hidden md:table-cell text-text-muted">{p.email_source}</td>
-						<td class="hidden md:table-cell text-text-muted whitespace-nowrap">{when(p.created_at)}</td>
+						<td class="hidden md:table-cell text-text-muted whitespace-nowrap">{formatDate(p.created_at, 'datetime')}</td>
 					</tr>
 				{/each}
 			</tbody>

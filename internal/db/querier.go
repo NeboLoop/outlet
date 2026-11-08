@@ -67,11 +67,9 @@ type Querier interface {
 	CountAutomationLog(ctx context.Context, arg CountAutomationLogParams) (int64, error)
 	CountBackups(ctx context.Context) (int64, error)
 	CountBlockedDomains(ctx context.Context, orgID string) (int64, error)
-	CountBouncesInDateRange(ctx context.Context, arg CountBouncesInDateRangeParams) (int64, error)
 	CountCampaignSendsByStatus(ctx context.Context, arg CountCampaignSendsByStatusParams) (int64, error)
 	CountCampaigns(ctx context.Context, orgID string) (int64, error)
 	CountCampaignsByStatus(ctx context.Context, arg CountCampaignsByStatusParams) (int64, error)
-	CountComplaintsInDateRange(ctx context.Context, arg CountComplaintsInDateRangeParams) (int64, error)
 	CountContacts(ctx context.Context) (int64, error)
 	CountContactsByOrg(ctx context.Context, orgID sql.NullString) (int64, error)
 	CountContactsByStatus(ctx context.Context, status sql.NullString) (int64, error)
@@ -259,6 +257,11 @@ type Querier interface {
 	GetBackupsByType(ctx context.Context, arg GetBackupsByTypeParams) ([]BackupHistory, error)
 	GetBackupsInProgress(ctx context.Context) ([]BackupHistory, error)
 	GetBlockedDomain(ctx context.Context, arg GetBlockedDomainParams) (BlockedDomain, error)
+	// What a brand's email did in a date range: every kind it sent (campaign
+	// sends, queued sequence and outreach email, transactional sends), with
+	// opens and clicks, and the brand's contacts who bounced, complained or
+	// unsubscribed. Dates are UTC 'YYYY-MM-DD HH:MM:SS', as stored.
+	GetBrandEmailStats(ctx context.Context, arg GetBrandEmailStatsParams) (GetBrandEmailStatsRow, error)
 	GetCampaign(ctx context.Context, arg GetCampaignParams) (EmailCampaign, error)
 	// Campaign Scheduler Queries
 	GetCampaignByID(ctx context.Context, id string) (EmailCampaign, error)
@@ -266,6 +269,7 @@ type Querier interface {
 	GetCampaignSend(ctx context.Context, id string) (CampaignSend, error)
 	GetCampaignSendByTracking(ctx context.Context, trackingToken sql.NullString) (CampaignSend, error)
 	GetCampaignSendByTrackingToken(ctx context.Context, token sql.NullString) (GetCampaignSendByTrackingTokenRow, error)
+	GetCampaignSendEvent(ctx context.Context, id string) (GetCampaignSendEventRow, error)
 	GetConfirmationTemplate(ctx context.Context, sequenceID sql.NullString) (GetConfirmationTemplateRow, error)
 	GetContact(ctx context.Context, id string) (Contact, error)
 	GetContactByEmail(ctx context.Context, email string) (Contact, error)
@@ -318,7 +322,6 @@ type Querier interface {
 	GetEmailReply(ctx context.Context, arg GetEmailReplyParams) (EmailReply, error)
 	GetEmailStatsForSequence(ctx context.Context, sequenceID sql.NullString) (GetEmailStatsForSequenceRow, error)
 	GetEmailStatsForTemplate(ctx context.Context, templateID sql.NullString) (GetEmailStatsForTemplateRow, error)
-	GetEmailStatsInDateRange(ctx context.Context, arg GetEmailStatsInDateRangeParams) (GetEmailStatsInDateRangeRow, error)
 	// Get enabled rules for a specific entity (e.g., email_list, product)
 	GetEntityRules(ctx context.Context, arg GetEntityRulesParams) ([]OrgRule, error)
 	GetEntryRule(ctx context.Context, id string) (SequenceEntryRule, error)
@@ -387,6 +390,9 @@ type Querier interface {
 	GetPlatformSettingValue(ctx context.Context, key string) (GetPlatformSettingValueRow, error)
 	GetPlatformSettingsByCategory(ctx context.Context, category string) ([]PlatformSetting, error)
 	GetPlatformSettingsValues(ctx context.Context, category string) ([]GetPlatformSettingsValuesRow, error)
+	// Who and what an email was, for the events published when it is sent,
+	// opened or clicked. One query per table that records a send.
+	GetQueuedEmailEvent(ctx context.Context, id string) (GetQueuedEmailEventRow, error)
 	GetQueuedEmailOrgID(ctx context.Context, id string) (string, error)
 	// Mail sent with the brand's API key (the SDK and SMTP) in the last 7 days.
 	GetRecentAPIKeySends(ctx context.Context, orgID string) (GetRecentAPIKeySendsRow, error)
@@ -429,6 +435,7 @@ type Querier interface {
 	GetTransactionalSendByTracking(ctx context.Context, trackingToken sql.NullString) (TransactionalSend, error)
 	GetTransactionalSendByTrackingAndOrg(ctx context.Context, arg GetTransactionalSendByTrackingAndOrgParams) (GetTransactionalSendByTrackingAndOrgRow, error)
 	GetTransactionalSendByTrackingToken(ctx context.Context, token sql.NullString) (GetTransactionalSendByTrackingTokenRow, error)
+	GetTransactionalSendEvent(ctx context.Context, id string) (GetTransactionalSendEventRow, error)
 	GetTransactionalStats(ctx context.Context, templateID string) (GetTransactionalStatsRow, error)
 	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
 	GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error)
@@ -716,7 +723,9 @@ type Querier interface {
 	UpdateTemplate(ctx context.Context, arg UpdateTemplateParams) error
 	UpdateTransactionalEmail(ctx context.Context, arg UpdateTransactionalEmailParams) (TransactionalEmail, error)
 	UpdateTransactionalSendStatus(ctx context.Context, arg UpdateTransactionalSendStatusParams) error
-	UpdateUser(ctx context.Context, arg UpdateUserParams) error
+	// The last active super admin keeps the role and stays active: with none
+	// left, nobody runs the platform and the first-run setup would open to anyone.
+	UpdateUser(ctx context.Context, arg UpdateUserParams) (int64, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpdateWebhook(ctx context.Context, arg UpdateWebhookParams) (Webhook, error)
 	UpdateWebhookDeliveryStats(ctx context.Context, arg UpdateWebhookDeliveryStatsParams) error

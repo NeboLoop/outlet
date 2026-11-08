@@ -6,6 +6,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -42,7 +43,10 @@ func (l *CreateUserLogic) CreateUser(req *types.CreateUserRequest) (resp *types.
 
 	role := req.Role
 	if role == "" {
-		role = "agent"
+		role = access.PlatformUser
+	}
+	if !access.PlatformRole(role) {
+		return nil, errorx.NewBadRequestError("A role is super_admin or " + access.PlatformUser + ".")
 	}
 
 	user, err := l.svcCtx.DB.CreateUser(l.ctx, db.CreateUserParams{

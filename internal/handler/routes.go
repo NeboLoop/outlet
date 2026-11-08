@@ -413,6 +413,21 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			[]rest.Middleware{serverCtx.Auth},
 			[]rest.Route{
 				{
+					Method:  http.MethodPost,
+					Path:    "/lists/:id/import",
+					Handler: adminimports.ImportListSubscribersHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin"),
+		rest.WithMaxBytes(52428800),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
 					Method:  http.MethodGet,
 					Path:    "/email-stats",
 					Handler: adminlists.GetEmailDashboardStatsHandler(serverCtx),
@@ -456,6 +471,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodGet,
 					Path:    "/lists/:id/subscribers",
 					Handler: adminlists.ListListSubscribersHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/lists/:id/subscribers",
+					Handler: adminlists.AddListSubscriberHandler(serverCtx),
 				},
 				{
 					Method:  http.MethodDelete,

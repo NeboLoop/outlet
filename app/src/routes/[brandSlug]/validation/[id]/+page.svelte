@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import {
 		getValidationJob,
@@ -32,8 +33,7 @@
 		jobStatusVariant,
 		percent,
 		resultsToCSV,
-		downloadFile,
-		formatDate
+		downloadFile
 	} from '$lib/validation';
 
 	let jobId = $derived($page.params.id!);
@@ -247,9 +247,9 @@
 					{:else}
 						<Upload class="h-3.5 w-3.5" /> Upload
 					{/if}
-					· {job.total.toLocaleString()} emails · Created {formatDate(job.created_at)}
+					· {job.total.toLocaleString()} emails · Created {formatDate(job.created_at, 'datetime') || '-'}
 					{#if job.completed_at}
-						· Completed {formatDate(job.completed_at)}
+						· Completed {formatDate(job.completed_at, 'datetime') || '-'}
 					{/if}
 				</p>
 			</div>

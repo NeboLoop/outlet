@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { listOrganizations, updateOrganization, getDashboardStats, type OrgInfo } from '$lib/api';
 	import { Button, Card, Input, Badge, Modal, Alert, LoadingSpinner, SaveButton, Toggle } from '$lib/components/ui';
 	import { Building2 } from '@lucide/svelte';
@@ -102,14 +103,6 @@
 		return maxContacts.toLocaleString();
 	}
 
-	function formatDate(dateString: string): string {
-		if (!dateString) return 'N/A';
-		return new Date(dateString).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		});
-	}
 
 	function getUsageVariant(current: number | undefined, max: number): 'default' | 'success' | 'warning' | 'error' {
 		if (max === 0) return 'default'; // Unlimited
@@ -166,7 +159,7 @@
 									<span class="font-medium text-text">{org.name}</span>
 									<Badge variant="default" size="sm">{org.slug}</Badge>
 								</div>
-								<p class="text-sm text-text-muted">Created {formatDate(org.created_at)}</p>
+								<p class="text-sm text-text-muted">Created {formatDate(org.created_at) || 'N/A'}</p>
 							</div>
 						</div>
 						<div class="text-right">

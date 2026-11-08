@@ -329,6 +329,19 @@ type (
 		Id           string `path:"id"`
 		SubscriberId string `path:"subscriberId"`
 	}
+	// An admin adds one person to a list: active at once, no confirmation email
+	AddListSubscriberRequest {
+		Id    string `path:"id"` // list ID
+		Email string `json:"email"`
+		Name  string `json:"name,optional"`
+	}
+	// A CSV with an email column (and optionally name) to add to a list; the
+	// import worker runs it as an import job
+	ImportListSubscribersRequest {
+		Id       string `path:"id"` // list ID
+		Filename string `json:"filename"`
+		Csv      string `json:"csv"`
+	}
 	// Subscriber Detail for modal view
 	GetSubscriberDetailRequest {
 		Id           string `path:"id"` // list ID
@@ -1642,6 +1655,7 @@ type (
 		PathwayId    string `json:"pathway_id,optional"` // An ses pathway's keys; empty: the platform's
 	}
 	SESQuotaResponse {
+		Configured      bool    `json:"configured"` // false: the platform sends through SMTP, not SES
 		Max24HourSend   float64 `json:"max_24_hour_send"`
 		MaxSendRate     float64 `json:"max_send_rate"`
 		SentLast24Hours float64 `json:"sent_last_24_hours"`
@@ -2390,6 +2404,9 @@ service outlet {
 	@handler ListListSubscribers
 	get /lists/:id/subscribers (ListSubscribersRequest) returns (ListSubscribersResponse)
 
+	@handler AddListSubscriber
+	post /lists/:id/subscribers (AddListSubscriberRequest) returns (Response)
+
 	@handler RemoveListSubscriber
 	delete /lists/:id/subscribers/:subscriberId (RemoveSubscriberRequest) returns (Response)
 
@@ -2472,8 +2489,18 @@ service outlet {
 
 	@handler CancelImportJob
 	post /import-jobs/:id/cancel (CancelImportJobRequest) returns (Response)
-// Note: Actual CSV upload endpoints are registered manually in outlet.go
-// because they require multipart/form-data handling
+}
+
+// CSV import upload: the file comes as JSON text, up to 50 MB
+@server (
+	group:      admin/imports
+	prefix:     /api/admin
+	middleware: Auth
+	maxBytes:   52428800
+)
+service outlet {
+	@handler ImportListSubscribers
+	post /lists/:id/import (ImportListSubscribersRequest) returns (ImportJobInfo)
 }
 
 // Admin Housekeeping

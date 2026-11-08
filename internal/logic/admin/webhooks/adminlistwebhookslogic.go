@@ -2,10 +2,10 @@ package webhooks
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -41,12 +41,7 @@ func (l *AdminListWebhooksLogic) AdminListWebhooks() (resp *types.ListWebhooksRe
 
 	result := make([]types.WebhookInfo, 0, len(webhooks))
 	for _, w := range webhooks {
-		// Decode events from JSON string
-		var events []string
-		if err := json.Unmarshal([]byte(w.Events), &events); err != nil {
-			l.Errorf("Failed to decode events for webhook %s: %v", w.ID, err)
-			events = []string{}
-		}
+		events := webhook.DecodeEvents(w.Events)
 
 		info := types.WebhookInfo{
 			Id:                w.ID,

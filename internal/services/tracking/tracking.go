@@ -18,27 +18,14 @@ var (
 
 // Service handles email tracking operations
 type Service struct {
-	db  *db.Queries
+	db  db.Querier
 	bus *events.Subject // optional; opens and clicks are published here
 }
 
-// New creates a new tracking service. bus may be nil.
-func New(db *db.Queries, bus *events.Subject) *Service {
+// New creates a new tracking service. Pass the *db.Store so unsubscribes are
+// published too. bus may be nil.
+func New(db db.Querier, bus *events.Subject) *Service {
 	return &Service{db: db, bus: bus}
-}
-
-// publish emits an open or click for the email on the event bus.
-func (s *Service) publish(topic, status string, e db.GetEmailByTrackingTokenRow) {
-	if s.bus == nil {
-		return
-	}
-	_ = events.Emit(s.bus, topic, events.EmailEvent{
-		EmailID:   e.ID,
-		ContactID: e.ContactID.String,
-		Email:     e.Email,
-		Status:    status,
-		Timestamp: time.Now(),
-	})
 }
 
 // RecordOpen records an email open by tracking token: a sequence email, or
@@ -61,7 +48,7 @@ func (s *Service) RecordOpen(ctx context.Context, token string) error {
 		if err := s.db.RecordEmailOpen(ctx, emailRecord.ID); err != nil {
 			return err
 		}
-		s.publish(events.TopicEmailOpened, "opened", emailRecord)
+		db.PublishEmail(ctx, s.db, s.bus, events.TopicEmailOpened, db.FromQueue, emailRecord.ID, "")
 		return nil
 	}
 
@@ -72,6 +59,7 @@ func (s *Service) RecordOpen(ctx context.Context, token string) error {
 	if err := s.db.RecordCampaignOpen(ctx, send.ID); err != nil {
 		return err
 	}
+	db.PublishEmail(ctx, s.db, s.bus, events.TopicEmailOpened, db.FromCampaign, send.ID, "")
 	return s.db.RefreshCampaignEngagement(ctx, send.CampaignID)
 }
 
@@ -100,7 +88,7 @@ func (s *Service) RecordClick(ctx context.Context, token, linkURL string) error 
 		if err := s.db.RecordEmailClick(ctx, emailRecord.ID); err != nil {
 			return err
 		}
-		s.publish(events.TopicEmailClicked, "clicked", emailRecord)
+		db.PublishEmail(ctx, s.db, s.bus, events.TopicEmailClicked, db.FromQueue, emailRecord.ID, linkURL)
 		return nil
 	}
 
@@ -111,6 +99,7 @@ func (s *Service) RecordClick(ctx context.Context, token, linkURL string) error 
 	if err := s.db.RecordCampaignClick(ctx, send.ID); err != nil {
 		return err
 	}
+	db.PublishEmail(ctx, s.db, s.bus, events.TopicEmailClicked, db.FromCampaign, send.ID, linkURL)
 	if linkURL != "" {
 		_, _ = s.db.CreateCampaignClick(ctx, db.CreateCampaignClickParams{
 			ID:             uuid.NewString(),

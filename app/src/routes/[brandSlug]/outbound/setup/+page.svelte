@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import {
 		getOutboundOverview,
 		setOutboundEnabled,
@@ -16,7 +17,7 @@
 	import { Button, Alert, LoadingSpinner, Badge, Input, Textarea, Toggle, Select, SlideForm } from '$lib/components/ui';
 	import { Plus, Check, X, Copy } from '@lucide/svelte';
 	import { page } from '$app/stores';
-	import { errorMessage, when } from '../shared';
+	import { errorMessage } from '../shared';
 
 	let brandSlug = $derived($page.params.brandSlug);
 
@@ -499,7 +500,7 @@
 											<span class="text-xs text-error block mt-1">Missing: {d.check.missing.join(', ')}</span>
 										{/if}
 									</td>
-									<td class="hidden sm:table-cell text-text-muted whitespace-nowrap">{when(d.checked_at)}</td>
+									<td class="hidden sm:table-cell text-text-muted whitespace-nowrap">{formatDate(d.checked_at, 'datetime')}</td>
 									<td class="text-right">
 										<Button type="ghost" size="xs" onclick={() => check(d.id)} disabled={checking !== ''}>
 											{checking === d.id ? 'Checking...' : 'Check'}

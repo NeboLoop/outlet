@@ -49,6 +49,10 @@ type ServiceContext struct {
 	// Email validation
 	SignalNet  *signalnet.Client // nil when Signal Network is not configured
 	Validation *validation.Service
+
+	// UploadDir holds uploaded files waiting for a worker (CSV imports), next
+	// to the database
+	UploadDir string
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -128,9 +132,11 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		events.WithReplay(100),
 	)
 	log.Printf("Event bus initialized")
+	// The store publishes contact and email events from the writes that make them
+	store.SetEvents(eventSubject)
 
 	// Initialize Tracking service (publishes opens and clicks on the event bus)
-	trackingService := tracking.New(store.Queries, eventSubject)
+	trackingService := tracking.New(store, eventSubject)
 
 	// Initialize and start Webhook Dispatcher for outbound webhook delivery
 	webhookDispatcher := webhook.NewDispatcher(store.Queries, eventSubject)
@@ -161,6 +167,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	return &ServiceContext{
 		Config:            c,
 		DB:                store,
+		UploadDir:         filepath.Join(dbDir, "uploads"),
 		Auth:              middleware.NewAuthMiddleware(c.Auth.AccessSecret, store).Handle,
 		APIKeyAuth:        apiKeyMiddleware.Handle,
 		APIKeyMiddleware:  apiKeyMiddleware,

@@ -2,9 +2,14 @@ package users
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"net/mail"
+	"strings"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -28,12 +33,17 @@ func NewUpdateUserLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Update
 }
 
 func (l *UpdateUserLogic) UpdateUser(req *types.UpdateUserRequest) (resp *types.UserInfo, err error) {
+	// Only a super admin changes people, and nobody holds a role above it, so
+	// nobody can raise their own role.
 	if _, err := access.Require(l.ctx, l.svcCtx.DB, "", access.SuperAdmin); err != nil {
 		return nil, err
 	}
 
 	// Get current user to preserve existing values
 	currentUser, err := l.svcCtx.DB.GetUserByID(l.ctx, req.Id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errorx.NewNotFoundError("User not found.")
+	}
 	if err != nil {
 		l.Errorf("Failed to get user: %v", err)
 		return nil, err
@@ -44,16 +54,38 @@ func (l *UpdateUserLogic) UpdateUser(req *types.UpdateUserRequest) (resp *types.
 	if name == "" {
 		name = currentUser.Name
 	}
+	role := currentUser.Role
+	if req.Role != "" {
+		if !access.PlatformRole(req.Role) {
+			return nil, errorx.NewBadRequestError("A role is super_admin or " + access.PlatformUser + ".")
+		}
+		role = req.Role
+	}
+	email := currentUser.Email
+	if e := strings.TrimSpace(req.Email); e != "" && !strings.EqualFold(e, currentUser.Email) {
+		if addr, err := mail.ParseAddress(e); err != nil || addr.Address != e {
+			return nil, errorx.NewBadRequestError("Enter a valid email address.")
+		}
+		if other, err := l.svcCtx.DB.GetUserByEmail(l.ctx, e); err == nil && other.ID != currentUser.ID {
+			return nil, errorx.NewBadRequestError("Another user has this email address.")
+		}
+		email = e
+	}
 
 	// Update user in database
-	err = l.svcCtx.DB.UpdateUser(l.ctx, db.UpdateUserParams{
+	n, err := l.svcCtx.DB.UpdateUser(l.ctx, db.UpdateUserParams{
 		ID:     req.Id,
 		Name:   name,
+		Email:  email,
+		Role:   role,
 		Status: currentUser.Status, // Keep existing status
 	})
 	if err != nil {
 		l.Errorf("Failed to update user: %v", err)
 		return nil, err
+	}
+	if n == 0 {
+		return nil, errorx.NewBadRequestError("This is the last super admin. Make someone else a super admin first.")
 	}
 
 	// Update password if provided

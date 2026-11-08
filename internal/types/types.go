@@ -12,6 +12,12 @@ type AddContactTagsRequest struct {
 	Tags []string `json:"tags"`
 }
 
+type AddListSubscriberRequest struct {
+	Id    string `path:"id"` // list ID
+	Email string `json:"email"`
+	Name  string `json:"name,optional"`
+}
+
 type AddSuppressedEmailRequest struct {
 	Email  string `json:"email"`
 	Reason string `json:"reason,optional"`
@@ -953,6 +959,12 @@ type ImportJobInfo struct {
 	CreatedAt     string `json:"created_at"`
 }
 
+type ImportListSubscribersRequest struct {
+	Id       string `path:"id"` // list ID
+	Filename string `json:"filename"`
+	Csv      string `json:"csv"`
+}
+
 type ListBackupsRequest struct {
 	Page     int `form:"page,optional,default=1"`
 	PageSize int `form:"page_size,optional,default=20"`
@@ -1740,6 +1752,7 @@ type SDKContactInfo struct {
 }
 
 type SESQuotaResponse struct {
+	Configured      bool    `json:"configured"` // false: the platform sends through SMTP, not SES
 	Max24HourSend   float64 `json:"max_24_hour_send"`
 	MaxSendRate     float64 `json:"max_send_rate"`
 	SentLast24Hours float64 `json:"sent_last_24_hours"`

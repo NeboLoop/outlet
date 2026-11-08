@@ -88,3 +88,24 @@ export function logout(): void {
 		window.location.href = '/auth/login';
 	}
 }
+
+/**
+ * The login page, asked to return to `returnTo` (a path in this app) after
+ * signing in.
+ */
+export function loginPath(returnTo: string): string {
+	const back = returnPath(returnTo);
+	return back === '/' ? '/auth/login' : `/auth/login?redirect=${encodeURIComponent(back)}`;
+}
+
+/**
+ * Where to go after signing in: the `redirect` value when it is a path in
+ * this app, otherwise home. Another site's address is never followed.
+ */
+export function returnPath(redirect: string | null | undefined): string {
+	if (!redirect || !redirect.startsWith('/') || redirect.startsWith('//') || redirect.startsWith('/\\')) {
+		return '/';
+	}
+	if (redirect.startsWith('/auth/login')) return '/';
+	return redirect;
+}

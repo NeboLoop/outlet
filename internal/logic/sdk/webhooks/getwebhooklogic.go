@@ -4,10 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/middleware"
+	webhooksvc "github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -53,7 +53,7 @@ func (l *GetWebhookLogic) GetWebhook(req *types.GetWebhookRequest) (resp *types.
 	info := &types.WebhookInfo{
 		Id:                webhook.ID,
 		Url:               webhook.Url,
-		Events:            strings.Split(webhook.Events, ","),
+		Events:            webhooksvc.DecodeEvents(webhook.Events),
 		Active:            webhook.Active.Valid && webhook.Active.Int64 == 1,
 		CreatedAt:         webhook.CreatedAt.String,
 		DeliveriesTotal:   int(webhook.DeliveriesTotal.Int64),

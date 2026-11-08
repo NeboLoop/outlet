@@ -440,6 +440,15 @@ export function cancelImportJob(params: components.CancelImportJobRequestParams,
 /**
  * @description 
  * @param params
+ * @param req
+ */
+export function importListSubscribers(params: components.ImportListSubscribersRequestParams, req: components.ImportListSubscribersRequest, id: string) {
+	return webapi.post<components.ImportJobInfo>(`/api/admin/lists/${id}/import`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
  */
 export function getEmailDashboardStats(params: components.EmailDashboardStatsRequestParams) {
 	return webapi.get<components.EmailDashboardStatsResponse>(`/api/admin/email-stats`, params)
@@ -507,6 +516,15 @@ export function getListStats(params: components.GetListRequestParams, id: string
  */
 export function listListSubscribers(params: components.ListSubscribersRequestParams, id: string) {
 	return webapi.get<components.ListSubscribersResponse>(`/api/admin/lists/${id}/subscribers`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function addListSubscriber(params: components.AddListSubscriberRequestParams, req: components.AddListSubscriberRequest, id: string) {
+	return webapi.post<components.Response>(`/api/admin/lists/${id}/subscribers`, params, req)
 }
 
 /**

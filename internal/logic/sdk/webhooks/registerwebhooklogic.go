@@ -6,10 +6,10 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/middleware"
+	webhooksvc "github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -41,8 +41,9 @@ func (l *RegisterWebhookLogic) RegisterWebhook(req *types.RegisterWebhookRequest
 		return nil, fmt.Errorf("webhook URL is required")
 	}
 
-	if len(req.Events) == 0 {
-		return nil, fmt.Errorf("at least one event is required")
+	events, err := webhooksvc.EncodeEvents(req.Events)
+	if err != nil {
+		return nil, err
 	}
 
 	secret := req.Secret
@@ -65,7 +66,7 @@ func (l *RegisterWebhookLogic) RegisterWebhook(req *types.RegisterWebhookRequest
 		OrgID:  orgID,
 		Url:    req.Url,
 		Secret: secret,
-		Events: strings.Join(req.Events, ","),
+		Events: events,
 		Active: sql.NullInt64{Int64: active, Valid: true},
 	})
 	if err != nil {
