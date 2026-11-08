@@ -77,7 +77,10 @@ type Querier interface {
 	CountCustomFieldsByList(ctx context.Context, listID int64) (int64, error)
 	CountEmailDesigns(ctx context.Context, orgID string) (int64, error)
 	CountEmailDesignsByCategory(ctx context.Context, arg CountEmailDesignsByCategoryParams) (int64, error)
-	CountInactiveContacts90Days(ctx context.Context, orgID sql.NullString) (int64, error)
+	// Inactive contacts: confirmed, still subscribed, with no open in the opens
+	// window and no click in the clicks window. Count and Delete share the one
+	// predicate, so the preview is what the delete removes.
+	CountInactiveContacts(ctx context.Context, arg CountInactiveContactsParams) (int64, error)
 	CountListSubscribers(ctx context.Context, arg CountListSubscribersParams) (int64, error)
 	// Bounces, spam blocks or complaints on one mailbox since a time.
 	CountMailboxRepliesSince(ctx context.Context, arg CountMailboxRepliesSinceParams) (int64, error)
@@ -209,7 +212,7 @@ type Querier interface {
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteFromSuppressionList(ctx context.Context, arg DeleteFromSuppressionListParams) error
 	DeleteImportJob(ctx context.Context, arg DeleteImportJobParams) error
-	DeleteInactiveContacts90Days(ctx context.Context, orgID sql.NullString) (int64, error)
+	DeleteInactiveContacts(ctx context.Context, arg DeleteInactiveContactsParams) (int64, error)
 	DeleteMCPAPIKey(ctx context.Context, id string) error
 	DeleteMCPSession(ctx context.Context, sessionID string) error
 	DeleteOldBackups(ctx context.Context, daysAgo sql.NullString) error

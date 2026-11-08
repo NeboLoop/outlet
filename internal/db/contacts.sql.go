@@ -54,20 +54,50 @@ func (q *Queries) CountContactsByStatus(ctx context.Context, status sql.NullStri
 	return count, err
 }
 
-const countInactiveContacts90Days = `-- name: CountInactiveContacts90Days :one
+const countInactiveContacts = `-- name: CountInactiveContacts :one
+
 SELECT COUNT(*) as count FROM contacts c
 WHERE c.org_id = ?1
-AND c.email_verified = 1
-AND c.unsubscribed_at IS NULL
-AND NOT EXISTS (
-    SELECT 1 FROM email_queue eq
-    WHERE eq.contact_id = c.id
-    AND eq.opened_at > datetime('now', '-90 days')
-)
+    AND c.email_verified = 1
+    AND c.unsubscribed_at IS NULL
+    -- A contact must have been here for the whole window to have had the
+    -- chance to open, or to click.
+    AND datetime(c.created_at) < datetime('now', ?2)
+    AND datetime(c.created_at) < datetime('now', ?3)
+    -- Opens, on every kind of email the brand sends: campaign sends, the
+    -- email queue (sequence and outreach emails) and transactional sends.
+    AND NOT EXISTS (SELECT 1 FROM campaign_sends cs WHERE cs.contact_id = c.id
+        AND datetime(cs.opened_at) >= datetime('now', ?2))
+    AND NOT EXISTS (SELECT 1 FROM email_queue eq WHERE eq.contact_id = c.id
+        AND datetime(eq.opened_at) >= datetime('now', ?2))
+    AND NOT EXISTS (SELECT 1 FROM transactional_sends ts WHERE ts.org_id = c.org_id
+        AND (ts.contact_id = c.id OR lower(ts.to_email) = lower(c.email))
+        AND datetime(ts.opened_at) >= datetime('now', ?2))
+    -- Clicks, on the same emails, and every click recorded per link.
+    AND NOT EXISTS (SELECT 1 FROM campaign_sends cs WHERE cs.contact_id = c.id
+        AND datetime(cs.clicked_at) >= datetime('now', ?3))
+    AND NOT EXISTS (SELECT 1 FROM campaign_clicks cc WHERE cc.contact_id = c.id
+        AND datetime(cc.clicked_at) >= datetime('now', ?3))
+    AND NOT EXISTS (SELECT 1 FROM email_queue eq WHERE eq.contact_id = c.id
+        AND datetime(eq.clicked_at) >= datetime('now', ?3))
+    AND NOT EXISTS (SELECT 1 FROM email_clicks ec WHERE ec.contact_id = c.id
+        AND datetime(ec.clicked_at) >= datetime('now', ?3))
+    AND NOT EXISTS (SELECT 1 FROM transactional_sends ts WHERE ts.org_id = c.org_id
+        AND (ts.contact_id = c.id OR lower(ts.to_email) = lower(c.email))
+        AND datetime(ts.clicked_at) >= datetime('now', ?3))
 `
 
-func (q *Queries) CountInactiveContacts90Days(ctx context.Context, orgID sql.NullString) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countInactiveContacts90Days, orgID)
+type CountInactiveContactsParams struct {
+	OrgID          sql.NullString `json:"org_id"`
+	OpensModifier  interface{}    `json:"opens_modifier"`
+	ClicksModifier interface{}    `json:"clicks_modifier"`
+}
+
+// Inactive contacts: confirmed, still subscribed, with no open in the opens
+// window and no click in the clicks window. Count and Delete share the one
+// predicate, so the preview is what the delete removes.
+func (q *Queries) CountInactiveContacts(ctx context.Context, arg CountInactiveContactsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countInactiveContacts, arg.OrgID, arg.OpensModifier, arg.ClicksModifier)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -154,24 +184,49 @@ func (q *Queries) DeleteContact(ctx context.Context, id string) error {
 	return err
 }
 
-const deleteInactiveContacts90Days = `-- name: DeleteInactiveContacts90Days :execrows
+const deleteInactiveContacts = `-- name: DeleteInactiveContacts :execrows
 DELETE FROM contacts
-WHERE contacts.org_id = ?1
-AND contacts.id IN (
+WHERE contacts.id IN (
     SELECT c.id FROM contacts c
     WHERE c.org_id = ?1
     AND c.email_verified = 1
     AND c.unsubscribed_at IS NULL
-    AND NOT EXISTS (
-        SELECT 1 FROM email_queue eq
-        WHERE eq.contact_id = c.id
-        AND eq.opened_at > datetime('now', '-90 days')
-    )
+    -- A contact must have been here for the whole window to have had the
+    -- chance to open, or to click.
+    AND datetime(c.created_at) < datetime('now', ?2)
+    AND datetime(c.created_at) < datetime('now', ?3)
+    -- Opens, on every kind of email the brand sends: campaign sends, the
+    -- email queue (sequence and outreach emails) and transactional sends.
+    AND NOT EXISTS (SELECT 1 FROM campaign_sends cs WHERE cs.contact_id = c.id
+        AND datetime(cs.opened_at) >= datetime('now', ?2))
+    AND NOT EXISTS (SELECT 1 FROM email_queue eq WHERE eq.contact_id = c.id
+        AND datetime(eq.opened_at) >= datetime('now', ?2))
+    AND NOT EXISTS (SELECT 1 FROM transactional_sends ts WHERE ts.org_id = c.org_id
+        AND (ts.contact_id = c.id OR lower(ts.to_email) = lower(c.email))
+        AND datetime(ts.opened_at) >= datetime('now', ?2))
+    -- Clicks, on the same emails, and every click recorded per link.
+    AND NOT EXISTS (SELECT 1 FROM campaign_sends cs WHERE cs.contact_id = c.id
+        AND datetime(cs.clicked_at) >= datetime('now', ?3))
+    AND NOT EXISTS (SELECT 1 FROM campaign_clicks cc WHERE cc.contact_id = c.id
+        AND datetime(cc.clicked_at) >= datetime('now', ?3))
+    AND NOT EXISTS (SELECT 1 FROM email_queue eq WHERE eq.contact_id = c.id
+        AND datetime(eq.clicked_at) >= datetime('now', ?3))
+    AND NOT EXISTS (SELECT 1 FROM email_clicks ec WHERE ec.contact_id = c.id
+        AND datetime(ec.clicked_at) >= datetime('now', ?3))
+    AND NOT EXISTS (SELECT 1 FROM transactional_sends ts WHERE ts.org_id = c.org_id
+        AND (ts.contact_id = c.id OR lower(ts.to_email) = lower(c.email))
+        AND datetime(ts.clicked_at) >= datetime('now', ?3))
 )
 `
 
-func (q *Queries) DeleteInactiveContacts90Days(ctx context.Context, orgID sql.NullString) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteInactiveContacts90Days, orgID)
+type DeleteInactiveContactsParams struct {
+	OrgID          sql.NullString `json:"org_id"`
+	OpensModifier  interface{}    `json:"opens_modifier"`
+	ClicksModifier interface{}    `json:"clicks_modifier"`
+}
+
+func (q *Queries) DeleteInactiveContacts(ctx context.Context, arg DeleteInactiveContactsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteInactiveContacts, arg.OrgID, arg.OpensModifier, arg.ClicksModifier)
 	if err != nil {
 		return 0, err
 	}
