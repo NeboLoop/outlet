@@ -558,10 +558,6 @@ type DomainIdentityInfo struct {
 	CreatedAt          string      `json:"created_at"`
 }
 
-type DownloadBackupRequest struct {
-	Id string `path:"id"`
-}
-
 type EmailAttachment struct {
 	Filename    string `json:"filename"`              // Attachment file name
 	ContentType string `json:"content_type,optional"` // MIME type; defaults to application/octet-stream

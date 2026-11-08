@@ -121,11 +121,6 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 				},
 				{
 					Method:  http.MethodGet,
-					Path:    "/:id/download",
-					Handler: adminbackup.DownloadBackupHandler(serverCtx),
-				},
-				{
-					Method:  http.MethodGet,
 					Path:    "/settings",
 					Handler: adminbackup.GetBackupSettingsHandler(serverCtx),
 				},

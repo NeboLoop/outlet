@@ -585,11 +585,6 @@ export interface DomainIdentityInfo {
 	created_at: string
 }
 
-export interface DownloadBackupRequest {
-}
-export interface DownloadBackupRequestParams {
-}
-
 export interface EmailAttachment {
 	filename: string // Attachment file name
 	content_type?: string // MIME type; defaults to application/octet-stream

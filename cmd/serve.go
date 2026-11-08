@@ -22,6 +22,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/config"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/handler"
+	adminbackup "github.com/outlet-sh/outlet/internal/logic/admin/backup"
 	publiclogic "github.com/outlet-sh/outlet/internal/logic/public"
 	outletmcp "github.com/outlet-sh/outlet/internal/mcp"
 	mcpoauth "github.com/outlet-sh/outlet/internal/mcp/oauth"
@@ -196,6 +197,9 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	// WebSocket endpoint for real-time updates
 	registerWebSocketRoute(server, ctx)
+
+	// Backup download (streams the file, which a generated handler can't)
+	registerBackupDownloadRoute(server, ctx)
 
 	// Start email worker in background
 	emailWorker := workers.StartEmailWorker(ctx)
@@ -952,4 +956,20 @@ func registerWebSocketRoute(server *rest.Server, ctx *svc.ServiceContext) {
 		Handler: outletws.Handler(ctx.WebSocketHub, ctx.Config.Auth.AccessSecret),
 	})
 	fmt.Println("WebSocket endpoint registered at /ws")
+}
+
+// registerBackupDownloadRoute adds the backup file download. It streams the
+// file, so it is written here rather than in outlet.api, whose handlers
+// answer with JSON. It sits behind the admin auth middleware like the other
+// backup routes; the handler lets only a super admin through. The timeout
+// matches the HTTPS server's write timeout.
+func registerBackupDownloadRoute(server *rest.Server, ctx *svc.ServiceContext) {
+	server.AddRoutes(
+		rest.WithMiddlewares([]rest.Middleware{ctx.Auth}, rest.Route{
+			Method:  http.MethodGet,
+			Path:    "/api/admin/backup/:id/download",
+			Handler: adminbackup.DownloadHandler(ctx),
+		}),
+		rest.WithTimeout(30*time.Second),
+	)
 }

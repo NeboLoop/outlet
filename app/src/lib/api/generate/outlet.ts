@@ -81,14 +81,6 @@ export function deleteBackup(params: components.DeleteBackupRequestParams, id: s
 
 /**
  * @description 
- * @param params
- */
-export function downloadBackup(params: components.DownloadBackupRequestParams, id: string) {
-	return webapi.get<null>(`/api/admin/backup/${id}/download`, params)
-}
-
-/**
- * @description 
  */
 export function getBackupSettings() {
 	return webapi.get<components.BackupSettingsResponse>(`/api/admin/backup/settings`)
