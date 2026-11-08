@@ -10,6 +10,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -99,6 +100,16 @@ func (l *UpdateEmailSettingsLogic) UpdateEmailSettings(req *types.UpdateEmailSet
 	}
 
 	// Legacy SMTP settings (deprecated but still supported)
+
+	// SMTP settings are saved only once they connect and log in, so they
+	// can't be saved in a state that fails on the first email.
+	if req.SmtpHost != "" || req.SmtpPort > 0 || req.SmtpUser != "" || req.SmtpPassword != "" {
+		if err := l.svcCtx.EmailService.CheckPlatformSMTP(l.ctx, email.MailboxLogin{
+			Host: req.SmtpHost, Port: req.SmtpPort, Username: req.SmtpUser, Password: req.SmtpPassword,
+		}); err != nil {
+			return nil, err
+		}
+	}
 
 	// Save SMTP host (non-sensitive)
 	if req.SmtpHost != "" {

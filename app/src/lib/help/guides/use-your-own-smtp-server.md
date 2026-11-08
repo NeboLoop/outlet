@@ -21,7 +21,7 @@ Every brand that sends through "This server's email settings" uses this.
    - **Port**: usually 587.
    - **Username**: from the relay.
    - **Password / API Key**: from the relay.
-4. Press **Save SMTP Settings**.
+4. Press **Save SMTP Settings**. Outlet connects to the relay and signs in before saving, so settings that can't send are never saved. A username and password are required: Outlet doesn't send through a relay that takes mail without a login.
 
 **Common providers**
 
@@ -55,7 +55,7 @@ Most relays, like Amazon SES, forbid cold email in their terms and can close you
 
 ## Common problems
 
-- **Mail doesn't go out, or authentication fails**: check the username and password at the relay. For SendGrid the username is literally `apikey`.
-- **Connection refused or times out**: check the host and port. Some hosting companies block port 25; use 587.
+- **"Couldn't connect and log in to ..." when saving**: the relay turned the sign-in down or couldn't be reached. Check the username and password at the relay (for SendGrid the username is literally `apikey`), then the host and port. Some hosting companies block port 25; use 587. Nothing is saved until it works.
+- **"Enter the SMTP username and password"**: fill in both. Outlet sends through a relay only with a login.
 - **"ENCRYPTION_KEY is not set on this server, so it can't store credentials"**: whoever installed Outlet needs to set `ENCRYPTION_KEY` on the server.
 - **Mail lands in spam**: the relay's SPF and DKIM records are probably missing. Add them at your DNS host.

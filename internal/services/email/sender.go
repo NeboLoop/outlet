@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/services/crypto"
 )
 
@@ -175,6 +176,41 @@ func (s *Service) getGlobalSMTPConfig(ctx context.Context) (*SMTPConfig, error) 
 	}
 
 	return config, nil
+}
+
+// CheckPlatformSMTP tests the platform SMTP settings about to be saved: it
+// connects and logs in, the way a mailbox is checked (CheckMailboxLogin). An
+// empty field of l keeps the stored value, as saving does. The platform sends
+// through SMTP only with a username and password, so settings without them
+// are refused, as is a login the server turns down.
+func (s *Service) CheckPlatformSMTP(ctx context.Context, l MailboxLogin) error {
+	stored, err := s.getGlobalSMTPConfig(ctx)
+	if err != nil {
+		return err
+	}
+	l.Email = stored.FromAddress
+	if l.Host == "" {
+		l.Host = stored.Host
+	}
+	if l.Port == 0 {
+		l.Port = stored.Port
+	}
+	if l.Username == "" {
+		l.Username = stored.User
+	}
+	if l.Password == "" {
+		l.Password = stored.Password
+	}
+	if l.Host == "" || l.Port <= 0 {
+		return errorx.NewBadRequestError("Enter the SMTP server and port.")
+	}
+	if l.Username == "" || l.Password == "" {
+		return errorx.NewBadRequestError("Enter the SMTP username and password. Outlet sends through an SMTP server only with a login.")
+	}
+	if err := CheckMailboxLogin(l); err != nil {
+		return errorx.NewBadRequestError(fmt.Sprintf("Couldn't connect and log in to %s:%d: %v. Check the server, port, username and password.", l.Host, l.Port, err))
+	}
+	return nil
 }
 
 // PlatformEmailStatus says what the platform's email settings can do: send
