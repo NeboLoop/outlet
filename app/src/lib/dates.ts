@@ -24,19 +24,28 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const HAS_ZONE = /(Z|[+-]\d{2}:?\d{2})$/i;
 
 /**
+ * parseDate reads a server time (UTC when it names no zone) as a Date, or
+ * null when it isn't one.
+ */
+export function parseDate(value: string | null | undefined): Date | null {
+	if (!value) return null;
+	let iso = value.trim().replace(' ', 'T');
+	if (DATE_ONLY.test(iso)) iso += 'T00:00:00';
+	if (!HAS_ZONE.test(iso)) iso += 'Z';
+	const d = new Date(iso);
+	return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
  * formatDate shows a server time in the viewer's time zone. It returns ''
  * for no value, and the value itself when it isn't a time.
  */
 export function formatDate(value: string | null | undefined, style: DateStyle = 'date'): string {
 	if (!value) return '';
-	const text = value.trim();
-	if (DATE_ONLY.test(text)) {
-		const day = new Date(`${text}T00:00:00Z`);
-		return day.toLocaleString('en-US', { ...STYLES[style === 'day' ? 'day' : 'date'], timeZone: 'UTC' });
+	const d = parseDate(value);
+	if (!d) return value;
+	if (DATE_ONLY.test(value.trim())) {
+		return d.toLocaleString('en-US', { ...STYLES[style === 'day' ? 'day' : 'date'], timeZone: 'UTC' });
 	}
-	let iso = text.replace(' ', 'T');
-	if (!HAS_ZONE.test(iso)) iso += 'Z';
-	const d = new Date(iso);
-	if (Number.isNaN(d.getTime())) return value;
 	return d.toLocaleString('en-US', STYLES[style]);
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatDate } from '$lib/dates';
+	import { formatDate, parseDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -32,7 +32,6 @@
 	let busy = $state(false);
 	let scheduleAt = $state('');
 
-	let editable = $derived(campaign?.status === 'draft' || campaign?.status === 'scheduled');
 	let audience = $derived(
 		lists.filter((l) => campaign?.list_ids?.includes(l.id)).reduce((sum, l) => sum + l.subscriber_count, 0)
 	);
@@ -41,10 +40,18 @@
 		load(id);
 	});
 
+	// Sent now (or its time has come): the scheduler starts it within seconds,
+	// so it's starting, not waiting for a time
+	let starting = $derived(
+		campaign?.status === 'scheduled' && (parseDate(campaign.scheduled_at)?.getTime() ?? 0) <= Date.now()
+	);
+	let shownStatus = $derived(starting ? 'starting' : (campaign?.status ?? ''));
+	let editable = $derived((campaign?.status === 'draft' || campaign?.status === 'scheduled') && !starting);
+
 	// Refresh while the campaign is going out, so progress shows live
 	$effect(() => {
 		if (campaign?.status !== 'sending' && campaign?.status !== 'scheduled') return;
-		const timer = setInterval(() => refresh(id), 5000);
+		const timer = setInterval(() => refresh(id), starting || campaign?.status === 'sending' ? 2000 : 5000);
 		return () => clearInterval(timer);
 	});
 
@@ -125,6 +132,7 @@
 	const statusVariant: Record<string, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
 		draft: 'default',
 		scheduled: 'info',
+		starting: 'warning',
 		sending: 'warning',
 		sent: 'success',
 		paused: 'warning',
@@ -163,10 +171,12 @@
 			<div class="min-w-0">
 				<div class="flex items-center gap-2 flex-wrap">
 					<h1 class="text-2xl font-semibold text-text truncate">{campaign.name}</h1>
-					<Badge variant={statusVariant[campaign.status] || 'default'} size="sm">{campaign.status}</Badge>
+					<Badge variant={statusVariant[shownStatus] || 'default'} size="sm">{shownStatus}</Badge>
 				</div>
 				<p class="mt-1 text-sm text-text-muted truncate">{campaign.subject}</p>
-				{#if campaign.status === 'scheduled' && campaign.scheduled_at}
+				{#if starting}
+					<p class="mt-1 text-sm text-text-muted">Going out now</p>
+				{:else if campaign.status === 'scheduled' && campaign.scheduled_at}
 					<p class="mt-1 text-sm text-text-muted">Goes out {formatDate(campaign.scheduled_at, 'datetime')}</p>
 				{:else if campaign.completed_at}
 					<p class="mt-1 text-sm text-text-muted">Finished {formatDate(campaign.completed_at, 'datetime')}</p>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDate } from './dates';
+import { formatDate, parseDate } from './dates';
 
 // Run 7 hours behind UTC, the way the bug showed: a UTC time read as local
 // time was 7 hours off. Node applies a TZ change at once.
@@ -40,5 +40,13 @@ describe('formatDate', () => {
 		expect(formatDate('2026-11-08 19:14:00', 'date')).toMatch(/^Nov \d{1,2}, 2026$/);
 		expect(formatDate('2026-11-08 19:14:00', 'datetime')).toMatch(/^Nov \d{1,2}, 2026, \d{1,2}:14\s[AP]M$/);
 		expect(formatDate('2026-11-08 19:14:00', 'day')).toMatch(/^Nov \d{1,2}$/);
+	});
+});
+
+describe('parseDate', () => {
+	it('reads a time without a zone as UTC', () => {
+		expect(parseDate('2026-11-08 19:14:00')?.toISOString()).toBe('2026-11-08T19:14:00.000Z');
+		expect(parseDate('nope')).toBeNull();
+		expect(parseDate(undefined)).toBeNull();
 	});
 });
