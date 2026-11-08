@@ -2559,6 +2559,10 @@ service outlet {
 
 	@handler GetTransactionalEmailStats
 	get /transactional-emails/:id/stats (GetTransactionalEmailRequest) returns (TransactionalStatsResponse)
+
+	@doc "Send a test transactional email as the signed-in member, through the same send as the SDK route"
+	@handler SendTransactionalTest
+	post /transactional-emails/test (SendEmailRequest) returns (SendEmailResponse)
 }
 
 // Admin Organizations

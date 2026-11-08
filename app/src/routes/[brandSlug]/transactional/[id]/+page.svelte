@@ -4,6 +4,7 @@
 		getTransactionalEmail,
 		updateTransactionalEmail,
 		getTransactionalEmailStats,
+		sendTransactionalTest,
 		getOrganizationBySlug,
 		type TransactionalEmailInfo,
 		type TransactionalStatsResponse,
@@ -11,7 +12,6 @@
 	} from '$lib/api';
 	import { Button, Alert, LoadingSpinner, Input, Textarea, HtmlEditor, Card, Badge } from '$lib/components/ui';
 	import { ArrowLeft, Send, Copy, Check } from '@lucide/svelte';
-	import { sendWithBrandKey } from '$lib/sendTest';
 
 	let id = $derived($page.params.id ?? '');
 	let basePath = $derived(`/${$page.params.brandSlug}`);
@@ -142,15 +142,15 @@
 		}
 	}
 
-	// Sends the saved template through the same API your apps use, so a test
-	// proves the slug, key, sender and suppression rules all work
+	// Sends the saved template through the same send as the API your apps
+	// use, so a test proves the slug, sender and suppression rules all work
 	async function sendTest() {
 		if (!testTo) return;
 		testing = true;
 		error = '';
 		notice = '';
 		try {
-			await sendWithBrandKey($page.params.brandSlug as string, { to: testTo, template_slug: slug, variables: samples });
+			await sendTransactionalTest({ to: testTo, template_slug: slug, variables: samples });
 			notice = `Test sent to ${testTo}`;
 		} catch (err: any) {
 			error = err.message || 'Test send failed';

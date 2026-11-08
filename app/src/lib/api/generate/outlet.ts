@@ -1080,6 +1080,14 @@ export function getTransactionalEmailStats(params: components.GetTransactionalEm
 }
 
 /**
+ * @description "Send a test transactional email as the signed-in member, through the same send as the SDK route"
+ * @param req
+ */
+export function sendTransactionalTest(req: components.SendEmailRequest) {
+	return webapi.post<components.SendEmailResponse>(`/api/admin/transactional-emails/test`, req)
+}
+
+/**
  * @description 
  */
 export function listUsers() {

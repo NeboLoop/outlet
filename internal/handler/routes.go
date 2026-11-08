@@ -875,6 +875,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/transactional-emails/:id/stats",
 					Handler: admintransactional.GetTransactionalEmailStatsHandler(serverCtx),
 				},
+				{
+					// Send a test transactional email as the signed-in member, through the same send as the SDK route
+					Method:  http.MethodPost,
+					Path:    "/transactional-emails/test",
+					Handler: admintransactional.SendTransactionalTestHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/admin"),
