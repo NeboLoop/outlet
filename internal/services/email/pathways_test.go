@@ -238,6 +238,64 @@ func TestPoolPicksLeastUsedMailbox(t *testing.T) {
 	assert.False(t, mb.DailyLimit.Valid)
 }
 
+// A domain moves between the brand's pathways only where its purpose fits;
+// an outreach domain takes its mailboxes, and their day's sends, along.
+func TestMoveDomain(t *testing.T) {
+	h := newPathwayHarness(t)
+	ctx := context.Background()
+	relay := h.relay(t, Limits{}, "transactional")
+	poolA, err := h.s.CreatePathway(ctx, "org-a", PathwayInput{Provider: ProviderMailboxes})
+	require.NoError(t, err)
+	poolB, err := h.s.CreatePathway(ctx, "org-a", PathwayInput{Name: "Second pool", Provider: ProviderMailboxes, Kinds: []string{"outreach"}})
+	require.NoError(t, err)
+	_, err = h.store.GetDB().Exec(`INSERT INTO domain_identities (id, org_id, domain, purpose, pathway_id) VALUES ('d-out', 'org-a', 'getexample.com', 'outreach', ?)`, poolA.ID)
+	require.NoError(t, err)
+	pw, err := h.s.cryptoSvc.EncryptString("pw")
+	require.NoError(t, err)
+	_, err = h.store.GetDB().Exec(`INSERT INTO mailboxes (id, org_id, domain_id, email, from_name, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc)
+		VALUES ('mb-1', 'org-a', 'd-out', 'sam@getexample.com', 'Sam', '127.0.0.1', 1, 'sam', ?, '127.0.0.1', 1, 'sam', ?)`, pw, pw)
+	require.NoError(t, err)
+	_, err = h.store.GetDB().Exec(`INSERT INTO send_counts (pathway_id, sender_id, day, n) VALUES (?, 'mb-1', '2026-03-02', 4), (?, 'mb-1', '2026-03-02', 1)`, poolA.ID, poolB.ID)
+	require.NoError(t, err)
+
+	_, err = h.s.MoveDomain(ctx, "org-a", "d-out", relay.ID)
+	assert.ErrorContains(t, err, "outreach domains belong to a mailbox pool")
+	_, err = h.s.MoveDomain(ctx, "org-a", "d-a", poolB.ID)
+	assert.ErrorContains(t, err, "sending domains belong to a platform, ses or smtp pathway")
+	_, err = h.s.MoveDomain(ctx, "org-b", "d-out", poolB.ID)
+	assert.ErrorContains(t, err, "no such domain", "another brand's domain")
+	assert.ErrorContains(t, h.s.DeletePathway(ctx, "org-a", poolA.ID), "move them to another pathway first")
+
+	to, err := h.s.MoveDomain(ctx, "org-a", "d-out", poolB.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Second pool", to.Name)
+	got, err := h.store.GetMailboxPathway(ctx, "mb-1")
+	require.NoError(t, err)
+	assert.Equal(t, poolB.ID, got.ID, "the mailbox moved with its domain")
+	n, err := h.store.SumSendCountsSince(ctx, db.SumSendCountsSinceParams{PathwayID: poolB.ID, SenderID: "mb-1", SinceDay: "2026-03-02"})
+	require.NoError(t, err)
+	assert.EqualValues(t, 5, n, "the day's sends count in the new pool")
+	n, err = h.store.SumSendCountsSince(ctx, db.SumSendCountsSinceParams{PathwayID: poolA.ID, SenderID: "mb-1", SinceDay: "2026-03-02"})
+	require.NoError(t, err)
+	assert.Zero(t, n)
+
+	// The emptied pool can go now.
+	require.NoError(t, h.s.DeletePathway(ctx, "org-a", poolA.ID))
+
+	// A sending domain moves between sending pathways.
+	platform, err := h.s.CreatePathway(ctx, "org-a", PathwayInput{Provider: ProviderPlatform})
+	require.NoError(t, err)
+	_, err = h.s.MoveDomain(ctx, "org-a", "d-a", platform.ID)
+	require.NoError(t, err)
+	views, err := h.s.ListPathways(ctx, "org-a")
+	require.NoError(t, err)
+	for _, v := range views {
+		if v.ID == platform.ID {
+			assert.Equal(t, []PathwayDomain{{ID: "d-a", Domain: "a.example", Purpose: "sending"}}, v.Domains)
+		}
+	}
+}
+
 // The health thresholds are the pathway's.
 func TestHealthPause(t *testing.T) {
 	p := db.SendingPathway{PauseBounceRate: 0.03, PauseMinBounces: 2, PauseSpamBlocks: 2, PauseComplaints: 2}

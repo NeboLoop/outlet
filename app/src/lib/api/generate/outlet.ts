@@ -841,6 +841,15 @@ export function updateOutboundSettings(req: components.OutboundSettingsRequest) 
  * @param params
  * @param req
  */
+export function moveSendingDomain(params: components.MoveDomainRequestParams, req: components.MoveDomainRequest, id: string) {
+	return webapi.put<components.Response>(`/api/admin/sending/domains/${id}/pathway`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
 export function setMailboxDailyLimit(params: components.MailboxDailyLimitRequestParams, req: components.MailboxDailyLimitRequest, id: string) {
 	return webapi.put<components.Response>(`/api/admin/sending/mailboxes/${id}/daily-limit`, params, req)
 }

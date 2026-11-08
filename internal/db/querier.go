@@ -32,6 +32,9 @@ type Querier interface {
 	CancelOpenOutreachForContact(ctx context.Context, contactID sql.NullString) error
 	CancelPendingEmailsForContactSequence(ctx context.Context, arg CancelPendingEmailsForContactSequenceParams) error
 	CancelValidationJob(ctx context.Context, arg CancelValidationJobParams) (int64, error)
+	// The send counts of a moved domain's mailboxes go to their new pool, so a
+	// move never resets a mailbox's day.
+	CarryDomainSendCounts(ctx context.Context, arg CarryDomainSendCountsParams) error
 	CheckCampaignSendExists(ctx context.Context, arg CheckCampaignSendExistsParams) (int64, error)
 	CheckEmailExists(ctx context.Context, email string) (int64, error)
 	// Check if an event has already been processed by a rule
@@ -200,6 +203,7 @@ type Querier interface {
 	DeleteCustomFieldsByList(ctx context.Context, listID int64) error
 	DeleteDomainIdentity(ctx context.Context, id string) error
 	DeleteDomainIdentityByOrg(ctx context.Context, arg DeleteDomainIdentityByOrgParams) error
+	DeleteDomainSendCounts(ctx context.Context, arg DeleteDomainSendCountsParams) error
 	DeleteEmailBounce(ctx context.Context, email string) error
 	DeleteEmailComplaint(ctx context.Context, email string) error
 	DeleteEmailDesign(ctx context.Context, arg DeleteEmailDesignParams) error
@@ -640,6 +644,9 @@ type Querier interface {
 	ScheduleCampaign(ctx context.Context, arg ScheduleCampaignParams) (EmailCampaign, error)
 	SetCampaignRecipientsCount(ctx context.Context, arg SetCampaignRecipientsCountParams) error
 	SetContactVerificationToken(ctx context.Context, arg SetContactVerificationTokenParams) error
+	// Moves a domain to another of the brand's pathways; an outreach domain's
+	// mailboxes go with it (a mailbox belongs to its domain's pool).
+	SetDomainPathway(ctx context.Context, arg SetDomainPathwayParams) (int64, error)
 	SetEmailReplyClassification(ctx context.Context, arg SetEmailReplyClassificationParams) error
 	SetEmailReplyHandled(ctx context.Context, arg SetEmailReplyHandledParams) error
 	SetImportJobErrors(ctx context.Context, arg SetImportJobErrorsParams) error

@@ -1225,6 +1225,11 @@ type MarkContactReadResponse struct {
 	Success bool `json:"success"`
 }
 
+type MoveDomainRequest struct {
+	Id        string `path:"id"`
+	PathwayId string `json:"pathway_id"` // an outreach domain moves only to a mailbox pool, a sending domain only to platform, ses or smtp
+}
+
 type NetworkEvent struct {
 	Hash string `json:"hash"`
 	Kind string `json:"kind"` // delivered, hard_bounce, complaint, open, click
@@ -1869,21 +1874,27 @@ type SendingLimits struct {
 }
 
 type SendingPathway struct {
-	Id              string        `json:"id"`
-	Name            string        `json:"name"`
-	Provider        string        `json:"provider"` // platform, ses, smtp, mailboxes
-	Kinds           []string      `json:"kinds"`    // transactional, marketing, outreach
-	AWSRegion       string        `json:"aws_region,optional"`
-	AWSKeysSet      bool          `json:"aws_keys_set"`
-	SMTPHost        string        `json:"smtp_host,optional"`
-	SMTPPort        int64         `json:"smtp_port,optional"`
-	SMTPUsername    string        `json:"smtp_username,optional"`
-	SMTPPasswordSet bool          `json:"smtp_password_set"`
-	Limits          SendingLimits `json:"limits"`
-	Domains         []string      `json:"domains"`
-	Mailboxes       int64         `json:"mailboxes"`
-	Warning         string        `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
-	CreatedAt       string        `json:"created_at"`
+	Id              string                 `json:"id"`
+	Name            string                 `json:"name"`
+	Provider        string                 `json:"provider"` // platform, ses, smtp, mailboxes
+	Kinds           []string               `json:"kinds"`    // transactional, marketing, outreach
+	AWSRegion       string                 `json:"aws_region,optional"`
+	AWSKeysSet      bool                   `json:"aws_keys_set"`
+	SMTPHost        string                 `json:"smtp_host,optional"`
+	SMTPPort        int64                  `json:"smtp_port,optional"`
+	SMTPUsername    string                 `json:"smtp_username,optional"`
+	SMTPPasswordSet bool                   `json:"smtp_password_set"`
+	Limits          SendingLimits          `json:"limits"`
+	Domains         []SendingPathwayDomain `json:"domains"`
+	Mailboxes       int64                  `json:"mailboxes"`
+	Warning         string                 `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
+	CreatedAt       string                 `json:"created_at"`
+}
+
+type SendingPathwayDomain struct {
+	Id      string `json:"id"`
+	Domain  string `json:"domain"`
+	Purpose string `json:"purpose"` // sending, or outreach (its mailboxes form the pool)
 }
 
 type SendingPathwayIDRequest struct {

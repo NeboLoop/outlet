@@ -697,6 +697,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			[]rest.Route{
 				{
 					Method:  http.MethodPut,
+					Path:    "/sending/domains/:id/pathway",
+					Handler: adminsending.MoveSendingDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
 					Path:    "/sending/mailboxes/:id/daily-limit",
 					Handler: adminsending.SetMailboxDailyLimitHandler(serverCtx),
 				},

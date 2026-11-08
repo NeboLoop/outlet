@@ -1320,6 +1320,12 @@ export interface MarkContactReadResponse {
 	success: boolean
 }
 
+export interface MoveDomainRequest {
+	pathway_id: string // an outreach domain moves only to a mailbox pool, a sending domain only to platform, ses or smtp
+}
+export interface MoveDomainRequestParams {
+}
+
 export interface NetworkEvent {
 	hash: string
 	kind: string // delivered, hard_bounce, complaint, open, click
@@ -1994,10 +2000,16 @@ export interface SendingPathway {
 	smtp_username?: string
 	smtp_password_set: boolean
 	limits: SendingLimits
-	domains: Array<string>
+	domains: Array<SendingPathwayDomain>
 	mailboxes: number
 	warning?: string // set when outreach rides a provider other than mailboxes
 	created_at: string
+}
+
+export interface SendingPathwayDomain {
+	id: string
+	domain: string
+	purpose: string // sending, or outreach (its mailboxes form the pool)
 }
 
 export interface SendingPathwayIDRequest {

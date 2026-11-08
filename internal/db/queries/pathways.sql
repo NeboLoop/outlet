@@ -64,6 +64,26 @@ DELETE FROM sending_pathways WHERE id = ? AND org_id = ?;
 -- name: ListPathwayDomains :many
 SELECT * FROM domain_identities WHERE pathway_id = ? ORDER BY domain;
 
+-- name: SetDomainPathway :execrows
+-- Moves a domain to another of the brand's pathways; an outreach domain's
+-- mailboxes go with it (a mailbox belongs to its domain's pool).
+UPDATE domain_identities SET pathway_id = sqlc.arg(pathway_id), updated_at = datetime('now')
+WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id);
+
+-- name: CarryDomainSendCounts :exec
+-- The send counts of a moved domain's mailboxes go to their new pool, so a
+-- move never resets a mailbox's day.
+INSERT INTO send_counts (pathway_id, sender_id, day, n)
+SELECT sqlc.arg(to_pathway_id), sc.sender_id, sc.day, sc.n FROM send_counts sc
+WHERE sc.pathway_id = sqlc.arg(from_pathway_id)
+  AND sc.sender_id IN (SELECT m.id FROM mailboxes m WHERE m.domain_id = sqlc.arg(domain_id))
+ON CONFLICT (pathway_id, sender_id, day) DO UPDATE SET n = send_counts.n + excluded.n;
+
+-- name: DeleteDomainSendCounts :exec
+DELETE FROM send_counts
+WHERE pathway_id = sqlc.arg(pathway_id)
+  AND sender_id IN (SELECT m.id FROM mailboxes m WHERE m.domain_id = sqlc.arg(domain_id));
+
 -- name: CountPathwayDomain :one
 -- Whether a From domain belongs to a pathway.
 SELECT COUNT(*) FROM domain_identities

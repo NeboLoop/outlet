@@ -4,12 +4,15 @@
 		createSendingPathway,
 		updateSendingPathway,
 		deleteSendingPathway,
+		moveSendingDomain,
 		type SendingPathway,
+		type SendingPathwayDomain,
 		type SendingLimits
 	} from '$lib/api';
 	import { Button, Alert, LoadingSpinner, Badge, Input, Select, Checkbox, SlideForm } from '$lib/components/ui';
 	import { Plus, Pencil, Trash2, TriangleAlert } from '@lucide/svelte';
 	import { errorMessage } from '../../outbound/shared';
+	import { moveTargets } from './pathways';
 
 	const OUTREACH_WARNING =
 		'Amazon SES and most email platforms forbid cold email in their terms and can suspend the account.';
@@ -49,6 +52,9 @@
 	let bouncePercent = $state(3);
 	let current = $state<SendingPathway | null>(null);
 	let deleting = $state('');
+	// The pathway each domain is to move to, by domain id.
+	let moveTo = $state<Record<string, string>>({});
+	let moving = $state('');
 
 	let showWarning = $derived(kinds.outreach && provider !== 'mailboxes');
 
@@ -176,6 +182,24 @@
 			error = errorMessage(err, 'Could not remove the pathway');
 		} finally {
 			deleting = '';
+		}
+	}
+
+	async function move(d: SendingPathwayDomain) {
+		const target = moveTo[d.id];
+		if (!target) return;
+		moving = d.id;
+		error = '';
+		notice = '';
+		try {
+			const res = await moveSendingDomain({}, { pathway_id: target }, d.id);
+			notice = `${d.domain}: ${res.message}`;
+			moveTo = { ...moveTo, [d.id]: '' };
+			await load();
+		} catch (err) {
+			error = errorMessage(err, `Could not move ${d.domain}`);
+		} finally {
+			moving = '';
 		}
 	}
 
@@ -426,14 +450,59 @@
 
 					<p class="text-xs text-text-muted mt-3">
 						{#if p.provider === 'mailboxes'}
-							{p.mailboxes} mailbox{p.mailboxes === 1 ? '' : 'es'}{p.domains.length ? ` on ${p.domains.join(', ')}` : ''}.
-							Manage them in Outbound, Setup.
+							{p.mailboxes} mailbox{p.mailboxes === 1 ? '' : 'es'}{p.domains.length
+								? ` on ${p.domains.map((d) => d.domain).join(', ')}`
+								: ''}. Manage them in Outbound, Setup.
 						{:else if p.domains.length}
-							Sends from {p.domains.join(', ')}.
+							Sends from {p.domains.map((d) => d.domain).join(', ')}.
 						{:else}
 							No domains yet.
 						{/if}
 					</p>
+
+					{#if p.domains.length}
+						<div class="mt-3 space-y-2">
+							{#each p.domains as d (d.id)}
+								{@const targets = moveTargets(pathways, p.id, d.purpose)}
+								<div class="flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
+									<span class="text-text sm:w-48 truncate">{d.domain}</span>
+									{#if targets.length}
+										<div class="flex items-center gap-2">
+											<label for="move-{d.id}" class="sr-only">Move {d.domain} to</label>
+											<Select
+												id="move-{d.id}"
+												size="sm"
+												class="w-52"
+												bind:value={moveTo[d.id]}
+												options={[
+													{ value: '', label: 'Move to...' },
+													...targets.map((t) => ({ value: t.id, label: t.name }))
+												]}
+											/>
+											<Button
+												type="ghost"
+												size="xs"
+												onclick={() => move(d)}
+												disabled={moving !== '' || !moveTo[d.id]}
+											>
+												{moving === d.id ? 'Moving...' : 'Move'}
+											</Button>
+										</div>
+									{:else}
+										<span class="text-xs text-text-muted">
+											{d.purpose === 'outreach'
+												? 'Add another mailbox pool to move it.'
+												: 'Add another sending pathway to move it.'}
+										</span>
+									{/if}
+								</div>
+							{/each}
+							<p class="form-hint">
+								An outreach domain moves to another mailbox pool, with its mailboxes. A sending domain moves to
+								another platform, SES or SMTP pathway.
+							</p>
+						</div>
+					{/if}
 				</section>
 			{/each}
 		</div>

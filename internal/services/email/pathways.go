@@ -208,11 +208,19 @@ type Pathway struct {
 	SMTPPort        int64    `json:"smtp_port,omitempty"`
 	SMTPUsername    string   `json:"smtp_username,omitempty"`
 	SMTPPasswordSet bool     `json:"smtp_password_set"`
-	Limits          Limits   `json:"limits"`
-	Domains         []string `json:"domains"`
-	Mailboxes       int      `json:"mailboxes"`
+	Limits          Limits          `json:"limits"`
+	Domains         []PathwayDomain `json:"domains"`
+	Mailboxes       int             `json:"mailboxes"`
 	Warning         string   `json:"warning,omitempty"`
 	CreatedAt       string   `json:"created_at"`
+}
+
+// PathwayDomain is one domain a pathway holds: a sending domain, or an
+// outreach domain whose mailboxes form the pool.
+type PathwayDomain struct {
+	ID      string `json:"id"`
+	Domain  string `json:"domain"`
+	Purpose string `json:"purpose"` // sending or outreach
 }
 
 // KindsOf lists the kinds a pathway carries.
@@ -235,7 +243,7 @@ func (s *Service) view(ctx context.Context, p db.SendingPathway) (Pathway, error
 		ID: p.ID, Name: p.Name, Provider: p.Provider, Kinds: KindsOf(p),
 		AWSRegion: p.AwsRegion, AWSKeysSet: len(p.AwsAccessKeyEnc) > 0 && len(p.AwsSecretKeyEnc) > 0,
 		SMTPHost: p.SmtpHost, SMTPPort: p.SmtpPort, SMTPUsername: p.SmtpUsername, SMTPPasswordSet: len(p.SmtpPasswordEnc) > 0,
-		Limits: LimitsOf(p), Domains: []string{}, CreatedAt: p.CreatedAt,
+		Limits: LimitsOf(p), Domains: []PathwayDomain{}, CreatedAt: p.CreatedAt,
 	}
 	if p.CarriesOutreach == 1 && p.Provider != ProviderMailboxes {
 		out.Warning = OutreachWarning
@@ -245,7 +253,7 @@ func (s *Service) view(ctx context.Context, p db.SendingPathway) (Pathway, error
 		return out, err
 	}
 	for _, d := range domains {
-		out.Domains = append(out.Domains, d.Domain)
+		out.Domains = append(out.Domains, PathwayDomain{ID: d.ID, Domain: d.Domain, Purpose: d.Purpose})
 	}
 	if p.Provider == ProviderMailboxes {
 		mbs, err := s.db.ListPoolMailboxes(ctx, sql.NullString{String: p.ID, Valid: true})
@@ -482,10 +490,42 @@ func (s *Service) DeletePathway(ctx context.Context, orgID, id string) error {
 		return err
 	}
 	if len(domains) > 0 {
-		return errorx.NewBadRequestError(fmt.Sprintf("%s still holds %d domains; remove them first", p.Name, len(domains)))
+		return errorx.NewBadRequestError(fmt.Sprintf("%s still holds %d domains; move them to another pathway first", p.Name, len(domains)))
 	}
 	_, err = s.db.DeleteSendingPathway(ctx, db.DeleteSendingPathwayParams{ID: p.ID, OrgID: orgID})
 	return err
+}
+
+// MoveDomain moves one of the brand's domains to another of its pathways.
+// The domain's purpose decides where it fits: an outreach domain only in a
+// mailbox pool, a sending domain only in a platform, ses or smtp pathway.
+// An outreach domain's mailboxes go with it, with today's sends counted in
+// their new pool.
+func (s *Service) MoveDomain(ctx context.Context, orgID, domainID, pathwayID string) (db.SendingPathway, error) {
+	d, err := s.db.GetDomainIdentity(ctx, domainID)
+	if err != nil || d.OrgID != orgID {
+		return db.SendingPathway{}, errorx.NewNotFoundError("no such domain")
+	}
+	to, err := s.DomainPathway(ctx, orgID, d.Purpose, pathwayID)
+	if err != nil {
+		return to, err
+	}
+	if d.PathwayID.String == to.ID {
+		return to, nil
+	}
+	err = s.db.ExecTx(ctx, func(q *db.Queries) error {
+		if _, err := q.SetDomainPathway(ctx, db.SetDomainPathwayParams{PathwayID: sql.NullString{String: to.ID, Valid: true}, ID: d.ID, OrgID: orgID}); err != nil {
+			return err
+		}
+		if !d.PathwayID.Valid {
+			return nil
+		}
+		if err := q.CarryDomainSendCounts(ctx, db.CarryDomainSendCountsParams{ToPathwayID: to.ID, FromPathwayID: d.PathwayID.String, DomainID: d.ID}); err != nil {
+			return err
+		}
+		return q.DeleteDomainSendCounts(ctx, db.DeleteDomainSendCountsParams{PathwayID: d.PathwayID.String, DomainID: d.ID})
+	})
+	return to, err
 }
 
 // SetMailboxDailyLimit gives one mailbox its own daily limit, or (nil) puts
