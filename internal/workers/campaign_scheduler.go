@@ -3,6 +3,7 @@ package workers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,16 +41,16 @@ type CampaignSchedulerConfig struct {
 	PoolSize int
 }
 
-// DefaultCampaignSchedulerConfig returns sensible defaults 
+// DefaultCampaignSchedulerConfig returns sensible defaults
 func DefaultCampaignSchedulerConfig() CampaignSchedulerConfig {
 	return CampaignSchedulerConfig{
 		ScheduleInterval: 10 * time.Second,
 		SendPollInterval: 2 * time.Second,
-		Workers:          10,             // Increased from 5
-		RateLimit:        14,             // SES sandbox default
-		BatchSize:        1000,           // Increased from 100
-		ErrorThreshold:   100,            // Pause after 100 consecutive errors
-		PoolSize:         20,             // SMTP connection pool size
+		Workers:          10,   // Increased from 5
+		RateLimit:        14,   // SES sandbox default
+		BatchSize:        1000, // Increased from 100
+		ErrorThreshold:   100,  // Pause after 100 consecutive errors
+		PoolSize:         20,   // SMTP connection pool size
 	}
 }
 
@@ -270,9 +271,10 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	listIDs := parseListIDs(campaign.ListIds.String)
 	if len(listIDs) == 0 {
 		logx.Errorf("Campaign %s has no target lists", campaign.ID)
+		// 'failed' is not an allowed campaign status; cancel it instead
 		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
 			ID:     campaign.ID,
-			Status: sql.NullString{String: "failed", Valid: true},
+			Status: sql.NullString{String: "cancelled", Valid: true},
 		})
 	}
 
@@ -372,7 +374,17 @@ func (s *CampaignScheduler) batchFetcher() {
 
 // fetchAndQueueSends fetches pending sends and adds them to the worker queue
 func (s *CampaignScheduler) fetchAndQueueSends() {
-	sends, err := s.store.GetPendingCampaignSends(s.ctx, int64(s.config.BatchSize))
+	// Claim the batch first, so polling again while these wait for the rate
+	// limiter cannot queue them twice
+	claim := sql.NullString{String: uuid.NewString(), Valid: true}
+	if err := s.store.ClaimPendingCampaignSends(s.ctx, db.ClaimPendingCampaignSendsParams{
+		ClaimToken: claim,
+		LimitCount: int64(s.config.BatchSize),
+	}); err != nil {
+		logx.Errorf("Failed to claim pending campaign sends: %v", err)
+		return
+	}
+	sends, err := s.store.GetPendingCampaignSends(s.ctx, claim)
 	if err != nil {
 		logx.Errorf("Failed to get pending campaign sends: %v", err)
 		return
@@ -425,7 +437,12 @@ func (s *CampaignScheduler) sendWorker(id int) {
 		}
 
 		// Send the email
-		if err := s.sendCampaignEmail(send); err != nil {
+		if err := s.sendCampaignEmail(send); errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
+			// The recipient can never be sent to: record it, never retry it,
+			// and don't count it toward auto-pausing the campaign
+			s.markSendFailed(send.ID, err.Error())
+			_ = s.store.MarkCampaignSendPermanentlyFailed(s.ctx, send.ID)
+		} else if err != nil {
 			s.markSendFailed(send.ID, err.Error())
 			s.totalFailed.Add(1)
 

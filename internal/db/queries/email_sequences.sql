@@ -92,7 +92,32 @@ INSERT INTO email_queue (id, contact_id, template_id, scheduled_for, status, tra
 VALUES (sqlc.arg(id), sqlc.arg(contact_id), sqlc.arg(template_id), sqlc.arg(scheduled_for), 'pending', sqlc.arg(tracking_token), datetime('now'))
 RETURNING *;
 
+-- name: ClaimPendingEmails :exec
+-- Claims up to limit_count due sequence emails. Skips unsubscribed or blocked
+-- contacts, paused or stopped sequences, and contacts who left the list.
+UPDATE email_queue
+SET claim_token = sqlc.arg(claim_token), claimed_at = datetime('now')
+WHERE id IN (
+    SELECT eq.id
+    FROM email_queue eq
+    JOIN email_templates et ON et.id = eq.template_id
+    JOIN contacts c ON c.id = eq.contact_id
+    LEFT JOIN email_sequences es ON es.id = et.sequence_id
+    LEFT JOIN contact_sequence_state css ON css.contact_id = eq.contact_id AND css.sequence_id = es.id
+    WHERE eq.status = 'pending' AND eq.scheduled_for <= sqlc.arg(scheduled_before)
+      AND (eq.claimed_at IS NULL OR eq.claimed_at < datetime('now', '-15 minutes'))
+      AND c.unsubscribed_at IS NULL AND c.blocked_at IS NULL
+      AND (css.id IS NULL OR css.is_active = 1)
+      AND NOT EXISTS (
+          SELECT 1 FROM list_subscribers ls
+          WHERE ls.list_id = es.list_id AND ls.contact_id = eq.contact_id AND ls.status = 'unsubscribed'
+      )
+    ORDER BY eq.scheduled_for
+    LIMIT sqlc.arg(limit_count)
+);
+
 -- name: GetPendingEmails :many
+-- Returns the sequence emails claimed with claim_token.
 SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.status, eq.tracking_token,
        et.subject, et.html_body, et.template_type, et.is_transactional,
        c.email, c.name,
@@ -101,9 +126,8 @@ FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
 LEFT JOIN email_sequences es ON es.id = et.sequence_id
-WHERE eq.status = 'pending' AND eq.scheduled_for <= sqlc.arg(scheduled_before) AND c.unsubscribed_at IS NULL
-ORDER BY eq.scheduled_for
-LIMIT sqlc.arg(limit_count);
+WHERE eq.status = 'pending' AND eq.claim_token = sqlc.arg(claim_token)
+ORDER BY eq.scheduled_for;
 
 -- name: MarkEmailSent :exec
 UPDATE email_queue

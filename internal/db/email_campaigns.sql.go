@@ -27,6 +27,30 @@ func (q *Queries) CheckCampaignSendExists(ctx context.Context, arg CheckCampaign
 	return count, err
 }
 
+const claimPendingCampaignSends = `-- name: ClaimPendingCampaignSends :exec
+UPDATE campaign_sends
+SET claim_token = ?1, claimed_at = datetime('now')
+WHERE id IN (
+    SELECT cs.id FROM campaign_sends cs
+    JOIN email_campaigns ec ON ec.id = cs.campaign_id
+    WHERE cs.status = 'pending' AND ec.status = 'sending'
+      AND (cs.claimed_at IS NULL OR cs.claimed_at < datetime('now', '-15 minutes'))
+    ORDER BY cs.created_at ASC
+    LIMIT ?2
+)
+`
+
+type ClaimPendingCampaignSendsParams struct {
+	ClaimToken sql.NullString `json:"claim_token"`
+	LimitCount int64          `json:"limit_count"`
+}
+
+// Claims up to limit_count pending sends of campaigns that are sending.
+func (q *Queries) ClaimPendingCampaignSends(ctx context.Context, arg ClaimPendingCampaignSendsParams) error {
+	_, err := q.db.ExecContext(ctx, claimPendingCampaignSends, arg.ClaimToken, arg.LimitCount)
+	return err
+}
+
 const countCampaignSendsByStatus = `-- name: CountCampaignSendsByStatus :one
 SELECT COUNT(*) as count FROM campaign_sends
 WHERE campaign_id = ?1 AND status = ?2
@@ -234,7 +258,7 @@ const createCampaignSend = `-- name: CreateCampaignSend :one
 
 INSERT INTO campaign_sends (id, campaign_id, contact_id, list_id, tracking_token, status, created_at)
 VALUES (?1, ?2, ?3, ?4, ?5, 'pending', datetime('now'))
-RETURNING id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at
+RETURNING id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at, claim_token, claimed_at
 `
 
 type CreateCampaignSendParams struct {
@@ -273,6 +297,8 @@ func (q *Queries) CreateCampaignSend(ctx context.Context, arg CreateCampaignSend
 		&i.CreatedAt,
 		&i.RetryCount,
 		&i.FailedAt,
+		&i.ClaimToken,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
@@ -299,6 +325,7 @@ JOIN contacts c ON c.id = ls.contact_id
 WHERE ls.list_id = ?1
   AND ls.status = 'active'
   AND c.bounced_at IS NULL
+  AND c.blocked_at IS NULL
   AND c.unsubscribed_at IS NULL
 `
 
@@ -506,7 +533,7 @@ func (q *Queries) GetCampaignLinkStats(ctx context.Context, campaignID string) (
 }
 
 const getCampaignSend = `-- name: GetCampaignSend :one
-SELECT id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at FROM campaign_sends
+SELECT id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at, claim_token, claimed_at FROM campaign_sends
 WHERE id = ?1
 `
 
@@ -531,12 +558,14 @@ func (q *Queries) GetCampaignSend(ctx context.Context, id string) (CampaignSend,
 		&i.CreatedAt,
 		&i.RetryCount,
 		&i.FailedAt,
+		&i.ClaimToken,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
 
 const getCampaignSendByTracking = `-- name: GetCampaignSendByTracking :one
-SELECT id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at FROM campaign_sends
+SELECT id, campaign_id, contact_id, list_id, status, sent_at, delivered_at, tracking_token, opened_at, open_count, clicked_at, click_count, error_message, bounce_type, created_at, retry_count, failed_at, claim_token, claimed_at FROM campaign_sends
 WHERE tracking_token = ?1
 `
 
@@ -561,6 +590,8 @@ func (q *Queries) GetCampaignSendByTracking(ctx context.Context, trackingToken s
 		&i.CreatedAt,
 		&i.RetryCount,
 		&i.FailedAt,
+		&i.ClaimToken,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
@@ -601,6 +632,8 @@ FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
 WHERE cs.status = 'failed' AND cs.retry_count < 3
+  AND ec.status IN ('sending', 'sent')
+  AND c.unsubscribed_at IS NULL
 ORDER BY cs.failed_at ASC
 LIMIT ?1
 `
@@ -673,9 +706,8 @@ SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.tracking_token, cs.s
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
-WHERE cs.status = 'pending'
+WHERE cs.status = 'pending' AND cs.claim_token = ?1
 ORDER BY cs.created_at ASC
-LIMIT ?1
 `
 
 type GetPendingCampaignSendsRow struct {
@@ -698,8 +730,9 @@ type GetPendingCampaignSendsRow struct {
 	OrgID         string         `json:"org_id"`
 }
 
-func (q *Queries) GetPendingCampaignSends(ctx context.Context, limitCount int64) ([]GetPendingCampaignSendsRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPendingCampaignSends, limitCount)
+// Returns the sends claimed with claim_token.
+func (q *Queries) GetPendingCampaignSends(ctx context.Context, claimToken sql.NullString) ([]GetPendingCampaignSendsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPendingCampaignSends, claimToken)
 	if err != nil {
 		return nil, err
 	}
@@ -741,10 +774,12 @@ func (q *Queries) GetPendingCampaignSends(ctx context.Context, limitCount int64)
 
 const getScheduledCampaigns = `-- name: GetScheduledCampaigns :many
 SELECT id, org_id, design_id, name, subject, preview_text, from_name, from_email, reply_to, html_body, plain_text, list_ids, exclude_list_ids, segment_filter, status, scheduled_at, started_at, completed_at, track_opens, track_clicks, recipients_count, sent_count, delivered_count, opened_count, clicked_count, bounced_count, complained_count, unsubscribed_count, created_at, updated_at FROM email_campaigns
-WHERE status = 'scheduled' AND scheduled_at <= datetime('now')
+WHERE status = 'scheduled' AND datetime(scheduled_at) <= datetime('now')
 ORDER BY scheduled_at ASC
 `
 
+// datetime() normalizes ISO 8601 values ("2026-11-08T09:00:00Z"), which
+// would otherwise compare as later than datetime('now') all day.
 func (q *Queries) GetScheduledCampaigns(ctx context.Context) ([]EmailCampaign, error) {
 	rows, err := q.db.QueryContext(ctx, getScheduledCampaigns)
 	if err != nil {
@@ -902,7 +937,7 @@ func (q *Queries) ListCampaignClicks(ctx context.Context, arg ListCampaignClicks
 }
 
 const listCampaignSends = `-- name: ListCampaignSends :many
-SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.status, cs.sent_at, cs.delivered_at, cs.tracking_token, cs.opened_at, cs.open_count, cs.clicked_at, cs.click_count, cs.error_message, cs.bounce_type, cs.created_at, cs.retry_count, cs.failed_at, c.email, c.name
+SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.status, cs.sent_at, cs.delivered_at, cs.tracking_token, cs.opened_at, cs.open_count, cs.clicked_at, cs.click_count, cs.error_message, cs.bounce_type, cs.created_at, cs.retry_count, cs.failed_at, cs.claim_token, cs.claimed_at, c.email, c.name
 FROM campaign_sends cs
 JOIN contacts c ON cs.contact_id = c.id
 WHERE cs.campaign_id = ?1
@@ -934,6 +969,8 @@ type ListCampaignSendsRow struct {
 	CreatedAt     sql.NullString `json:"created_at"`
 	RetryCount    sql.NullInt64  `json:"retry_count"`
 	FailedAt      sql.NullString `json:"failed_at"`
+	ClaimToken    sql.NullString `json:"claim_token"`
+	ClaimedAt     sql.NullString `json:"claimed_at"`
 	Email         string         `json:"email"`
 	Name          string         `json:"name"`
 }
@@ -965,6 +1002,8 @@ func (q *Queries) ListCampaignSends(ctx context.Context, arg ListCampaignSendsPa
 			&i.CreatedAt,
 			&i.RetryCount,
 			&i.FailedAt,
+			&i.ClaimToken,
+			&i.ClaimedAt,
 			&i.Email,
 			&i.Name,
 		); err != nil {
@@ -1123,7 +1162,7 @@ func (q *Queries) ListCampaignsByStatus(ctx context.Context, arg ListCampaignsBy
 
 const markCampaignSendFailed = `-- name: MarkCampaignSendFailed :exec
 UPDATE campaign_sends
-SET status = 'failed', error_message = ?1
+SET status = 'failed', error_message = ?1, failed_at = datetime('now')
 WHERE id = ?2
 `
 
@@ -1139,10 +1178,12 @@ func (q *Queries) MarkCampaignSendFailed(ctx context.Context, arg MarkCampaignSe
 
 const markCampaignSendPermanentlyFailed = `-- name: MarkCampaignSendPermanentlyFailed :exec
 UPDATE campaign_sends
-SET status = 'permanent_failure'
+SET status = 'failed', retry_count = 3
 WHERE id = ?1
 `
 
+// Stays 'failed' (the status CHECK allows nothing else); retry_count 3 takes
+// it out of the retry queue for good.
 func (q *Queries) MarkCampaignSendPermanentlyFailed(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, markCampaignSendPermanentlyFailed, id)
 	return err
@@ -1200,6 +1241,60 @@ type ScheduleCampaignParams struct {
 
 func (q *Queries) ScheduleCampaign(ctx context.Context, arg ScheduleCampaignParams) (EmailCampaign, error) {
 	row := q.db.QueryRowContext(ctx, scheduleCampaign, arg.ScheduledAt, arg.ID, arg.OrgID)
+	var i EmailCampaign
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.DesignID,
+		&i.Name,
+		&i.Subject,
+		&i.PreviewText,
+		&i.FromName,
+		&i.FromEmail,
+		&i.ReplyTo,
+		&i.HtmlBody,
+		&i.PlainText,
+		&i.ListIds,
+		&i.ExcludeListIds,
+		&i.SegmentFilter,
+		&i.Status,
+		&i.ScheduledAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.TrackOpens,
+		&i.TrackClicks,
+		&i.RecipientsCount,
+		&i.SentCount,
+		&i.DeliveredCount,
+		&i.OpenedCount,
+		&i.ClickedCount,
+		&i.BouncedCount,
+		&i.ComplainedCount,
+		&i.UnsubscribedCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const sendCampaignNow = `-- name: SendCampaignNow :one
+UPDATE email_campaigns
+SET status = 'scheduled',
+    scheduled_at = datetime('now'),
+    updated_at = datetime('now')
+WHERE id = ?1 AND org_id = ?2 AND status IN ('draft', 'scheduled')
+RETURNING id, org_id, design_id, name, subject, preview_text, from_name, from_email, reply_to, html_body, plain_text, list_ids, exclude_list_ids, segment_filter, status, scheduled_at, started_at, completed_at, track_opens, track_clicks, recipients_count, sent_count, delivered_count, opened_count, clicked_count, bounced_count, complained_count, unsubscribed_count, created_at, updated_at
+`
+
+type SendCampaignNowParams struct {
+	ID    string `json:"id"`
+	OrgID string `json:"org_id"`
+}
+
+// Schedules a draft or scheduled campaign for now; the scheduler expands it
+// into sends on its next check.
+func (q *Queries) SendCampaignNow(ctx context.Context, arg SendCampaignNowParams) (EmailCampaign, error) {
+	row := q.db.QueryRowContext(ctx, sendCampaignNow, arg.ID, arg.OrgID)
 	var i EmailCampaign
 	err := row.Scan(
 		&i.ID,

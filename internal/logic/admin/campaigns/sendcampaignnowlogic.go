@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -33,11 +34,14 @@ func (l *SendCampaignNowLogic) SendCampaignNow(req *types.SendCampaignNowRequest
 		return nil, errors.New("org_id not found in context")
 	}
 
-	campaign, err := l.svcCtx.DB.UpdateCampaignStatus(l.ctx, db.UpdateCampaignStatusParams{
-		ID:     req.Id,
-		OrgID:  orgID,
-		Status: sql.NullString{String: "sending", Valid: true},
+	// The scheduler picks it up within its check interval and creates the sends
+	campaign, err := l.svcCtx.DB.SendCampaignNow(l.ctx, db.SendCampaignNowParams{
+		ID:    req.Id,
+		OrgID: orgID,
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errorx.NewBadRequestError("Only draft or scheduled campaigns can be sent")
+	}
 	if err != nil {
 		l.Errorf("Failed to start campaign: %v", err)
 		return nil, err

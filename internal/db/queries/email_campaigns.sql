@@ -65,6 +65,16 @@ SET status = 'scheduled',
 WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id) AND status = 'draft'
 RETURNING *;
 
+-- name: SendCampaignNow :one
+-- Schedules a draft or scheduled campaign for now; the scheduler expands it
+-- into sends on its next check.
+UPDATE email_campaigns
+SET status = 'scheduled',
+    scheduled_at = datetime('now'),
+    updated_at = datetime('now')
+WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id) AND status IN ('draft', 'scheduled')
+RETURNING *;
+
 -- name: UpdateCampaignStats :exec
 UPDATE email_campaigns
 SET recipients_count = sqlc.arg(recipients_count),
@@ -105,8 +115,10 @@ SELECT COUNT(*) as count FROM email_campaigns
 WHERE org_id = sqlc.arg(org_id) AND status = sqlc.arg(status);
 
 -- name: GetScheduledCampaigns :many
+-- datetime() normalizes ISO 8601 values ("2026-11-08T09:00:00Z"), which
+-- would otherwise compare as later than datetime('now') all day.
 SELECT * FROM email_campaigns
-WHERE status = 'scheduled' AND scheduled_at <= datetime('now')
+WHERE status = 'scheduled' AND datetime(scheduled_at) <= datetime('now')
 ORDER BY scheduled_at ASC;
 
 -- Campaign Sends
@@ -199,7 +211,21 @@ SET recipients_count = sqlc.arg(recipients_count),
     updated_at = datetime('now')
 WHERE id = sqlc.arg(id);
 
+-- name: ClaimPendingCampaignSends :exec
+-- Claims up to limit_count pending sends of campaigns that are sending.
+UPDATE campaign_sends
+SET claim_token = sqlc.arg(claim_token), claimed_at = datetime('now')
+WHERE id IN (
+    SELECT cs.id FROM campaign_sends cs
+    JOIN email_campaigns ec ON ec.id = cs.campaign_id
+    WHERE cs.status = 'pending' AND ec.status = 'sending'
+      AND (cs.claimed_at IS NULL OR cs.claimed_at < datetime('now', '-15 minutes'))
+    ORDER BY cs.created_at ASC
+    LIMIT sqlc.arg(limit_count)
+);
+
 -- name: GetPendingCampaignSends :many
+-- Returns the sends claimed with claim_token.
 SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.tracking_token, cs.status,
        c.email, c.name,
        ec.subject, ec.html_body, ec.plain_text, ec.from_name, ec.from_email, ec.reply_to,
@@ -207,9 +233,8 @@ SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.tracking_token, cs.s
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
-WHERE cs.status = 'pending'
-ORDER BY cs.created_at ASC
-LIMIT sqlc.arg(limit_count);
+WHERE cs.status = 'pending' AND cs.claim_token = sqlc.arg(claim_token)
+ORDER BY cs.created_at ASC;
 
 -- name: MarkCampaignSendSent :exec
 UPDATE campaign_sends
@@ -218,7 +243,7 @@ WHERE id = sqlc.arg(id);
 
 -- name: MarkCampaignSendFailed :exec
 UPDATE campaign_sends
-SET status = 'failed', error_message = sqlc.arg(error_message)
+SET status = 'failed', error_message = sqlc.arg(error_message), failed_at = datetime('now')
 WHERE id = sqlc.arg(id);
 
 -- name: GetActiveSubscribersForList :many
@@ -228,6 +253,7 @@ JOIN contacts c ON c.id = ls.contact_id
 WHERE ls.list_id = sqlc.arg(list_id)
   AND ls.status = 'active'
   AND c.bounced_at IS NULL
+  AND c.blocked_at IS NULL
   AND c.unsubscribed_at IS NULL;
 
 -- name: CheckCampaignSendExists :one
@@ -253,6 +279,8 @@ FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
 WHERE cs.status = 'failed' AND cs.retry_count < 3
+  AND ec.status IN ('sending', 'sent')
+  AND c.unsubscribed_at IS NULL
 ORDER BY cs.failed_at ASC
 LIMIT sqlc.arg(limit_count);
 
@@ -262,8 +290,10 @@ SET retry_count = retry_count + 1
 WHERE id = sqlc.arg(id);
 
 -- name: MarkCampaignSendPermanentlyFailed :exec
+-- Stays 'failed' (the status CHECK allows nothing else); retry_count 3 takes
+-- it out of the retry queue for good.
 UPDATE campaign_sends
-SET status = 'permanent_failure'
+SET status = 'failed', retry_count = 3
 WHERE id = sqlc.arg(id);
 
 -- Dashboard Stats

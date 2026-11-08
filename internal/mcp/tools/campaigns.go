@@ -506,11 +506,10 @@ func handleCampaignSend(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 			"id")
 	}
 
-	// Update status to 'sending' - the campaign scheduler worker will pick it up
-	_, err = toolCtx.DB().UpdateCampaignStatus(ctx, db.UpdateCampaignStatusParams{
-		ID:     input.ID,
-		OrgID:  toolCtx.BrandID(),
-		Status: sql.NullString{String: "sending", Valid: true},
+	// Schedule it for now; the campaign scheduler creates the sends
+	_, err = toolCtx.DB().SendCampaignNow(ctx, db.SendCampaignNowParams{
+		ID:    input.ID,
+		OrgID: toolCtx.BrandID(),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to start campaign: %w", err)

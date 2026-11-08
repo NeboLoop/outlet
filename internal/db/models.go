@@ -89,6 +89,8 @@ type CampaignSend struct {
 	CreatedAt     sql.NullString `json:"created_at"`
 	RetryCount    sql.NullInt64  `json:"retry_count"`
 	FailedAt      sql.NullString `json:"failed_at"`
+	ClaimToken    sql.NullString `json:"claim_token"`
+	ClaimedAt     sql.NullString `json:"claimed_at"`
 }
 
 type Contact struct {
@@ -297,6 +299,8 @@ type EmailQueue struct {
 	OpenCount     int64          `json:"open_count"`
 	ClickedAt     sql.NullString `json:"clicked_at"`
 	ClickCount    int64          `json:"click_count"`
+	ClaimToken    sql.NullString `json:"claim_token"`
+	ClaimedAt     sql.NullString `json:"claimed_at"`
 }
 
 type EmailSequence struct {

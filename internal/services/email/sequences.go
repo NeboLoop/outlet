@@ -329,10 +329,7 @@ func (s *SequenceService) calculateNextSendTime(sendHour int32, timezone string,
 // ProcessPendingEmails sends all pending emails that are due
 func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize int64) (int, error) {
 	// Get pending emails
-	pendingEmails, err := s.db.GetPendingEmails(ctx, db.GetPendingEmailsParams{
-		ScheduledBefore: time.Now().Format(time.RFC3339),
-		LimitCount:      batchSize,
-	})
+	pendingEmails, err := claimDueEmails(ctx, s.db, batchSize)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get pending emails: %w", err)
 	}
@@ -408,56 +405,74 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 		sent++
 		logx.Infof("Sent email %s to %s: %s", email.ID, email.Email, subject)
 
-		// Update sequence position and queue next email
-		if email.ContactID.Valid && email.TemplateID.Valid {
-			template, err := s.db.GetTemplateByID(ctx, email.TemplateID.String)
-			if err == nil {
-				// Update position
-				_ = s.db.UpdateContactSequencePosition(ctx, db.UpdateContactSequencePositionParams{
-					ContactID:       email.ContactID,
-					SequenceID:      template.SequenceID,
-					CurrentPosition: sql.NullInt64{Int64: template.Position, Valid: true},
-				})
-
-				// Queue next email
-				if template.SequenceID.Valid {
-					err = s.queueNextEmail(ctx, email.ContactID.String, template.SequenceID.String, template.Position+1)
-					if err != nil {
-						logx.Errorf("Failed to queue next email: %v", err)
-					}
-
-					// Check if sequence is complete
-					nextTemplate, err := s.db.GetNextTemplate(ctx, db.GetNextTemplateParams{
-						SequenceID: template.SequenceID,
-						Position:   template.Position + 1,
-					})
-					if err != nil || nextTemplate.ID == "" {
-						// No more templates - mark sequence complete
-						_ = s.db.CompleteContactSequence(ctx, db.CompleteContactSequenceParams{
-							ContactID:  email.ContactID,
-							SequenceID: template.SequenceID,
-						})
-						logx.Infof("Completed sequence for contact %s", email.ContactID.String)
-
-						// Check for sequence chaining - auto-enroll in next sequence if configured
-						seq, seqErr := s.db.GetSequenceByID(ctx, template.SequenceID.String)
-						if seqErr == nil && seq.OnCompletionSequenceID.Valid && seq.OnCompletionSequenceID.String != "" {
-							chainErr := s.StartSequenceByID(ctx, email.ContactID.String, seq.OnCompletionSequenceID.String)
-							if chainErr != nil {
-								logx.Errorf("Failed to start chained sequence %s for contact %s: %v",
-									seq.OnCompletionSequenceID.String, email.ContactID.String, chainErr)
-							} else {
-								logx.Infof("Chained contact %s from sequence %s to sequence %s",
-									email.ContactID.String, template.SequenceID.String, seq.OnCompletionSequenceID.String)
-							}
-						}
-					}
-				}
-			}
-		}
+		s.advanceSequence(ctx, email)
 	}
 
 	return sent, nil
+}
+
+// claimDueEmails claims up to limit due sequence emails for this worker and
+// returns them. A claimed row is never handed to another worker, so polling
+// again while these wait for the rate limiter cannot send them twice.
+func claimDueEmails(ctx context.Context, store *db.Store, limit int64) ([]db.GetPendingEmailsRow, error) {
+	claim := uuid.NewString()
+	if err := store.ClaimPendingEmails(ctx, db.ClaimPendingEmailsParams{
+		ClaimToken:      sql.NullString{String: claim, Valid: true},
+		ScheduledBefore: time.Now().Format(time.RFC3339),
+		LimitCount:      limit,
+	}); err != nil {
+		return nil, err
+	}
+	return store.GetPendingEmails(ctx, sql.NullString{String: claim, Valid: true})
+}
+
+// advanceSequence runs after a sequence email is sent: it records the
+// position, queues the next step, and when the sequence is finished marks it
+// complete and starts the chained sequence, if one is configured.
+func (s *SequenceService) advanceSequence(ctx context.Context, email db.GetPendingEmailsRow) {
+	if !email.ContactID.Valid || !email.TemplateID.Valid {
+		return
+	}
+	template, err := s.db.GetTemplateByID(ctx, email.TemplateID.String)
+	if err != nil || !template.SequenceID.Valid {
+		return
+	}
+
+	_ = s.db.UpdateContactSequencePosition(ctx, db.UpdateContactSequencePositionParams{
+		ContactID:       email.ContactID,
+		SequenceID:      template.SequenceID,
+		CurrentPosition: sql.NullInt64{Int64: template.Position, Valid: true},
+	})
+
+	if err := s.queueNextEmail(ctx, email.ContactID.String, template.SequenceID.String, template.Position+1); err != nil {
+		logx.Errorf("Failed to queue next email: %v", err)
+	}
+
+	nextTemplate, err := s.db.GetNextTemplate(ctx, db.GetNextTemplateParams{
+		SequenceID: template.SequenceID,
+		Position:   template.Position + 1,
+	})
+	if err == nil && nextTemplate.ID != "" {
+		return
+	}
+
+	_ = s.db.CompleteContactSequence(ctx, db.CompleteContactSequenceParams{
+		ContactID:  email.ContactID,
+		SequenceID: template.SequenceID,
+	})
+	logx.Infof("Completed sequence for contact %s", email.ContactID.String)
+
+	seq, err := s.db.GetSequenceByID(ctx, template.SequenceID.String)
+	if err != nil || !seq.OnCompletionSequenceID.Valid || seq.OnCompletionSequenceID.String == "" {
+		return
+	}
+	if err := s.StartSequenceByID(ctx, email.ContactID.String, seq.OnCompletionSequenceID.String); err != nil {
+		logx.Errorf("Failed to start chained sequence %s for contact %s: %v",
+			seq.OnCompletionSequenceID.String, email.ContactID.String, err)
+		return
+	}
+	logx.Infof("Chained contact %s from sequence %s to sequence %s",
+		email.ContactID.String, template.SequenceID.String, seq.OnCompletionSequenceID.String)
 }
 
 // TemplateContext holds variables for template processing

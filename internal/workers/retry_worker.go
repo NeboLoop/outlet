@@ -3,6 +3,7 @@ package workers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,9 +36,9 @@ func DefaultRetryWorkerConfig() RetryWorkerConfig {
 		PollInterval: 30 * time.Second,
 		MaxRetries:   3,
 		RetryIntervals: []time.Duration{
-			5 * time.Minute,   // First retry after 5 min
-			30 * time.Minute,  // Second retry after 30 min
-			2 * time.Hour,     // Third retry after 2 hours
+			5 * time.Minute,  // First retry after 5 min
+			30 * time.Minute, // Second retry after 30 min
+			2 * time.Hour,    // Third retry after 2 hours
 		},
 		BatchSize: 100,
 	}
@@ -175,6 +176,12 @@ func (w *RetryWorker) retrySend(send db.GetFailedCampaignSendsForRetryRow) {
 
 	// Try to send
 	err := w.sendEmail(send)
+	if errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
+		// Retrying cannot help
+		w.markPermanentlyFailed(send.ID)
+		w.exhausted.Add(1)
+		return
+	}
 	if err != nil {
 		logx.Errorf("Retry failed for send %s: %v", send.ID, err)
 		w.store.MarkCampaignSendFailed(w.ctx, db.MarkCampaignSendFailedParams{

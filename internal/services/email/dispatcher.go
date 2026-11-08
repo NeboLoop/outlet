@@ -436,10 +436,7 @@ func (d *Dispatcher) fetchBatch() {
 		return
 	}
 
-	pendingEmails, err := d.db.GetPendingEmails(d.ctx, db.GetPendingEmailsParams{
-		ScheduledBefore: time.Now().Format(time.RFC3339),
-		LimitCount:      int64(d.config.BatchSize),
-	})
+	pendingEmails, err := claimDueEmails(d.ctx, d.db, int64(d.config.BatchSize))
 	if err != nil {
 		logx.Errorf("Failed to fetch pending emails: %v", err)
 		return
@@ -464,44 +461,9 @@ func (d *Dispatcher) fetchBatch() {
 	}
 }
 
-// updateSequenceState updates sequence position and queues next email
+// updateSequenceState advances the sequence after a successful send
 func (d *Dispatcher) updateSequenceState(email db.GetPendingEmailsRow) {
-	if !email.ContactID.Valid || !email.TemplateID.Valid {
-		return
-	}
-
-	template, err := d.db.GetTemplateByID(d.ctx, email.TemplateID.String)
-	if err != nil {
-		return
-	}
-
-	// Update position
-	_ = d.db.UpdateContactSequencePosition(d.ctx, db.UpdateContactSequencePositionParams{
-		ContactID:       email.ContactID,
-		SequenceID:      template.SequenceID,
-		CurrentPosition: sql.NullInt64{Int64: template.Position, Valid: true},
-	})
-
-	// Queue next email
-	if template.SequenceID.Valid {
-		err = d.sequenceService.queueNextEmail(d.ctx, email.ContactID.String, template.SequenceID.String, template.Position+1)
-		if err != nil {
-			logx.Errorf("Failed to queue next email: %v", err)
-		}
-
-		// Check if sequence complete
-		nextTemplate, err := d.db.GetNextTemplate(d.ctx, db.GetNextTemplateParams{
-			SequenceID: template.SequenceID,
-			Position:   template.Position + 1,
-		})
-		if err != nil || nextTemplate.ID == "" {
-			_ = d.db.CompleteContactSequence(d.ctx, db.CompleteContactSequenceParams{
-				ContactID:  email.ContactID,
-				SequenceID: template.SequenceID,
-			})
-			logx.Infof("Completed sequence for contact %s", email.ContactID.String)
-		}
-	}
+	d.sequenceService.advanceSequence(d.ctx, email)
 }
 
 // metricsReporter periodically logs metrics
