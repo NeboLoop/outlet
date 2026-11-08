@@ -175,9 +175,9 @@ func (q *Queries) CountUnhandledOutboundReplies(ctx context.Context, orgID strin
 }
 
 const createOutboundCampaign = `-- name: CreateOutboundCampaign :one
-INSERT INTO outbound_campaigns (id, org_id, name, approval_mode, window_start_hour, window_end_hour, idempotency_key)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, name, status, approval_mode, window_start_hour, window_end_hour, idempotency_key, created_at
+INSERT INTO outbound_campaigns (id, org_id, name, approval_mode, track_clicks, window_start_hour, window_end_hour, idempotency_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, name, status, approval_mode, track_clicks, window_start_hour, window_end_hour, idempotency_key, created_at
 `
 
 type CreateOutboundCampaignParams struct {
@@ -185,6 +185,7 @@ type CreateOutboundCampaignParams struct {
 	OrgID           string `json:"org_id"`
 	Name            string `json:"name"`
 	ApprovalMode    string `json:"approval_mode"`
+	TrackClicks     int64  `json:"track_clicks"`
 	WindowStartHour int64  `json:"window_start_hour"`
 	WindowEndHour   int64  `json:"window_end_hour"`
 	IdempotencyKey  string `json:"idempotency_key"`
@@ -196,6 +197,7 @@ func (q *Queries) CreateOutboundCampaign(ctx context.Context, arg CreateOutbound
 		arg.OrgID,
 		arg.Name,
 		arg.ApprovalMode,
+		arg.TrackClicks,
 		arg.WindowStartHour,
 		arg.WindowEndHour,
 		arg.IdempotencyKey,
@@ -207,6 +209,7 @@ func (q *Queries) CreateOutboundCampaign(ctx context.Context, arg CreateOutbound
 		&i.Name,
 		&i.Status,
 		&i.ApprovalMode,
+		&i.TrackClicks,
 		&i.WindowStartHour,
 		&i.WindowEndHour,
 		&i.IdempotencyKey,
@@ -216,9 +219,9 @@ func (q *Queries) CreateOutboundCampaign(ctx context.Context, arg CreateOutbound
 }
 
 const createOutboundDomain = `-- name: CreateOutboundDomain :one
-INSERT INTO outbound_domains (id, org_id, domain, dns_host, dkim_selector)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, org_id, domain, dns_host, dkim_selector, status, check_result, checked_at, created_at
+INSERT INTO outbound_domains (id, org_id, domain, dns_host, dkim_selector, tracking_host)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, domain, dns_host, dkim_selector, tracking_host, status, check_result, checked_at, created_at
 `
 
 type CreateOutboundDomainParams struct {
@@ -227,6 +230,7 @@ type CreateOutboundDomainParams struct {
 	Domain       string `json:"domain"`
 	DnsHost      string `json:"dns_host"`
 	DkimSelector string `json:"dkim_selector"`
+	TrackingHost string `json:"tracking_host"`
 }
 
 func (q *Queries) CreateOutboundDomain(ctx context.Context, arg CreateOutboundDomainParams) (OutboundDomain, error) {
@@ -236,6 +240,7 @@ func (q *Queries) CreateOutboundDomain(ctx context.Context, arg CreateOutboundDo
 		arg.Domain,
 		arg.DnsHost,
 		arg.DkimSelector,
+		arg.TrackingHost,
 	)
 	var i OutboundDomain
 	err := row.Scan(
@@ -244,6 +249,7 @@ func (q *Queries) CreateOutboundDomain(ctx context.Context, arg CreateOutboundDo
 		&i.Domain,
 		&i.DnsHost,
 		&i.DkimSelector,
+		&i.TrackingHost,
 		&i.Status,
 		&i.CheckResult,
 		&i.CheckedAt,
@@ -295,6 +301,27 @@ func (q *Queries) CreateOutboundEnrollment(ctx context.Context, arg CreateOutbou
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const createOutboundLink = `-- name: CreateOutboundLink :exec
+INSERT INTO outbound_links (token, org_id, message_id, url) VALUES (?, ?, ?, ?)
+`
+
+type CreateOutboundLinkParams struct {
+	Token     string `json:"token"`
+	OrgID     string `json:"org_id"`
+	MessageID string `json:"message_id"`
+	Url       string `json:"url"`
+}
+
+func (q *Queries) CreateOutboundLink(ctx context.Context, arg CreateOutboundLinkParams) error {
+	_, err := q.db.ExecContext(ctx, createOutboundLink,
+		arg.Token,
+		arg.OrgID,
+		arg.MessageID,
+		arg.Url,
+	)
+	return err
 }
 
 const createOutboundMailbox = `-- name: CreateOutboundMailbox :one
@@ -512,8 +539,8 @@ func (q *Queries) CreateOutboundProspect(ctx context.Context, arg CreateOutbound
 const createOutboundReply = `-- name: CreateOutboundReply :one
 INSERT INTO outbound_replies (
     id, org_id, mailbox_id, enrollment_id, prospect_id, from_email, subject,
-    body, message_id, in_reply_to, refs, classification, handled
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    body, message_id, in_reply_to, refs, classification, handled, received_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (mailbox_id, message_id) DO NOTHING
 RETURNING id, org_id, mailbox_id, enrollment_id, prospect_id, from_email, subject, body, message_id, in_reply_to, refs, classification, handled, received_at
 `
@@ -532,6 +559,7 @@ type CreateOutboundReplyParams struct {
 	Refs           string         `json:"refs"`
 	Classification string         `json:"classification"`
 	Handled        int64          `json:"handled"`
+	ReceivedAt     string         `json:"received_at"`
 }
 
 func (q *Queries) CreateOutboundReply(ctx context.Context, arg CreateOutboundReplyParams) (OutboundReply, error) {
@@ -549,6 +577,7 @@ func (q *Queries) CreateOutboundReply(ctx context.Context, arg CreateOutboundRep
 		arg.Refs,
 		arg.Classification,
 		arg.Handled,
+		arg.ReceivedAt,
 	)
 	var i OutboundReply
 	err := row.Scan(
@@ -632,7 +661,7 @@ func (q *Queries) EditOutboundMessage(ctx context.Context, arg EditOutboundMessa
 }
 
 const getOutboundCampaign = `-- name: GetOutboundCampaign :one
-SELECT id, org_id, name, status, approval_mode, window_start_hour, window_end_hour, idempotency_key, created_at FROM outbound_campaigns WHERE id = ? AND org_id = ?
+SELECT id, org_id, name, status, approval_mode, track_clicks, window_start_hour, window_end_hour, idempotency_key, created_at FROM outbound_campaigns WHERE id = ? AND org_id = ?
 `
 
 type GetOutboundCampaignParams struct {
@@ -649,6 +678,7 @@ func (q *Queries) GetOutboundCampaign(ctx context.Context, arg GetOutboundCampai
 		&i.Name,
 		&i.Status,
 		&i.ApprovalMode,
+		&i.TrackClicks,
 		&i.WindowStartHour,
 		&i.WindowEndHour,
 		&i.IdempotencyKey,
@@ -658,7 +688,7 @@ func (q *Queries) GetOutboundCampaign(ctx context.Context, arg GetOutboundCampai
 }
 
 const getOutboundCampaignByKey = `-- name: GetOutboundCampaignByKey :one
-SELECT id, org_id, name, status, approval_mode, window_start_hour, window_end_hour, idempotency_key, created_at FROM outbound_campaigns WHERE org_id = ? AND idempotency_key = ?
+SELECT id, org_id, name, status, approval_mode, track_clicks, window_start_hour, window_end_hour, idempotency_key, created_at FROM outbound_campaigns WHERE org_id = ? AND idempotency_key = ?
 `
 
 type GetOutboundCampaignByKeyParams struct {
@@ -675,6 +705,7 @@ func (q *Queries) GetOutboundCampaignByKey(ctx context.Context, arg GetOutboundC
 		&i.Name,
 		&i.Status,
 		&i.ApprovalMode,
+		&i.TrackClicks,
 		&i.WindowStartHour,
 		&i.WindowEndHour,
 		&i.IdempotencyKey,
@@ -684,7 +715,7 @@ func (q *Queries) GetOutboundCampaignByKey(ctx context.Context, arg GetOutboundC
 }
 
 const getOutboundDomain = `-- name: GetOutboundDomain :one
-SELECT id, org_id, domain, dns_host, dkim_selector, status, check_result, checked_at, created_at FROM outbound_domains WHERE id = ? AND org_id = ?
+SELECT id, org_id, domain, dns_host, dkim_selector, tracking_host, status, check_result, checked_at, created_at FROM outbound_domains WHERE id = ? AND org_id = ?
 `
 
 type GetOutboundDomainParams struct {
@@ -701,6 +732,7 @@ func (q *Queries) GetOutboundDomain(ctx context.Context, arg GetOutboundDomainPa
 		&i.Domain,
 		&i.DnsHost,
 		&i.DkimSelector,
+		&i.TrackingHost,
 		&i.Status,
 		&i.CheckResult,
 		&i.CheckedAt,
@@ -710,7 +742,7 @@ func (q *Queries) GetOutboundDomain(ctx context.Context, arg GetOutboundDomainPa
 }
 
 const getOutboundDomainByName = `-- name: GetOutboundDomainByName :one
-SELECT id, org_id, domain, dns_host, dkim_selector, status, check_result, checked_at, created_at FROM outbound_domains WHERE domain = ?
+SELECT id, org_id, domain, dns_host, dkim_selector, tracking_host, status, check_result, checked_at, created_at FROM outbound_domains WHERE domain = ?
 `
 
 func (q *Queries) GetOutboundDomainByName(ctx context.Context, domain string) (OutboundDomain, error) {
@@ -722,6 +754,7 @@ func (q *Queries) GetOutboundDomainByName(ctx context.Context, domain string) (O
 		&i.Domain,
 		&i.DnsHost,
 		&i.DkimSelector,
+		&i.TrackingHost,
 		&i.Status,
 		&i.CheckResult,
 		&i.CheckedAt,
@@ -749,6 +782,25 @@ func (q *Queries) GetOutboundEnrollment(ctx context.Context, id string) (Outboun
 		&i.ThreadSubject,
 		&i.CreatedAt,
 	)
+	return i, err
+}
+
+const getOutboundLinkForClick = `-- name: GetOutboundLinkForClick :one
+SELECT l.token, l.url, m.sent_at FROM outbound_links l
+JOIN outbound_messages m ON m.id = l.message_id
+WHERE l.token = ?
+`
+
+type GetOutboundLinkForClickRow struct {
+	Token  string         `json:"token"`
+	Url    string         `json:"url"`
+	SentAt sql.NullString `json:"sent_at"`
+}
+
+func (q *Queries) GetOutboundLinkForClick(ctx context.Context, token string) (GetOutboundLinkForClickRow, error) {
+	row := q.db.QueryRowContext(ctx, getOutboundLinkForClick, token)
+	var i GetOutboundLinkForClickRow
+	err := row.Scan(&i.Token, &i.Url, &i.SentAt)
 	return i, err
 }
 
@@ -1016,6 +1068,28 @@ func (q *Queries) GetOutboundSettings(ctx context.Context, orgID string) (Outbou
 	return i, err
 }
 
+const latestOutboundEnrollmentForProspect = `-- name: LatestOutboundEnrollmentForProspect :one
+SELECT id, org_id, campaign_id, prospect_id, mailbox_id, status, next_position, next_at, thread_subject, created_at FROM outbound_enrollments WHERE prospect_id = ? ORDER BY created_at DESC LIMIT 1
+`
+
+func (q *Queries) LatestOutboundEnrollmentForProspect(ctx context.Context, prospectID string) (OutboundEnrollment, error) {
+	row := q.db.QueryRowContext(ctx, latestOutboundEnrollmentForProspect, prospectID)
+	var i OutboundEnrollment
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.CampaignID,
+		&i.ProspectID,
+		&i.MailboxID,
+		&i.Status,
+		&i.NextPosition,
+		&i.NextAt,
+		&i.ThreadSubject,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listActiveOutboundEnrollmentsForProspect = `-- name: ListActiveOutboundEnrollmentsForProspect :many
 SELECT id, org_id, campaign_id, prospect_id, mailbox_id, status, next_position, next_at, thread_subject, created_at FROM outbound_enrollments WHERE prospect_id = ? AND status IN ('active', 'paused')
 `
@@ -1107,7 +1181,7 @@ func (q *Queries) ListActiveOutboundMailboxes(ctx context.Context) ([]OutboundMa
 }
 
 const listAllOutboundDomains = `-- name: ListAllOutboundDomains :many
-SELECT id, org_id, domain, dns_host, dkim_selector, status, check_result, checked_at, created_at FROM outbound_domains ORDER BY domain
+SELECT id, org_id, domain, dns_host, dkim_selector, tracking_host, status, check_result, checked_at, created_at FROM outbound_domains ORDER BY domain
 `
 
 func (q *Queries) ListAllOutboundDomains(ctx context.Context) ([]OutboundDomain, error) {
@@ -1125,6 +1199,7 @@ func (q *Queries) ListAllOutboundDomains(ctx context.Context) ([]OutboundDomain,
 			&i.Domain,
 			&i.DnsHost,
 			&i.DkimSelector,
+			&i.TrackingHost,
 			&i.Status,
 			&i.CheckResult,
 			&i.CheckedAt,
@@ -1245,7 +1320,7 @@ func (q *Queries) ListDueOutboundEnrollments(ctx context.Context, arg ListDueOut
 }
 
 const listOutboundCampaigns = `-- name: ListOutboundCampaigns :many
-SELECT id, org_id, name, status, approval_mode, window_start_hour, window_end_hour, idempotency_key, created_at FROM outbound_campaigns WHERE org_id = ? ORDER BY created_at DESC
+SELECT id, org_id, name, status, approval_mode, track_clicks, window_start_hour, window_end_hour, idempotency_key, created_at FROM outbound_campaigns WHERE org_id = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) ListOutboundCampaigns(ctx context.Context, orgID string) ([]OutboundCampaign, error) {
@@ -1263,6 +1338,7 @@ func (q *Queries) ListOutboundCampaigns(ctx context.Context, orgID string) ([]Ou
 			&i.Name,
 			&i.Status,
 			&i.ApprovalMode,
+			&i.TrackClicks,
 			&i.WindowStartHour,
 			&i.WindowEndHour,
 			&i.IdempotencyKey,
@@ -1282,7 +1358,7 @@ func (q *Queries) ListOutboundCampaigns(ctx context.Context, orgID string) ([]Ou
 }
 
 const listOutboundDomains = `-- name: ListOutboundDomains :many
-SELECT id, org_id, domain, dns_host, dkim_selector, status, check_result, checked_at, created_at FROM outbound_domains WHERE org_id = ? ORDER BY domain
+SELECT id, org_id, domain, dns_host, dkim_selector, tracking_host, status, check_result, checked_at, created_at FROM outbound_domains WHERE org_id = ? ORDER BY domain
 `
 
 func (q *Queries) ListOutboundDomains(ctx context.Context, orgID string) ([]OutboundDomain, error) {
@@ -1300,6 +1376,7 @@ func (q *Queries) ListOutboundDomains(ctx context.Context, orgID string) ([]Outb
 			&i.Domain,
 			&i.DnsHost,
 			&i.DkimSelector,
+			&i.TrackingHost,
 			&i.Status,
 			&i.CheckResult,
 			&i.CheckedAt,
@@ -1760,6 +1837,216 @@ func (q *Queries) NextOutboundMessageForMailbox(ctx context.Context, arg NextOut
 	return i, err
 }
 
+const outboundCampaignClickers = `-- name: OutboundCampaignClickers :one
+SELECT COUNT(DISTINCT m.prospect_id) FROM outbound_links l
+JOIN outbound_messages m ON m.id = l.message_id
+JOIN outbound_enrollments e ON e.id = m.enrollment_id
+WHERE e.campaign_id = ? AND l.clicks > 0
+`
+
+func (q *Queries) OutboundCampaignClickers(ctx context.Context, campaignID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, outboundCampaignClickers, campaignID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const outboundCampaignClicksByStep = `-- name: OutboundCampaignClicksByStep :many
+SELECT m.position, COUNT(DISTINCT m.prospect_id) AS n FROM outbound_links l
+JOIN outbound_messages m ON m.id = l.message_id
+JOIN outbound_enrollments e ON e.id = m.enrollment_id
+WHERE e.campaign_id = ? AND l.clicks > 0
+GROUP BY m.position
+`
+
+type OutboundCampaignClicksByStepRow struct {
+	Position int64 `json:"position"`
+	N        int64 `json:"n"`
+}
+
+// People who clicked, by the step whose link they clicked.
+func (q *Queries) OutboundCampaignClicksByStep(ctx context.Context, campaignID string) ([]OutboundCampaignClicksByStepRow, error) {
+	rows, err := q.db.QueryContext(ctx, outboundCampaignClicksByStep, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OutboundCampaignClicksByStepRow
+	for rows.Next() {
+		var i OutboundCampaignClicksByStepRow
+		if err := rows.Scan(&i.Position, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const outboundCampaignEnrollmentCounts = `-- name: OutboundCampaignEnrollmentCounts :many
+
+SELECT status, COUNT(*) AS n FROM outbound_enrollments WHERE campaign_id = ? GROUP BY status
+`
+
+type OutboundCampaignEnrollmentCountsRow struct {
+	Status string `json:"status"`
+	N      int64  `json:"n"`
+}
+
+// Campaign results. Reply rate is the measure: opens aren't tracked (pixels
+// hurt cold delivery and Apple Mail fakes them).
+func (q *Queries) OutboundCampaignEnrollmentCounts(ctx context.Context, campaignID string) ([]OutboundCampaignEnrollmentCountsRow, error) {
+	rows, err := q.db.QueryContext(ctx, outboundCampaignEnrollmentCounts, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OutboundCampaignEnrollmentCountsRow
+	for rows.Next() {
+		var i OutboundCampaignEnrollmentCountsRow
+		if err := rows.Scan(&i.Status, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const outboundCampaignPartners = `-- name: OutboundCampaignPartners :one
+SELECT COUNT(*) FROM outbound_enrollments e
+JOIN outbound_prospects p ON p.id = e.prospect_id
+WHERE e.campaign_id = ? AND p.status = 'partner'
+`
+
+func (q *Queries) OutboundCampaignPartners(ctx context.Context, campaignID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, outboundCampaignPartners, campaignID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const outboundCampaignRepliesByClass = `-- name: OutboundCampaignRepliesByClass :many
+SELECT r.classification, COUNT(DISTINCT r.prospect_id) AS n FROM outbound_replies r
+JOIN outbound_enrollments e ON e.id = r.enrollment_id
+WHERE e.campaign_id = ?
+GROUP BY r.classification
+`
+
+type OutboundCampaignRepliesByClassRow struct {
+	Classification string `json:"classification"`
+	N              int64  `json:"n"`
+}
+
+func (q *Queries) OutboundCampaignRepliesByClass(ctx context.Context, campaignID string) ([]OutboundCampaignRepliesByClassRow, error) {
+	rows, err := q.db.QueryContext(ctx, outboundCampaignRepliesByClass, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OutboundCampaignRepliesByClassRow
+	for rows.Next() {
+		var i OutboundCampaignRepliesByClassRow
+		if err := rows.Scan(&i.Classification, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const outboundCampaignRepliesByStep = `-- name: OutboundCampaignRepliesByStep :many
+SELECT CAST(COALESCE((SELECT MAX(m.position) FROM outbound_messages m
+        WHERE m.enrollment_id = r.enrollment_id AND m.status = 'sent' AND m.position > 0
+          AND m.sent_at <= r.received_at), 0) AS INTEGER) AS step,
+    COUNT(DISTINCT r.prospect_id) AS n
+FROM outbound_replies r
+JOIN outbound_enrollments e ON e.id = r.enrollment_id
+WHERE e.campaign_id = ? AND r.classification NOT IN ('bounce', 'out_of_office')
+GROUP BY step
+`
+
+type OutboundCampaignRepliesByStepRow struct {
+	Step int64 `json:"step"`
+	N    int64 `json:"n"`
+}
+
+// Which step each person answered: the last one sent to them before their
+// first human reply.
+func (q *Queries) OutboundCampaignRepliesByStep(ctx context.Context, campaignID string) ([]OutboundCampaignRepliesByStepRow, error) {
+	rows, err := q.db.QueryContext(ctx, outboundCampaignRepliesByStep, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OutboundCampaignRepliesByStepRow
+	for rows.Next() {
+		var i OutboundCampaignRepliesByStepRow
+		if err := rows.Scan(&i.Step, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const outboundCampaignSentByStep = `-- name: OutboundCampaignSentByStep :many
+SELECT m.position, COUNT(*) AS n FROM outbound_messages m
+JOIN outbound_enrollments e ON e.id = m.enrollment_id
+WHERE e.campaign_id = ? AND m.status = 'sent' AND m.position > 0
+GROUP BY m.position
+`
+
+type OutboundCampaignSentByStepRow struct {
+	Position int64 `json:"position"`
+	N        int64 `json:"n"`
+}
+
+func (q *Queries) OutboundCampaignSentByStep(ctx context.Context, campaignID string) ([]OutboundCampaignSentByStepRow, error) {
+	rows, err := q.db.QueryContext(ctx, outboundCampaignSentByStep, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OutboundCampaignSentByStepRow
+	for rows.Next() {
+		var i OutboundCampaignSentByStepRow
+		if err := rows.Scan(&i.Position, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pauseOutboundMailboxesOnDomain = `-- name: PauseOutboundMailboxesOnDomain :exec
 UPDATE outbound_mailboxes SET status = 'paused', paused_reason = ?
 WHERE domain_id = ? AND status = 'active'
@@ -1772,6 +2059,22 @@ type PauseOutboundMailboxesOnDomainParams struct {
 
 func (q *Queries) PauseOutboundMailboxesOnDomain(ctx context.Context, arg PauseOutboundMailboxesOnDomainParams) error {
 	_, err := q.db.ExecContext(ctx, pauseOutboundMailboxesOnDomain, arg.PausedReason, arg.DomainID)
+	return err
+}
+
+const recordOutboundClick = `-- name: RecordOutboundClick :exec
+UPDATE outbound_links SET clicks = clicks + 1,
+    first_clicked_at = COALESCE(first_clicked_at, ?)
+WHERE token = ?
+`
+
+type RecordOutboundClickParams struct {
+	FirstClickedAt sql.NullString `json:"first_clicked_at"`
+	Token          string         `json:"token"`
+}
+
+func (q *Queries) RecordOutboundClick(ctx context.Context, arg RecordOutboundClickParams) error {
+	_, err := q.db.ExecContext(ctx, recordOutboundClick, arg.FirstClickedAt, arg.Token)
 	return err
 }
 
@@ -1847,6 +2150,20 @@ type SetOutboundDomainCheckParams struct {
 
 func (q *Queries) SetOutboundDomainCheck(ctx context.Context, arg SetOutboundDomainCheckParams) error {
 	_, err := q.db.ExecContext(ctx, setOutboundDomainCheck, arg.Status, arg.CheckResult, arg.ID)
+	return err
+}
+
+const setOutboundDomainTrackingHost = `-- name: SetOutboundDomainTrackingHost :exec
+UPDATE outbound_domains SET tracking_host = ? WHERE id = ?
+`
+
+type SetOutboundDomainTrackingHostParams struct {
+	TrackingHost string `json:"tracking_host"`
+	ID           string `json:"id"`
+}
+
+func (q *Queries) SetOutboundDomainTrackingHost(ctx context.Context, arg SetOutboundDomainTrackingHostParams) error {
+	_, err := q.db.ExecContext(ctx, setOutboundDomainTrackingHost, arg.TrackingHost, arg.ID)
 	return err
 }
 

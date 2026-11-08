@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS outbound_domains (
     domain TEXT NOT NULL,
     dns_host TEXT NOT NULL DEFAULT 'manual', -- digitalocean or manual
     dkim_selector TEXT NOT NULL DEFAULT 'google',
+    -- go.<domain>, a CNAME to this server, when click tracking is set up.
+    -- Never a shared host: one sender's reputation must not touch another's.
+    tracking_host TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending', -- pending, ok, failing
     check_result TEXT NOT NULL DEFAULT '',
     checked_at TEXT,
@@ -88,6 +91,7 @@ CREATE TABLE IF NOT EXISTS outbound_campaigns (
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active', -- active, paused, done
     approval_mode TEXT NOT NULL DEFAULT 'every', -- every, first, automatic
+    track_clicks INTEGER NOT NULL DEFAULT 0,
     window_start_hour INTEGER NOT NULL DEFAULT 8,
     window_end_hour INTEGER NOT NULL DEFAULT 17,
     idempotency_key TEXT NOT NULL DEFAULT '',
@@ -171,7 +175,20 @@ CREATE TABLE IF NOT EXISTS outbound_replies (
 );
 CREATE INDEX IF NOT EXISTS idx_outbound_replies_org ON outbound_replies(org_id, handled, received_at);
 
+-- A tracked link in a sent email. The token is random and the address is
+-- stored here, so the redirect can only go where the email pointed.
+CREATE TABLE IF NOT EXISTS outbound_links (
+    token TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL REFERENCES outbound_messages(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    clicks INTEGER NOT NULL DEFAULT 0,
+    first_clicked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_outbound_links_message ON outbound_links(message_id);
+
 -- +goose Down
+DROP TABLE IF EXISTS outbound_links;
 DROP TABLE IF EXISTS outbound_replies;
 DROP TABLE IF EXISTS outbound_messages;
 DROP TABLE IF EXISTS outbound_enrollments;

@@ -176,6 +176,7 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	// Custom handlers for email tracking
 	registerEmailTrackingRoutes(server, ctx)
+	registerOutboundClickRoute(server, ctx)
 
 	// Custom webhook handlers (need raw body access)
 	registerWebhookRoutes(server, ctx)
@@ -543,6 +544,26 @@ func runServe(cmd *cobra.Command, args []string) {
 }
 
 // registerEmailTrackingRoutes adds email open/click tracking endpoints
+// registerOutboundClickRoute serves tracked links in outreach email. They
+// arrive on each outreach domain's go. subdomain (a CNAME to this server).
+// The address comes from the database, never the request.
+func registerOutboundClickRoute(server *rest.Server, ctx *svc.ServiceContext) {
+	server.AddRoute(rest.Route{
+		Method: http.MethodGet,
+		Path:   "/o/c/:token",
+		Handler: func(w http.ResponseWriter, r *http.Request) {
+			dest := ctx.Outbound.Click(r.Context(), strings.TrimPrefix(r.URL.Path, "/o/c/"))
+			if dest == "" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			http.Redirect(w, r, dest, http.StatusFound)
+		},
+	})
+}
+
 func registerEmailTrackingRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 	// Email open tracking - returns 1x1 transparent pixel
 	server.AddRoute(rest.Route{

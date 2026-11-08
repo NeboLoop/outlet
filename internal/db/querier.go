@@ -133,6 +133,7 @@ type Querier interface {
 	CreateOutboundCampaign(ctx context.Context, arg CreateOutboundCampaignParams) (OutboundCampaign, error)
 	CreateOutboundDomain(ctx context.Context, arg CreateOutboundDomainParams) (OutboundDomain, error)
 	CreateOutboundEnrollment(ctx context.Context, arg CreateOutboundEnrollmentParams) (OutboundEnrollment, error)
+	CreateOutboundLink(ctx context.Context, arg CreateOutboundLinkParams) error
 	CreateOutboundMailbox(ctx context.Context, arg CreateOutboundMailboxParams) (OutboundMailbox, error)
 	CreateOutboundMessage(ctx context.Context, arg CreateOutboundMessageParams) (OutboundMessage, error)
 	CreateOutboundProspect(ctx context.Context, arg CreateOutboundProspectParams) (OutboundProspect, error)
@@ -321,6 +322,7 @@ type Querier interface {
 	GetOutboundDomain(ctx context.Context, arg GetOutboundDomainParams) (OutboundDomain, error)
 	GetOutboundDomainByName(ctx context.Context, domain string) (OutboundDomain, error)
 	GetOutboundEnrollment(ctx context.Context, id string) (OutboundEnrollment, error)
+	GetOutboundLinkForClick(ctx context.Context, token string) (GetOutboundLinkForClickRow, error)
 	GetOutboundMailbox(ctx context.Context, arg GetOutboundMailboxParams) (OutboundMailbox, error)
 	GetOutboundMailboxByEmail(ctx context.Context, email string) (OutboundMailbox, error)
 	GetOutboundMessage(ctx context.Context, arg GetOutboundMessageParams) (OutboundMessage, error)
@@ -397,6 +399,7 @@ type Querier interface {
 	// ========== COMBINED BLOCK CHECK (Enhanced) ==========
 	IsEmailFullyBlocked(ctx context.Context, arg IsEmailFullyBlockedParams) (int64, error)
 	IsEmailSuppressed(ctx context.Context, arg IsEmailSuppressedParams) (int64, error)
+	LatestOutboundEnrollmentForProspect(ctx context.Context, prospectID string) (OutboundEnrollment, error)
 	ListActiveAgents(ctx context.Context) ([]ListActiveAgentsRow, error)
 	ListActiveOutboundEnrollmentsForProspect(ctx context.Context, prospectID string) ([]OutboundEnrollment, error)
 	// Every mailbox the sender and the reply reader work, across brands.
@@ -477,6 +480,18 @@ type Querier interface {
 	// The oldest approved email due on this mailbox whose enrollment, if any, is
 	// still running.
 	NextOutboundMessageForMailbox(ctx context.Context, arg NextOutboundMessageForMailboxParams) (OutboundMessage, error)
+	OutboundCampaignClickers(ctx context.Context, campaignID string) (int64, error)
+	// People who clicked, by the step whose link they clicked.
+	OutboundCampaignClicksByStep(ctx context.Context, campaignID string) ([]OutboundCampaignClicksByStepRow, error)
+	// Campaign results. Reply rate is the measure: opens aren't tracked (pixels
+	// hurt cold delivery and Apple Mail fakes them).
+	OutboundCampaignEnrollmentCounts(ctx context.Context, campaignID string) ([]OutboundCampaignEnrollmentCountsRow, error)
+	OutboundCampaignPartners(ctx context.Context, campaignID string) (int64, error)
+	OutboundCampaignRepliesByClass(ctx context.Context, campaignID string) ([]OutboundCampaignRepliesByClassRow, error)
+	// Which step each person answered: the last one sent to them before their
+	// first human reply.
+	OutboundCampaignRepliesByStep(ctx context.Context, campaignID string) ([]OutboundCampaignRepliesByStepRow, error)
+	OutboundCampaignSentByStep(ctx context.Context, campaignID string) ([]OutboundCampaignSentByStepRow, error)
 	PauseContactSequence(ctx context.Context, arg PauseContactSequenceParams) error
 	PauseOutboundMailboxesOnDomain(ctx context.Context, arg PauseOutboundMailboxesOnDomainParams) error
 	QueueEmail(ctx context.Context, arg QueueEmailParams) (EmailQueue, error)
@@ -486,6 +501,7 @@ type Querier interface {
 	RecordCampaignOpen(ctx context.Context, id string) error
 	RecordEmailClick(ctx context.Context, id string) error
 	RecordEmailOpen(ctx context.Context, id string) error
+	RecordOutboundClick(ctx context.Context, arg RecordOutboundClickParams) error
 	RecordTransactionalClick(ctx context.Context, id string) error
 	RecordTransactionalOpen(ctx context.Context, id string) error
 	RegenerateAPIKey(ctx context.Context, arg RegenerateAPIKeyParams) (Organization, error)
@@ -512,6 +528,7 @@ type Querier interface {
 	SetOutboundCampaignStatus(ctx context.Context, arg SetOutboundCampaignStatusParams) error
 	SetOutboundDNSToken(ctx context.Context, arg SetOutboundDNSTokenParams) error
 	SetOutboundDomainCheck(ctx context.Context, arg SetOutboundDomainCheckParams) error
+	SetOutboundDomainTrackingHost(ctx context.Context, arg SetOutboundDomainTrackingHostParams) error
 	SetOutboundEnrollmentNext(ctx context.Context, arg SetOutboundEnrollmentNextParams) error
 	SetOutboundEnrollmentStatus(ctx context.Context, arg SetOutboundEnrollmentStatusParams) error
 	SetOutboundMailboxError(ctx context.Context, arg SetOutboundMailboxErrorParams) error

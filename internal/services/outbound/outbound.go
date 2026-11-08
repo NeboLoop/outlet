@@ -52,6 +52,7 @@ type Service struct {
 	verify    Verifier
 	dns       Resolver
 	doAPI     string // DigitalOcean API base, replaced in tests
+	tracking  string // the host tracking subdomains point at (this server)
 	now       func() time.Time
 	mu        sync.Mutex
 	rnd       *rand.Rand
@@ -61,19 +62,21 @@ type Service struct {
 type Config struct {
 	Brands           []string // brand slugs outbound is on for
 	ProtectedDomains []string // never used for outbound, beyond the brand's own
+	TrackingTarget   string   // this server's public host; tracking subdomains CNAME to it
 }
 
 // New makes the service. Outbound is off for every brand not in cfg.Brands.
 func New(store *db.Store, cryptoSvc *crypto.Service, cfg Config) *Service {
 	s := &Service{
-		db:     store,
-		crypto: cryptoSvc,
-		brands: map[string]bool{},
-		verify: emailvalVerifier,
-		dns:    netResolver{},
-		doAPI:  "https://api.digitalocean.com",
-		now:    time.Now,
-		rnd:    rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
+		db:       store,
+		crypto:   cryptoSvc,
+		brands:   map[string]bool{},
+		verify:   emailvalVerifier,
+		dns:      netResolver{},
+		doAPI:    "https://api.digitalocean.com",
+		tracking: normDomain(cfg.TrackingTarget),
+		now:      time.Now,
+		rnd:      rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
 	}
 	for _, b := range cfg.Brands {
 		if b = strings.TrimSpace(strings.ToLower(b)); b != "" {

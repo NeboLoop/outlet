@@ -293,9 +293,13 @@ func (s *Service) handleIncoming(ctx context.Context, mb db.OutboundMailbox, raw
 	if class == "bounce" && in.FailedRecipient != "" && in.FailedRecipient != prospect.Email {
 		return // a bounce for some other mail
 	}
+	// The reply counts for the campaign it answers: the thread's, or else the
+	// prospect's latest, so a reply from a new thread still shows in results.
 	enrollment := sql.NullString{}
 	if sent != nil && sent.EnrollmentID.Valid {
 		enrollment = sent.EnrollmentID
+	} else if e, err := s.db.LatestOutboundEnrollmentForProspect(ctx, prospect.ID); err == nil {
+		enrollment = sql.NullString{String: e.ID, Valid: true}
 	}
 	handled := int64(1)
 	if class == "needs_review" || class == "complaint" {
@@ -308,7 +312,7 @@ func (s *Service) handleIncoming(ctx context.Context, mb db.OutboundMailbox, raw
 		ID: uuid.NewString(), OrgID: mb.OrgID, MailboxID: mb.ID, EnrollmentID: enrollment,
 		ProspectID: sql.NullString{String: prospect.ID, Valid: true}, FromEmail: in.From, Subject: in.Subject,
 		Body: truncate(newTextOrAll(in.Text), 20000), MessageID: in.MessageID, InReplyTo: in.InReplyTo,
-		Refs: strings.Join(in.References, " "), Classification: class, Handled: handled,
+		Refs: strings.Join(in.References, " "), Classification: class, Handled: handled, ReceivedAt: ts(s.now()),
 	}); err != nil {
 		return // already recorded (ON CONFLICT) or failed; effects ran the first time
 	}

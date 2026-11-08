@@ -64,10 +64,19 @@ func changesOnly() *mcp.ToolAnnotations { f := false; return &mcp.ToolAnnotation
 // ---- outreach_overview ----------------------------------------------------
 
 type OverviewInput struct {
-	Action string `json:"action" jsonschema:"required,get"`
+	Action     string `json:"action" jsonschema:"required,get"`
+	CampaignID string `json:"campaign_id,omitempty" jsonschema:"one campaign's results, step by step: sent, replies, reply rate and clicks per step"`
 }
 
-func overviewRun(ctx context.Context, t *mcpctx.ToolContext, _ OverviewInput) (any, error) {
+func overviewRun(ctx context.Context, t *mcpctx.ToolContext, in OverviewInput) (any, error) {
+	if in.CampaignID != "" {
+		brand := t.Brand(ctx)
+		c, err := t.DB().GetOutboundCampaign(ctx, db.GetOutboundCampaignParams{ID: in.CampaignID, OrgID: brand.ID})
+		if err != nil {
+			return nil, mcpctx.NewNotFoundError("no such campaign")
+		}
+		return t.Svc().Outbound.CampaignResults(ctx, c, true)
+	}
 	return t.Svc().Outbound.Overview(ctx, t.Brand(ctx))
 }
 
@@ -87,6 +96,7 @@ type SetupSendingInput struct {
 	DKIMSelector   string                  `json:"dkim_selector,omitempty" jsonschema:"add_domain: DKIM selector (default google)"`
 	DKIMValue      string                  `json:"dkim_value,omitempty" jsonschema:"add_domain: the DKIM TXT value from the mail provider's admin console"`
 	DMARCReport    string                  `json:"dmarc_report,omitempty" jsonschema:"add_domain: address for DMARC reports (optional)"`
+	ClickTracking  bool                    `json:"click_tracking,omitempty" jsonschema:"add_domain: set up go.<domain> (a CNAME to this server) so campaigns can track clicks"`
 	DomainID       string                  `json:"domain_id,omitempty" jsonschema:"check_domain: which domain to recheck"`
 	Mailboxes      []outbound.MailboxInput `json:"mailboxes,omitempty" jsonschema:"add_mailboxes: up to 100 mailboxes; each must log in to SMTP and IMAP"`
 }
@@ -114,7 +124,7 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 		}
 		d, pending, check, err := o.AddDomain(ctx, brand, outbound.DomainInput{
 			Domain: in.Domain, DNSHost: in.DNSHost, MailProvider: in.MailProvider, MXHosts: in.MXHosts,
-			SPFInclude: in.SPFInclude, DKIMSelector: in.DKIMSelector, DKIMValue: in.DKIMValue, DMARCReport: in.DMARCReport,
+			SPFInclude: in.SPFInclude, DKIMSelector: in.DKIMSelector, DKIMValue: in.DKIMValue, DMARCReport: in.DMARCReport, ClickTracking: in.ClickTracking,
 		})
 		if err != nil {
 			return map[string]any{"records_to_add": pending}, err
@@ -311,13 +321,13 @@ func defineOutbound[In any](name, title, desc string, ann *mcp.ToolAnnotations, 
 
 var outboundTools = []outboundTool{
 	defineOutbound("outreach_overview", "Outreach overview",
-		"Outreach at a glance: whether outbound is on, domains and their DNS, each mailbox's sends today against its limit, bounces and complaints, drafts and replies waiting, anything paused and why, and what to do next.\n\nExample: outreach_overview(action: get)",
+		"Outreach at a glance: whether outbound is on, domains and their DNS, each mailbox's sends today against its limit, bounces and complaints, drafts and replies waiting, anything paused and why, what to do next, and every campaign's results (reached, replied, reply rate, interested, partners, clicks, bounces, opt-outs). With campaign_id: that campaign step by step, to see which email gets the replies.\n\nExamples: outreach_overview(action: get); outreach_overview(action: get, campaign_id: \"...\")",
 		readOnly(), overviewRun),
 	defineOutbound("setup_sending", "Set up sending",
 		"Set up where outreach sends from. Outreach uses separate outreach domains, never the brand's own or a protected company domain, and never SES.\n"+
 			"- settings: mailing_address (required before any campaign), opt_out_line, timezone\n"+
 			"- dns_token: store a DigitalOcean token (domain read/write) so add_domain can write DNS\n"+
-			"- add_domain: domain, dns_host (digitalocean|manual), mail_provider (google|other), mx_hosts, spf_include, dkim_selector, dkim_value, dmarc_report. Writes MX, SPF, DMARC and DKIM when on DigitalOcean, otherwise returns records_to_add\n"+
+			"- add_domain: domain, dns_host (digitalocean|manual), mail_provider (google|other), mx_hosts, spf_include, dkim_selector, dkim_value, dmarc_report, click_tracking. Writes MX, SPF, DMARC and DKIM when on DigitalOcean, otherwise returns records_to_add\n"+
 			"- check_domain: domain_id. Rechecks public DNS (also done daily; failing DNS pauses the domain's mailboxes)\n"+
 			"- add_mailboxes: mailboxes [{email, from_name, signature, provider: google, password (an app password)} or custom smtp_/imap_ hosts]. Each must log in\n"+
 			"- list: the brand's mailboxes",
@@ -326,7 +336,7 @@ var outboundTools = []outboundTool{
 		"Import up to 100 people to reach, with creator fields (platform, channel_url, audience_size, niche, recent_video, personal_line) and email_source, where the address was published for business. Removes duplicates, checks suppression and verifies every address; risky ones are held and never sent.\n\nExample: add_prospects(action: add, prospects: [{email, first_name, platform: youtube, channel_url, recent_video, personal_line, email_source: \"YouTube About page\"}])",
 		changesOnly(), addProspectsRun),
 	defineOutbound("draft_outreach", "Draft outreach",
-		"Create a campaign of 1 to 5 steps and draft every first email for its prospects. Templates use {{first_name}}, {{name}}, {{channel_url}}, {{recent_video}}, {{personal_line}}, {{sender_first}} and custom fields, and {a|b} variants. A missing value skips that prospect rather than sending a blank. Each prospect gets one mailbox for the whole sequence, and follow-ups reply in the same thread. The opt-out line and mailing address are added. dry_run renders without saving. Nothing sends until approved (approval_mode every by default).",
+		"Create a campaign of 1 to 5 steps and draft every first email for its prospects. Templates use {{first_name}}, {{name}}, {{channel_url}}, {{recent_video}}, {{personal_line}}, {{sender_first}} and custom fields, and {a|b} variants. A missing value skips that prospect rather than sending a blank. Each prospect gets one mailbox for the whole sequence, and follow-ups reply in the same thread. The opt-out line and mailing address are added. track_clicks sends links through each domain's go. subdomain and counts clicks (off by default; reply rate is the main measure). dry_run renders without saving. Nothing sends until approved (approval_mode every by default).",
 		changesOnly(), draftOutreachRun),
 	defineOutbound("review_drafts", "Review drafts",
 		"List emails waiting for approval, then approve, edit or skip them by id (up to 100 at a time). Approving lets them send, paced per mailbox inside the sending window.",

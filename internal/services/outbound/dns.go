@@ -22,6 +22,7 @@ import (
 type Resolver interface {
 	LookupMX(ctx context.Context, name string) ([]*net.MX, error)
 	LookupTXT(ctx context.Context, name string) ([]string, error)
+	LookupCNAME(ctx context.Context, name string) (string, error)
 }
 
 type netResolver struct{}
@@ -34,6 +35,10 @@ func (netResolver) LookupTXT(ctx context.Context, name string) ([]string, error)
 	return net.DefaultResolver.LookupTXT(ctx, name)
 }
 
+func (netResolver) LookupCNAME(ctx context.Context, name string) (string, error) {
+	return net.DefaultResolver.LookupCNAME(ctx, name)
+}
+
 // DNSCheck is what one domain's mail records look like from public DNS.
 type DNSCheck struct {
 	MX      bool     `json:"mx"`
@@ -41,6 +46,9 @@ type DNSCheck struct {
 	DKIM    bool     `json:"dkim"`
 	DMARC   bool     `json:"dmarc"`
 	Missing []string `json:"missing,omitempty"`
+	// Tracking is whether the click-tracking subdomain points at this server.
+	// It never pauses sending; campaigns with click tracking need it.
+	Tracking *bool `json:"tracking,omitempty"`
 }
 
 func (c DNSCheck) OK() bool { return len(c.Missing) == 0 }
@@ -62,6 +70,11 @@ func (s *Service) checkDNS(ctx context.Context, d db.OutboundDomain) DNSCheck {
 		}
 	}
 	sort.Strings(c.Missing)
+	if d.TrackingHost != "" {
+		cname, err := s.dns.LookupCNAME(ctx, d.TrackingHost)
+		ok := err == nil && s.tracking != "" && normDomain(cname) == s.tracking
+		c.Tracking = &ok
+	}
 	return c
 }
 
@@ -119,6 +132,10 @@ type DomainInput struct {
 	DKIMSelector string   `json:"dkim_selector,omitempty"` // default google
 	DKIMValue    string   `json:"dkim_value,omitempty"`    // the TXT value from the mail provider's admin
 	DMARCReport  string   `json:"dmarc_report,omitempty"`  // rua address, optional
+	// ClickTracking sets up go.<domain>, a CNAME to this server, for tracked links.
+	ClickTracking bool `json:"click_tracking,omitempty"`
+
+	trackingTarget string // this server's host, filled by AddDomain
 }
 
 // DNSRecord is one record outbound wants on a domain.
@@ -156,6 +173,9 @@ func wantedRecords(in DomainInput) ([]DNSRecord, error) {
 	if in.DKIMValue != "" {
 		recs = append(recs, DNSRecord{Type: "TXT", Name: in.DKIMSelector + "._domainkey", Data: in.DKIMValue})
 	}
+	if in.ClickTracking {
+		recs = append(recs, DNSRecord{Type: "CNAME", Name: "go", Data: in.trackingTarget + "."})
+	}
 	return recs, nil
 }
 
@@ -176,6 +196,13 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 	if err := s.allowedDomain(ctx, org, in.Domain); err != nil {
 		return db.OutboundDomain{}, nil, DNSCheck{}, err
 	}
+	trackingHost := ""
+	if in.ClickTracking {
+		if s.tracking == "" {
+			return db.OutboundDomain{}, nil, DNSCheck{}, refuse("Click tracking needs this server's public host (APP_DOMAIN) in its config.")
+		}
+		in.trackingTarget, trackingHost = s.tracking, "go."+in.Domain
+	}
 	recs, err := wantedRecords(in)
 	if err != nil {
 		return db.OutboundDomain{}, nil, DNSCheck{}, err
@@ -187,10 +214,17 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 	case err != nil:
 		d, err = s.db.CreateOutboundDomain(ctx, db.CreateOutboundDomainParams{
 			ID: uuid.NewString(), OrgID: org.ID, Domain: in.Domain, DnsHost: in.DNSHost, DkimSelector: in.DKIMSelector,
+			TrackingHost: trackingHost,
 		})
 		if err != nil {
 			return d, nil, DNSCheck{}, err
 		}
+	}
+	if trackingHost != "" && d.TrackingHost != trackingHost {
+		if err := s.db.SetOutboundDomainTrackingHost(ctx, db.SetOutboundDomainTrackingHostParams{TrackingHost: trackingHost, ID: d.ID}); err != nil {
+			return d, nil, DNSCheck{}, err
+		}
+		d.TrackingHost = trackingHost
 	}
 	var pending []DNSRecord
 	if in.DNSHost == "digitalocean" {
@@ -310,6 +344,8 @@ func doHas(have []doRecord, r DNSRecord) bool {
 		case r.Type == "TXT" && strings.HasPrefix(rd, "v=dmarc1") && strings.HasPrefix(hd, "v=dmarc1"):
 			return true
 		case r.Type == "TXT" && strings.HasSuffix(r.Name, "._domainkey"):
+			return true
+		case r.Type == "CNAME": // one CNAME per name; the tracking check says if it points elsewhere
 			return true
 		}
 	}

@@ -494,6 +494,7 @@ type OutboundCampaign struct {
 	Name            string `json:"name"`
 	Status          string `json:"status"`
 	ApprovalMode    string `json:"approval_mode"`
+	TrackClicks     int64  `json:"track_clicks"`
 	WindowStartHour int64  `json:"window_start_hour"`
 	WindowEndHour   int64  `json:"window_end_hour"`
 	IdempotencyKey  string `json:"idempotency_key"`
@@ -506,6 +507,7 @@ type OutboundDomain struct {
 	Domain       string         `json:"domain"`
 	DnsHost      string         `json:"dns_host"`
 	DkimSelector string         `json:"dkim_selector"`
+	TrackingHost string         `json:"tracking_host"`
 	Status       string         `json:"status"`
 	CheckResult  string         `json:"check_result"`
 	CheckedAt    sql.NullString `json:"checked_at"`
@@ -523,6 +525,15 @@ type OutboundEnrollment struct {
 	NextAt        sql.NullString `json:"next_at"`
 	ThreadSubject string         `json:"thread_subject"`
 	CreatedAt     string         `json:"created_at"`
+}
+
+type OutboundLink struct {
+	Token          string         `json:"token"`
+	OrgID          string         `json:"org_id"`
+	MessageID      string         `json:"message_id"`
+	Url            string         `json:"url"`
+	Clicks         int64          `json:"clicks"`
+	FirstClickedAt sql.NullString `json:"first_clicked_at"`
 }
 
 type OutboundMailbox struct {

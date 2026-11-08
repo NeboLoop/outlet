@@ -30,6 +30,7 @@ type CampaignInput struct {
 	ProspectIDs     []string    `json:"prospect_ids"`
 	MailboxIDs      []string    `json:"mailbox_ids,omitempty"`   // default: every active mailbox of the brand
 	ApprovalMode    string      `json:"approval_mode,omitempty"` // every (default), first, automatic
+	TrackClicks     bool        `json:"track_clicks,omitempty"`  // links go through each domain's go. subdomain
 	WindowStartHour int         `json:"window_start_hour,omitempty"`
 	WindowEndHour   int         `json:"window_end_hour,omitempty"`
 	IdempotencyKey  string      `json:"idempotency_key,omitempty"`
@@ -132,6 +133,11 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 	if err != nil {
 		return CampaignResult{}, err
 	}
+	if in.TrackClicks {
+		if err := s.trackingReady(ctx, org.ID, pool); err != nil {
+			return CampaignResult{}, err
+		}
+	}
 	if in.ApprovalMode == "automatic" {
 		for _, mb := range pool {
 			if s.now().Sub(parseTS(mb.WarmupStartedAt)) < 30*24*time.Hour {
@@ -206,7 +212,7 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 		status = "approved"
 	}
 	camp, err := s.db.CreateOutboundCampaign(ctx, db.CreateOutboundCampaignParams{
-		ID: uuid.NewString(), OrgID: org.ID, Name: strings.TrimSpace(in.Name), ApprovalMode: in.ApprovalMode,
+		ID: uuid.NewString(), OrgID: org.ID, Name: strings.TrimSpace(in.Name), ApprovalMode: in.ApprovalMode, TrackClicks: boolInt(in.TrackClicks),
 		WindowStartHour: int64(in.WindowStartHour), WindowEndHour: int64(in.WindowEndHour), IdempotencyKey: in.IdempotencyKey,
 	})
 	if err != nil {

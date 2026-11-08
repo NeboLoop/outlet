@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,6 +145,16 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Outbound: outbound.New(store, cryptoService, outbound.Config{
 			Brands:           strings.Split(c.Outbound.Brands, ","),
 			ProtectedDomains: strings.Split(c.Outbound.ProtectedDomains, ","),
+			TrackingTarget:   publicHost(c.App.BaseURL),
 		}),
 	}
+}
+
+// publicHost is the host of the server's public URL.
+func publicHost(baseURL string) string {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }

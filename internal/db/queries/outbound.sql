@@ -24,8 +24,8 @@ ON CONFLICT (org_id) DO UPDATE SET paused = excluded.paused, paused_reason = exc
     updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now');
 
 -- name: CreateOutboundDomain :one
-INSERT INTO outbound_domains (id, org_id, domain, dns_host, dkim_selector)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO outbound_domains (id, org_id, domain, dns_host, dkim_selector, tracking_host)
+VALUES (?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetOutboundDomain :one
@@ -127,8 +127,8 @@ WHERE id = ?;
 SELECT status, COUNT(*) AS n FROM outbound_prospects WHERE org_id = ? GROUP BY status;
 
 -- name: CreateOutboundCampaign :one
-INSERT INTO outbound_campaigns (id, org_id, name, approval_mode, window_start_hour, window_end_hour, idempotency_key)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO outbound_campaigns (id, org_id, name, approval_mode, track_clicks, window_start_hour, window_end_hour, idempotency_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetOutboundCampaign :one
@@ -254,8 +254,8 @@ SELECT * FROM outbound_messages WHERE status = 'sending' AND claimed_at < ?;
 -- name: CreateOutboundReply :one
 INSERT INTO outbound_replies (
     id, org_id, mailbox_id, enrollment_id, prospect_id, from_email, subject,
-    body, message_id, in_reply_to, refs, classification, handled
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    body, message_id, in_reply_to, refs, classification, handled, received_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (mailbox_id, message_id) DO NOTHING
 RETURNING *;
 
@@ -280,3 +280,71 @@ SELECT domain FROM domain_identities;
 
 -- name: SetOutboundMessageNotBefore :exec
 UPDATE outbound_messages SET not_before = ? WHERE id = ? AND status = 'approved';
+
+-- Campaign results. Reply rate is the measure: opens aren't tracked (pixels
+-- hurt cold delivery and Apple Mail fakes them).
+
+-- name: OutboundCampaignEnrollmentCounts :many
+SELECT status, COUNT(*) AS n FROM outbound_enrollments WHERE campaign_id = ? GROUP BY status;
+
+-- name: OutboundCampaignSentByStep :many
+SELECT m.position, COUNT(*) AS n FROM outbound_messages m
+JOIN outbound_enrollments e ON e.id = m.enrollment_id
+WHERE e.campaign_id = ? AND m.status = 'sent' AND m.position > 0
+GROUP BY m.position;
+
+-- name: OutboundCampaignRepliesByClass :many
+SELECT r.classification, COUNT(DISTINCT r.prospect_id) AS n FROM outbound_replies r
+JOIN outbound_enrollments e ON e.id = r.enrollment_id
+WHERE e.campaign_id = ?
+GROUP BY r.classification;
+
+-- name: OutboundCampaignRepliesByStep :many
+-- Which step each person answered: the last one sent to them before their
+-- first human reply.
+SELECT CAST(COALESCE((SELECT MAX(m.position) FROM outbound_messages m
+        WHERE m.enrollment_id = r.enrollment_id AND m.status = 'sent' AND m.position > 0
+          AND m.sent_at <= r.received_at), 0) AS INTEGER) AS step,
+    COUNT(DISTINCT r.prospect_id) AS n
+FROM outbound_replies r
+JOIN outbound_enrollments e ON e.id = r.enrollment_id
+WHERE e.campaign_id = ? AND r.classification NOT IN ('bounce', 'out_of_office')
+GROUP BY step;
+
+-- name: OutboundCampaignPartners :one
+SELECT COUNT(*) FROM outbound_enrollments e
+JOIN outbound_prospects p ON p.id = e.prospect_id
+WHERE e.campaign_id = ? AND p.status = 'partner';
+
+-- name: LatestOutboundEnrollmentForProspect :one
+SELECT * FROM outbound_enrollments WHERE prospect_id = ? ORDER BY created_at DESC LIMIT 1;
+
+-- name: SetOutboundDomainTrackingHost :exec
+UPDATE outbound_domains SET tracking_host = ? WHERE id = ?;
+
+-- name: CreateOutboundLink :exec
+INSERT INTO outbound_links (token, org_id, message_id, url) VALUES (?, ?, ?, ?);
+
+-- name: GetOutboundLinkForClick :one
+SELECT l.token, l.url, m.sent_at FROM outbound_links l
+JOIN outbound_messages m ON m.id = l.message_id
+WHERE l.token = ?;
+
+-- name: RecordOutboundClick :exec
+UPDATE outbound_links SET clicks = clicks + 1,
+    first_clicked_at = COALESCE(first_clicked_at, ?)
+WHERE token = ?;
+
+-- name: OutboundCampaignClicksByStep :many
+-- People who clicked, by the step whose link they clicked.
+SELECT m.position, COUNT(DISTINCT m.prospect_id) AS n FROM outbound_links l
+JOIN outbound_messages m ON m.id = l.message_id
+JOIN outbound_enrollments e ON e.id = m.enrollment_id
+WHERE e.campaign_id = ? AND l.clicks > 0
+GROUP BY m.position;
+
+-- name: OutboundCampaignClickers :one
+SELECT COUNT(DISTINCT m.prospect_id) FROM outbound_links l
+JOIN outbound_messages m ON m.id = l.message_id
+JOIN outbound_enrollments e ON e.id = m.enrollment_id
+WHERE e.campaign_id = ? AND l.clicks > 0;

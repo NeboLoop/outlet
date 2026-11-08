@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/mail"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -162,6 +163,13 @@ func bodyOf(t *testing.T, m *mail.Message) string {
 
 type fakeDNS struct{ ok map[string]bool }
 
+func (f fakeDNS) LookupCNAME(_ context.Context, name string) (string, error) {
+	if f.ok[strings.TrimPrefix(name, "go.")] && f.ok["cname:"+name] {
+		return "outlet.example.com.", nil
+	}
+	return "", errors.New("no CNAME")
+}
+
 func (f fakeDNS) LookupMX(_ context.Context, name string) ([]*net.MX, error) {
 	if f.ok[name] {
 		return []*net.MX{{Host: "smtp.google.com.", Pref: 1}}, nil
@@ -217,6 +225,7 @@ func newHarness(t *testing.T) *harness {
 	h.dns = fakeDNS{ok: map[string]bool{"getexample.com": true}}
 	h.svc = New(store, cs, Config{Brands: []string{"nebo-outreach"}, ProtectedDomains: []string{"neboai.com", "neboloop.com"}})
 	h.svc.now = func() time.Time { return h.clock }
+	h.svc.tracking = "outlet.example.com"
 	h.svc.dns = h.dns
 	h.svc.verify = func(_ context.Context, email string) (bool, string) {
 		if strings.Contains(email, "risky") {
@@ -499,7 +508,7 @@ func TestSafetyLimits(t *testing.T) {
 
 	// Health: bounces over 3% pause the mailbox.
 	for i, id := range []string{"b1@x", "b2@x"} {
-		_, err := h.store.CreateOutboundReply(ctx, db.CreateOutboundReplyParams{ID: id, OrgID: h.org.ID, MailboxID: sam.ID, FromEmail: "mailer-daemon@x", MessageID: id, Classification: "bounce", Handled: 1})
+		_, err := h.store.CreateOutboundReply(ctx, db.CreateOutboundReplyParams{ID: id, OrgID: h.org.ID, MailboxID: sam.ID, FromEmail: "mailer-daemon@x", MessageID: id, Classification: "bounce", Handled: 1, ReceivedAt: ts(h.clock)})
 		require.NoError(t, err, i)
 	}
 	h.svc.Tick(ctx)
@@ -668,4 +677,81 @@ func TestDigitalOceanRecords(t *testing.T) {
 		kinds = append(kinds, r.Type+" "+r.Name)
 	}
 	assert.ElementsMatch(t, []string{"MX @", "TXT _dmarc", "TXT google._domainkey"}, kinds, "SPF already existed and is not doubled")
+}
+
+// Results tell whether a campaign works: reached, replied, reply rate and,
+// with track_clicks, who clicked, overall and step by step. Tracked links go
+// through the domain's own go. subdomain and only ever redirect to the
+// address the email held; a scanner's instant click isn't counted.
+func TestCampaignResultsAndClicks(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	h.setup()
+	got := h.prospects(creator("kai@example.org", "Kai", "the setup tour"), creator("lee@example.org", "Lee", "the gear guide"))
+	ids := []string{got["kai@example.org"].ID, got["lee@example.org"].ID}
+	steps := []StepInput{{Subject: "Hi {{first_name}}", Body: "Loved {{recent_video}}. Details: https://neboai.com/creators."}, {DelayDays: 2, Body: "Any thoughts, {{first_name}}?"}}
+
+	_, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
+	assert.ErrorContains(t, err, "click-tracking subdomain")
+	_, _, _, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com", ClickTracking: true})
+	require.NoError(t, err)
+	_, err = h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
+	assert.ErrorContains(t, err, "doesn't point at this server")
+	h.dns.ok["cname:go.getexample.com"] = true
+	d, _ := h.store.GetOutboundDomainByName(ctx, "getexample.com")
+	c, err := h.svc.CheckDomain(ctx, d)
+	require.NoError(t, err)
+	require.True(t, *c.Tracking)
+
+	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
+	require.NoError(t, err)
+	assert.Contains(t, camp.Drafts[0].Body, "https://neboai.com/creators", "drafts show the real link")
+	_, err = h.svc.Review(ctx, h.org, "approve", []string{camp.Drafts[0].MessageID, camp.Drafts[1].MessageID})
+	require.NoError(t, err)
+	h.svc.Tick(ctx)
+	kai := h.mail.sentTo("kai@example.org")
+	require.Len(t, kai, 1)
+	body := bodyOf(t, kai[0])
+	assert.NotContains(t, body, "neboai.com/creators")
+	m := regexp.MustCompile(`https://go\.getexample\.com/o/c/([0-9a-f]{32})\.`).FindStringSubmatch(body)
+	require.NotNil(t, m, body)
+	token := m[1]
+
+	assert.Equal(t, "https://neboai.com/creators", h.svc.Click(ctx, token))
+	assert.Equal(t, "", h.svc.Click(ctx, "not-a-token"))
+	h.advance(2 * time.Minute)
+	assert.Equal(t, "https://neboai.com/creators", h.svc.Click(ctx, token))
+
+	h.mail.deliver(t, kaiBox(kai[0]), "From: kai@example.org\nTo: x\nSubject: Re: hi\nMessage-ID: <r-kai@example.org>\nIn-Reply-To: "+kai[0].Header.Get("Message-Id")+"\n\nI'm in. What's next?\n")
+	h.svc.PollReplies(ctx)
+
+	o, err := h.svc.Overview(ctx, h.org)
+	require.NoError(t, err)
+	require.Len(t, o.Campaigns, 1)
+	r := o.Campaigns[0]
+	assert.EqualValues(t, 2, r.Reached)
+	assert.EqualValues(t, 1, r.Replied)
+	assert.EqualValues(t, 50, r.ReplyRate)
+	assert.EqualValues(t, 1, r.Clicked, "the scanner-speed click isn't counted; the later one is, once per person")
+	assert.EqualValues(t, 50, r.ClickRate)
+
+	replies, _ := h.svc.ListReplies(ctx, h.org, false, 10)
+	require.NoError(t, h.svc.Classify(ctx, h.org, replies[0].ID, "interested"))
+	full, err := h.svc.CampaignResults(ctx, mustCampaign(t, h, camp.CampaignID), true)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, full.Interested)
+	require.Len(t, full.Steps, 2)
+	assert.Equal(t, StepResult{Step: 1, Sent: 2, Replies: 1, ReplyRate: 50, Clicked: 1}, full.Steps[0])
+	assert.Equal(t, StepResult{Step: 2}, full.Steps[1])
+}
+
+func kaiBox(m *mail.Message) string {
+	a, _ := mail.ParseAddress(m.Header.Get("From"))
+	return a.Address
+}
+
+func mustCampaign(t *testing.T, h *harness, id string) db.OutboundCampaign {
+	c, err := h.store.GetOutboundCampaign(h.ctx, db.GetOutboundCampaignParams{ID: id, OrgID: h.org.ID})
+	require.NoError(t, err)
+	return c
 }

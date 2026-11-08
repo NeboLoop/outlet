@@ -102,8 +102,15 @@ func (s *Service) sendOne(ctx context.Context, mb db.OutboundMailbox) error {
 	if m.Refs != "" {
 		refs = strings.Fields(m.Refs)
 	}
+	body := m.Body
+	if host := s.trackingHostFor(ctx, m, mb); host != "" {
+		if body, err = s.trackLinks(ctx, m, host); err != nil {
+			_ = s.db.ReleaseOutboundMessage(ctx, db.ReleaseOutboundMessageParams{Error: err.Error(), NotBefore: ts(now.Add(15 * time.Minute)), ID: m.ID})
+			return err
+		}
+	}
 	transient, sendErr := sendSMTP(mb, smtpPass, outMessage{
-		FromName: mb.FromName, From: mb.Email, To: m.ToEmail, Subject: m.Subject, Body: m.Body,
+		FromName: mb.FromName, From: mb.Email, To: m.ToEmail, Subject: m.Subject, Body: body,
 		MessageID: m.MessageID, InReplyTo: m.InReplyTo, References: refs, Date: now,
 	})
 	_ = s.db.SetOutboundMailboxNextSend(ctx, db.SetOutboundMailboxNextSendParams{NextSendAt: sql.NullString{String: ts(now.Add(s.gap())), Valid: true}, ID: mb.ID})

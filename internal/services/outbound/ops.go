@@ -27,15 +27,16 @@ type MailboxHealth struct {
 
 // Overview is outreach at a glance, with the next things to do.
 type Overview struct {
-	Enabled        bool             `json:"enabled"`
-	Paused         string           `json:"paused,omitempty"`
-	MailingAddress string           `json:"mailing_address"`
-	Domains        []map[string]any `json:"domains"`
-	Mailboxes      []MailboxHealth  `json:"mailboxes"`
-	Prospects      map[string]int64 `json:"prospects"`
-	Messages       map[string]int64 `json:"messages"`
-	RepliesWaiting int64            `json:"replies_waiting"`
-	Next           []string         `json:"next"`
+	Enabled        bool              `json:"enabled"`
+	Paused         string            `json:"paused,omitempty"`
+	MailingAddress string            `json:"mailing_address"`
+	Domains        []map[string]any  `json:"domains"`
+	Mailboxes      []MailboxHealth   `json:"mailboxes"`
+	Prospects      map[string]int64  `json:"prospects"`
+	Messages       map[string]int64  `json:"messages"`
+	RepliesWaiting int64             `json:"replies_waiting"`
+	Campaigns      []CampaignResults `json:"campaigns"`
+	Next           []string          `json:"next"`
 }
 
 func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, error) {
@@ -74,6 +75,12 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 		}
 	}
 	o.RepliesWaiting, _ = s.db.CountUnhandledOutboundReplies(ctx, org.ID)
+	camps, _ := s.db.ListOutboundCampaigns(ctx, org.ID)
+	for _, c := range camps {
+		if r, err := s.CampaignResults(ctx, c, false); err == nil {
+			o.Campaigns = append(o.Campaigns, r)
+		}
+	}
 
 	switch {
 	case !o.Enabled:
