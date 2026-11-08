@@ -324,7 +324,6 @@ FROM list_subscribers ls
 JOIN contacts c ON c.id = ls.contact_id
 WHERE ls.list_id = ?1
   AND ls.status = 'active'
-  AND c.bounced_at IS NULL
   AND c.blocked_at IS NULL
   AND c.unsubscribed_at IS NULL
 `
@@ -626,7 +625,7 @@ const getFailedCampaignSendsForRetry = `-- name: GetFailedCampaignSendsForRetry 
 
 SELECT cs.id, cs.campaign_id, cs.contact_id, cs.tracking_token, cs.retry_count, cs.failed_at,
        c.email, c.name,
-       ec.org_id, ec.subject, ec.html_body, ec.from_name, ec.from_email, ec.reply_to,
+       ec.org_id, ec.subject, ec.html_body, ec.plain_text, ec.from_name, ec.from_email, ec.reply_to,
        ec.track_opens, ec.track_clicks
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
@@ -650,6 +649,7 @@ type GetFailedCampaignSendsForRetryRow struct {
 	OrgID         string         `json:"org_id"`
 	Subject       string         `json:"subject"`
 	HtmlBody      string         `json:"html_body"`
+	PlainText     sql.NullString `json:"plain_text"`
 	FromName      sql.NullString `json:"from_name"`
 	FromEmail     sql.NullString `json:"from_email"`
 	ReplyTo       sql.NullString `json:"reply_to"`
@@ -679,6 +679,7 @@ func (q *Queries) GetFailedCampaignSendsForRetry(ctx context.Context, limitCount
 			&i.OrgID,
 			&i.Subject,
 			&i.HtmlBody,
+			&i.PlainText,
 			&i.FromName,
 			&i.FromEmail,
 			&i.ReplyTo,
@@ -1221,6 +1222,26 @@ WHERE id = ?1
 
 func (q *Queries) RecordCampaignOpen(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, recordCampaignOpen, id)
+	return err
+}
+
+const refreshCampaignEngagement = `-- name: RefreshCampaignEngagement :exec
+UPDATE email_campaigns
+SET opened_count = (SELECT COUNT(*) FROM campaign_sends cs WHERE cs.campaign_id = ?1 AND cs.opened_at IS NOT NULL),
+    clicked_count = (SELECT COUNT(*) FROM campaign_sends cs WHERE cs.campaign_id = ?1 AND cs.clicked_at IS NOT NULL),
+    unsubscribed_count = (
+        SELECT COUNT(*) FROM campaign_sends cs JOIN contacts c ON c.id = cs.contact_id
+        WHERE cs.campaign_id = ?1 AND c.unsubscribed_at IS NOT NULL AND cs.sent_at IS NOT NULL
+          AND c.unsubscribed_at >= cs.sent_at
+    ),
+    updated_at = datetime('now')
+WHERE id = ?1
+`
+
+// Recounts a campaign's unique opens, clicks and unsubscribes from its sends,
+// so the totals never drift from what each recipient did.
+func (q *Queries) RefreshCampaignEngagement(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, refreshCampaignEngagement, id)
 	return err
 }
 

@@ -13,7 +13,7 @@ import (
 const addUserToOrganization = `-- name: AddUserToOrganization :exec
 INSERT INTO org_users (org_id, user_id, role, created_at)
 VALUES (?1, ?2, ?3, datetime('now'))
-ON CONFLICT (org_id, user_id) DO UPDATE SET role = sqlc.arg(role)
+ON CONFLICT (org_id, user_id) DO UPDATE SET role = excluded.role
 `
 
 type AddUserToOrganizationParams struct {

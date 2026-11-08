@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -51,6 +52,20 @@ func (c *Config) Validate() []string {
 		errors = append(errors, "APP_BASE_URL is required")
 	}
 
+	// Admin logins are signed with these; an empty secret means anyone can
+	// forge a login
+	if c.Auth.AccessSecret == "" {
+		errors = append(errors, "JWT_SECRET is required (try: openssl rand -hex 32)")
+	}
+	if c.Auth.RefreshSecret == "" {
+		errors = append(errors, "JWT_REFRESH_SECRET is required (try: openssl rand -hex 32)")
+	}
+
+	// Email provider credentials are stored encrypted with this key
+	if key, err := hex.DecodeString(c.Encryption.Key); err != nil || len(key) != 32 {
+		errors = append(errors, "ENCRYPTION_KEY is required: 64 hex characters (try: openssl rand -hex 32)")
+	}
+
 	// Validate URLs have proper format (not empty after env expansion)
 	if c.App.BaseURL != "" && !strings.HasPrefix(c.App.BaseURL, "http") {
 		errors = append(errors, fmt.Sprintf("APP_BASE_URL must start with http:// or https://, got: %s", c.App.BaseURL))
@@ -71,9 +86,8 @@ func (c *Config) MustValidate() {
 func (c *Config) ValidateAndWarn() []string {
 	var warnings []string
 
-	// Optional but recommended
-	if c.Auth.AccessSecret == "" {
-		warnings = append(warnings, "JWT_SECRET not set - authentication disabled")
+	if c.Auth.AccessSecret != "" && len(c.Auth.AccessSecret) < 32 {
+		warnings = append(warnings, "JWT_SECRET is shorter than 32 characters; use a longer random value (openssl rand -hex 32)")
 	}
 
 	return warnings

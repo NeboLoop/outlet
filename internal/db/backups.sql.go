@@ -356,7 +356,7 @@ const updateBackupStatus = `-- name: UpdateBackupStatus :one
 UPDATE backup_history
 SET status = ?1,
     error_message = ?2,
-    completed_at = CASE WHEN sqlc.arg(status) IN ('completed', 'failed') THEN datetime('now') ELSE completed_at END
+    completed_at = CASE WHEN ?1 = 'completed' OR ?1 = 'failed' THEN datetime('now') ELSE completed_at END
 WHERE id = ?3
 RETURNING id, filename, file_path, file_size, backup_type, storage_type, s3_bucket, s3_key, status, error_message, created_by, started_at, completed_at, created_at
 `

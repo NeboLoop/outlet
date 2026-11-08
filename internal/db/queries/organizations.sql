@@ -54,7 +54,7 @@ WHERE id = sqlc.arg(id);
 -- name: AddUserToOrganization :exec
 INSERT INTO org_users (org_id, user_id, role, created_at)
 VALUES (sqlc.arg(org_id), sqlc.arg(user_id), sqlc.arg(role), datetime('now'))
-ON CONFLICT (org_id, user_id) DO UPDATE SET role = sqlc.arg(role);
+ON CONFLICT (org_id, user_id) DO UPDATE SET role = excluded.role;
 
 -- name: RemoveUserFromOrganization :exec
 DELETE FROM org_users

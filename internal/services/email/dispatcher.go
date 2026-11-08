@@ -239,8 +239,8 @@ func (d *Dispatcher) sendEmail(job EmailJob) error {
 	}
 
 	// Process template variables
-	htmlBody := d.sequenceService.processTemplateVariables(email.HtmlBody, tplCtx)
-	subject := d.sequenceService.processTemplateVariables(email.Subject, tplCtx)
+	htmlBody := d.sequenceService.processTemplateVariables(email.HtmlBody, tplCtx, true)
+	subject := d.sequenceService.processTemplateVariables(email.Subject, tplCtx, false)
 
 	// Rewrite links for tracking
 	if email.TrackingToken.Valid && email.TrackingToken.String != "" {

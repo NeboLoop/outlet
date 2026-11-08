@@ -207,6 +207,7 @@ func (w *RetryWorker) sendEmail(send db.GetFailedCampaignSendsForRetryRow) error
 		Name:          send.Name,
 		Subject:       send.Subject,
 		HTML:          send.HtmlBody,
+		Text:          send.PlainText.String,
 		TrackingToken: send.TrackingToken.String,
 		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
 		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,

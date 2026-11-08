@@ -47,6 +47,8 @@ type Querier interface {
 	ClearSuppressionList(ctx context.Context, orgID string) error
 	CompleteContactSequence(ctx context.Context, arg CompleteContactSequenceParams) error
 	CompleteValidationJob(ctx context.Context, id string) error
+	// The token is kept so opening the link again (a link scanner often opens
+	// it first) shows "confirmed" instead of "invalid link"
 	ConfirmListSubscription(ctx context.Context, token sql.NullString) (ListSubscriber, error)
 	CountActiveSequencesForContact(ctx context.Context, contactID sql.NullString) (int64, error)
 	CountActiveSubscribers(ctx context.Context, listID int64) (int64, error)
@@ -111,6 +113,7 @@ type Querier interface {
 	CreateEmailComplaint(ctx context.Context, arg CreateEmailComplaintParams) (EmailComplaint, error)
 	// Email Designs (Global Templates)
 	// Reusable email designs at org level
+	// id is AUTOINCREMENT; passing one made every insert use 0
 	CreateEmailDesign(ctx context.Context, arg CreateEmailDesignParams) (EmailDesign, error)
 	CreateEmailList(ctx context.Context, arg CreateEmailListParams) (EmailList, error)
 	CreateEntryRule(ctx context.Context, arg CreateEntryRuleParams) (SequenceEntryRule, error)
@@ -464,6 +467,9 @@ type Querier interface {
 	RecordNetworkSender(ctx context.Context, arg RecordNetworkSenderParams) error
 	RecordTransactionalClick(ctx context.Context, id string) error
 	RecordTransactionalOpen(ctx context.Context, id string) error
+	// Recounts a campaign's unique opens, clicks and unsubscribes from its sends,
+	// so the totals never drift from what each recipient did.
+	RefreshCampaignEngagement(ctx context.Context, id string) error
 	RefreshValidationJobProgress(ctx context.Context, id string) error
 	RegenerateAPIKey(ctx context.Context, arg RegenerateAPIKeyParams) (Organization, error)
 	RemoveContactTag(ctx context.Context, arg RemoveContactTagParams) error

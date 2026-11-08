@@ -282,16 +282,24 @@ func (h *Handler) HandleConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Confirm the subscription
-	confirmedSub, err := h.svcCtx.DB.ConfirmListSubscription(r.Context(), sql.NullString{String: token, Valid: true})
-	if err != nil {
-		log.Printf("Error confirming subscription: %v", err)
-		h.renderError(w, "Error", "Something went wrong. Please try again later.", http.StatusInternalServerError)
+	// Confirm a pending subscription. A link opened again after confirming
+	// shows the same success page; one for an unsubscribed address does not
+	// subscribe it again.
+	switch subscriber.Status.String {
+	case "pending":
+		if _, err := h.svcCtx.DB.ConfirmListSubscription(r.Context(), sql.NullString{String: token, Valid: true}); err != nil {
+			log.Printf("Error confirming subscription: %v", err)
+			h.renderError(w, "Error", "Something went wrong. Please try again later.", http.StatusInternalServerError)
+			return
+		}
+	case "active":
+	default:
+		h.renderError(w, "Invalid Link", "This confirmation link is no longer valid.", http.StatusNotFound)
 		return
 	}
 
 	// Get contact email for display
-	contact, err := h.svcCtx.DB.GetContact(r.Context(), confirmedSub.ContactID)
+	contact, err := h.svcCtx.DB.GetContact(r.Context(), subscriber.ContactID)
 	if err != nil {
 		log.Printf("Error getting contact: %v", err)
 	}
@@ -399,6 +407,9 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Perform unsubscribe
+	if campaignSend.CampaignID != "" {
+		defer func() { _ = h.svcCtx.DB.RefreshCampaignEngagement(r.Context(), campaignSend.CampaignID) }()
+	}
 	if contactID != "" {
 		if err := h.svcCtx.DB.UnsubscribeContact(r.Context(), contactID); err != nil {
 			log.Printf("Error unsubscribing contact: %v", err)

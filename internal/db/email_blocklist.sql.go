@@ -1101,7 +1101,7 @@ const updateImportJobStatus = `-- name: UpdateImportJobStatus :exec
 UPDATE import_jobs
 SET status = ?1,
     started_at = CASE WHEN ?1 = 'processing' THEN datetime('now') ELSE started_at END,
-    completed_at = CASE WHEN sqlc.arg(status) IN ('completed', 'failed', 'cancelled') THEN datetime('now') ELSE completed_at END
+    completed_at = CASE WHEN ?1 = 'completed' OR ?1 = 'failed' OR ?1 = 'cancelled' THEN datetime('now') ELSE completed_at END
 WHERE id = ?2
 `
 

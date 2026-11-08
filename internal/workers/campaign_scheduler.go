@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -258,17 +257,12 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	// Create pipe for this campaign
 	s.getOrCreatePipe(campaign.ID)
 
-	// Update status to sending
-	err := s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
-		ID:     campaign.ID,
-		Status: sql.NullString{String: "sending", Valid: true},
-	})
-	if err != nil {
-		return err
-	}
-
-	// Parse list_ids (comma-separated)
-	listIDs := parseListIDs(campaign.ListIds.String)
+	// The campaign stays 'scheduled' while its sends are created and only then
+	// becomes 'sending'. Workers claim sends of 'sending' campaigns only, so
+	// none can finish (and mark the campaign sent) while rows are still being
+	// added. If this stops halfway, the next check resumes it; existing sends
+	// are skipped.
+	listIDs := db.DecodeListIDs(campaign.ListIds.String)
 	if len(listIDs) == 0 {
 		logx.Errorf("Campaign %s has no target lists", campaign.ID)
 		// 'failed' is not an allowed campaign status; cancel it instead
@@ -297,7 +291,7 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	}
 
 	// Parse exclude_list_ids and remove those contacts
-	excludeListIDs := parseListIDs(campaign.ExcludeListIds.String)
+	excludeListIDs := db.DecodeListIDs(campaign.ExcludeListIds.String)
 	for _, excludeListID := range excludeListIDs {
 		excludedSubs, err := s.store.GetActiveSubscribersForList(s.ctx, excludeListID)
 		if err != nil {
@@ -322,6 +316,7 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 			continue
 		}
 		if exists > 0 {
+			recipientCount++ // created by an earlier, interrupted run
 			continue
 		}
 
@@ -342,7 +337,7 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	}
 
 	// Update recipient count
-	err = s.store.SetCampaignRecipientsCount(s.ctx, db.SetCampaignRecipientsCountParams{
+	err := s.store.SetCampaignRecipientsCount(s.ctx, db.SetCampaignRecipientsCountParams{
 		ID:              campaign.ID,
 		RecipientsCount: sql.NullInt64{Int64: recipientCount, Valid: true},
 	})
@@ -353,7 +348,15 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	s.totalScheduled.Add(1)
 	logx.Infof("Campaign %s queued with %d recipients", campaign.ID, recipientCount)
 
-	return nil
+	// Release it to the workers; with nothing to send it is finished at once
+	status := "sending"
+	if recipientCount == 0 {
+		status = "sent"
+	}
+	return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
+		ID:     campaign.ID,
+		Status: sql.NullString{String: status, Valid: true},
+	})
 }
 
 // batchFetcher continuously fetches pending sends and queues them
@@ -478,6 +481,7 @@ func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow
 		Name:          send.Name,
 		Subject:       send.Subject,
 		HTML:          send.HtmlBody,
+		Text:          send.PlainText.String,
 		TrackingToken: send.TrackingToken.String,
 		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
 		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
@@ -633,35 +637,6 @@ func (s *CampaignScheduler) SetRateLimit(rate int) {
 	logx.Infof("Campaign scheduler rate limit updated to %d/sec", rate)
 }
 
-// parseListIDs parses comma-separated list IDs
-func parseListIDs(s string) []int64 {
-	if s == "" {
-		return nil
-	}
-
-	parts := strings.Split(s, ",")
-	var ids []int64
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		var id int64
-		var valid bool
-		for _, c := range p {
-			if c >= '0' && c <= '9' {
-				id = id*10 + int64(c-'0')
-				valid = true
-			} else {
-				break
-			}
-		}
-		if valid && id > 0 {
-			ids = append(ids, id)
-		}
-	}
-	return ids
-}
 
 // StartCampaignScheduler starts the campaign scheduler from service context
 func StartCampaignScheduler(svcCtx *svc.ServiceContext) *CampaignScheduler {

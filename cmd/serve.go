@@ -606,9 +606,9 @@ func registerEmailTrackingRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 			}
 
 			// Track the click (fire and forget)
-			go func(token string) {
-				_ = ctx.Tracking.RecordClick(context.Background(), token)
-			}(token)
+			go func(token, target string) {
+				_ = ctx.Tracking.RecordClick(context.Background(), token, target)
+			}(token, redirectUrl)
 
 			http.Redirect(w, r, redirectUrl, http.StatusFound)
 		},

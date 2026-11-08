@@ -45,13 +45,15 @@ func (l *UpdateTransactionalEmailLogic) UpdateTransactionalEmail(req *types.Upda
 		OrgID:       orgID,
 		Name:        sql.NullString{String: req.Name, Valid: req.Name != ""},
 		Slug:        sql.NullString{String: req.Slug, Valid: req.Slug != ""},
-		Description: sql.NullString{String: req.Description, Valid: req.Description != ""},
 		Subject:     sql.NullString{String: req.Subject, Valid: req.Subject != ""},
 		HtmlBody:    sql.NullString{String: req.HtmlBody, Valid: req.HtmlBody != ""},
-		PlainText:   sql.NullString{String: req.PlainText, Valid: req.PlainText != ""},
-		FromName:    sql.NullString{String: req.FromName, Valid: req.FromName != ""},
-		FromEmail:   sql.NullString{String: req.FromEmail, Valid: req.FromEmail != ""},
-		ReplyTo:     sql.NullString{String: req.ReplyTo, Valid: req.ReplyTo != ""},
+		// The admin editor always sends the whole template, so an empty
+		// optional field means "clear it"
+		Description: sql.NullString{String: req.Description, Valid: true},
+		PlainText:   sql.NullString{String: req.PlainText, Valid: true},
+		FromName:    sql.NullString{String: req.FromName, Valid: true},
+		FromEmail:   sql.NullString{String: req.FromEmail, Valid: true},
+		ReplyTo:     sql.NullString{String: req.ReplyTo, Valid: true},
 		IsActive:    isActive,
 	})
 	if err != nil {

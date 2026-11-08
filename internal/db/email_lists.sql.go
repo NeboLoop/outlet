@@ -29,11 +29,13 @@ func (q *Queries) CheckListSubscription(ctx context.Context, arg CheckListSubscr
 
 const confirmListSubscription = `-- name: ConfirmListSubscription :one
 UPDATE list_subscribers
-SET status = 'active', verified_at = datetime('now'), verification_token = NULL
+SET status = 'active', verified_at = datetime('now')
 WHERE verification_token = ?1 AND status = 'pending'
 RETURNING id, list_id, contact_id, status, verification_token, verification_sent_at, verified_at, subscribed_at, unsubscribed_at
 `
 
+// The token is kept so opening the link again (a link scanner often opens
+// it first) shows "confirmed" instead of "invalid link"
 func (q *Queries) ConfirmListSubscription(ctx context.Context, token sql.NullString) (ListSubscriber, error) {
 	row := q.db.QueryRowContext(ctx, confirmListSubscription, token)
 	var i ListSubscriber

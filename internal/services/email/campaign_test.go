@@ -13,9 +13,9 @@ func TestCampaignMessage(t *testing.T) {
 	link := "https://mail.example.com/u/tok"
 
 	t.Run("personalizes and adds footer link and headers", func(t *testing.T) {
-		m := s.CampaignMessage(CampaignEmail{OrgID: "o1", To: "ana@x.com", Name: "Ana", Subject: "Hi {{.Name}}",
-			HTML: "<html><body><p>Hello {{.Name}} ({{.Email}})</p></body></html>", TrackingToken: "tok"})
-		if m.Subject != "Hi Ana" || !strings.Contains(m.HTML, "Hello Ana (ana@x.com)") {
+		m := s.CampaignMessage(CampaignEmail{OrgID: "o1", To: "ana@x.com", Name: "Ana <b>Lee</b>", Subject: "Hi {{first_name,fallback=there}}",
+			HTML: "<html><body><p>Hello {{name}} ({{email}})</p></body></html>", TrackingToken: "tok"})
+		if m.Subject != "Hi Ana" || !strings.Contains(m.HTML, "Hello Ana &lt;b&gt;Lee&lt;/b&gt; (ana@x.com)") {
 			t.Errorf("not personalized: %q %q", m.Subject, m.HTML)
 		}
 		if !strings.Contains(m.HTML, `href="`+link+`"`) || !strings.HasSuffix(m.HTML, "</body></html>") {
@@ -76,5 +76,14 @@ func TestClickLinksAreSigned(t *testing.T) {
 		if ok {
 			t.Errorf("%s verified", name)
 		}
+	}
+}
+
+func TestMergeTagFallbacksAndUnknownTags(t *testing.T) {
+	c := mergeContext{BaseURL: "https://m.example", Email: "a@x.com", TrackingToken: "tok", CustomFields: map[string]string{"plan": "Pro"}}
+	got := fillMergeTags("Hi {{first_name,fallback=there}} on {{plan}}, {{coupon,fallback=none}} {{mystery}} {{web_version_url}}", c, true)
+	want := "Hi there on Pro, none {{mystery}} https://m.example/w/tok"
+	if got != want {
+		t.Errorf("got %q\nwant %q", got, want)
 	}
 }

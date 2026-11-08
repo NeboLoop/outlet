@@ -1,0 +1,1 @@
+import"../chunks/DsnmJJEf.js";import"../chunks/CEoJdOE_.js";import{e as t,g as a}from"../chunks/BtjfW9_B.js";import{h as e}from"../chunks/DvNfZKU3.js";import{C as m}from"../chunks/CLTPIJ0w.js";function s(o){e("1vqcqve",r=>{t(()=>{a.title="New Campaign | Outlet"})}),m(o,{})}export{s as component};

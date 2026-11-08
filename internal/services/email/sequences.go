@@ -6,8 +6,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -138,8 +136,8 @@ func (s *SequenceService) SendConfirmationEmail(ctx context.Context, contactID s
 		Email:             contact.Email,
 		VerificationToken: verificationToken,
 	}
-	htmlBody := s.processTemplateVariables(confirmationTemplate.HtmlBody, tplCtx)
-	subject := s.processTemplateVariables(confirmationTemplate.Subject, tplCtx)
+	htmlBody := s.processTemplateVariables(confirmationTemplate.HtmlBody, tplCtx, true)
+	subject := s.processTemplateVariables(confirmationTemplate.Subject, tplCtx, false)
 
 	// Confirmation emails don't get link tracking (we want them to click the raw confirmation URL)
 	// Also, confirmation templates use template_type='confirmation' which uses raw HTML from DB
@@ -356,8 +354,8 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 		}
 
 		// Process template variables
-		htmlBody := s.processTemplateVariables(email.HtmlBody, tplCtx)
-		subject := s.processTemplateVariables(email.Subject, tplCtx)
+		htmlBody := s.processTemplateVariables(email.HtmlBody, tplCtx, true)
+		subject := s.processTemplateVariables(email.Subject, tplCtx, false)
 
 		// Rewrite links to go through tracking redirect
 		if email.TrackingToken.Valid && email.TrackingToken.String != "" {
@@ -485,32 +483,16 @@ type TemplateContext struct {
 }
 
 // processTemplateVariables replaces placeholders in email content
-func (s *SequenceService) processTemplateVariables(content string, ctx TemplateContext) string {
-	firstName := strings.Split(ctx.Name, " ")[0]
-
-	content = strings.ReplaceAll(content, "{{name}}", ctx.Name)
-	content = strings.ReplaceAll(content, "{{first_name}}", firstName)
-	content = strings.ReplaceAll(content, "{{email}}", ctx.Email)
-
-	// Replace confirmation URL for double opt-in emails
-	if ctx.VerificationToken != "" {
-		confirmURL := fmt.Sprintf("%s/api/confirm-email?token=%s", s.baseURL, url.QueryEscape(ctx.VerificationToken))
-		content = strings.ReplaceAll(content, "{{confirm_url}}", confirmURL)
-	}
-
-	// Replace unsubscribe URL if tracking token is available
-	if ctx.TrackingToken != "" {
-		link := unsubscribeURL(s.baseURL, ctx.TrackingToken)
-		content = strings.ReplaceAll(content, "{{unsubscribe_url}}", link)
-	}
-
-	// Replace custom field merge tags
-	for fieldKey, value := range ctx.CustomFields {
-		placeholder := "{{" + fieldKey + "}}"
-		content = strings.ReplaceAll(content, placeholder, value)
-	}
-
-	return content
+// processTemplateVariables fills merge tags; escapeHTML is true for HTML bodies
+func (s *SequenceService) processTemplateVariables(content string, ctx TemplateContext, escapeHTML bool) string {
+	return fillMergeTags(content, mergeContext{
+		BaseURL:           s.baseURL,
+		Name:              ctx.Name,
+		Email:             ctx.Email,
+		TrackingToken:     ctx.TrackingToken,
+		VerificationToken: ctx.VerificationToken,
+		CustomFields:      ctx.CustomFields,
+	}, escapeHTML)
 }
 
 // sequenceMessage addresses a queued sequence email from its brand. Marketing

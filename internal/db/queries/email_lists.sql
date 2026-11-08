@@ -116,7 +116,9 @@ RETURNING *;
 
 -- name: ConfirmListSubscription :one
 UPDATE list_subscribers
-SET status = 'active', verified_at = datetime('now'), verification_token = NULL
+-- The token is kept so opening the link again (a link scanner often opens
+-- it first) shows "confirmed" instead of "invalid link"
+SET status = 'active', verified_at = datetime('now')
 WHERE verification_token = sqlc.arg(token) AND status = 'pending'
 RETURNING *;
 

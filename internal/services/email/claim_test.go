@@ -107,3 +107,28 @@ func TestScheduledCampaignsCompareISOTimes(t *testing.T) {
 		t.Errorf("another brand must not send it: %v", err)
 	}
 }
+
+func TestTransactionalUpdateKeepsOrClearsOptionalFields(t *testing.T) {
+	_, store := newTestService(t)
+	ctx := context.Background()
+	if _, err := store.GetDB().Exec(`INSERT INTO transactional_emails (id, org_id, name, slug, subject, html_body, plain_text, from_name, is_active)
+		VALUES ('tx', 'org-a', 'Receipt', 'receipt', 'Your receipt', '<p>x</p>', 'x', 'Billing', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	update := func(fromName any) db.TransactionalEmail {
+		got, err := store.UpdateTransactionalEmail(ctx, db.UpdateTransactionalEmailParams{
+			ID: "tx", OrgID: "org-a", Subject: "", Name: "", Slug: "", HtmlBody: "",
+			FromName: fromName, IsActive: sql.NullInt64{Int64: 1, Valid: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := update(sql.NullString{}); got.FromName.String != "Billing" || got.PlainText.String != "x" || got.Subject != "Your receipt" {
+		t.Errorf("keep: %+v", got)
+	}
+	if got := update(sql.NullString{String: "", Valid: true}); got.FromName.Valid {
+		t.Errorf("clear: from_name = %v", got.FromName)
+	}
+}

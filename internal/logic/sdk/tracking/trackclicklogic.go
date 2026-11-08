@@ -24,7 +24,7 @@ func NewTrackClickLogic(ctx context.Context, svcCtx *svc.ServiceContext) *TrackC
 }
 
 func (l *TrackClickLogic) TrackClick(req *types.TrackClickRequest) (resp *types.Response, err error) {
-	if err := l.svcCtx.Tracking.RecordClick(l.ctx, req.Token); err != nil {
+	if err := l.svcCtx.Tracking.RecordClick(l.ctx, req.Token, req.Url); err != nil {
 		return &types.Response{Success: false, Message: "invalid token"}, nil
 	}
 

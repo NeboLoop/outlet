@@ -101,7 +101,7 @@ func TestRecordOpen_TokenNotFound(t *testing.T) {
 
 func TestRecordClick_EmptyToken(t *testing.T) {
 	svc := New(nil, nil)
-	err := svc.RecordClick(context.Background(), "")
+	err := svc.RecordClick(context.Background(), "", "")
 	if err != ErrInvalidToken {
 		t.Errorf("Expected ErrInvalidToken, got %v", err)
 	}

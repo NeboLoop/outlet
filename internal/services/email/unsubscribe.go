@@ -26,39 +26,41 @@ type CampaignEmail struct {
 	Name          string
 	Subject       string
 	HTML          string
+	Text          string
 	TrackingToken string
 	TrackOpens    bool
 	TrackClicks   bool
 }
 
 // CampaignMessage builds the Message for a campaign send, the same way for the
-// first attempt and every retry. It personalizes the subject and body, fills
-// {{unsubscribe_url}}, adds a footer unsubscribe link when the body has none,
-// adds open and click tracking when enabled (never on the unsubscribe link),
-// and sets the one-click List-Unsubscribe headers.
+// first attempt and every retry. It fills merge tags, adds a footer
+// unsubscribe link when the body has none, adds open and click tracking when
+// enabled (never on the unsubscribe link), and sets the one-click
+// List-Unsubscribe headers.
 func (s *Service) CampaignMessage(c CampaignEmail) Message {
-	subject := strings.ReplaceAll(c.Subject, "{{.Name}}", c.Name)
-	htmlBody := strings.ReplaceAll(c.HTML, "{{.Name}}", c.Name)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{.Email}}", c.To)
-
+	tags := mergeContext{BaseURL: s.baseURL, Name: c.Name, Email: c.To, TrackingToken: c.TrackingToken}
 	m := Message{
 		OrgID:     c.OrgID,
 		FromName:  c.FromName,
 		FromEmail: c.FromEmail,
 		ReplyTo:   c.ReplyTo,
 		To:        c.To,
-		Subject:   subject,
+		Subject:   fillMergeTags(c.Subject, tags, false),
+		Text:      fillMergeTags(c.Text, tags, false),
 	}
+	htmlBody := fillMergeTags(c.HTML, tags, true)
 	if c.TrackingToken == "" {
 		m.HTML = htmlBody
 		return m
 	}
 
 	link := s.UnsubscribeURL(c.TrackingToken)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{unsubscribe_url}}", link)
 	if !strings.Contains(htmlBody, link) {
 		footer := fmt.Sprintf(`<p style="text-align:center;font-size:12px;color:#6b7280;margin-top:30px;"><a href="%s" style="color:#6b7280;">Unsubscribe</a></p>`, link)
 		htmlBody = insertBeforeBodyEnd(htmlBody, footer)
+	}
+	if m.Text != "" && !strings.Contains(m.Text, link) {
+		m.Text += "\n\nUnsubscribe: " + link
 	}
 	if c.TrackOpens {
 		pixel := fmt.Sprintf(`<img src="%s" width="1" height="1" alt="" style="display:none" />`, s.GetTrackingPixelURL(c.TrackingToken))

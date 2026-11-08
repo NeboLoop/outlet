@@ -1,0 +1,1 @@
+import{n as o}from"./DfxTvd9F.js";async function i(e,a){const n=await o({},e),t=await fetch("/sdk/v1/emails",{method:"POST",headers:{"Content-Type":"application/json","X-API-Key":n.api_key},body:JSON.stringify(a)}),s=await t.json().catch(()=>null);if(!t.ok||!s?.success)throw new Error(s?.message||s?.error||`Send failed with status ${t.status}`);return s.message_id}export{i as s};

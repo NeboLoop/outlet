@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -130,18 +131,18 @@ type CampaignSendOutput struct {
 
 // CampaignStatsOutput defines output for campaign stats.
 type CampaignStatsOutput struct {
-	ID               string  `json:"id"`
-	RecipientsCount  int64   `json:"recipients_count"`
-	SentCount        int64   `json:"sent_count"`
-	DeliveredCount   int64   `json:"delivered_count"`
-	OpenedCount      int64   `json:"opened_count"`
-	ClickedCount     int64   `json:"clicked_count"`
-	BouncedCount     int64   `json:"bounced_count"`
-	ComplainedCount  int64   `json:"complained_count"`
-	UnsubscribedCnt  int64   `json:"unsubscribed_count"`
-	OpenRate         float64 `json:"open_rate"`
-	ClickRate        float64 `json:"click_rate"`
-	BounceRate       float64 `json:"bounce_rate"`
+	ID              string  `json:"id"`
+	RecipientsCount int64   `json:"recipients_count"`
+	SentCount       int64   `json:"sent_count"`
+	DeliveredCount  int64   `json:"delivered_count"`
+	OpenedCount     int64   `json:"opened_count"`
+	ClickedCount    int64   `json:"clicked_count"`
+	BouncedCount    int64   `json:"bounced_count"`
+	ComplainedCount int64   `json:"complained_count"`
+	UnsubscribedCnt int64   `json:"unsubscribed_count"`
+	OpenRate        float64 `json:"open_rate"`
+	ClickRate       float64 `json:"click_rate"`
+	BounceRate      float64 `json:"bounce_rate"`
 }
 
 // RegisterCampaignTool registers the campaign tool.
@@ -250,8 +251,8 @@ func handleCampaignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 		ReplyTo:        sql.NullString{String: input.ReplyTo, Valid: input.ReplyTo != ""},
 		HtmlBody:       input.HTMLBody,
 		PlainText:      sql.NullString{String: input.PlainText, Valid: input.PlainText != ""},
-		ListIds:        sql.NullString{String: input.ListIDs, Valid: true},
-		ExcludeListIds: sql.NullString{String: input.ExcludeListIDs, Valid: input.ExcludeListIDs != ""},
+		ListIds:        sql.NullString{String: db.EncodeListIDs(strings.Split(input.ListIDs, ",")), Valid: true},
+		ExcludeListIds: sql.NullString{String: db.EncodeListIDs(strings.Split(input.ExcludeListIDs, ",")), Valid: input.ExcludeListIDs != ""},
 		Status:         sql.NullString{String: "draft", Valid: true},
 		TrackOpens:     sql.NullInt64{Int64: boolToInt64(trackOpens), Valid: true},
 		TrackClicks:    sql.NullInt64{Int64: boolToInt64(trackClicks), Valid: true},
@@ -344,8 +345,8 @@ func handleCampaignGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input C
 		ReplyTo:         campaign.ReplyTo.String,
 		HTMLBody:        campaign.HtmlBody,
 		PlainText:       campaign.PlainText.String,
-		ListIDs:         campaign.ListIds.String,
-		ExcludeListIDs:  campaign.ExcludeListIds.String,
+		ListIDs:         joinListIDs(campaign.ListIds.String),
+		ExcludeListIDs:  joinListIDs(campaign.ExcludeListIds.String),
 		Status:          campaign.Status.String,
 		ScheduledAt:     campaign.ScheduledAt.String,
 		StartedAt:       campaign.StartedAt.String,
@@ -403,8 +404,8 @@ func handleCampaignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 		ReplyTo:        input.ReplyTo,
 		HtmlBody:       input.HTMLBody,
 		PlainText:      input.PlainText,
-		ListIds:        input.ListIDs,
-		ExcludeListIds: input.ExcludeListIDs,
+		ListIds:        encodeListIDsArg(input.ListIDs),
+		ExcludeListIds: encodeListIDsArg(input.ExcludeListIDs),
 		TrackOpens:     trackOpens,
 		TrackClicks:    trackClicks,
 	})
@@ -575,4 +576,22 @@ func registerCampaignToolToRegistry(registry *ToolRegistry, toolCtx *mcpctx.Tool
 		_, output, err := handler(ctx, nil, input)
 		return output, err
 	})
+}
+
+// joinListIDs shows stored list IDs as the comma-separated form tool calls use.
+func joinListIDs(stored string) string {
+	var parts []string
+	for _, id := range db.DecodeListIDs(stored) {
+		parts = append(parts, strconv.FormatInt(id, 10))
+	}
+	return strings.Join(parts, ",")
+}
+
+// encodeListIDsArg stores comma-separated list IDs from a tool call; empty
+// leaves the campaign's current value unchanged.
+func encodeListIDsArg(commaSeparated string) string {
+	if strings.TrimSpace(commaSeparated) == "" {
+		return ""
+	}
+	return db.EncodeListIDs(strings.Split(commaSeparated, ","))
 }

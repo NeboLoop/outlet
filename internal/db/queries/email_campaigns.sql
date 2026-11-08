@@ -102,6 +102,20 @@ UPDATE email_campaigns
 SET clicked_count = clicked_count + 1
 WHERE id = sqlc.arg(id);
 
+-- name: RefreshCampaignEngagement :exec
+-- Recounts a campaign's unique opens, clicks and unsubscribes from its sends,
+-- so the totals never drift from what each recipient did.
+UPDATE email_campaigns
+SET opened_count = (SELECT COUNT(*) FROM campaign_sends cs WHERE cs.campaign_id = sqlc.arg(id) AND cs.opened_at IS NOT NULL),
+    clicked_count = (SELECT COUNT(*) FROM campaign_sends cs WHERE cs.campaign_id = sqlc.arg(id) AND cs.clicked_at IS NOT NULL),
+    unsubscribed_count = (
+        SELECT COUNT(*) FROM campaign_sends cs JOIN contacts c ON c.id = cs.contact_id
+        WHERE cs.campaign_id = sqlc.arg(id) AND c.unsubscribed_at IS NOT NULL AND cs.sent_at IS NOT NULL
+          AND c.unsubscribed_at >= cs.sent_at
+    ),
+    updated_at = datetime('now')
+WHERE id = sqlc.arg(id);
+
 -- name: DeleteCampaign :exec
 DELETE FROM email_campaigns
 WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id) AND status = 'draft';
@@ -252,7 +266,6 @@ FROM list_subscribers ls
 JOIN contacts c ON c.id = ls.contact_id
 WHERE ls.list_id = sqlc.arg(list_id)
   AND ls.status = 'active'
-  AND c.bounced_at IS NULL
   AND c.blocked_at IS NULL
   AND c.unsubscribed_at IS NULL;
 
@@ -273,7 +286,7 @@ WHERE campaign_id = sqlc.arg(campaign_id) AND status = 'sent';
 -- name: GetFailedCampaignSendsForRetry :many
 SELECT cs.id, cs.campaign_id, cs.contact_id, cs.tracking_token, cs.retry_count, cs.failed_at,
        c.email, c.name,
-       ec.org_id, ec.subject, ec.html_body, ec.from_name, ec.from_email, ec.reply_to,
+       ec.org_id, ec.subject, ec.html_body, ec.plain_text, ec.from_name, ec.from_email, ec.reply_to,
        ec.track_opens, ec.track_clicks
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id

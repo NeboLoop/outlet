@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/google/uuid"
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -40,40 +41,65 @@ func (s *Service) publish(topic, status string, e db.GetEmailByTrackingTokenRow)
 	})
 }
 
-// RecordOpen records an email open event by tracking token
+// RecordOpen records an email open by tracking token: a sequence email, or
+// a campaign send.
 func (s *Service) RecordOpen(ctx context.Context, token string) error {
 	if token == "" {
 		return ErrInvalidToken
 	}
+	tok := sql.NullString{String: token, Valid: true}
 
-	emailRecord, err := s.db.GetEmailByTrackingToken(ctx, sql.NullString{String: token, Valid: true})
+	if emailRecord, err := s.db.GetEmailByTrackingToken(ctx, tok); err == nil {
+		if err := s.db.RecordEmailOpen(ctx, emailRecord.ID); err != nil {
+			return err
+		}
+		s.publish(events.TopicEmailOpened, "opened", emailRecord)
+		return nil
+	}
+
+	send, err := s.db.GetCampaignSendByTrackingToken(ctx, tok)
 	if err != nil {
 		return ErrNotFound
 	}
-
-	if err := s.db.RecordEmailOpen(ctx, emailRecord.ID); err != nil {
+	if err := s.db.RecordCampaignOpen(ctx, send.ID); err != nil {
 		return err
 	}
-	s.publish(events.TopicEmailOpened, "opened", emailRecord)
-	return nil
+	return s.db.RefreshCampaignEngagement(ctx, send.CampaignID)
 }
 
-// RecordClick records an email click event by tracking token
-func (s *Service) RecordClick(ctx context.Context, token string) error {
+// RecordClick records a click by tracking token: a sequence email, or a
+// campaign send, where the link is also recorded for per-link stats.
+func (s *Service) RecordClick(ctx context.Context, token, linkURL string) error {
 	if token == "" {
 		return ErrInvalidToken
 	}
+	tok := sql.NullString{String: token, Valid: true}
 
-	emailRecord, err := s.db.GetEmailByTrackingToken(ctx, sql.NullString{String: token, Valid: true})
+	if emailRecord, err := s.db.GetEmailByTrackingToken(ctx, tok); err == nil {
+		if err := s.db.RecordEmailClick(ctx, emailRecord.ID); err != nil {
+			return err
+		}
+		s.publish(events.TopicEmailClicked, "clicked", emailRecord)
+		return nil
+	}
+
+	send, err := s.db.GetCampaignSendByTrackingToken(ctx, tok)
 	if err != nil {
 		return ErrNotFound
 	}
-
-	if err := s.db.RecordEmailClick(ctx, emailRecord.ID); err != nil {
+	if err := s.db.RecordCampaignClick(ctx, send.ID); err != nil {
 		return err
 	}
-	s.publish(events.TopicEmailClicked, "clicked", emailRecord)
-	return nil
+	if linkURL != "" {
+		_, _ = s.db.CreateCampaignClick(ctx, db.CreateCampaignClickParams{
+			ID:             uuid.NewString(),
+			CampaignSendID: send.ID,
+			CampaignID:     send.CampaignID,
+			ContactID:      send.ContactID,
+			LinkUrl:        linkURL,
+		})
+	}
+	return s.db.RefreshCampaignEngagement(ctx, send.CampaignID)
 }
 
 // Unsubscribe unsubscribes a contact by tracking token and cancels pending emails

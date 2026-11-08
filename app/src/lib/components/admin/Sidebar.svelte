@@ -12,7 +12,8 @@
 		Mail,
 		Ban,
 		Trash2,
-		MailCheck
+		MailCheck,
+		Zap
 	} from 'lucide-svelte';
 
 	interface Props {
@@ -47,10 +48,11 @@
 	// Sequences/Autoresponders live inside Lists now
 	const navItems = [
 		{ id: 'dashboard', label: 'Dashboard', href: '', icon: LayoutDashboard, exact: true },
+		{ id: 'transactional', label: 'Transactional', href: '/transactional', icon: Zap },
 		{ id: 'campaigns', label: 'Campaigns', href: '/campaigns', icon: Send },
 		{ id: 'lists', label: 'Lists', href: '/lists', icon: Users },
 		{ id: 'validation', label: 'Validation', href: '/validation', icon: MailCheck },
-		{ id: 'templates', label: 'Templates', href: '/templates', icon: FileText },
+		{ id: 'templates', label: 'Designs', href: '/templates', icon: FileText },
 		{ id: 'housekeeping', label: 'Housekeeping', href: '/housekeeping', icon: Trash2 },
 		{ id: 'blocklist', label: 'Blocklist', href: '/blocklist', icon: Ban },
 	];

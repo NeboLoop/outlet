@@ -575,6 +575,13 @@
 			</p>
 		</div>
 
+		<!-- Errors show here too: the page's own alert is hidden behind the modal -->
+		{#if error}
+			<Alert type="error" title="Couldn't set up the domain">
+				<p>{error}</p>
+			</Alert>
+		{/if}
+
 		<div class="flex justify-end gap-3 pt-2">
 			<Button variant="ghost" onclick={() => { showSetupDomainModal = false; }}>
 				Cancel

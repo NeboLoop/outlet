@@ -2,8 +2,9 @@
 -- Reusable email designs at org level
 
 -- name: CreateEmailDesign :one
-INSERT INTO email_designs (id, org_id, name, slug, description, category, html_body, plain_text, is_active, created_at, updated_at)
-VALUES (sqlc.arg(id), sqlc.arg(org_id), sqlc.arg(name), sqlc.arg(slug), sqlc.arg(description), sqlc.arg(category), sqlc.arg(html_body), sqlc.arg(plain_text), sqlc.arg(is_active), datetime('now'), datetime('now'))
+-- id is AUTOINCREMENT; passing one made every insert use 0
+INSERT INTO email_designs (org_id, name, slug, description, category, html_body, plain_text, is_active, created_at, updated_at)
+VALUES (sqlc.arg(org_id), sqlc.arg(name), sqlc.arg(slug), sqlc.arg(description), sqlc.arg(category), sqlc.arg(html_body), sqlc.arg(plain_text), sqlc.arg(is_active), datetime('now'), datetime('now'))
 RETURNING *;
 
 -- name: GetEmailDesign :one

@@ -206,7 +206,7 @@ LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
 UPDATE import_jobs
 SET status = sqlc.arg(status),
     started_at = CASE WHEN sqlc.arg(status) = 'processing' THEN datetime('now') ELSE started_at END,
-    completed_at = CASE WHEN sqlc.arg(status) IN ('completed', 'failed', 'cancelled') THEN datetime('now') ELSE completed_at END
+    completed_at = CASE WHEN sqlc.arg(status) = 'completed' OR sqlc.arg(status) = 'failed' OR sqlc.arg(status) = 'cancelled' THEN datetime('now') ELSE completed_at END
 WHERE id = sqlc.arg(id);
 
 -- name: UpdateImportJobProgress :exec
