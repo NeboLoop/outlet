@@ -109,8 +109,8 @@ type EmailInput struct {
 	ContactID string `json:"contact_id,omitempty" jsonschema:"Contact ID (enrollment operations, queue.list filter)"`
 
 	// Entry rule fields
-	TriggerType string `json:"trigger_type,omitempty" jsonschema:"Trigger type: list_subscribe, sequence_complete, tag_added (entry_rule.create)"`
-	SourceID    string `json:"source_id,omitempty" jsonschema:"Source ID (list ID or sequence ID) for the trigger (entry_rule.create)"`
+	TriggerType string `json:"trigger_type,omitempty" jsonschema:"When the rule starts its sequence for a contact: list_join (a subscription to the list becomes active), sequence_complete (the contact finishes the sequence), tag_added (the contact is given the tag) (entry_rule.create)"`
+	SourceID    string `json:"source_id,omitempty" jsonschema:"What the trigger waits on: the list ID (list_join), the sequence ID (sequence_complete) or the tag (tag_added) (entry_rule.create)"`
 	Priority    int    `json:"priority,omitempty" jsonschema:"Rule priority (higher runs first, default: 10)"`
 }
 
@@ -128,7 +128,7 @@ Resources:
 - sequence: Automated drip campaigns attached to lists
 - template: Individual emails within a sequence
 - enrollment: Manage contact sequence enrollments
-- entry_rule: Automatic enrollment rules for sequences
+- entry_rule: Automatic enrollment rules for sequences: start a sequence for a contact when a list subscription becomes active (list_join), another sequence is finished (sequence_complete) or a tag is added (tag_added)
 - queue: Pending/scheduled emails
 
 Actions and Required Fields:
@@ -182,7 +182,7 @@ Examples:
   email(resource: sequence, action: create, name: "Welcome Series", list_id: "1")
   email(resource: enrollment, action: enroll, sequence_id: "uuid", contact_id: "uuid")
   email(resource: enrollment, action: list, contact_id: "uuid")
-  email(resource: entry_rule, action: create, sequence_id: "uuid", trigger_type: "list_subscribe", source_id: "1")
+  email(resource: entry_rule, action: create, sequence_id: "uuid", trigger_type: "list_join", source_id: "1")
   email(resource: queue, action: list, status: "pending")`,
 	}, emailHandler(toolCtx))
 }
@@ -1478,8 +1478,17 @@ func handleListSubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("list %s not found", input.ID))
 	}
 
-	// Find or create contact
+	// An address at a domain the brand blocked doesn't subscribe, a contact
+	// already stored included
 	brandID := toolCtx.BrandID(ctx)
+	if err := toolCtx.DB().RefuseBlockedDomain(ctx, brandID, input.Email); err != nil {
+		if errors.Is(err, db.ErrBlockedDomain) {
+			return nil, nil, mcpctx.NewValidationError(db.ErrBlockedDomain.Error(), "email")
+		}
+		return nil, nil, fmt.Errorf("failed to check blocked domains: %w", err)
+	}
+
+	// Find or create contact
 	contact, err := toolCtx.DB().GetContactByOrgAndEmail(ctx, db.GetContactByOrgAndEmailParams{
 		OrgID: sql.NullString{String: brandID, Valid: true},
 		Email: input.Email,
@@ -1933,12 +1942,12 @@ func handleEntryRuleCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inp
 		return nil, nil, mcpctx.NewValidationError("sequence_id is required", "sequence_id")
 	}
 
-	if strings.TrimSpace(input.TriggerType) == "" {
-		return nil, nil, mcpctx.NewValidationError("trigger_type is required (list_subscribe, sequence_complete, tag_added)", "trigger_type")
-	}
-
-	if strings.TrimSpace(input.SourceID) == "" {
-		return nil, nil, mcpctx.NewValidationError("source_id is required", "source_id")
+	if err := email.CheckEntryRule(input.TriggerType, input.SourceID); err != nil {
+		field := "trigger_type"
+		if slices.Contains(email.EntryRuleTriggers, input.TriggerType) {
+			field = "source_id"
+		}
+		return nil, nil, mcpctx.NewValidationError(err.Error(), field)
 	}
 
 	// Verify sequence belongs to brand

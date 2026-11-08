@@ -163,6 +163,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	}
 	validationService := validation.New(store, c.Validation, signalNet)
 	sequences := email.NewSequenceServiceWithBaseURL(store, emailService, c.App.BaseURL)
+	// A new tag starts the sequences whose entry rules wait on it
+	store.OnTagAdded(sequences.TagAdded)
 
 	return &ServiceContext{
 		Config:            c,

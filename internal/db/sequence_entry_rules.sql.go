@@ -87,14 +87,16 @@ const getActiveEntryRuleForTrigger = `-- name: GetActiveEntryRuleForTrigger :man
 SELECT ser.id, ser.sequence_id, ser.trigger_type, ser.source_id, ser.priority, ser.is_active, ser.created_at, es.name as sequence_name, es.sequence_type
 FROM sequence_entry_rules ser
 JOIN email_sequences es ON es.id = ser.sequence_id
-WHERE ser.trigger_type = ?1
-  AND ser.source_id = ?2
+JOIN contacts c ON c.id = ?1 AND c.org_id = es.org_id
+WHERE ser.trigger_type = ?2
+  AND ser.source_id = ?3
   AND ser.is_active = 1
   AND es.is_active = 1
-ORDER BY ser.priority
+ORDER BY ser.priority DESC, ser.created_at
 `
 
 type GetActiveEntryRuleForTriggerParams struct {
+	ContactID   string `json:"contact_id"`
 	TriggerType string `json:"trigger_type"`
 	SourceID    string `json:"source_id"`
 }
@@ -111,8 +113,10 @@ type GetActiveEntryRuleForTriggerRow struct {
 	SequenceType sql.NullString `json:"sequence_type"`
 }
 
+// The active rules waiting on this trigger and source, for sequences of the
+// contact's own brand only, highest priority first.
 func (q *Queries) GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiveEntryRuleForTriggerParams) ([]GetActiveEntryRuleForTriggerRow, error) {
-	rows, err := q.db.QueryContext(ctx, getActiveEntryRuleForTrigger, arg.TriggerType, arg.SourceID)
+	rows, err := q.db.QueryContext(ctx, getActiveEntryRuleForTrigger, arg.ContactID, arg.TriggerType, arg.SourceID)
 	if err != nil {
 		return nil, err
 	}

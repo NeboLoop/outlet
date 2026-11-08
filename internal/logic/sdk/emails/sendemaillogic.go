@@ -108,6 +108,23 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 		plainText = template.PlainText.String
 		tmplFromName, tmplFromEmail, tmplReplyTo = template.FromName.String, template.FromEmail.String, template.ReplyTo.String
 
+		// The template's design wraps its content through ApplyDesign, as
+		// campaigns and sequence emails are wrapped; variables are filled
+		// after, in the design as in the content.
+		if template.DesignID.Valid {
+			design, err := svcCtx.DB.GetEmailDesign(ctx, db.GetEmailDesignParams{ID: template.DesignID.Int64, OrgID: org.ID})
+			switch {
+			case err == nil:
+				htmlBody = email.ApplyDesign(design.HtmlBody, htmlBody)
+				if plainText != "" {
+					plainText = email.ApplyDesign(design.PlainText.String, plainText)
+				}
+			case !errors.Is(err, sql.ErrNoRows):
+				l.Errorf("Failed to load design %d: %v", template.DesignID.Int64, err)
+				return fail("Failed to prepare email for sending")
+			}
+		}
+
 		for key, value := range req.Variables {
 			placeholder := "{{" + key + "}}"
 			subject = strings.ReplaceAll(subject, placeholder, value)

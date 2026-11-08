@@ -11,8 +11,26 @@ import (
 // Store provides all database operations with transaction support
 type Store struct {
 	*Queries
-	db     *sql.DB
-	events *events.Subject // optional; see events.go
+	db       *sql.DB
+	events   *events.Subject                                  // optional; see events.go
+	tagAdded func(ctx context.Context, contactID, tag string) // optional; see OnTagAdded
+}
+
+// OnTagAdded sets what runs when a contact is given a tag it didn't have
+// (the sequences waiting on that tag), whichever handler, worker or tool
+// tagged it. Tags added inside ExecTx don't run it.
+func (s *Store) OnTagAdded(fn func(ctx context.Context, contactID, tag string)) {
+	s.tagAdded = fn
+}
+
+// AddContactTag tags a contact. A tag the contact already has is left as it is
+// (sql.ErrNoRows); a new one runs OnTagAdded.
+func (s *Store) AddContactTag(ctx context.Context, arg AddContactTagParams) (ContactTag, error) {
+	t, err := s.Queries.AddContactTag(ctx, arg)
+	if err == nil && s.tagAdded != nil {
+		s.tagAdded(ctx, arg.ContactID.String, arg.Tag)
+	}
+	return t, err
 }
 
 // NewStore creates a new Store instance

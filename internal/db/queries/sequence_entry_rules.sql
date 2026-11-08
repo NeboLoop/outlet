@@ -18,14 +18,17 @@ ORDER BY ser.priority;
 SELECT * FROM sequence_entry_rules WHERE id = sqlc.arg(id);
 
 -- name: GetActiveEntryRuleForTrigger :many
+-- The active rules waiting on this trigger and source, for sequences of the
+-- contact's own brand only, highest priority first.
 SELECT ser.*, es.name as sequence_name, es.sequence_type
 FROM sequence_entry_rules ser
 JOIN email_sequences es ON es.id = ser.sequence_id
+JOIN contacts c ON c.id = sqlc.arg(contact_id) AND c.org_id = es.org_id
 WHERE ser.trigger_type = sqlc.arg(trigger_type)
   AND ser.source_id = sqlc.arg(source_id)
   AND ser.is_active = 1
   AND es.is_active = 1
-ORDER BY ser.priority;
+ORDER BY ser.priority DESC, ser.created_at;
 
 -- name: CreateEntryRule :one
 INSERT INTO sequence_entry_rules (id, sequence_id, trigger_type, source_id, priority, is_active, created_at)

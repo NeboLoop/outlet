@@ -77,7 +77,10 @@ type Querier interface {
 	CountCustomFieldsByList(ctx context.Context, listID int64) (int64, error)
 	CountEmailDesigns(ctx context.Context, orgID string) (int64, error)
 	CountEmailDesignsByCategory(ctx context.Context, arg CountEmailDesignsByCategoryParams) (int64, error)
-	CountInactiveContacts90Days(ctx context.Context, orgID sql.NullString) (int64, error)
+	// Inactive contacts: confirmed, still subscribed, with no open in the opens
+	// window and no click in the clicks window. Count and Delete share the one
+	// predicate, so the preview is what the delete removes.
+	CountInactiveContacts(ctx context.Context, arg CountInactiveContactsParams) (int64, error)
 	CountListSubscribers(ctx context.Context, arg CountListSubscribersParams) (int64, error)
 	// Bounces, spam blocks or complaints on one mailbox since a time.
 	CountMailboxRepliesSince(ctx context.Context, arg CountMailboxRepliesSinceParams) (int64, error)
@@ -209,7 +212,7 @@ type Querier interface {
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteFromSuppressionList(ctx context.Context, arg DeleteFromSuppressionListParams) error
 	DeleteImportJob(ctx context.Context, arg DeleteImportJobParams) error
-	DeleteInactiveContacts90Days(ctx context.Context, orgID sql.NullString) (int64, error)
+	DeleteInactiveContacts(ctx context.Context, arg DeleteInactiveContactsParams) (int64, error)
 	DeleteMCPAPIKey(ctx context.Context, id string) error
 	DeleteMCPSession(ctx context.Context, sessionID string) error
 	DeleteOldBackups(ctx context.Context, daysAgo sql.NullString) error
@@ -233,6 +236,8 @@ type Querier interface {
 	DeleteWebhook(ctx context.Context, arg DeleteWebhookParams) error
 	EditOutreachEmail(ctx context.Context, arg EditOutreachEmailParams) (int64, error)
 	EnsureSendCount(ctx context.Context, arg EnsureSendCountParams) error
+	// The active rules waiting on this trigger and source, for sequences of the
+	// contact's own brand only, highest priority first.
 	GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiveEntryRuleForTriggerParams) ([]GetActiveEntryRuleForTriggerRow, error)
 	GetActiveSequenceForContact(ctx context.Context, contactID sql.NullString) (GetActiveSequenceForContactRow, error)
 	// Only a list of the campaign's own brand gives recipients.
@@ -268,6 +273,7 @@ type Querier interface {
 	GetCampaignLinkStats(ctx context.Context, campaignID string) ([]GetCampaignLinkStatsRow, error)
 	GetCampaignSend(ctx context.Context, id string) (CampaignSend, error)
 	GetCampaignSendByTracking(ctx context.Context, trackingToken sql.NullString) (CampaignSend, error)
+	// The send with all CampaignMessage needs to build it, design included.
 	GetCampaignSendByTrackingToken(ctx context.Context, token sql.NullString) (GetCampaignSendByTrackingTokenRow, error)
 	GetCampaignSendEvent(ctx context.Context, id string) (GetCampaignSendEventRow, error)
 	GetConfirmationTemplate(ctx context.Context, sequenceID sql.NullString) (GetConfirmationTemplateRow, error)
