@@ -18,7 +18,7 @@ Google, Microsoft and other mail providers judge every sender. A new mailbox tha
 
 So a new mailbox sends at most 5 on its first day, 7 on the second, 9 on the third, and reaches 30 a day after about two weeks. The warm-up counts from the day the mailbox was connected.
 
-**Maildoso mailboxes** follow Maildoso's terms instead: a Maildoso connection starts at 15 a day per mailbox, and its mailboxes warm up under the pool's warm-up, from 5. See [Connect a mailbox service](/help/connect-a-mailbox-service).
+**Maildoso mailboxes** follow Maildoso's terms instead: a Maildoso connection starts at 15 a day per mailbox, warming up from 5 and adding 1 a day, so it reaches 15 on day 10. Maildoso's terms allow 15 a day after 14 days of warm-up. See [Connect a mailbox service](/help/connect-a-mailbox-service).
 
 **Amazon SES, SMTP relays and the platform pathway** have no daily limit, warm-up or spacing by default; those services limit sending on their side.
 
@@ -31,15 +31,15 @@ So a new mailbox sends at most 5 on its first day, 7 on the second, 9 on the thi
 
 Only the brand's admin can change limits.
 
-## Give a connection its own daily limit
+## Give a connection its own limits
 
-Each mailbox service connection can have a daily limit for its mailboxes, for example to follow that service's terms.
+Each mailbox service connection can have its own daily limit and warm-up for its mailboxes, for example to follow that service's terms.
 
 1. Open {{label.connectionsScreen}} and, on the pool's **{{label.connectionsHeading}}**, press **{{label.manage}}** on the connection.
-2. Type a number under **{{label.connectionLimit}}**, or leave it empty to use the pool's.
+2. Fill in **{{label.connectionLimit}}**, **{{label.connectionWarmupStart}}** and **{{label.connectionWarmupStep}}**. Each shows "{{label.connectionPoolDefault}}" when empty, which means the pool's setting applies. A **{{label.connectionWarmupStart}}** of 0 turns warm-up off for the connection.
 3. Press **{{label.saveConnection}}**.
 
-A Maildoso connection starts at 15. See [Run several mailbox services together](/help/several-mailbox-services).
+The pool's spacing and health pauses still apply to every connection. A Maildoso connection starts at 15 a day, warming up from 5 and adding 1 a day. See [Run several mailbox services together](/help/several-mailbox-services).
 
 ## Give one mailbox its own daily limit
 
@@ -47,7 +47,7 @@ A Maildoso connection starts at 15. See [Run several mailbox services together](
 2. Under **Mailboxes**, find the mailbox and type a number under **Own daily limit**.
 3. Press **Save**. You see "Daily limit saved".
 
-Clear the number and press **Save** to go back to the shared limit ("The mailbox uses its pool's daily limit"). The most specific limit wins: the mailbox's own, then its connection's, then the pool's. The warm-up still applies: the limit is the top a mailbox climbs to.
+Clear the number and press **Save** to go back to the shared limit ("The mailbox uses its pool's daily limit"). The daily limit comes from the mailbox's own, then its connection's, then the pool's. The warm-up comes from the connection's, then the pool's. The warm-up still applies: the daily limit is the top a mailbox climbs to.
 
 The **Overview** tab shows each mailbox's limit in words, such as "Warming up: 9 today, climbing to 30 a day (the pool's)".
 

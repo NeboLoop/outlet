@@ -20,6 +20,9 @@ export const helpLabels: Record<string, string> = {
 	// Per connection, under Manage
 	manage: 'Manage',
 	connectionLimit: 'Daily limit per mailbox',
+	connectionWarmupStart: 'Warm-up first day',
+	connectionWarmupStep: 'Warm-up added each day',
+	connectionPoolDefault: "The pool's",
 	saveConnection: 'Save',
 	removeConnection: 'Remove',
 	moveTo: 'Move to...',

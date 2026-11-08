@@ -74,7 +74,7 @@ Use **{{label.syncSection}}** (with the service's name) when you made mailboxes 
 
 Under **{{label.manage}}**:
 
-- **{{label.connectionLimit}}**: the daily limit for this connection's mailboxes. Empty uses the pool's.
+- **{{label.connectionLimit}}**, **{{label.connectionWarmupStart}}** and **{{label.connectionWarmupStep}}**: the daily limit and warm-up for this connection's mailboxes. Each shows "{{label.connectionPoolDefault}}" when empty, which means the pool's setting applies. A first day of 0 turns warm-up off.
 - Change the **Name** or paste a new **API key**, then press **{{label.saveConnection}}**.
 - Each domain has **{{label.moveTo}}** and **{{label.move}}**: the domain moves with its mailboxes to another connection of the same pool.
 - **{{label.removeConnection}}**: first move its domains to another connection. Outlet then forgets the connection and its key. Nothing changes at the service, so cancel there too if you're done with it.
@@ -89,7 +89,7 @@ Under **{{label.deleteSection}}** (with the service's name), press **{{label.del
 - **Automatic**: connects domains you own for free, buys new domains, creates mailboxes, and runs DNS for its domains.
 - **Connecting a domain**: Maildoso replaces the domain's MX, SPF, DKIM and DMARC records. Set the nameservers it gives within 24 hours. It marks the domain active, usually within 2 hours.
 - **Costs**: Maildoso's API gives no prices. Domains and mailboxes are billed to the payment method on your Maildoso account and plan, so the quote shows "Price unknown". Check prices in Maildoso before you buy.
-- **Its limits**: Maildoso's terms cap cold email at **15 a day per mailbox**, after **14 days of warm-up**, to **business addresses only**. A Maildoso connection starts at 15 a day per mailbox, and its mailboxes warm up under the pool's warm-up (from 5 a day by default). Change it in the connection's **{{label.connectionLimit}}**, but going above Maildoso's terms risks your account.
+- **Its limits**: Maildoso's terms cap cold email at **15 a day per mailbox**, after **14 days of warm-up**, to **business addresses only**. A Maildoso connection starts at 15 a day per mailbox, warming up from 5 and adding 1 a day, so it reaches 15 on day 10. Change these under the connection's **{{label.manage}}**, but going above Maildoso's terms risks your account.
 
 ## CheapInboxes
 

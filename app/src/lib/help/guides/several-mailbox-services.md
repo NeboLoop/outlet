@@ -13,7 +13,7 @@ A mailbox pool can hold several connections side by side: different mailbox serv
 - **Each connection is one service account with its own API key.** Use Maildoso, CheapInboxes and Infraforge together, add a second account of one of them, and use **{{label.manualServiceShort}}** for mailboxes you add yourself.
 - **Each outreach domain belongs to one connection.** A domain bought or connected at Maildoso stays with that Maildoso connection, and its mailboxes come from it.
 - **One pool sends from every mailbox.** Sending draws on every connection's mailboxes. Each prospect keeps one mailbox for their whole sequence, picked from the least-used active ones.
-- **One set of limits, with exceptions.** The pool's warm-up, spacing and health pauses apply to every mailbox. A connection can have its own daily limit, and a single mailbox can have its own on top.
+- **One set of limits, with exceptions.** The pool's spacing and health pauses apply to every mailbox. A connection can have its own daily limit and warm-up, and a single mailbox can have its own daily limit on top.
 
 ## Run two services side by side
 
@@ -37,11 +37,11 @@ Domains added there join the pool's first hand-added connection. To put a domain
 
 Services set different limits in their terms. Maildoso's terms cap cold email at 15 a day per mailbox, while Outlet's normal outreach default is 30.
 
-- A **Maildoso connection** starts at 15 a day per mailbox. Change it in the connection's **{{label.manage}}**, under **{{label.connectionLimit}}**.
-- Other connections use the pool's limit until you set **{{label.connectionLimit}}**.
+- A **Maildoso connection** starts at 15 a day per mailbox, warming up from 5 and adding 1 a day. Change it in the connection's **{{label.manage}}**, under **{{label.connectionLimit}}**, **{{label.connectionWarmupStart}}** and **{{label.connectionWarmupStep}}**.
+- Other connections use the pool's settings (30 a day, warming up from 5 and adding 2 a day, by default) until you fill those fields in. Empty fields show "{{label.connectionPoolDefault}}".
 - One mailbox can have its own limit: on **Outbound**, **Setup**, under **Mailboxes**, type a number under **Own daily limit** and press **Save**.
 
-The most specific limit wins: a mailbox's own, then its connection's, then the pool's. See [Warm-up and limits](/help/warm-up-and-limits).
+The daily limit comes from a mailbox's own, then its connection's, then the pool's. The warm-up comes from the connection's, then the pool's. See [Warm-up and limits](/help/warm-up-and-limits).
 
 ## Remove a connection
 
