@@ -20,21 +20,20 @@ func createTestToken(claims jwt.MapClaims, secret string) string {
 	return tokenString
 }
 
-// createUnsignedToken creates a JWT token string without signing (for testing ParseUnverified)
-func createUnsignedToken(claims jwt.MapClaims) string {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	// Sign with a dummy secret since the middleware uses ParseUnverified
-	tokenString, _ := token.SignedString([]byte("any-secret"))
-	return tokenString
+const testSecret = "test-access-secret"
+
+// createSignedToken creates a JWT token signed with the middleware's secret
+func createSignedToken(claims jwt.MapClaims) string {
+	return createTestToken(claims, testSecret)
 }
 
 func TestNewAuthMiddleware(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	assert.NotNil(t, middleware, "NewAuthMiddleware should return a non-nil middleware")
 }
 
 func TestAuthMiddleware_Handle_NoAuthorizationHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	handlerCalled := false
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +56,7 @@ func TestAuthMiddleware_Handle_NoAuthorizationHeader(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_ValidTokenFromCookie(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	handlerCalled := false
 	var capturedUserID interface{}
 	var capturedEmail interface{}
@@ -74,7 +73,7 @@ func TestAuthMiddleware_Handle_ValidTokenFromCookie(t *testing.T) {
 		"role":    role,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
-	tokenString := createUnsignedToken(claims)
+	tokenString := createSignedToken(claims)
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
 		handlerCalled = true
@@ -101,7 +100,7 @@ func TestAuthMiddleware_Handle_ValidTokenFromCookie(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_ValidTokenFromHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	handlerCalled := false
 	var capturedUserID interface{}
 	var capturedEmail interface{}
@@ -117,7 +116,7 @@ func TestAuthMiddleware_Handle_ValidTokenFromHeader(t *testing.T) {
 		"role":    role,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
-	tokenString := createUnsignedToken(claims)
+	tokenString := createSignedToken(claims)
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
 		handlerCalled = true
@@ -139,7 +138,7 @@ func TestAuthMiddleware_Handle_ValidTokenFromHeader(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_InvalidAuthorizationHeaderFormat(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	handlerCalled := false
 
 	tests := []struct {
@@ -150,7 +149,7 @@ func TestAuthMiddleware_Handle_InvalidAuthorizationHeaderFormat(t *testing.T) {
 		{"Only token no prefix", "some-token-value", "Invalid authorization header format"},
 		{"Wrong prefix", "Basic some-token-value", "Invalid authorization header format"},
 		{"Bearer with no token", "Bearer", "Invalid authorization header format"},
-		{"Empty bearer", "Bearer ", "Invalid token format"}, // Empty token after Bearer passes split but fails parse
+		{"Empty bearer", "Bearer ", "Invalid or expired token"}, // Empty token after Bearer passes split but fails parse
 		{"Too many parts", "Bearer token extra", "Invalid authorization header format"},
 	}
 
@@ -178,7 +177,7 @@ func TestAuthMiddleware_Handle_InvalidAuthorizationHeaderFormat(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_MalformedToken(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	handlerCalled := false
 
 	tests := []struct {
@@ -215,7 +214,7 @@ func TestAuthMiddleware_Handle_MalformedToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_MissingUserIDClaim(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	handlerCalled := false
 
 	// Token without user_id claim
@@ -224,7 +223,7 @@ func TestAuthMiddleware_Handle_MissingUserIDClaim(t *testing.T) {
 		"role":  "admin",
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	}
-	tokenString := createUnsignedToken(claims)
+	tokenString := createSignedToken(claims)
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
 		handlerCalled = true
@@ -242,11 +241,11 @@ func TestAuthMiddleware_Handle_MissingUserIDClaim(t *testing.T) {
 	var response map[string]string
 	err := json.NewDecoder(rr.Body).Decode(&response)
 	require.NoError(t, err)
-	assert.Equal(t, "Invalid token claims", response["error"])
+	assert.Equal(t, "Invalid or expired token", response["error"])
 }
 
 func TestAuthMiddleware_Handle_PartialClaims(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	handlerCalled := false
 	var capturedUserID interface{}
 	var capturedEmail interface{}
@@ -258,7 +257,7 @@ func TestAuthMiddleware_Handle_PartialClaims(t *testing.T) {
 		"user_id": userID,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
-	tokenString := createUnsignedToken(claims)
+	tokenString := createSignedToken(claims)
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
 		handlerCalled = true
@@ -281,7 +280,7 @@ func TestAuthMiddleware_Handle_PartialClaims(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_HeaderTakesPrecedenceOverCookie(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	var capturedUserID interface{}
 
 	headerUserID := uuid.New().String()
@@ -291,13 +290,13 @@ func TestAuthMiddleware_Handle_HeaderTakesPrecedenceOverCookie(t *testing.T) {
 		"user_id": headerUserID,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
-	headerToken := createUnsignedToken(headerClaims)
+	headerToken := createSignedToken(headerClaims)
 
 	cookieClaims := jwt.MapClaims{
 		"user_id": cookieUserID,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
-	cookieToken := createUnsignedToken(cookieClaims)
+	cookieToken := createSignedToken(cookieClaims)
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
 		capturedUserID = r.Context().Value("userId")
@@ -318,7 +317,7 @@ func TestAuthMiddleware_Handle_HeaderTakesPrecedenceOverCookie(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_WithOrgIDHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	var capturedOrgID interface{}
 
 	userID := uuid.New().String()
@@ -328,7 +327,7 @@ func TestAuthMiddleware_Handle_WithOrgIDHeader(t *testing.T) {
 		"user_id": userID,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
-	tokenString := createUnsignedToken(claims)
+	tokenString := createSignedToken(claims)
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
 		capturedOrgID = r.Context().Value(OrgIDKey)
@@ -345,7 +344,7 @@ func TestAuthMiddleware_Handle_WithOrgIDHeader(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_InvalidOrgIDHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	var capturedOrgID interface{}
 
 	userID := uuid.New().String()
@@ -354,7 +353,7 @@ func TestAuthMiddleware_Handle_InvalidOrgIDHeader(t *testing.T) {
 		"user_id": userID,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
-	tokenString := createUnsignedToken(claims)
+	tokenString := createSignedToken(claims)
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
 		capturedOrgID = r.Context().Value(OrgIDKey)
@@ -373,7 +372,7 @@ func TestAuthMiddleware_Handle_InvalidOrgIDHeader(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_EmptyOrgIDHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	var capturedOrgID interface{}
 
 	userID := uuid.New().String()
@@ -382,7 +381,7 @@ func TestAuthMiddleware_Handle_EmptyOrgIDHeader(t *testing.T) {
 		"user_id": userID,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
-	tokenString := createUnsignedToken(claims)
+	tokenString := createSignedToken(claims)
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
 		capturedOrgID = r.Context().Value(OrgIDKey)
@@ -401,7 +400,7 @@ func TestAuthMiddleware_Handle_EmptyOrgIDHeader(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_EmptyCookie(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 	handlerCalled := false
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +426,7 @@ func TestAuthMiddleware_Handle_EmptyCookie(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_ContentTypeHeader(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 
 	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
 		// Should not be called
@@ -443,7 +442,7 @@ func TestAuthMiddleware_Handle_ContentTypeHeader(t *testing.T) {
 }
 
 func TestAuthMiddleware_Handle_DifferentHTTPMethods(t *testing.T) {
-	middleware := NewAuthMiddleware()
+	middleware := NewAuthMiddleware(testSecret)
 
 	methods := []string{
 		http.MethodGet,
@@ -460,7 +459,7 @@ func TestAuthMiddleware_Handle_DifferentHTTPMethods(t *testing.T) {
 		"user_id": userID,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
-	tokenString := createUnsignedToken(claims)
+	tokenString := createSignedToken(claims)
 
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
@@ -481,26 +480,27 @@ func TestAuthMiddleware_Handle_DifferentHTTPMethods(t *testing.T) {
 	}
 }
 
-func TestAuthMiddleware_Handle_NumericClaims(t *testing.T) {
-	middleware := NewAuthMiddleware()
-	var capturedUserID interface{}
+func TestAuthMiddleware_Handle_RejectsUntrustedTokens(t *testing.T) {
+	middleware := NewAuthMiddleware(testSecret)
+	valid := jwt.MapClaims{"user_id": uuid.New().String(), "exp": time.Now().Add(time.Hour).Unix()}
 
-	// Test with numeric user_id (some systems use integers)
-	claims := jwt.MapClaims{
-		"user_id": float64(12345), // JSON numbers are float64
-		"exp":     time.Now().Add(time.Hour).Unix(),
+	noneToken, _ := jwt.NewWithClaims(jwt.SigningMethodNone, valid).SignedString(jwt.UnsafeAllowNoneSignatureType)
+
+	for name, token := range map[string]string{
+		"wrong secret":    createTestToken(valid, "attacker-secret"),
+		"alg none":        noneToken,
+		"expired":         createSignedToken(jwt.MapClaims{"user_id": "u1", "exp": time.Now().Add(-time.Minute).Unix()}),
+		"numeric user_id": createSignedToken(jwt.MapClaims{"user_id": float64(12345), "exp": time.Now().Add(time.Hour).Unix()}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			called := false
+			handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) { called = true })
+			req := httptest.NewRequest(http.MethodGet, "/api/admin/organizations", nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			rr := httptest.NewRecorder()
+			handler(rr, req)
+			assert.False(t, called)
+			assert.Equal(t, http.StatusUnauthorized, rr.Code)
+		})
 	}
-	tokenString := createUnsignedToken(claims)
-
-	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
-		capturedUserID = r.Context().Value("userId")
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer "+tokenString)
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	assert.Equal(t, float64(12345), capturedUserID, "Should handle numeric user_id claims")
 }
