@@ -80,8 +80,8 @@ func TestClickLinksAreSigned(t *testing.T) {
 }
 
 func TestMergeTagFallbacksAndUnknownTags(t *testing.T) {
-	c := mergeContext{BaseURL: "https://m.example", Email: "a@x.com", TrackingToken: "tok", CustomFields: map[string]string{"plan": "Pro"}}
-	got := fillMergeTags("Hi {{first_name,fallback=there}} on {{plan}}, {{coupon,fallback=none}} {{mystery}} {{web_version_url}}", c, true)
+	c := MergeContext{BaseURL: "https://m.example", Email: "a@x.com", TrackingToken: "tok", CustomFields: map[string]string{"plan": "Pro"}}
+	got := FillMergeTags("Hi {{first_name,fallback=there}} on {{plan}}, {{coupon,fallback=none}} {{mystery}} {{web_version_url}}", c, true)
 	want := "Hi there on Pro, none {{mystery}} https://m.example/w/tok"
 	if got != want {
 		t.Errorf("got %q\nwant %q", got, want)

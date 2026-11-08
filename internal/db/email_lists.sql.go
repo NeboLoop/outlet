@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const checkListSubscription = `-- name: CheckListSubscription :one
@@ -661,6 +662,50 @@ func (q *Queries) GetSubscriberSequenceEnrollments(ctx context.Context, contactI
 	return items, nil
 }
 
+const listCustomFieldValuesForSubscribers = `-- name: ListCustomFieldValuesForSubscribers :many
+SELECT subscriber_id, field_id, value FROM custom_field_values
+WHERE subscriber_id IN (/*SLICE:subscriber_ids*/?)
+`
+
+type ListCustomFieldValuesForSubscribersRow struct {
+	SubscriberID string         `json:"subscriber_id"`
+	FieldID      string         `json:"field_id"`
+	Value        sql.NullString `json:"value"`
+}
+
+func (q *Queries) ListCustomFieldValuesForSubscribers(ctx context.Context, subscriberIds []string) ([]ListCustomFieldValuesForSubscribersRow, error) {
+	query := listCustomFieldValuesForSubscribers
+	var queryParams []interface{}
+	if len(subscriberIds) > 0 {
+		for _, v := range subscriberIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:subscriber_ids*/?", strings.Repeat(",?", len(subscriberIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:subscriber_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCustomFieldValuesForSubscribersRow
+	for rows.Next() {
+		var i ListCustomFieldValuesForSubscribersRow
+		if err := rows.Scan(&i.SubscriberID, &i.FieldID, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEmailLists = `-- name: ListEmailLists :many
 SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind FROM email_lists
 WHERE org_id = ?1
@@ -777,6 +822,78 @@ func (q *Queries) ListListSubscribers(ctx context.Context, arg ListListSubscribe
 			&i.Name,
 			&i.ValidationStatus,
 			&i.ValidationSubStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listListSubscribersForExport = `-- name: ListListSubscribersForExport :many
+SELECT ls.id, ls.status, ls.subscribed_at, ls.verified_at, ls.unsubscribed_at,
+       c.email, c.name, c.created_at AS contact_created_at
+FROM list_subscribers ls
+JOIN contacts c ON c.id = ls.contact_id
+WHERE ls.list_id = ?1
+  AND COALESCE(ls.subscribed_at, '') >= CAST(?2 AS TEXT) -- lets the index seek
+  AND (COALESCE(ls.subscribed_at, ''), ls.id) > (CAST(?2 AS TEXT), CAST(?3 AS TEXT))
+  AND (?4 = '' OR ls.status = ?4)
+ORDER BY COALESCE(ls.subscribed_at, ''), ls.id
+LIMIT ?5
+`
+
+type ListListSubscribersForExportParams struct {
+	ListID            int64       `json:"list_id"`
+	AfterSubscribedAt string      `json:"after_subscribed_at"`
+	AfterID           string      `json:"after_id"`
+	FilterStatus      interface{} `json:"filter_status"`
+	LimitCount        int64       `json:"limit_count"`
+}
+
+type ListListSubscribersForExportRow struct {
+	ID               string         `json:"id"`
+	Status           sql.NullString `json:"status"`
+	SubscribedAt     sql.NullString `json:"subscribed_at"`
+	VerifiedAt       sql.NullString `json:"verified_at"`
+	UnsubscribedAt   sql.NullString `json:"unsubscribed_at"`
+	Email            string         `json:"email"`
+	Name             string         `json:"name"`
+	ContactCreatedAt sql.NullString `json:"contact_created_at"`
+}
+
+// One page of a list's export, in the order subscribers joined the list,
+// after the subscriber that ended the page before (empty keys to start).
+func (q *Queries) ListListSubscribersForExport(ctx context.Context, arg ListListSubscribersForExportParams) ([]ListListSubscribersForExportRow, error) {
+	rows, err := q.db.QueryContext(ctx, listListSubscribersForExport,
+		arg.ListID,
+		arg.AfterSubscribedAt,
+		arg.AfterID,
+		arg.FilterStatus,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListListSubscribersForExportRow
+	for rows.Next() {
+		var i ListListSubscribersForExportRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.SubscribedAt,
+			&i.VerifiedAt,
+			&i.UnsubscribedAt,
+			&i.Email,
+			&i.Name,
+			&i.ContactCreatedAt,
 		); err != nil {
 			return nil, err
 		}

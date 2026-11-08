@@ -30,7 +30,7 @@ func NewAddListSubscriberLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 }
 
 // AddListSubscriber adds one person to a list, active at once, the way a CSV
-// import does.
+// import does, and starts the list's sign-up emails for them.
 func (l *AddListSubscriberLogic) AddListSubscriber(req *types.AddListSubscriberRequest) (resp *types.Response, err error) {
 	listID, err := strconv.ParseInt(req.Id, 10, 64)
 	if err != nil {
@@ -40,7 +40,7 @@ func (l *AddListSubscriberLogic) AddListSubscriber(req *types.AddListSubscriberR
 	if err != nil {
 		return nil, err
 	}
-	added, err := l.svcCtx.DB.AddSubscriber(l.ctx, orgID, listID, req.Email, req.Name, "manual")
+	added, err := l.svcCtx.DB.AddSubscriber(l.ctx, orgID, listID, req.Email, req.Name, "manual", true)
 	if errors.Is(err, db.ErrInvalidEmail) {
 		return nil, errorx.NewBadRequestError("Enter a valid email address.")
 	}

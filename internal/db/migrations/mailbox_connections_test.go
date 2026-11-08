@@ -22,7 +22,7 @@ func TestMigration0028(t *testing.T) {
 	t.Cleanup(func() { conn.Close() })
 	goose.SetBaseFS(embedMigrations)
 	require.NoError(t, goose.SetDialect("sqlite3"))
-	require.NoError(t, goose.UpTo(conn, ".", 26))
+	require.NoError(t, goose.UpTo(conn, ".", 27))
 
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -39,7 +39,7 @@ func TestMigration0028(t *testing.T) {
 	exec(`INSERT INTO mailbox_service_quotes (id, org_id, pathway_id, service, kind, request, expires_at)
 		VALUES ('q1', 'o1', 'pool-md', 'maildoso', 'domain', '{}', '2099-01-01 00:00:00')`)
 
-	require.NoError(t, goose.UpTo(conn, ".", 27))
+	require.NoError(t, goose.UpTo(conn, ".", 28))
 
 	type connection struct {
 		id, service, name  string

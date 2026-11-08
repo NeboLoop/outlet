@@ -42,6 +42,8 @@ export const CLASSIFICATIONS: { value: string; label: string }[] = [
 	{ value: 'complaint', label: 'Complaint' }
 ];
 
+// A reply the rules couldn't sort waits as needs_review: it reads as not sorted.
 export function classificationLabel(value: string): string {
-	return CLASSIFICATIONS.find((c) => c.value === value)?.label || value || 'Not sorted';
+	if (!value || value === 'needs_review') return 'Not sorted';
+	return CLASSIFICATIONS.find((c) => c.value === value)?.label || value;
 }

@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -45,23 +47,45 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 			Message: "Organization not found in context",
 		}, nil
 	}
-	return Send(l.ctx, l.svcCtx, org, req)
+	// The response says why a send failed; the API answers with it.
+	resp, _ = Send(l.ctx, l.svcCtx, org, req, ViaAPI)
+	return resp, nil
 }
 
-// Send sends one transactional email for a brand and records it. It is the
-// one transactional send: the SDK route calls it for the API key's brand, and
-// the admin test route for the brand the signed-in member works in. A send
-// that fails comes back with Success false and a message, not an error.
-func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.SendEmailRequest) (*types.SendEmailResponse, error) {
+// Via is the way a send came in. A send without a template is recorded under
+// the system template of its way in, so SMTP mail stays apart from API mail.
+type Via int
+
+const (
+	ViaAPI  Via = iota // the SDK route and the admin test send
+	ViaSMTP            // the SMTP ingress server
+)
+
+// ErrNotSubscribed means a marketing send's recipient isn't an active
+// subscriber of its list. It wraps email.ErrSuppressed: the email must not go.
+var ErrNotSubscribed = fmt.Errorf("%w: not an active subscriber of the list", email.ErrSuppressed)
+
+// Send sends one transactional or marketing email for a brand and records
+// it. It is the one such send: the SDK route calls it for the API key's
+// brand, the admin test route for the brand the signed-in member works in,
+// and the SMTP server for each recipient of a message. A send that fails
+// comes back with Success false and a message, and an error that says the
+// kind of failure: email.ErrInvalidMessage for a request that can't be sent
+// as it is, email.ErrSuppressed for a recipient who mustn't get it,
+// email.ErrOverLimit, or the delivery error.
+func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.SendEmailRequest, via Via) (*types.SendEmailResponse, error) {
 	l := logx.WithContext(ctx)
+
+	fail := func(message string) (*types.SendEmailResponse, error) {
+		return &types.SendEmailResponse{Success: false, Status: "failed", Message: message}, fmt.Errorf("%w: %s", email.ErrInvalidMessage, message)
+	}
+	failInternal := func(message string, err error) (*types.SendEmailResponse, error) {
+		return &types.SendEmailResponse{Success: false, Status: "failed", Message: message}, err
+	}
 
 	// Validate required fields
 	if req.To == "" {
-		return &types.SendEmailResponse{
-			Success: false,
-			Status:  "failed",
-			Message: "Recipient email (to) is required",
-		}, nil
+		return fail("Recipient email (to) is required")
 	}
 
 	// Decode optional attachments up front so a bad payload fails before we
@@ -70,21 +94,13 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 	for _, a := range req.Attachments {
 		raw, decErr := base64.StdEncoding.DecodeString(a.Content)
 		if decErr != nil {
-			return &types.SendEmailResponse{
-				Success: false,
-				Status:  "failed",
-				Message: "Invalid base64 content for attachment " + a.Filename,
-			}, nil
+			return fail("Invalid base64 content for attachment " + a.Filename)
 		}
 		attachments = append(attachments, email.Attachment{
 			Filename:    a.Filename,
 			ContentType: a.ContentType,
 			Content:     raw,
 		})
-	}
-
-	fail := func(message string) (*types.SendEmailResponse, error) {
-		return &types.SendEmailResponse{Success: false, Status: "failed", Message: message}, nil
 	}
 
 	var subject, htmlBody, plainText string
@@ -121,16 +137,10 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 				}
 			case !errors.Is(err, sql.ErrNoRows):
 				l.Errorf("Failed to load design %d: %v", template.DesignID.Int64, err)
-				return fail("Failed to prepare email for sending")
+				return failInternal("Failed to prepare email for sending", err)
 			}
 		}
 
-		for key, value := range req.Variables {
-			placeholder := "{{" + key + "}}"
-			subject = strings.ReplaceAll(subject, placeholder, value)
-			htmlBody = strings.ReplaceAll(htmlBody, placeholder, value)
-			plainText = strings.ReplaceAll(plainText, placeholder, value)
-		}
 	} else {
 		if req.Subject == "" {
 			return fail("Subject is required when not using a template")
@@ -143,10 +153,44 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 		plainText = req.TextBody
 	}
 
+	// Marketing mail goes only to an active subscriber of its list, through
+	// the brand's marketing pathway, with an unsubscribe link.
+	kind := email.KindTransactional
+	var contactID sql.NullString
+	switch strings.ToLower(strings.TrimSpace(req.Type)) {
+	case "", "transactional":
+		if req.ListSlug != "" {
+			return fail("list_slug is for marketing mail: set type to marketing, or leave list_slug out")
+		}
+	case "marketing":
+		if req.ListSlug == "" {
+			return fail("Marketing mail needs list_slug: the list the recipient subscribed to")
+		}
+		id, err := activeSubscriber(ctx, svcCtx.DB, org.ID, req.ListSlug, req.To)
+		switch {
+		case errors.Is(err, ErrNotSubscribed):
+			return &types.SendEmailResponse{
+				Success: false,
+				Status:  "suppressed",
+				Message: "Not sent: " + req.To + " isn't an active subscriber of list '" + req.ListSlug + "'",
+			}, err
+		case errors.Is(err, errNoList):
+			return fail("List '" + req.ListSlug + "' not found")
+		case err != nil:
+			l.Errorf("Failed to check the list subscription: %v", err)
+			return failInternal("Failed to prepare email for sending", err)
+		}
+		kind = email.KindMarketing
+		contactID = sql.NullString{String: id, Valid: true}
+	default:
+		return fail("type must be transactional or marketing")
+	}
+
 	// Request fields override the template's; the email service falls back to
 	// the brand, then the platform, for anything still empty.
 	message := email.Message{
 		OrgID:       org.ID,
+		Kind:        kind,
 		FromName:    firstNonEmpty(req.FromName, tmplFromName),
 		FromEmail:   firstNonEmpty(req.FromEmail, tmplFromEmail),
 		ReplyTo:     firstNonEmpty(req.ReplyTo, tmplReplyTo),
@@ -163,6 +207,25 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 	}
 
 	trackingToken := generateTrackingToken()
+	svcCtx.EmailService.Track(&message, email.Tracking{
+		Token:       trackingToken,
+		Unsubscribe: kind == email.KindMarketing,
+		Opens:       req.TrackOpens,
+		Clicks:      req.TrackClicks,
+	})
+
+	// A template's variables fill its merge tags through the one merge-tag
+	// implementation, fallbacks included, and the send's tracking token fills
+	// {{unsubscribe_url}} and {{web_version_url}} (a design's footer has them).
+	if req.TemplateSlug != "" {
+		tags := email.MergeContext{
+			BaseURL: svcCtx.Config.App.BaseURL, Name: req.Variables["name"], Email: firstNonEmpty(req.Variables["email"], req.To),
+			TrackingToken: trackingToken, CustomFields: req.Variables,
+		}
+		message.Subject = email.FillMergeTags(message.Subject, tags, false)
+		message.HTML = email.FillMergeTags(message.HTML, tags, false)
+		message.Text = email.FillMergeTags(message.Text, tags, false)
+	}
 
 	var contextData sql.NullString
 	if len(req.Meta) > 0 || len(req.Tags) > 0 {
@@ -180,14 +243,10 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 	if templateID == "" {
 		// For ad-hoc sends without a template, we need at least one template to exist
 		// Create or get a default "adhoc" template for the org
-		adhocTemplate, err := getOrCreateAdhocTemplate(ctx, svcCtx.DB, org.ID)
+		adhocTemplate, err := getOrCreateAdhocTemplate(ctx, svcCtx.DB, org.ID, via)
 		if err != nil {
 			l.Errorf("Failed to get adhoc template: %v", err)
-			return &types.SendEmailResponse{
-				Success: false,
-				Status:  "failed",
-				Message: "Failed to prepare email for sending",
-			}, nil
+			return failInternal("Failed to prepare email for sending", err)
 		}
 		templateID = adhocTemplate.ID
 	}
@@ -198,18 +257,14 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 		OrgID:         org.ID,
 		ToEmail:       req.To,
 		ToName:        sql.NullString{},
-		ContactID:     sql.NullString{},
+		ContactID:     contactID,
 		Status:        sql.NullString{String: "pending", Valid: true},
 		TrackingToken: sql.NullString{String: trackingToken, Valid: true},
 		ContextData:   contextData,
 	})
 	if err != nil {
 		l.Errorf("Failed to create send record: %v", err)
-		return &types.SendEmailResponse{
-			Success: false,
-			Status:  "failed",
-			Message: "Failed to queue email for sending",
-		}, nil
+		return failInternal("Failed to queue email for sending", err)
 	}
 
 	sendErr := svcCtx.EmailService.Send(ctx, message)
@@ -241,7 +296,7 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 		case errors.Is(sendErr, email.ErrInvalidMessage):
 			resp.Message = sendErr.Error()
 		}
-		return resp, nil
+		return resp, sendErr
 	}
 
 	// Update status to sent
@@ -276,9 +331,17 @@ func generateTrackingToken() string {
 	return hex.EncodeToString(bytes)
 }
 
-func getOrCreateAdhocTemplate(ctx context.Context, store *db.Store, orgID string) (db.TransactionalEmail, error) {
+// adhocTemplates are the system templates sends without a template are
+// recorded under, by the way they came in.
+var adhocTemplates = map[Via]struct{ slug, name, description string }{
+	ViaAPI:  {"_adhoc", "Ad-hoc Emails", "System template for tracking ad-hoc transactional emails"},
+	ViaSMTP: {"_smtp_adhoc", "SMTP Emails", "System template for tracking emails received via SMTP"},
+}
+
+func getOrCreateAdhocTemplate(ctx context.Context, store *db.Store, orgID string, via Via) (db.TransactionalEmail, error) {
+	t := adhocTemplates[via]
 	template, err := store.GetTransactionalEmailBySlug(ctx, db.GetTransactionalEmailBySlugParams{
-		Slug:  "_adhoc",
+		Slug:  t.slug,
 		OrgID: orgID,
 	})
 	if err == nil {
@@ -289,9 +352,9 @@ func getOrCreateAdhocTemplate(ctx context.Context, store *db.Store, orgID string
 		ID:          uuid.New().String(),
 		OrgID:       orgID,
 		DesignID:    sql.NullInt64{},
-		Name:        "Ad-hoc Emails",
-		Slug:        "_adhoc",
-		Description: sql.NullString{String: "System template for tracking ad-hoc transactional emails", Valid: true},
+		Name:        t.name,
+		Slug:        t.slug,
+		Description: sql.NullString{String: t.description, Valid: true},
 		Subject:     "{{subject}}",
 		HtmlBody:    "{{body}}",
 		PlainText:   sql.NullString{},
@@ -331,4 +394,44 @@ func headerValue(h map[string]string, name string) string {
 		}
 	}
 	return ""
+}
+
+var errNoList = errors.New("no such list")
+
+// activeSubscriber returns the brand's contact for this address when it is
+// an active subscriber of the list: subscribed, and not unsubscribed from
+// everything or blocked. Otherwise it returns ErrNotSubscribed, or errNoList.
+func activeSubscriber(ctx context.Context, store *db.Store, orgID, listSlug, to string) (string, error) {
+	list, err := store.GetEmailListByOrgAndSlug(ctx, db.GetEmailListByOrgAndSlugParams{OrgID: orgID, Slug: listSlug})
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errNoList
+	}
+	if err != nil {
+		return "", err
+	}
+	addr, err := mail.ParseAddress(to)
+	if err != nil {
+		return "", ErrNotSubscribed
+	}
+	contact, err := store.GetContactByOrgAndEmail(ctx, db.GetContactByOrgAndEmailParams{
+		OrgID: sql.NullString{String: orgID, Valid: true},
+		Email: strings.ToLower(addr.Address),
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotSubscribed
+	}
+	if err != nil {
+		return "", err
+	}
+	if contact.UnsubscribedAt.Valid || contact.BlockedAt.Valid {
+		return "", ErrNotSubscribed
+	}
+	sub, err := store.GetListSubscriber(ctx, db.GetListSubscriberParams{ListID: list.ID, ContactID: contact.ID})
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && sub.Status.String != "active") {
+		return "", ErrNotSubscribed
+	}
+	if err != nil {
+		return "", err
+	}
+	return contact.ID, nil
 }

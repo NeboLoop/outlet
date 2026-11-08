@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { OutboundCampaignResults, OutboundMailboxHealth } from '$lib/api';
-import { mailboxLimit, overBounceLimit, pageRange } from './shared';
+import { classificationLabel, mailboxLimit, overBounceLimit, pageRange } from './shared';
 
 describe('pageRange', () => {
 	it('says which rows a page shows', () => {
@@ -60,5 +60,13 @@ describe('overBounceLimit', () => {
 
 	it('never flags when the pathway never pauses', () => {
 		expect(overBounceLimit(campaign(40, 0))).toBe(false);
+	});
+});
+
+describe('classificationLabel', () => {
+	it('names a sorted reply and reads an unsorted one as not sorted', () => {
+		expect(classificationLabel('interested')).toBe('Interested');
+		expect(classificationLabel('needs_review')).toBe('Not sorted');
+		expect(classificationLabel('')).toBe('Not sorted');
 	});
 });

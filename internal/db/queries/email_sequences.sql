@@ -13,6 +13,13 @@ SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, sen
 FROM email_sequences
 WHERE list_id = sqlc.arg(list_id) AND trigger_event = sqlc.arg(trigger_event) AND is_active = 1;
 
+-- name: ListActiveSequencesByListAndTrigger :many
+-- Every active sequence of a list that this trigger starts, oldest first.
+SELECT id, slug
+FROM email_sequences
+WHERE list_id = sqlc.arg(list_id) AND trigger_event = sqlc.arg(trigger_event) AND is_active = 1
+ORDER BY created_at, id;
+
 -- name: ListSequencesByList :many
 SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, on_completion_sequence_id, created_at
 FROM email_sequences

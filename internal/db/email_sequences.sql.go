@@ -1119,6 +1119,47 @@ func (q *Queries) GetTemplateByID(ctx context.Context, id string) (GetTemplateBy
 	return i, err
 }
 
+const listActiveSequencesByListAndTrigger = `-- name: ListActiveSequencesByListAndTrigger :many
+SELECT id, slug
+FROM email_sequences
+WHERE list_id = ?1 AND trigger_event = ?2 AND is_active = 1
+ORDER BY created_at, id
+`
+
+type ListActiveSequencesByListAndTriggerParams struct {
+	ListID       sql.NullInt64 `json:"list_id"`
+	TriggerEvent string        `json:"trigger_event"`
+}
+
+type ListActiveSequencesByListAndTriggerRow struct {
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+}
+
+// Every active sequence of a list that this trigger starts, oldest first.
+func (q *Queries) ListActiveSequencesByListAndTrigger(ctx context.Context, arg ListActiveSequencesByListAndTriggerParams) ([]ListActiveSequencesByListAndTriggerRow, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveSequencesByListAndTrigger, arg.ListID, arg.TriggerEvent)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveSequencesByListAndTriggerRow
+	for rows.Next() {
+		var i ListActiveSequencesByListAndTriggerRow
+		if err := rows.Scan(&i.ID, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllSequences = `-- name: ListAllSequences :many
 SELECT es.id, es.org_id, es.list_id, es.slug, es.name, es.trigger_event, es.is_active,
        es.send_hour, es.send_timezone, es.sequence_type, es.on_completion_sequence_id, es.created_at,

@@ -96,6 +96,7 @@ var policy = map[string]toolPolicy{
 		"list.create": write(member), "list.list": read(member), "list.get": read(member),
 		"list.update": write(member), "list.delete": write(member), "list.stats": read(member),
 		"list.subscribers": read(member), "list.subscribe": write(member), "list.unsubscribe": write(member),
+		"list.export":     read(member),
 		"sequence.create": write(member), "sequence.list": read(member), "sequence.get": read(member),
 		"sequence.update": write(member), "sequence.delete": write(member), "sequence.stats": read(member),
 		"template.create": write(member), "template.list": read(member), "template.get": read(member),

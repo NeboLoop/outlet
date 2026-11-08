@@ -35,11 +35,11 @@ func newStore(t *testing.T) *db.Store {
 func TestAddSubscriber_RefusesAnInvalidAddress(t *testing.T) {
 	store := newStore(t)
 	for _, bad := range []string{"not-an-email", "Ann <ann@example.com>", ""} {
-		if _, err := store.AddSubscriber(context.Background(), "org-1", 0, bad, "", "import"); !errors.Is(err, db.ErrInvalidEmail) {
+		if _, err := store.AddSubscriber(context.Background(), "org-1", 0, bad, "", "import", false); !errors.Is(err, db.ErrInvalidEmail) {
 			t.Errorf("%q: got %v, want ErrInvalidEmail", bad, err)
 		}
 	}
-	if _, err := store.AddSubscriber(context.Background(), "org-1", 0, " Ann@Example.com ", "", "import"); err != nil {
+	if _, err := store.AddSubscriber(context.Background(), "org-1", 0, " Ann@Example.com ", "", "import", false); err != nil {
 		t.Errorf("a valid address: %v", err)
 	}
 }

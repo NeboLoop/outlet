@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,7 +38,8 @@ func NewImportListSubscribersLogic(ctx context.Context, svcCtx *svc.ServiceConte
 }
 
 // ImportListSubscribers saves the CSV and queues an import job; the import
-// worker adds each row to the list, active at once.
+// worker adds each row to the list, active at once, and starts the list's
+// sign-up emails for them when StartSignup is set.
 func (l *ImportListSubscribersLogic) ImportListSubscribers(req *types.ImportListSubscribersRequest) (resp *types.ImportJobInfo, err error) {
 	listID, err := strconv.ParseInt(req.Id, 10, 64)
 	if err != nil {
@@ -70,12 +72,17 @@ func (l *ImportListSubscribersLogic) ImportListSubscribers(req *types.ImportList
 	if name == "." || name == "/" || name == "" {
 		name = "import.csv"
 	}
+	options, err := json.Marshal(workers.ImportOptions{StartSignup: req.StartSignup})
+	if err != nil {
+		return nil, errorx.NewInternalError("Couldn't start the import.")
+	}
 	job, err := l.svcCtx.DB.CreateImportJob(l.ctx, db.CreateImportJobParams{
 		ID:       jobID,
 		OrgID:    orgID,
 		ListID:   sql.NullInt64{Int64: listID, Valid: true},
 		Type:     "subscribers",
 		Filename: name,
+		Options:  sql.NullString{String: string(options), Valid: true},
 	})
 	if err != nil {
 		_ = os.Remove(workers.ImportFile(l.svcCtx.UploadDir, jobID))

@@ -37,6 +37,7 @@ func TestSubscribeToList_StartsSignupSequence(t *testing.T) {
 	store := db.NewStore(conn)
 	emailService := email.NewService(store, nil)
 	s := &svc.ServiceContext{DB: store, EmailService: emailService, Sequences: email.NewSequenceServiceWithBaseURL(store, emailService, "https://outlet.test")}
+	store.OnSubscriptionActivated(s.Sequences.SubscriptionActivated)
 	ctx := context.WithValue(context.Background(), middleware.OrgIDKey, "org-a")
 
 	for range 2 {

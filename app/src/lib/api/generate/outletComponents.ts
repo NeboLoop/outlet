@@ -785,7 +785,7 @@ export interface GDPRConsentRequestParams {
 
 export interface GDPRDeleteRequest {
 	confirm: boolean // Must be true to proceed
-	delete_email?: boolean // Also delete from email provider logs if possible
+	delete_email?: boolean // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
 }
 export interface GDPRDeleteRequestParams {
 }
@@ -794,7 +794,8 @@ export interface GDPRDeleteResponse {
 	success: boolean
 	message: string
 	deleted_data: string // Summary of what was deleted
-	audit_record_id: string
+	audit_record_id: string // The deletion's row in the GDPR audit log
+	provider_results: Array<GDPRProviderResult> // Set when delete_email was asked for
 }
 
 export interface GDPRExportRequest {
@@ -818,6 +819,13 @@ export interface GDPRLookupResponse {
 	found: boolean
 	contact_id?: string
 	email?: string
+}
+
+export interface GDPRProviderResult {
+	pathway: string
+	provider: string // Amazon SES, SMTP relay, Mailboxes
+	result: string
+	failed: boolean
 }
 
 export interface GetBackupRequest {
@@ -1025,6 +1033,7 @@ export interface ImportJobInfo {
 export interface ImportListSubscribersRequest {
 	filename: string
 	csv: string
+	start_signup?: boolean // Start the list's sign-up emails for the people added; off for an old list that shouldn't get them
 }
 export interface ImportListSubscribersRequestParams {
 }
@@ -1263,6 +1272,16 @@ export interface ListValidationResultsResponse {
 	total: number
 	page: number
 	limit: number
+}
+
+export interface ListWebhookDeliveriesRequest {
+}
+export interface ListWebhookDeliveriesRequestParams {
+	limit?: number // default 50, max 200
+}
+
+export interface ListWebhookDeliveriesResponse {
+	deliveries: Array<WebhookDeliveryInfo>
 }
 
 export interface ListWebhookLogsRequest {
@@ -2024,6 +2043,17 @@ export interface RemoveSubscriberRequest {
 export interface RemoveSubscriberRequestParams {
 }
 
+export interface ResendWebhookDeliveryRequest {
+}
+export interface ResendWebhookDeliveryRequestParams {
+}
+
+export interface ResendWebhookDeliveryResponse {
+	delivery: WebhookDeliveryInfo
+	success: boolean
+	error?: string
+}
+
 export interface ResetPasswordRequest {
 	token: string
 	new_password: string
@@ -2124,6 +2154,10 @@ export interface SendEmailRequest {
 	tags?: Array<string> // For tracking/filtering
 	meta?: { [key: string]: string } // Custom metadata
 	attachments?: Array<EmailAttachment> // Optional file attachments
+	type?: string // transactional (default) or marketing
+	list_slug?: string // Marketing only, and required for it: the list the recipient subscribed to. Sent only to an active subscriber, with an unsubscribe link
+	track_opens?: boolean // Add an open pixel
+	track_clicks?: boolean // Send links through click tracking
 }
 
 export interface SendEmailResponse {
@@ -2785,6 +2819,19 @@ export interface VersionInfo {
 	arch: string
 }
 
+export interface WebhookDeliveryInfo {
+	id: string
+	event: string
+	status: string // pending (waiting to retry), sending, succeeded, failed
+	attempts: number
+	max_attempts: number
+	last_status_code?: number // HTTP status of the last try
+	last_error?: string
+	next_retry_at?: string // when pending
+	created_at: string
+	updated_at: string
+}
+
 export interface WebhookInfo {
 	id: string
 	url: string
@@ -2797,6 +2844,9 @@ export interface WebhookInfo {
 	deliveries_failed: number
 	last_delivery_at?: string
 	last_status?: number // HTTP status code
+	// Retries (admin list): deliveries waiting for another try, and when the next one is
+	waiting_deliveries?: number
+	next_retry_at?: string
 }
 
 export interface WebhookLogInfo {

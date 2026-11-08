@@ -3,11 +3,7 @@ package smtp
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -19,11 +15,12 @@ import (
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/logic/sdk/emails"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
+	"github.com/outlet-sh/outlet/internal/types"
 
 	gosmtp "github.com/emersion/go-smtp"
-	"github.com/google/uuid"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -93,31 +90,43 @@ func (p *EmailProcessor) Process(r io.Reader) (string, error) {
 		fromName, fromEmail = "", ""
 	}
 
-	// Each recipient gets its own send record and tracking token
+	// Each recipient is one send through emails.Send, the API's send, with its
+	// own record and tracking token. The X-Outlet-* headers are its fields.
 	var messageIDs []string
 	var failed []string
+	var reason string // why the first refused recipient was refused
 	permanent := true
 	for _, recipient := range p.recipients {
-		message := email.Message{
-			OrgID:     p.org.ID,
-			FromName:  fromName,
-			FromEmail: fromEmail,
-			ReplyTo:   replyTo,
-			To:        recipient,
-			Subject:   subject,
-			HTML:      htmlBody,
-			Text:      plainText,
+		req := &types.SendEmailRequest{
+			To:           recipient,
+			TemplateSlug: headers.TemplateSlug,
+			Subject:      subject,
+			Body:         htmlBody,
+			TextBody:     plainText,
+			FromName:     fromName,
+			FromEmail:    fromEmail,
+			ReplyTo:      replyTo,
+			Tags:         headers.Tags,
+			Meta:         headers.Meta,
+			Type:         headers.Type,
+			ListSlug:     headers.ListSlug,
+			TrackOpens:   headers.TrackOpens,
+			TrackClicks:  headers.TrackClicks,
 		}
-		id, err := p.sendToRecipient(message, headers)
+		resp, err := emails.Send(context.Background(), p.svcCtx, p.org, req, emails.ViaSMTP)
 		if err != nil {
 			logx.Errorf("SMTP: Failed to send to %s: %v", recipient, err)
 			failed = append(failed, recipient)
+			if reason == "" {
+				reason = resp.Message
+			}
 			if !errors.Is(err, email.ErrSuppressed) && !errors.Is(err, email.ErrInvalidMessage) {
 				permanent = false
 			}
 			continue
 		}
-		messageIDs = append(messageIDs, id)
+		logx.Infof("SMTP: Email sent to=%s subject=%q org=%s msgId=%s", recipient, subject, p.org.Slug, resp.MessageId)
+		messageIDs = append(messageIDs, resp.MessageId)
 	}
 
 	// SMTP answers DATA once for the whole message. When every recipient
@@ -125,7 +134,7 @@ func (p *EmailProcessor) Process(r io.Reader) (string, error) {
 	// the mail went out. Partial failures are recorded per send.
 	if len(messageIDs) == 0 {
 		if permanent {
-			return "", &gosmtp.SMTPError{Code: 554, EnhancedCode: gosmtp.EnhancedCode{5, 1, 1}, Message: "No recipient could be sent to: " + strings.Join(failed, ", ")}
+			return "", &gosmtp.SMTPError{Code: 554, EnhancedCode: gosmtp.EnhancedCode{5, 1, 1}, Message: "No recipient could be sent to: " + strings.Join(failed, ", ") + ": " + reason}
 		}
 		return "", &gosmtp.SMTPError{Code: 451, EnhancedCode: gosmtp.EnhancedCode{4, 3, 0}, Message: "Temporary failure sending the message, try again later"}
 	}
@@ -224,106 +233,4 @@ func (w *whitespaceStripper) Read(p []byte) (int, error) {
 		}
 	}
 	return len(out), err
-}
-
-// sendToRecipient records and sends the email to one recipient, returning its
-// tracking token.
-func (p *EmailProcessor) sendToRecipient(message email.Message, headers *OutletHeaders) (string, error) {
-	ctx := context.Background()
-	trackingToken := p.generateTrackingToken()
-
-	// Prepare context data (meta + tags)
-	var contextData sql.NullString
-	if len(headers.Meta) > 0 || len(headers.Tags) > 0 {
-		contextMap := make(map[string]interface{})
-		if len(headers.Meta) > 0 {
-			contextMap["meta"] = headers.Meta
-		}
-		if len(headers.Tags) > 0 {
-			contextMap["tags"] = headers.Tags
-		}
-		jsonBytes, _ := json.Marshal(contextMap)
-		contextData = sql.NullString{String: string(jsonBytes), Valid: true}
-	}
-
-	// Get or create adhoc template for tracking
-	templateID, err := p.getOrCreateAdhocTemplate()
-	if err != nil {
-		return "", fmt.Errorf("failed to get adhoc template: %w", err)
-	}
-
-	send, err := p.svcCtx.DB.CreateTransactionalSend(ctx, db.CreateTransactionalSendParams{
-		ID:            uuid.New().String(),
-		TemplateID:    templateID,
-		OrgID:         p.org.ID,
-		ToEmail:       message.To,
-		ToName:        sql.NullString{},
-		ContactID:     sql.NullString{},
-		Status:        sql.NullString{String: "pending", Valid: true},
-		TrackingToken: sql.NullString{String: trackingToken, Valid: true},
-		ContextData:   contextData,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create send record: %w", err)
-	}
-
-	if sendErr := p.svcCtx.EmailService.Send(ctx, message); sendErr != nil {
-		_ = p.svcCtx.DB.UpdateTransactionalSendStatus(ctx, db.UpdateTransactionalSendStatusParams{
-			ID:           send.ID,
-			Status:       sql.NullString{String: "failed", Valid: true},
-			ErrorMessage: sql.NullString{String: sendErr.Error(), Valid: true},
-		})
-		return "", fmt.Errorf("failed to send: %w", sendErr)
-	}
-
-	_ = p.svcCtx.DB.UpdateTransactionalSendStatus(ctx, db.UpdateTransactionalSendStatusParams{
-		ID:           send.ID,
-		Status:       sql.NullString{String: "sent", Valid: true},
-		ErrorMessage: sql.NullString{},
-	})
-
-	logx.Infof("SMTP: Email sent to=%s subject=%q org=%s msgId=%s", message.To, message.Subject, p.org.Slug, trackingToken)
-	return trackingToken, nil
-}
-
-// getOrCreateAdhocTemplate gets or creates the _smtp_adhoc template for SMTP sends
-func (p *EmailProcessor) getOrCreateAdhocTemplate() (string, error) {
-	ctx := context.Background()
-
-	template, err := p.svcCtx.DB.GetTransactionalEmailBySlug(ctx, db.GetTransactionalEmailBySlugParams{
-		Slug:  "_smtp_adhoc",
-		OrgID: p.org.ID,
-	})
-	if err == nil {
-		return template.ID, nil
-	}
-
-	// Create the template
-	template, err = p.svcCtx.DB.CreateTransactionalEmail(ctx, db.CreateTransactionalEmailParams{
-		ID:          uuid.New().String(),
-		OrgID:       p.org.ID,
-		DesignID:    sql.NullInt64{},
-		Name:        "SMTP Emails",
-		Slug:        "_smtp_adhoc",
-		Description: sql.NullString{String: "System template for tracking emails received via SMTP", Valid: true},
-		Subject:     "{{subject}}",
-		HtmlBody:    "{{body}}",
-		PlainText:   sql.NullString{},
-		FromName:    sql.NullString{},
-		FromEmail:   sql.NullString{},
-		ReplyTo:     sql.NullString{},
-		IsActive:    sql.NullInt64{Int64: 1, Valid: true},
-	})
-	if err != nil {
-		return "", err
-	}
-
-	return template.ID, nil
-}
-
-// generateTrackingToken creates a unique tracking token
-func (p *EmailProcessor) generateTrackingToken() string {
-	bytes := make([]byte, 32)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
 }

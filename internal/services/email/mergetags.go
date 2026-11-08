@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// mergeContext holds the values merge tags are filled from.
-type mergeContext struct {
+// MergeContext holds the values merge tags are filled from.
+type MergeContext struct {
 	BaseURL           string
 	Name              string
 	Email             string
@@ -20,13 +20,14 @@ type mergeContext struct {
 
 var mergeTagPattern = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_]+)\s*(?:,\s*fallback\s*=\s*([^}]*))?\}\}`)
 
-// fillMergeTags is the one merge-tag implementation for campaigns and
-// sequences. It fills {{name}}, {{first_name}}, {{email}}, custom fields,
+// FillMergeTags is the one merge-tag implementation for campaigns,
+// sequences and transactional emails. It fills {{name}}, {{first_name}},
+// {{email}}, custom fields (a transactional email's variables),
 // {{unsubscribe_url}}, {{web_version_url}} and {{confirm_url}}; any tag may
 // carry a fallback, as in {{first_name,fallback=there}}. With escapeHTML,
 // subscriber-supplied values are escaped for an HTML body; subjects and plain
 // text pass false. Unknown tags are left as they are.
-func fillMergeTags(content string, c mergeContext, escapeHTML bool) string {
+func FillMergeTags(content string, c MergeContext, escapeHTML bool) string {
 	out, _ := fill(content, c, escapeHTML)
 	return out
 }
@@ -35,10 +36,10 @@ func fillMergeTags(content string, c mergeContext, escapeHTML bool) string {
 // that came out empty (no value and no fallback). One-to-one outreach refuses
 // to send those rather than write "Hi ,".
 func FillTags(content, name, address string, fields map[string]string) (string, []string) {
-	return fill(content, mergeContext{Name: name, Email: address, CustomFields: fields}, false)
+	return fill(content, MergeContext{Name: name, Email: address, CustomFields: fields}, false)
 }
 
-func fill(content string, c mergeContext, escapeHTML bool) (string, []string) {
+func fill(content string, c MergeContext, escapeHTML bool) (string, []string) {
 	base := strings.TrimRight(c.BaseURL, "/")
 	var empty []string
 	out := mergeTagPattern.ReplaceAllStringFunc(content, func(tag string) string {

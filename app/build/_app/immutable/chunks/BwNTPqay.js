@@ -1,0 +1,1 @@
+import{Xn as e,Zn as t}from"./DOXkaBoS.js";function n(n,r={}){return e(t(`/api/admin/lists/${n}/export`,r),`list-${n}-subscribers.csv`)}function r(t,n){return e(`/api/admin/backup/${encodeURIComponent(t)}/download`,n)}export{n,r as t};

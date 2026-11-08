@@ -404,6 +404,19 @@ type EmailValidationCache struct {
 	CheckedAt  string `json:"checked_at"`
 }
 
+type GdprDeletion struct {
+	ID                 string `json:"id"`
+	OrgID              string `json:"org_id"`
+	ContactID          string `json:"contact_id"`
+	EmailSha256        string `json:"email_sha256"`
+	RequestedBy        string `json:"requested_by"`
+	RequestedByEmail   string `json:"requested_by_email"`
+	Via                string `json:"via"`
+	ProvidersRequested int64  `json:"providers_requested"`
+	ProviderResults    string `json:"provider_results"`
+	CreatedAt          string `json:"created_at"`
+}
+
 type ImportJob struct {
 	ID            string         `json:"id"`
 	OrgID         string         `json:"org_id"`
@@ -830,6 +843,20 @@ type Webhook struct {
 	UpdatedAt         sql.NullString `json:"updated_at"`
 }
 
+type WebhookDelivery struct {
+	ID             string         `json:"id"`
+	WebhookID      string         `json:"webhook_id"`
+	Event          string         `json:"event"`
+	Payload        string         `json:"payload"`
+	Status         string         `json:"status"`
+	Attempts       int64          `json:"attempts"`
+	NextAttemptAt  sql.NullString `json:"next_attempt_at"`
+	LastStatusCode sql.NullInt64  `json:"last_status_code"`
+	LastError      sql.NullString `json:"last_error"`
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at"`
+}
+
 type WebhookLog struct {
 	ID          string         `json:"id"`
 	WebhookID   string         `json:"webhook_id"`
@@ -840,4 +867,6 @@ type WebhookLog struct {
 	Error       sql.NullString `json:"error"`
 	DurationMs  sql.NullInt64  `json:"duration_ms"`
 	DeliveredAt sql.NullString `json:"delivered_at"`
+	DeliveryID  sql.NullString `json:"delivery_id"`
+	Attempt     sql.NullInt64  `json:"attempt"`
 }

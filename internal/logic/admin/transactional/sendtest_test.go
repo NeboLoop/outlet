@@ -73,8 +73,8 @@ func TestSendTransactionalTest_AsMember(t *testing.T) {
 		`INSERT INTO users (id, email, password_hash, name, role, status, email_verified) VALUES ('mike', 'mike@example.com', 'x', 'M', 'agent', 'active', 1)`,
 		`INSERT INTO organizations (id, name, slug, api_key) VALUES ('alpha-id', 'alpha', 'alpha', 'k-a'), ('bravo-id', 'bravo', 'bravo', 'k-b')`,
 		`INSERT INTO org_users (org_id, user_id, role) VALUES ('alpha-id', 'mike', 'member')`,
-		`INSERT INTO email_designs (id, org_id, name, slug, html_body) VALUES (7, 'alpha-id', 'D', 'd', '<html><body><div>ACME brand {{order}}</div>{{content}}</body></html>')`,
-		`INSERT INTO transactional_emails (id, org_id, design_id, name, slug, subject, html_body, is_active) VALUES ('te-1', 'alpha-id', 7, 'Receipt', 'receipt', 'Receipt {{order}}', '<p>Order {{order}}</p>', 1)`,
+		`INSERT INTO email_designs (id, org_id, name, slug, html_body) VALUES (7, 'alpha-id', 'D', 'd', '<html><body><div>ACME brand {{order}}</div>{{content}}<a href="{{unsubscribe_url}}">Unsubscribe</a></body></html>')`,
+		`INSERT INTO transactional_emails (id, org_id, design_id, name, slug, subject, html_body, is_active) VALUES ('te-1', 'alpha-id', 7, 'Receipt', 'receipt', 'Receipt {{order}}', '<p>Order {{order}} for {{name,fallback=friend}}</p>', 1)`,
 		`INSERT INTO platform_settings (key, value_text, category) VALUES ('smtp_host', '127.0.0.1', 'email'), ('smtp_port', '` + strconv.Itoa(ln.Addr().(*net.TCPAddr).Port) + `', 'email'), ('smtp_user', 'u', 'email'), ('smtp_password', 'p', 'email'), ('from_email', 'team@outlet.example', 'email')`,
 	} {
 		_, err := conn.Exec(q)
@@ -101,7 +101,8 @@ func TestSendTransactionalTest_AsMember(t *testing.T) {
 	body, err := io.ReadAll(msg.Body)
 	require.NoError(t, err)
 	assert.Contains(t, string(body), "ACME brand 42", "the design, its variables filled")
-	assert.Contains(t, string(body), "Order 42")
+	assert.Contains(t, string(body), "Order 42 for friend", "a fallback fills a variable not given")
+	assert.NotContains(t, string(body), "{{", "every merge tag is filled, the design's unsubscribe link too")
 
 	// A failed send is an error the page shows.
 	_, err = NewSendTransactionalTestLogic(in("alpha-id"), s).SendTransactionalTest(&types.SendEmailRequest{To: "mike@example.com", TemplateSlug: "missing"})

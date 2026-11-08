@@ -237,48 +237,24 @@ func (s *SequenceService) runEntryRules(ctx context.Context, trigger, sourceID, 
 	return errors.Join(errs...)
 }
 
-// StartSequence initiates an email sequence for a contact
+// StartSequence starts, through StartSequenceByID, every active sequence of
+// the list that this trigger starts: a list can have several "On signup"
+// autoresponders, and each runs once per contact.
 func (s *SequenceService) StartSequence(ctx context.Context, contactID string, listID int64, triggerEvent string) error {
-	// Get the sequence for this trigger
-	sequence, err := s.db.GetSequenceByListAndTrigger(ctx, db.GetSequenceByListAndTriggerParams{
+	sequences, err := s.db.ListActiveSequencesByListAndTrigger(ctx, db.ListActiveSequencesByListAndTriggerParams{
 		ListID:       sql.NullInt64{Int64: listID, Valid: true},
 		TriggerEvent: triggerEvent,
 	})
 	if err != nil {
-		logx.Infof("No email sequence found for list %d trigger %s: %v", listID, triggerEvent, err)
-		return nil // Not an error - just no sequence configured
+		return fmt.Errorf("sequences for list %d trigger %s: %w", listID, triggerEvent, err)
 	}
-
-	// Check if contact is already in this sequence
-	_, err = s.db.GetContactSequenceState(ctx, db.GetContactSequenceStateParams{
-		ContactID:  sql.NullString{String: contactID, Valid: true},
-		SequenceID: sql.NullString{String: sequence.ID, Valid: true},
-	})
-	if err == nil {
-		// Already in sequence
-		logx.Infof("Contact %s already in sequence %s", contactID, sequence.Slug)
-		return nil
+	var errs []error
+	for _, seq := range sequences {
+		if err := s.StartSequenceByID(ctx, contactID, seq.ID); err != nil {
+			errs = append(errs, fmt.Errorf("sequence %s: %w", seq.Slug, err))
+		}
 	}
-
-	// Create sequence state
-	_, err = s.db.CreateContactSequenceState(ctx, db.CreateContactSequenceStateParams{
-		ID:              uuid.NewString(),
-		ContactID:       sql.NullString{String: contactID, Valid: true},
-		SequenceID:      sql.NullString{String: sequence.ID, Valid: true},
-		CurrentPosition: sql.NullInt64{Int64: 0, Valid: true},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create sequence state: %w", err)
-	}
-
-	// Queue the first email (position 1)
-	err = s.queueNextEmail(ctx, contactID, sequence.ID, 1)
-	if err != nil {
-		logx.Errorf("Failed to queue first email: %v", err)
-	}
-
-	logx.Infof("Started email sequence %s for contact %s", sequence.Slug, contactID)
-	return nil
+	return errors.Join(errs...)
 }
 
 // StartSequenceByID initiates an email sequence for a contact by sequence ID directly
@@ -594,7 +570,7 @@ type TemplateContext struct {
 // processTemplateVariables replaces placeholders in email content
 // processTemplateVariables fills merge tags; escapeHTML is true for HTML bodies
 func (s *SequenceService) processTemplateVariables(content string, ctx TemplateContext, escapeHTML bool) string {
-	return fillMergeTags(content, mergeContext{
+	return FillMergeTags(content, MergeContext{
 		BaseURL:           s.baseURL,
 		Name:              ctx.Name,
 		Email:             ctx.Email,

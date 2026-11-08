@@ -338,9 +338,10 @@ type (
 	// A CSV with an email column (and optionally name) to add to a list; the
 	// import worker runs it as an import job
 	ImportListSubscribersRequest {
-		Id       string `path:"id"` // list ID
-		Filename string `json:"filename"`
-		Csv      string `json:"csv"`
+		Id          string `path:"id"` // list ID
+		Filename    string `json:"filename"`
+		Csv         string `json:"csv"`
+		StartSignup bool   `json:"start_signup,optional,default=true"` // Start the list's sign-up emails for the people added; off for an old list that shouldn't get them
 	}
 	// Subscriber Detail for modal view
 	GetSubscriberDetailRequest {
@@ -1078,6 +1079,10 @@ type (
 		Tags         []string          `json:"tags,optional"` // For tracking/filtering
 		Meta         map[string]string `json:"meta,optional"` // Custom metadata
 		Attachments  []EmailAttachment `json:"attachments,optional"` // Optional file attachments
+		Type         string            `json:"type,optional"` // transactional (default) or marketing
+		ListSlug     string            `json:"list_slug,optional"` // Marketing only, and required for it: the list the recipient subscribed to. Sent only to an active subscriber, with an unsubscribe link
+		TrackOpens   bool              `json:"track_opens,optional"` // Add an open pixel
+		TrackClicks  bool              `json:"track_clicks,optional"` // Send links through click tracking
 	}
 	SendEmailResponse {
 		Success   bool   `json:"success"`
@@ -1243,6 +1248,9 @@ type (
 		DeliveriesFailed  int    `json:"deliveries_failed"`
 		LastDeliveryAt    string `json:"last_delivery_at,omitempty"`
 		LastStatus        int    `json:"last_status,omitempty"` // HTTP status code
+		// Retries (admin list): deliveries waiting for another try, and when the next one is
+		WaitingDeliveries int    `json:"waiting_deliveries,omitempty"`
+		NextRetryAt       string `json:"next_retry_at,omitempty"`
 	}
 	ListWebhooksResponse {
 		Webhooks []WebhookInfo `json:"webhooks"`
@@ -1284,6 +1292,35 @@ type (
 	}
 	ListWebhookLogsResponse {
 		Logs []WebhookLogInfo `json:"logs"`
+	}
+	// One event for one webhook, tried until it succeeds or runs out of tries
+	WebhookDeliveryInfo {
+		Id             string `json:"id"`
+		Event          string `json:"event"`
+		Status         string `json:"status"` // pending (waiting to retry), sending, succeeded, failed
+		Attempts       int    `json:"attempts"`
+		MaxAttempts    int    `json:"max_attempts"`
+		LastStatusCode int    `json:"last_status_code,omitempty"` // HTTP status of the last try
+		LastError      string `json:"last_error,omitempty"`
+		NextRetryAt    string `json:"next_retry_at,omitempty"` // when pending
+		CreatedAt      string `json:"created_at"`
+		UpdatedAt      string `json:"updated_at"`
+	}
+	ListWebhookDeliveriesRequest {
+		Id    string `path:"id"`
+		Limit int    `form:"limit,optional"` // default 50, max 200
+	}
+	ListWebhookDeliveriesResponse {
+		Deliveries []WebhookDeliveryInfo `json:"deliveries"`
+	}
+	ResendWebhookDeliveryRequest {
+		Id         string `path:"id"`
+		DeliveryId string `path:"delivery_id"`
+	}
+	ResendWebhookDeliveryResponse {
+		Delivery WebhookDeliveryInfo `json:"delivery"`
+		Success  bool                `json:"success"`
+		Error    string              `json:"error,optional"`
 	}
 	// ========== SDK Stats Types ==========
 	GetStatsOverviewRequest {
@@ -1805,13 +1842,21 @@ type (
 	GDPRDeleteRequest {
 		ContactId   string `path:"contact_id"`
 		Confirm     bool   `json:"confirm"` // Must be true to proceed
-		DeleteEmail bool   `json:"delete_email,optional"` // Also delete from email provider logs if possible
+		DeleteEmail bool   `json:"delete_email,optional"` // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
+	}
+	// What one sending pathway's provider did with a request to forget an address
+	GDPRProviderResult {
+		Pathway  string `json:"pathway"`
+		Provider string `json:"provider"` // Amazon SES, SMTP relay, Mailboxes
+		Result   string `json:"result"`
+		Failed   bool   `json:"failed"`
 	}
 	GDPRDeleteResponse {
-		Success       bool   `json:"success"`
-		Message       string `json:"message"`
-		DeletedData   string `json:"deleted_data"` // Summary of what was deleted
-		AuditRecordId string `json:"audit_record_id"`
+		Success         bool                 `json:"success"`
+		Message         string               `json:"message"`
+		DeletedData     string               `json:"deleted_data"` // Summary of what was deleted
+		AuditRecordId   string               `json:"audit_record_id"` // The deletion's row in the GDPR audit log
+		ProviderResults []GDPRProviderResult `json:"provider_results"` // Set when delete_email was asked for
 	}
 	GDPRConsentRequest {
 		ContactId string `path:"contact_id"`
@@ -2513,6 +2558,14 @@ service outlet {
 
 	@handler AdminListWebhookLogs
 	get /:id/logs (ListWebhookLogsRequest) returns (ListWebhookLogsResponse)
+
+	@doc "A webhook's deliveries, newest first: status, tries and next retry"
+	@handler AdminListWebhookDeliveries
+	get /:id/deliveries (ListWebhookDeliveriesRequest) returns (ListWebhookDeliveriesResponse)
+
+	@doc "Send a delivery again now, signed the same way"
+	@handler AdminResendWebhookDelivery
+	post /:id/deliveries/:delivery_id/resend (ResendWebhookDeliveryRequest) returns (ResendWebhookDeliveryResponse)
 }
 
 // Admin Users
@@ -3178,16 +3231,26 @@ service outlet {
 	post /confirm (TrackConfirmRequest) returns (TrackConfirmResponse)
 }
 
-// Admin Email Validation
+// Admin Email Validation. A single check waits on DNS and an SMTP probe,
+// which the validation service bounds at 20 seconds: its route has the time
+// to finish.
+@server (
+	group:      admin/validation
+	prefix:     /api/admin/validation
+	middleware: Auth
+	timeout:    30s
+)
+service outlet {
+	@handler AdminValidateEmail
+	post /check (ValidateEmailRequest) returns (ValidationResult)
+}
+
 @server (
 	group:      admin/validation
 	prefix:     /api/admin/validation
 	middleware: Auth
 )
 service outlet {
-	@handler AdminValidateEmail
-	post /check (ValidateEmailRequest) returns (ValidationResult)
-
 	@handler CreateValidationJob
 	post /jobs (CreateValidationJobRequest) returns (ValidationJobInfo)
 
@@ -3216,16 +3279,25 @@ service outlet {
 	get /usage (ValidationUsageRequest) returns (ValidationUsageResponse)
 }
 
-// SDK Email Validation
+// SDK Email Validation. A single check has the time its probe takes (see
+// the admin check).
+@server (
+	group:      sdk/validation
+	prefix:     /sdk/v1/validate
+	middleware: APIKeyAuth
+	timeout:    30s
+)
+service outlet {
+	@handler ValidateEmail
+	post / (ValidateEmailRequest) returns (ValidationResult)
+}
+
 @server (
 	group:      sdk/validation
 	prefix:     /sdk/v1/validate
 	middleware: APIKeyAuth
 )
 service outlet {
-	@handler ValidateEmail
-	post / (ValidateEmailRequest) returns (ValidationResult)
-
 	@handler ValidateBatch
 	post /batch (ValidateBatchRequest) returns (ValidateBatchResponse)
 }
