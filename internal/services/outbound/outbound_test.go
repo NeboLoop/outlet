@@ -283,11 +283,11 @@ func (h *harness) setup() (sam, pat db.Mailbox) {
 	t := h.t
 	_, err := h.svc.UpdateSettings(h.ctx, h.org, SettingsInput{MailingAddress: "NeboAI, 123 Main St, Provo, UT 84601", Timezone: "UTC"})
 	require.NoError(t, err)
-	d, pending, check, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com"})
+	added, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com"})
 	require.NoError(t, err)
-	assert.True(t, check.OK())
-	assert.Equal(t, "success", d.VerificationStatus.String)
-	assert.NotEmpty(t, pending, "a manual domain returns the records to paste")
+	assert.True(t, added.Check.OK())
+	assert.Equal(t, "success", added.Domain.VerificationStatus.String)
+	assert.NotEmpty(t, added.RecordsToAdd, "a manual domain returns the records to paste")
 	res, err := h.svc.AddMailboxes(h.ctx, h.org, []MailboxInput{h.mailbox("sam@getexample.com", "pw-sam"), h.mailbox("pat@getexample.com", "pw-pat")})
 	require.NoError(t, err)
 	for _, r := range res {
@@ -335,9 +335,9 @@ func TestOutreachEndToEnd(t *testing.T) {
 	ctx := h.ctx
 
 	// Protected and the brand's own domains are refused.
-	_, _, _, err := h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "neboai.com"})
+	_, err := h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "neboai.com"})
 	assert.ErrorContains(t, err, "protected")
-	_, _, _, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "mail.neboloop.com"})
+	_, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "mail.neboloop.com"})
 	assert.ErrorContains(t, err, "protected")
 
 	// Campaigns need a mailing address.
@@ -345,7 +345,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 	assert.ErrorContains(t, err, "mailing address")
 
 	// A mailbox that can't log in is reported and not saved.
-	_, _, _, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com"})
+	_, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com"})
 	require.NoError(t, err)
 	res, err := h.svc.AddMailboxes(ctx, h.org, []MailboxInput{h.mailbox("sam@getexample.com", "wrong")})
 	require.NoError(t, err)
@@ -764,17 +764,74 @@ func TestDigitalOceanRecords(t *testing.T) {
 	defer api.Close()
 	h.svc.doAPI = api.URL
 
-	_, _, _, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com", DNSHost: "digitalocean"})
+	_, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com", DNSHost: "digitalocean"})
 	assert.ErrorContains(t, err, "No DigitalOcean token")
 	require.NoError(t, h.svc.SetDNSToken(h.ctx, h.org.ID, "do-token"))
-	_, pending, _, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com", DNSHost: "digitalocean", DKIMValue: "v=DKIM1; k=rsa; p=abc"})
+	h.refresh()
+	added, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com", DNSHost: "digitalocean", DKIMValue: "v=DKIM1; k=rsa; p=abc"})
 	require.NoError(t, err)
-	assert.Empty(t, pending)
+	assert.Empty(t, added.RecordsToAdd)
+	assert.Empty(t, added.DNSError)
 	var kinds []string
 	for _, r := range posted {
 		kinds = append(kinds, r.Type+" "+r.Name)
 	}
 	assert.ElementsMatch(t, []string{"MX @", "TXT _dmarc", "TXT google._domainkey"}, kinds, "SPF already existed and is not doubled")
+}
+
+// A domain keeps the records it needs; each later read says which the last
+// check found. When DigitalOcean fails, the domain is added all the same and
+// the answer carries the records to add by hand.
+func TestDomainRecordsKept(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	added, err := h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com", DKIMValue: "v=DKIM1; k=rsa; p=abc", ClickTracking: true})
+	require.NoError(t, err)
+
+	d, err := h.store.GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: added.Domain.ID, OrgID: h.org.ID})
+	require.NoError(t, err)
+	present := map[string]bool{}
+	for _, r := range DomainInfoOf(d).Records {
+		present[r.Type+" "+r.Name] = r.Present
+	}
+	assert.Equal(t, map[string]bool{"MX @": true, "TXT @": true, "TXT _dmarc": true, "TXT google._domainkey": true, "CNAME go": false}, present,
+		"the tracking CNAME doesn't point here yet; the rest were found")
+
+	// DigitalOcean refuses one record: the domain is added, and that record is to add by hand.
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"domain_records":[]}`))
+			return
+		}
+		var rec doRecord
+		_ = json.NewDecoder(r.Body).Decode(&rec)
+		if rec.Type == "MX" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"message":"bad record"}`))
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer api.Close()
+	h.svc.doAPI = api.URL
+	require.NoError(t, h.svc.SetDNSToken(ctx, h.org.ID, "do-token"))
+	h.refresh()
+	h.dns.ok["getoutreach.com"] = true
+	res, err := h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getoutreach.com", DNSHost: "digitalocean"})
+	require.NoError(t, err)
+	assert.Contains(t, res.DNSError, "DigitalOcean refused 1 record")
+	require.Len(t, res.RecordsToAdd, 1)
+	assert.Equal(t, "MX", res.RecordsToAdd[0].Type)
+	assert.Equal(t, "getoutreach.com", res.Domain.Domain)
+	assert.Len(t, DomainInfoOf(res.Domain).Records, 3, "MX, SPF and DMARC; no DKIM value was given")
+
+	// DigitalOcean can't be reached at all: every record is to add by hand.
+	h.svc.doAPI = "http://127.0.0.1:1"
+	res, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getoutreach.com", DNSHost: "digitalocean"})
+	require.NoError(t, err)
+	assert.NotEmpty(t, res.DNSError)
+	assert.Len(t, res.RecordsToAdd, 3)
 }
 
 // Results tell whether a campaign works: reached, replied, reply rate and,
@@ -791,7 +848,7 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 
 	_, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
 	assert.ErrorContains(t, err, "no tracking subdomain")
-	_, _, _, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com", ClickTracking: true})
+	_, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com", ClickTracking: true})
 	require.NoError(t, err)
 	_, err = h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
 	assert.ErrorContains(t, err, "doesn't point at this server")

@@ -128,24 +128,34 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 		if in.Domain == "" {
 			return nil, mcpctx.NewValidationError("domain is required", "domain")
 		}
-		d, pending, check, err := o.AddDomain(ctx, brand, outbound.DomainInput{
+		res, err := o.AddDomain(ctx, brand, outbound.DomainInput{
 			Domain: in.Domain, DNSHost: in.DNSHost, MailProvider: in.MailProvider, MXHosts: in.MXHosts,
 			SPFInclude: in.SPFInclude, DKIMSelector: in.DKIMSelector, DKIMValue: in.DKIMValue, DMARCReport: in.DMARCReport, ClickTracking: in.ClickTracking,
 		})
 		if err != nil {
-			return map[string]any{"records_to_add": pending}, err
+			return nil, err
 		}
 		next := "DNS is complete. Connect mailboxes with setup_sending(action: add_mailboxes)."
-		if !check.OK() {
-			next = "Missing in public DNS: " + fmt.Sprint(check.Missing) + ". Add records_to_add (DKIM comes from the mail provider's admin console), then check_domain. New records can take minutes to appear."
+		if !res.Check.OK() {
+			next = "Missing in public DNS: " + fmt.Sprint(res.Check.Missing) + ". Add records_to_add (DKIM comes from the mail provider's admin console), then check_domain. New records can take minutes to appear."
 		}
-		return map[string]any{"domain_id": d.ID, "status": d.VerificationStatus.String, "tracking_host": d.TrackingHost, "check": check, "records_to_add": pending, "next": next}, nil
+		out := map[string]any{"domain_id": res.Domain.ID, "status": res.Domain.VerificationStatus.String, "tracking_host": res.Domain.TrackingHost, "check": res.Check, "records_to_add": res.RecordsToAdd, "next": next}
+		if res.DNSError != "" {
+			out["dns_error"] = res.DNSError
+		}
+		return out, nil
 	case "check_domain":
 		d, err := t.DB().GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: in.DomainID, OrgID: brand.ID})
 		if err != nil {
 			return nil, mcpctx.NewNotFoundError("no such domain")
 		}
-		return o.CheckDomain(ctx, d)
+		if _, err := o.CheckDomain(ctx, d); err != nil {
+			return nil, err
+		}
+		if d, err = t.DB().GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: in.DomainID, OrgID: brand.ID}); err != nil {
+			return nil, err
+		}
+		return outbound.DomainInfoOf(d), nil
 	case "add_mailboxes":
 		res, err := o.AddMailboxes(ctx, brand, in.Mailboxes)
 		if err != nil {
@@ -404,8 +414,8 @@ var outboundTools = []outboundTool{
 		"Set up where outreach sends from. Outreach uses separate outreach domains, never the brand's own or a protected company domain, and never SES.\n"+
 			"- settings: mailing_address (required before any campaign), opt_out_line, timezone\n"+
 			"- dns_token: store a DigitalOcean token (domain read/write) so add_domain can write DNS\n"+
-			"- add_domain: domain, dns_host (digitalocean|manual), mail_provider (google|other), mx_hosts, spf_include, dkim_selector, dkim_value, dmarc_report, click_tracking. Writes MX, SPF, DMARC and DKIM when on DigitalOcean, otherwise returns records_to_add\n"+
-			"- check_domain: domain_id. Rechecks public DNS (also done daily; failing DNS pauses the domain's mailboxes)\n"+
+			"- add_domain: domain, dns_host (digitalocean|manual), mail_provider (google|other), mx_hosts, spf_include, dkim_selector, dkim_value, dmarc_report, click_tracking. Writes MX, SPF, DMARC and DKIM when on DigitalOcean, otherwise returns records_to_add. When DigitalOcean fails, dns_error says why and records_to_add holds what to add by hand\n"+
+			"- check_domain: domain_id. Rechecks public DNS (also done daily; failing DNS pauses the domain's mailboxes) and returns the records the domain needs, each marked present or not\n"+
 			"- add_mailboxes: mailboxes [{email, from_name, signature, provider: google, password (an app password), daily_limit (optional, its own)} or custom smtp_/imap_ hosts]. Each must log in\n"+
 			"- list: the brand's mailbox pools with their limits (daily limit, warm-up, spacing, health pauses), and each mailbox with its own limit and today's sends\n"+
 			"- set_limits: limits (all of them), pool_id (default: the pool carrying outreach). Brand admins only\n"+

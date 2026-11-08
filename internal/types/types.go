@@ -1410,12 +1410,21 @@ type OutboundDNSTokenRequest struct {
 }
 
 type OutboundDomainInfo struct {
-	Id           string           `json:"id"`
-	Domain       string           `json:"domain"`
-	Status       string           `json:"status"`
-	TrackingHost string           `json:"tracking_host,optional"`
-	Check        OutboundDNSCheck `json:"check"`
-	CheckedAt    string           `json:"checked_at,optional"`
+	Id           string                 `json:"id"`
+	Domain       string                 `json:"domain"`
+	Status       string                 `json:"status"`
+	TrackingHost string                 `json:"tracking_host,optional"`
+	Check        OutboundDNSCheck       `json:"check"`
+	CheckedAt    string                 `json:"checked_at,optional"`
+	Records      []OutboundDomainRecord `json:"records"` // the records it needs, and which the last check found
+}
+
+type OutboundDomainRecord struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Data     string `json:"data"`
+	Priority int    `json:"priority,optional"`
+	Present  bool   `json:"present"` // the last check found it in public DNS
 }
 
 type OutboundDomainRequest struct {
@@ -1433,7 +1442,8 @@ type OutboundDomainRequest struct {
 
 type OutboundDomainResponse struct {
 	Domain       OutboundDomainInfo  `json:"domain"`
-	RecordsToAdd []OutboundDNSRecord `json:"records_to_add"`
+	RecordsToAdd []OutboundDNSRecord `json:"records_to_add"`     // to add at the DNS host by hand
+	DNSError     string              `json:"dns_error,optional"` // why DigitalOcean didn't take the records; records_to_add holds them
 }
 
 type OutboundDraft struct {

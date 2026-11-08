@@ -11,6 +11,7 @@
 		setMailboxDailyLimit,
 		type OutboundOverview,
 		type OutboundDNSRecord,
+		type OutboundDomainRecord,
 		type OutboundMailboxInput,
 		type OutboundMailboxResult
 	} from '$lib/api';
@@ -51,7 +52,10 @@
 	let dmarcReport = $state('');
 	let clickTracking = $state(false);
 	let records = $state<OutboundDNSRecord[]>([]);
+	let dnsError = $state('');
 	let copied = $state('');
+	// The domain whose records are shown.
+	let showRecords = $state('');
 
 	let showMailbox = $state(false);
 	let addingMailbox = $state(false);
@@ -176,6 +180,7 @@
 		dmarcReport = '';
 		clickTracking = false;
 		records = [];
+		dnsError = '';
 		showDomain = true;
 	}
 
@@ -195,6 +200,7 @@
 				click_tracking: clickTracking
 			});
 			records = res.records_to_add || [];
+			dnsError = res.dns_error || '';
 			notice = records.length
 				? `${res.domain.domain} added. Add the records below at your DNS host, then press Check.`
 				: `${res.domain.domain} added`;
@@ -259,6 +265,46 @@
 		addingMailbox = false;
 	}
 </script>
+
+{#snippet recordTable(rows: (OutboundDNSRecord | OutboundDomainRecord)[])}
+	<div class="data-table overflow-x-auto">
+		<table class="w-full text-sm">
+			<thead>
+				<tr>
+					<th class="text-left">Type</th>
+					<th class="text-left">Name</th>
+					<th class="text-left">Value</th>
+					<th class="text-left">Priority</th>
+					{#if rows.some((r) => 'present' in r)}
+						<th class="text-left">Found</th>
+					{/if}
+				</tr>
+			</thead>
+			<tbody>
+				{#each rows as r}
+					<tr>
+						<td>{r.type}</td>
+						<td><code class="text-xs">{r.name}</code></td>
+						<td>
+							<button type="button" class="inline-flex items-start gap-2 text-left" onclick={() => copy(r.data)}>
+								<code class="text-xs break-all">{r.data}</code>
+								{#if copied === r.data}
+									<Check class="h-4 w-4 shrink-0 text-success" />
+								{:else}
+									<Copy class="h-4 w-4 shrink-0 text-text-muted" />
+								{/if}
+							</button>
+						</td>
+						<td>{r.priority || ''}</td>
+						{#if 'present' in r}
+							<td>{@render mark(r.present, r.present ? 'Found' : 'Missing')}</td>
+						{/if}
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+{/snippet}
 
 {#snippet mark(ok: boolean | undefined, label: string)}
 	<span class="inline-flex items-center gap-1 text-xs" class:text-success={ok} class:text-error={!ok}>
@@ -415,40 +461,15 @@
 						<Toggle bind:checked={clickTracking} label="Click tracking" description="Adds go.{domainName || 'yourdomain'} for tracked links" />
 					</div>
 
+					{#if dnsError}
+						<Alert type="warning" title="DigitalOcean didn't take the records">
+							<p>{dnsError}</p>
+						</Alert>
+					{/if}
 					{#if records.length}
 						<div>
 							<p class="text-sm font-medium text-text mb-2">Add these records at your DNS host</p>
-							<div class="data-table overflow-x-auto">
-								<table class="w-full text-sm">
-									<thead>
-										<tr>
-											<th class="text-left">Type</th>
-											<th class="text-left">Name</th>
-											<th class="text-left">Value</th>
-											<th class="text-left">Priority</th>
-										</tr>
-									</thead>
-									<tbody>
-										{#each records as r}
-											<tr>
-												<td>{r.type}</td>
-												<td><code class="text-xs">{r.name}</code></td>
-												<td>
-													<button type="button" class="inline-flex items-start gap-2 text-left" onclick={() => copy(r.data)}>
-														<code class="text-xs break-all">{r.data}</code>
-														{#if copied === r.data}
-															<Check class="h-4 w-4 shrink-0 text-success" />
-														{:else}
-															<Copy class="h-4 w-4 shrink-0 text-text-muted" />
-														{/if}
-													</button>
-												</td>
-												<td>{r.priority || ''}</td>
-											</tr>
-										{/each}
-									</tbody>
-								</table>
-							</div>
+							{@render recordTable(records)}
 						</div>
 					{/if}
 				</div>
@@ -501,12 +522,31 @@
 										{/if}
 									</td>
 									<td class="hidden sm:table-cell text-text-muted whitespace-nowrap">{formatDate(d.checked_at, 'datetime')}</td>
-									<td class="text-right">
+									<td class="text-right whitespace-nowrap">
+										<Button type="ghost" size="xs" onclick={() => (showRecords = showRecords === d.id ? '' : d.id)}>
+											{showRecords === d.id ? 'Hide records' : 'Records'}
+										</Button>
 										<Button type="ghost" size="xs" onclick={() => check(d.id)} disabled={checking !== ''}>
 											{checking === d.id ? 'Checking...' : 'Check'}
 										</Button>
 									</td>
 								</tr>
+								{#if showRecords === d.id}
+									<tr>
+										<td colspan="4">
+											{#if d.records.length}
+												<p class="form-hint mb-2">
+													The records {d.domain} needs at its DNS host. Found is as of the last check.
+												</p>
+												{@render recordTable(d.records)}
+											{:else}
+												<p class="form-hint">
+													No records are kept for {d.domain}. Add the domain again with the same settings to see them.
+												</p>
+											{/if}
+										</td>
+									</tr>
+								{/if}
 							{/each}
 						</tbody>
 					</table>

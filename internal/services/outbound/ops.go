@@ -33,21 +33,24 @@ type MailboxHealth struct {
 	Limited      bool   `json:"limited"`               // false: no daily limit applies, whatever allowed_today says
 }
 
-// DomainInfo is one outreach domain and its last DNS check.
+// DomainInfo is one outreach domain, its last DNS check, and the records it
+// needs with which of them that check found.
 type DomainInfo struct {
-	ID           string   `json:"id"`
-	Domain       string   `json:"domain"`
-	Status       string   `json:"status"`
-	TrackingHost string   `json:"tracking_host,omitempty"`
-	Check        DNSCheck `json:"check"`
-	CheckedAt    string   `json:"checked_at,omitempty"`
+	ID           string         `json:"id"`
+	Domain       string         `json:"domain"`
+	Status       string         `json:"status"`
+	TrackingHost string         `json:"tracking_host,omitempty"`
+	Check        DNSCheck       `json:"check"`
+	CheckedAt    string         `json:"checked_at,omitempty"`
+	Records      []DomainRecord `json:"records"`
 }
 
-// DomainInfoOf reads a domain row and its stored check.
+// DomainInfoOf reads a domain row, its stored check and its records.
 func DomainInfoOf(d db.DomainIdentity) DomainInfo {
 	var c DNSCheck
 	_ = json.Unmarshal([]byte(d.DnsCheck), &c)
-	return DomainInfo{ID: d.ID, Domain: d.Domain, Status: d.VerificationStatus.String, TrackingHost: d.TrackingHost, Check: c, CheckedAt: d.LastCheckedAt.String}
+	return DomainInfo{ID: d.ID, Domain: d.Domain, Status: d.VerificationStatus.String, TrackingHost: d.TrackingHost, Check: c, CheckedAt: d.LastCheckedAt.String,
+		Records: domainRecords(d, c)}
 }
 
 // Overview is a brand's outreach at a glance, with the next things to do.

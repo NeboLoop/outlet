@@ -1513,6 +1513,15 @@ export interface OutboundDomainInfo {
 	tracking_host?: string
 	check: OutboundDNSCheck
 	checked_at?: string
+	records: Array<OutboundDomainRecord> // the records it needs, and which the last check found
+}
+
+export interface OutboundDomainRecord {
+	type: string
+	name: string
+	data: string
+	priority?: number
+	present: boolean // the last check found it in public DNS
 }
 
 export interface OutboundDomainRequest {
@@ -1530,7 +1539,8 @@ export interface OutboundDomainRequest {
 
 export interface OutboundDomainResponse {
 	domain: OutboundDomainInfo
-	records_to_add: Array<OutboundDNSRecord>
+	records_to_add: Array<OutboundDNSRecord> // to add at the DNS host by hand
+	dns_error?: string // why DigitalOcean didn't take the records; records_to_add holds them
 }
 
 export interface OutboundDraft {
