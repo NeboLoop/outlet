@@ -47,6 +47,10 @@ func (w *statusWriter) Flush() {
 	}
 }
 
+// Unwrap lets http.ResponseController reach the connection (a download lifts
+// its write deadline through it).
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 // Hijack keeps WebSocket upgrades working.
 func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	h, ok := w.ResponseWriter.(http.Hijacker)

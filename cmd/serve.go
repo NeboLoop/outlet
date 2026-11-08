@@ -709,8 +709,8 @@ func registerWebhookRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 
 // registerListExportRoutes adds the list CSV downloads. They stream rows as
 // they are read, so they are written here rather than in outlet.api, whose
-// handlers answer with JSON. The timeout matches the HTTPS server's write
-// timeout.
+// handlers answer with JSON. They have no timeout: a download of any size
+// finishes (listexport.Unbounded lifts the write deadline).
 func registerListExportRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 	server.AddRoutes(
 		rest.WithMiddlewares([]rest.Middleware{ctx.Auth}, rest.Route{
@@ -718,7 +718,7 @@ func registerListExportRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 			Path:    "/api/admin/lists/:id/export",
 			Handler: listexport.AdminHandler(ctx.DB),
 		}),
-		rest.WithTimeout(30*time.Second),
+		rest.WithTimeout(0),
 	)
 	server.AddRoutes(
 		rest.WithMiddlewares([]rest.Middleware{ctx.APIKeyAuth}, rest.Route{
@@ -726,7 +726,7 @@ func registerListExportRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 			Path:    "/sdk/v1/lists/:slug/export",
 			Handler: listexport.SDKHandler(ctx.DB),
 		}),
-		rest.WithTimeout(30*time.Second),
+		rest.WithTimeout(0),
 	)
 }
 
