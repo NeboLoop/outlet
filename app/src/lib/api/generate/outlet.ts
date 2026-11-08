@@ -659,6 +659,14 @@ export function createInvitation(params: components.CreateInvitationRequestParam
 }
 
 /**
+ * @description "A brand's people: its members with their roles, and invitations not yet accepted with when they expire (brand admins)"
+ * @param params
+ */
+export function listOrgPeople(params: components.ListOrgPeopleRequestParams, id: string) {
+	return webapi.get<components.ListOrgPeopleResponse>(`/api/admin/organizations/${id}/people`, params)
+}
+
+/**
  * @description 
  * @param params
  */

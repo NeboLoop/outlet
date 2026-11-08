@@ -599,6 +599,9 @@ type Querier interface {
 	// Sending domains awaiting SES verification; outreach domains never touch SES.
 	ListPendingDomainIdentities(ctx context.Context) ([]DomainIdentity, error)
 	ListPendingImportJobs(ctx context.Context) ([]ImportJob, error)
+	// A brand's invitations not yet accepted, newest first, with whether each
+	// has expired.
+	ListPendingOrgInvitations(ctx context.Context, orgID string) ([]ListPendingOrgInvitationsRow, error)
 	ListPlatformSettings(ctx context.Context) ([]PlatformSetting, error)
 	ListPoolMailboxes(ctx context.Context, pathwayID sql.NullString) ([]Mailbox, error)
 	ListProcessingValidationJobs(ctx context.Context) ([]ValidationJob, error)

@@ -569,6 +569,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: adminorganizations.CreateInvitationHandler(serverCtx),
 				},
 				{
+					// A brand's people: its members with their roles, and invitations not yet accepted with when they expire (brand admins)
+					Method:  http.MethodGet,
+					Path:    "/organizations/:id/people",
+					Handler: adminorganizations.ListOrgPeopleHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodPost,
 					Path:    "/organizations/:id/regenerate-key",
 					Handler: adminorganizations.RegenerateOrgApiKeyHandler(serverCtx),

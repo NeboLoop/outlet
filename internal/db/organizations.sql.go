@@ -521,6 +521,53 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 	return items, nil
 }
 
+const listPendingOrgInvitations = `-- name: ListPendingOrgInvitations :many
+SELECT email, COALESCE(role, 'member') AS role, expires_at, COALESCE(created_at, '') AS created_at,
+       CAST(datetime(expires_at) <= datetime('now') AS INTEGER) AS expired
+FROM org_invitations
+WHERE org_id = ?1 AND accepted_at IS NULL
+ORDER BY created_at DESC, email
+`
+
+type ListPendingOrgInvitationsRow struct {
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	ExpiresAt string `json:"expires_at"`
+	CreatedAt string `json:"created_at"`
+	Expired   int64  `json:"expired"`
+}
+
+// A brand's invitations not yet accepted, newest first, with whether each
+// has expired.
+func (q *Queries) ListPendingOrgInvitations(ctx context.Context, orgID string) ([]ListPendingOrgInvitationsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingOrgInvitations, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPendingOrgInvitationsRow
+	for rows.Next() {
+		var i ListPendingOrgInvitationsRow
+		if err := rows.Scan(
+			&i.Email,
+			&i.Role,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.Expired,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const regenerateAPIKey = `-- name: RegenerateAPIKey :one
 UPDATE organizations
 SET
