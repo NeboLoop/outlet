@@ -152,6 +152,12 @@ func TestCampaignSends_RetryTemporaryFailuresOnce(t *testing.T) {
 		a, _ := k.counts("temp@x.example")
 		return a == 1 && status(t, store, "campaign_sends", "s-perm") == "failed"
 	}, 5*time.Second, 10*time.Millisecond)
+	// The refusal is attempted before it is deferred: wait for the deferral.
+	require.Eventually(t, func() bool {
+		var n int
+		_ = store.GetDB().QueryRow(`SELECT COUNT(*) FROM campaign_sends WHERE id = 's-temp' AND first_refused_at IS NOT NULL AND claim_token IS NULL`).Scan(&n)
+		return n == 1
+	}, 5*time.Second, 10*time.Millisecond)
 	time.Sleep(100 * time.Millisecond) // several polls
 	var sendAfter string
 	var claim sql.NullString
@@ -217,6 +223,12 @@ func TestSequenceEmails_RetryTemporaryFailuresOnce(t *testing.T) {
 	require.Eventually(t, func() bool {
 		a, _ := k.counts("temp@x.example")
 		return a == 1 && status(t, store, "email_queue", "q-perm") == "failed"
+	}, 5*time.Second, 10*time.Millisecond)
+	// The refusal is attempted before it is deferred: wait for the deferral.
+	require.Eventually(t, func() bool {
+		var n int
+		_ = store.GetDB().QueryRow(`SELECT COUNT(*) FROM email_queue WHERE id = 'q-temp' AND first_refused_at IS NOT NULL AND claim_token IS NULL`).Scan(&n)
+		return n == 1
 	}, 5*time.Second, 10*time.Millisecond)
 	time.Sleep(100 * time.Millisecond)
 	var scheduled string
