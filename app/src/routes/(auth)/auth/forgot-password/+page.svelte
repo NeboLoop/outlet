@@ -1,14 +1,25 @@
 <script lang="ts">
+	import { forgotPassword } from '$lib/api';
 	import { Card, Input, Button, Alert } from '$lib/components/ui';
 	import { ArrowLeft, CheckCircle } from '@lucide/svelte';
 
 	let email = $state('');
 	let submitted = $state(false);
+	let loading = $state(false);
+	let error = $state('');
 
-	function handleSubmit(e: Event) {
+	async function handleSubmit(e: Event) {
 		e.preventDefault();
-		console.log('Password reset request for:', email);
-		submitted = true;
+		error = '';
+		loading = true;
+		try {
+			await forgotPassword({ email: email.trim() });
+			submitted = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Could not send the reset link. Please try again.';
+		} finally {
+			loading = false;
+		}
 	}
 </script>
 
@@ -34,6 +45,13 @@
 
 	{#if !submitted}
 		<Card>
+			{#if error}
+				<Alert type="error" title="Error">
+					<p>{error}</p>
+				</Alert>
+				<div class="mt-6"></div>
+			{/if}
+
 			<form class="space-y-5" onsubmit={handleSubmit}>
 				<div>
 					<label for="email" class="form-label">Email address</label>
@@ -41,6 +59,7 @@
 						id="email"
 						type="email"
 						placeholder="you@example.com"
+						required
 						bind:value={email}
 					/>
 				</div>
@@ -50,6 +69,8 @@
 					type="primary"
 					size="lg"
 					class="w-full justify-center"
+					{loading}
+					disabled={loading}
 				>
 					Send reset link
 				</Button>
@@ -64,10 +85,10 @@
 				<div>
 					<h3 class="text-lg font-medium text-text">Check your email</h3>
 					<p class="mt-2 text-sm text-text-muted">
-						We've sent a password reset link to <span class="font-medium text-text">{email}</span>.
+						If an account uses <span class="font-medium text-text">{email}</span>, we've sent it a password reset link.
 					</p>
 					<p class="mt-2 text-sm text-text-muted">
-						Please check your inbox and click the link to reset your password.
+						The link works once and expires in 1 hour.
 					</p>
 				</div>
 				<div class="pt-4">
