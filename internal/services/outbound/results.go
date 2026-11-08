@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/email"
 )
 
 // StepResult is how one step of a campaign did.
@@ -36,6 +37,9 @@ type CampaignResults struct {
 	Partners   int64            `json:"partners"`
 	Bounced    int64            `json:"bounced"`
 	BounceRate float64          `json:"bounce_rate"`
+	// BounceLimit is the bounce rate, in percent, at which the pathway
+	// carrying the brand's outreach pauses a mailbox; 0 when it never does.
+	BounceLimit float64 `json:"bounce_limit"`
 	SpamBlocks int64            `json:"spam_blocks"`
 	OptedOut   int64            `json:"opted_out"`
 	InProgress int64            `json:"in_progress"`
@@ -112,6 +116,9 @@ func (s *Service) CampaignResults(ctx context.Context, c db.EmailSequence, steps
 	r.Partners, _ = s.db.OutreachPartners(ctx, seqID)
 	r.Interested = max(r.Interested, r.Partners)
 	r.ReplyRate, r.OpenRate, r.ClickRate, r.BounceRate = pct(r.Replied, r.Reached), pct(r.Opened, r.Reached), pct(r.Clicked, r.Reached), pct(r.Bounced, r.Reached)
+	if p, err := s.db.GetPathwayForKind(ctx, db.GetPathwayForKindParams{OrgID: c.OrgID.String, Kind: email.KindOutreach.Name()}); err == nil {
+		r.BounceLimit = float64(int64(1000*p.PauseBounceRate+0.5)) / 10
+	}
 	if !steps {
 		r.Replies = nil
 		return r, nil

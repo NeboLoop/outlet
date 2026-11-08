@@ -35,7 +35,15 @@ func pathwayOut(p email.Pathway) types.SendingPathway {
 		Id: p.ID, Name: p.Name, Provider: p.Provider, Kinds: p.Kinds,
 		AWSRegion: p.AWSRegion, AWSKeysSet: p.AWSKeysSet,
 		SMTPHost: p.SMTPHost, SMTPPort: p.SMTPPort, SMTPUsername: p.SMTPUsername, SMTPPasswordSet: p.SMTPPasswordSet,
-		Limits: limitsOut(p.Limits), Domains: p.Domains, Mailboxes: int64(p.Mailboxes),
+		Limits: limitsOut(p.Limits), Domains: domainsOut(p.Domains), Mailboxes: int64(p.Mailboxes),
 		Warning: p.Warning, CreatedAt: p.CreatedAt,
 	}
+}
+
+func domainsOut(ds []email.PathwayDomain) []types.SendingPathwayDomain {
+	out := make([]types.SendingPathwayDomain, 0, len(ds))
+	for _, d := range ds {
+		out = append(out, types.SendingPathwayDomain{Id: d.ID, Domain: d.Domain, Purpose: d.Purpose})
+	}
+	return out
 }

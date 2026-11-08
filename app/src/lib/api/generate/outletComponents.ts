@@ -1320,6 +1320,12 @@ export interface MarkContactReadResponse {
 	success: boolean
 }
 
+export interface MoveDomainRequest {
+	pathway_id: string // an outreach domain moves only to a mailbox pool, a sending domain only to platform, ses or smtp
+}
+export interface MoveDomainRequestParams {
+}
+
 export interface NetworkEvent {
 	hash: string
 	kind: string // delivered, hard_bounce, complaint, open, click
@@ -1431,6 +1437,11 @@ export interface OutboundAnswerRequest {
 export interface OutboundAnswerRequestParams {
 }
 
+export interface OutboundCampaignRef {
+	id: string
+	name: string
+}
+
 export interface OutboundCampaignRequest {
 	name: string
 	list?: string
@@ -1448,7 +1459,8 @@ export interface OutboundCampaignRequest {
 export interface OutboundCampaignResponse {
 	campaign_id?: string
 	enrolled: number
-	drafts?: Array<OutboundDraft>
+	drafts?: Array<OutboundDraft> // the saved drafts
+	previews?: Array<OutboundPreview> // dry_run: the first emails, not saved
 	skipped?: { [key: string]: string }
 	next: string
 }
@@ -1469,6 +1481,7 @@ export interface OutboundCampaignResults {
 	partners: number
 	bounced: number
 	bounce_rate: number
+	bounce_limit: number // percent: the outreach pathway pauses a mailbox above it; 0: never
 	spam_blocks: number
 	opted_out: number
 	in_progress: number
@@ -1513,6 +1526,15 @@ export interface OutboundDomainInfo {
 	tracking_host?: string
 	check: OutboundDNSCheck
 	checked_at?: string
+	records: Array<OutboundDomainRecord> // the records it needs, and which the last check found
+}
+
+export interface OutboundDomainRecord {
+	type: string
+	name: string
+	data: string
+	priority?: number
+	present: boolean // the last check found it in public DNS
 }
 
 export interface OutboundDomainRequest {
@@ -1530,11 +1552,15 @@ export interface OutboundDomainRequest {
 
 export interface OutboundDomainResponse {
 	domain: OutboundDomainInfo
-	records_to_add: Array<OutboundDNSRecord>
+	records_to_add: Array<OutboundDNSRecord> // to add at the DNS host by hand
+	dns_error?: string // why DigitalOcean didn't take the records; records_to_add holds them
 }
 
 export interface OutboundDraft {
-	message_id?: string
+	message_id: string // what approve, skip and edit take
+	campaign_id: string
+	campaign_name: string
+	step: number
 	prospect_id: string
 	to: string
 	from: string
@@ -1578,8 +1604,17 @@ export interface OutboundIDRequestParams {
 export interface OutboundListProspectsRequest {
 }
 export interface OutboundListProspectsRequestParams {
-	list_id?: number
+	list_id?: string // one outreach list; empty: all
+	status?: string // their status on it: prospect, held, ...
+	search?: string // part of an email or name
+	enrollable?: boolean // only people a campaign can take now
 	limit?: number
+	offset?: number
+}
+
+export interface OutboundListRef {
+	id: string
+	name: string
 }
 
 export interface OutboundListRepliesRequest {
@@ -1611,6 +1646,9 @@ export interface OutboundMailboxHealth {
 	pool_id?: string // its mailbox pool (sending pathway)
 	daily_limit?: number // its own daily limit; empty uses the pool's
 	limited: boolean // false: no daily limit applies
+	limit_in_use: number // the daily limit it sends under: its own, else its pool's; 0: none
+	warming_up: boolean // the warm-up holds it below limit_in_use; allowed_today is today's step
+	domain: string
 }
 
 export interface OutboundMailboxInput {
@@ -1648,6 +1686,8 @@ export interface OutboundOverview {
 	prospects: { [key: string]: number }
 	messages: { [key: string]: number }
 	replies_waiting: number
+	drafts_waiting: number
+	reply_rate: number // replied over reached across every campaign, percent
 	campaigns: Array<OutboundCampaignResults>
 	next: Array<string>
 }
@@ -1658,16 +1698,26 @@ export interface OutboundPauseRequest {
 	resume?: boolean
 }
 
+export interface OutboundPreview {
+	prospect_id: string
+	to: string
+	from: string
+	subject: string
+	body: string
+	sends_after?: string
+}
+
 export interface OutboundProspectInfo {
 	id: string
 	email: string
 	name: string
 	email_source: string
 	validation_status: string
-	list_id: number
-	list_name: string
-	status: string
 	created_at: string
+	lists: Array<OutboundProspectListStatus> // the outreach lists they are on, with their status on each
+	campaigns: Array<OutboundCampaignRef> // the outreach campaigns they are in now
+	suppressed: boolean
+	enrollable: boolean // a campaign can take them now
 }
 
 export interface OutboundProspectInput {
@@ -1687,6 +1737,14 @@ export interface OutboundProspectInput {
 
 export interface OutboundProspectList {
 	prospects: Array<OutboundProspectInfo>
+	total: number // every person matching, across pages
+	lists: Array<OutboundListRef> // the brand's outreach lists
+}
+
+export interface OutboundProspectListStatus {
+	id: string
+	name: string
+	status: string
 }
 
 export interface OutboundProspectResult {
@@ -1701,6 +1759,7 @@ export interface OutboundReplyInfo {
 	mailbox_id: string
 	contact_id: string
 	sequence_id: string
+	campaign_name: string // the campaign it answers
 	from_email: string
 	subject: string
 	body: string
@@ -1942,10 +2001,16 @@ export interface SendingPathway {
 	smtp_username?: string
 	smtp_password_set: boolean
 	limits: SendingLimits
-	domains: Array<string>
+	domains: Array<SendingPathwayDomain>
 	mailboxes: number
 	warning?: string // set when outreach rides a provider other than mailboxes
 	created_at: string
+}
+
+export interface SendingPathwayDomain {
+	id: string
+	domain: string
+	purpose: string // sending, or outreach (its mailboxes form the pool)
 }
 
 export interface SendingPathwayIDRequest {

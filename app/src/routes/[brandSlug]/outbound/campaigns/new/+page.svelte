@@ -7,6 +7,7 @@
 		listOutboundProspects,
 		type OutboundCampaignRequest,
 		type OutboundCampaignResponse,
+		type OutboundListRef,
 		type OutboundProspectInfo
 	} from '$lib/api';
 	import { Button, Alert, LoadingSpinner, Input, Textarea, Toggle, Select, Checkbox, EmptyState } from '$lib/components/ui';
@@ -19,7 +20,6 @@
 	let base = $derived(`/${$page.params.brandSlug}/outbound`);
 
 	let name = $state('');
-	let list = $state('Outreach');
 	let steps = $state<{ subject: string; body: string; delay_days: number }[]>([{ subject: '', body: '', delay_days: 0 }]);
 	let approvalMode = $state('every');
 	let trackOpens = $state(false);
@@ -30,8 +30,14 @@
 	const idempotencyKey = crypto.randomUUID();
 
 	let loadingProspects = $state(true);
+	let lists = $state<OutboundListRef[]>([]);
+	let listId = $state('');
+	// Only people the chosen list's campaign can take now.
 	let prospects = $state<OutboundProspectInfo[]>([]);
+	let totalFree = $state(0);
 	let selected = $state<string[]>([]);
+
+	let listName = $derived(lists.find((l) => l.id === listId)?.name || '');
 
 	let error = $state('');
 	let working = $state(false);
@@ -43,6 +49,7 @@
 	);
 	let canSubmit = $derived(
 		name.trim() !== '' &&
+			listName !== '' &&
 			steps[0].subject.trim() !== '' &&
 			steps.every((s) => s.body.trim() !== '') &&
 			selected.length > 0 &&
@@ -50,19 +57,22 @@
 	);
 
 	$effect(() => {
-		loadProspects();
+		loadProspects(listId);
 	});
 
-	async function loadProspects() {
+	async function loadProspects(id: string) {
 		loadingProspects = true;
 		try {
-			const res = await listOutboundProspects({ limit: 500 });
-			const seen = new Set<string>();
-			prospects = (res.prospects || []).filter((p) => {
-				if (p.status !== 'prospect' || seen.has(p.id)) return false;
-				seen.add(p.id);
-				return true;
-			});
+			const res = await listOutboundProspects({ list_id: id || undefined, enrollable: true, limit: 500 });
+			lists = res.lists || [];
+			if (!id && lists.length) {
+				// Start on the default outreach list; choosing it loads its people.
+				listId = (lists.find((l) => l.name === 'Outreach') || lists[0]).id;
+				return;
+			}
+			prospects = res.prospects || [];
+			totalFree = res.total;
+			selected = selected.filter((s) => prospects.some((p) => p.id === s));
 		} catch (err) {
 			error = errorMessage(err, 'Could not load prospects');
 		} finally {
@@ -93,7 +103,7 @@
 	function request(dryRun: boolean): OutboundCampaignRequest {
 		return {
 			name: name.trim(),
-			list: list.trim() || undefined,
+			list: listName,
 			steps: steps.map((s, i) => ({
 				subject: s.subject.trim() || undefined,
 				body: s.body,
@@ -161,7 +171,7 @@
 		</div>
 		<div>
 			<label for="oc-list" class="form-label">Outreach list</label>
-			<Input id="oc-list" bind:value={list} placeholder="Outreach" />
+			<Select id="oc-list" bind:value={listId} options={lists.map((l) => ({ value: l.id, label: l.name }))} />
 		</div>
 	</div>
 
@@ -246,7 +256,11 @@
 
 	<div>
 		<h3 class="text-base font-semibold text-text mb-1">Prospects</h3>
-		<p class="form-hint mb-3">Pick up to {MAX_PROSPECTS}. {selected.length} selected.</p>
+		<p class="form-hint mb-3">
+			People on {listName || 'the list'} free to enroll: prospects in no other campaign and not suppressed. Pick up to
+			{MAX_PROSPECTS}. {selected.length} selected.{#if totalFree > prospects.length}
+				Showing the newest {prospects.length} of {totalFree}.{/if}
+		</p>
 		{#if loadingProspects}
 			<div class="flex justify-center py-6">
 				<LoadingSpinner />
@@ -254,8 +268,8 @@
 		{:else if prospects.length === 0}
 			<EmptyState
 				icon={Users}
-				title="No prospects ready"
-				description="Add prospects on the Prospects tab, or let the AI add them over MCP."
+				title="No prospects free to enroll"
+				description="Add prospects on the Prospects tab, or let the AI add them over MCP. People already in a campaign, held or suppressed aren't listed."
 			/>
 		{:else}
 			<div class="data-table overflow-x-auto max-h-96 overflow-y-auto">
@@ -267,7 +281,6 @@
 							</th>
 							<th class="text-left">Email</th>
 							<th class="text-left">Name</th>
-							<th class="text-left">List</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -283,7 +296,6 @@
 								</td>
 								<td>{p.email}</td>
 								<td>{p.name}</td>
-								<td class="text-text-muted">{p.list_name}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -317,7 +329,7 @@
 				</Alert>
 			{/if}
 			<div class="space-y-3">
-				{#each preview.drafts || [] as d}
+				{#each preview.previews || [] as d}
 					<div class="rounded-lg border border-border p-4">
 						<p class="text-xs text-text-muted">
 							From {d.from} to {d.to}{#if d.sends_after}, sends after {formatDate(d.sends_after, 'datetime')}{/if}

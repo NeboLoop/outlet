@@ -10,7 +10,7 @@
 	import { Button, Alert, LoadingSpinner, Badge, EmptyState } from '$lib/components/ui';
 	import { Send, Pause, Play } from '@lucide/svelte';
 	import CampaignTable from './CampaignTable.svelte';
-	import { errorMessage, percent } from './shared';
+	import { errorMessage, mailboxLimit, percent } from './shared';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -22,10 +22,6 @@
 
 	let sentToday = $derived((overview?.mailboxes || []).reduce((n, m) => n + m.sent_today, 0));
 	let allowedToday = $derived((overview?.mailboxes || []).reduce((n, m) => n + m.allowed_today, 0));
-	let reached = $derived((overview?.campaigns || []).reduce((n, c) => n + c.reached, 0));
-	let replied = $derived((overview?.campaigns || []).reduce((n, c) => n + c.replied, 0));
-	let replyRate = $derived(reached > 0 ? (replied / reached) * 100 : 0);
-	let draftsWaiting = $derived(overview?.messages?.draft || 0);
 
 	$effect(() => {
 		load();
@@ -132,11 +128,11 @@
 		</div>
 		<div class="rounded-lg border border-border p-4">
 			<p class="text-xs text-text-muted">Reply rate</p>
-			<p class="text-2xl font-semibold text-text">{percent(replyRate)}</p>
+			<p class="text-2xl font-semibold text-text">{percent(overview.reply_rate)}</p>
 		</div>
 		<a href="{base}/drafts" class="rounded-lg border border-border p-4 hover:border-primary/50 transition-colors">
 			<p class="text-xs text-text-muted">Drafts waiting</p>
-			<p class="text-2xl font-semibold text-text">{draftsWaiting}</p>
+			<p class="text-2xl font-semibold text-text">{overview.drafts_waiting}</p>
 		</a>
 		<a href="{base}/replies" class="rounded-lg border border-border p-4 hover:border-primary/50 transition-colors">
 			<p class="text-xs text-text-muted">Replies waiting</p>
@@ -166,6 +162,7 @@
 						<th class="text-left">Mailbox</th>
 						<th class="text-left">Status</th>
 						<th class="text-right">Today</th>
+						<th class="text-left">Daily limit</th>
 						<th class="text-right">Sent 7d</th>
 						<th class="text-right">Bounces</th>
 						<th class="text-right">Spam blocks</th>
@@ -178,7 +175,7 @@
 						<tr class={mailboxFlagged(m) ? 'bg-error/5' : ''}>
 							<td>
 								<span class="font-medium text-text block">{m.email}</span>
-								<span class="text-xs text-text-muted block">{m.from_name}</span>
+								<span class="text-xs text-text-muted block">{m.from_name}, on {m.domain}</span>
 								{#if m.last_error}
 									<span class="text-xs text-error block mt-1">{m.last_error}</span>
 								{/if}
@@ -193,7 +190,8 @@
 									<Badge variant="success" size="sm">Active</Badge>
 								{/if}
 							</td>
-							<td class="text-right">{m.sent_today}/{m.allowed_today}</td>
+							<td class="text-right">{m.sent_today}{m.limited ? `/${m.allowed_today}` : ''}</td>
+							<td class="text-xs text-text-muted">{mailboxLimit(m)}</td>
 							<td class="text-right">{m.sent_7d}</td>
 							<td class="text-right">{m.bounces_7d}</td>
 							<td class="text-right" class:text-error={m.spam_blocks_7d > 0}>{m.spam_blocks_7d}</td>

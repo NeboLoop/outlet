@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const approveOutreachDraft = `-- name: ApproveOutreachDraft :execrows
@@ -929,6 +930,60 @@ func (q *Queries) ListActiveMailboxes(ctx context.Context) ([]Mailbox, error) {
 	return items, nil
 }
 
+const listActiveOutreachCampaignsFor = `-- name: ListActiveOutreachCampaignsFor :many
+SELECT css.contact_id, es.id, es.name
+FROM contact_sequence_state css
+JOIN email_sequences es ON es.id = css.sequence_id AND es.sequence_type = 'outreach'
+WHERE es.org_id = ?1 AND css.is_active = 1 AND css.contact_id IN (/*SLICE:contact_ids*/?)
+ORDER BY es.name
+`
+
+type ListActiveOutreachCampaignsForParams struct {
+	OrgID      sql.NullString   `json:"org_id"`
+	ContactIds []sql.NullString `json:"contact_ids"`
+}
+
+type ListActiveOutreachCampaignsForRow struct {
+	ContactID sql.NullString `json:"contact_id"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+}
+
+// The outreach campaigns some people are in now.
+func (q *Queries) ListActiveOutreachCampaignsFor(ctx context.Context, arg ListActiveOutreachCampaignsForParams) ([]ListActiveOutreachCampaignsForRow, error) {
+	query := listActiveOutreachCampaignsFor
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.OrgID)
+	if len(arg.ContactIds) > 0 {
+		for _, v := range arg.ContactIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:contact_ids*/?", strings.Repeat(",?", len(arg.ContactIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:contact_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveOutreachCampaignsForRow
+	for rows.Next() {
+		var i ListActiveOutreachCampaignsForRow
+		if err := rows.Scan(&i.ContactID, &i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveOutreachStatesForContact = `-- name: ListActiveOutreachStatesForContact :many
 SELECT css.id, css.contact_id, css.sequence_id, css.current_position, css.is_active, css.started_at, css.completed_at, css.unsubscribed_at, css.paused_at, css.mailbox_id, css.stopped_reason FROM contact_sequence_state css
 JOIN email_sequences es ON es.id = css.sequence_id AND es.sequence_type = 'outreach'
@@ -1069,7 +1124,10 @@ func (q *Queries) ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity,
 }
 
 const listEmailReplies = `-- name: ListEmailReplies :many
-SELECT id, org_id, mailbox_id, contact_id, queue_id, sequence_id, from_email, subject, body, message_id, in_reply_to, refs, classification, handled, received_at FROM email_replies WHERE org_id = ? AND handled = ? ORDER BY received_at DESC LIMIT ?
+SELECT r.id, r.org_id, r.mailbox_id, r.contact_id, r.queue_id, r.sequence_id, r.from_email, r.subject, r.body, r.message_id, r.in_reply_to, r.refs, r.classification, r.handled, r.received_at, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
+FROM email_replies r
+LEFT JOIN email_sequences es ON es.id = r.sequence_id
+WHERE r.org_id = ? AND r.handled = ? ORDER BY r.received_at DESC LIMIT ?
 `
 
 type ListEmailRepliesParams struct {
@@ -1078,15 +1136,35 @@ type ListEmailRepliesParams struct {
 	Limit   int64  `json:"limit"`
 }
 
-func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesParams) ([]EmailReply, error) {
+type ListEmailRepliesRow struct {
+	ID             string         `json:"id"`
+	OrgID          string         `json:"org_id"`
+	MailboxID      string         `json:"mailbox_id"`
+	ContactID      sql.NullString `json:"contact_id"`
+	QueueID        sql.NullString `json:"queue_id"`
+	SequenceID     sql.NullString `json:"sequence_id"`
+	FromEmail      string         `json:"from_email"`
+	Subject        string         `json:"subject"`
+	Body           string         `json:"body"`
+	MessageID      string         `json:"message_id"`
+	InReplyTo      string         `json:"in_reply_to"`
+	Refs           string         `json:"refs"`
+	Classification string         `json:"classification"`
+	Handled        int64          `json:"handled"`
+	ReceivedAt     string         `json:"received_at"`
+	CampaignName   string         `json:"campaign_name"`
+}
+
+// Replies with the name of the campaign each answers.
+func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesParams) ([]ListEmailRepliesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listEmailReplies, arg.OrgID, arg.Handled, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []EmailReply
+	var items []ListEmailRepliesRow
 	for rows.Next() {
-		var i EmailReply
+		var i ListEmailRepliesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrgID,
@@ -1103,6 +1181,7 @@ func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesPara
 			&i.Classification,
 			&i.Handled,
 			&i.ReceivedAt,
+			&i.CampaignName,
 		); err != nil {
 			return nil, err
 		}
@@ -1216,11 +1295,13 @@ func (q *Queries) ListOutreachDomains(ctx context.Context, orgID string) ([]Doma
 }
 
 const listOutreachEmails = `-- name: ListOutreachEmails :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email,
+       CAST(COALESCE(es.id, '') AS TEXT) AS campaign_id, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
 JOIN mailboxes m ON m.id = eq.mailbox_id
 LEFT JOIN email_templates et ON et.id = eq.template_id
+LEFT JOIN email_sequences es ON es.id = et.sequence_id
 WHERE c.org_id = ?1 AND eq.kind = 'outreach' AND eq.status = ?2
 ORDER BY eq.scheduled_for
 LIMIT ?3
@@ -1259,9 +1340,12 @@ type ListOutreachEmailsRow struct {
 	ToName        string         `json:"to_name"`
 	Position      int64          `json:"position"`
 	FromEmail     string         `json:"from_email"`
+	CampaignID    string         `json:"campaign_id"`
+	CampaignName  string         `json:"campaign_name"`
 }
 
-// A brand's outreach emails with one status, oldest first.
+// A brand's outreach emails with one status, oldest first, with the
+// campaign and step each belongs to.
 func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmailsParams) ([]ListOutreachEmailsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listOutreachEmails, arg.OrgID, arg.Status, arg.LimitCount)
 	if err != nil {
@@ -1298,6 +1382,8 @@ func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmails
 			&i.ToName,
 			&i.Position,
 			&i.FromEmail,
+			&i.CampaignID,
+			&i.CampaignName,
 		); err != nil {
 			return nil, err
 		}
@@ -1313,7 +1399,7 @@ func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmails
 }
 
 const listOutreachEmailsForSequence = `-- name: ListOutreachEmailsForSequence :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, m.email AS from_email
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, c.email AS to_email, m.email AS from_email, et.position
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
@@ -1347,6 +1433,7 @@ type ListOutreachEmailsForSequenceRow struct {
 	ClaimedAt     sql.NullString `json:"claimed_at"`
 	ToEmail       string         `json:"to_email"`
 	FromEmail     string         `json:"from_email"`
+	Position      int64          `json:"position"`
 }
 
 func (q *Queries) ListOutreachEmailsForSequence(ctx context.Context, sequenceID sql.NullString) ([]ListOutreachEmailsForSequenceRow, error) {
@@ -1383,6 +1470,7 @@ func (q *Queries) ListOutreachEmailsForSequence(ctx context.Context, sequenceID 
 			&i.ClaimedAt,
 			&i.ToEmail,
 			&i.FromEmail,
+			&i.Position,
 		); err != nil {
 			return nil, err
 		}
@@ -1554,20 +1642,106 @@ func (q *Queries) ListOutreachThread(ctx context.Context, arg ListOutreachThread
 	return items, nil
 }
 
-const listProspects = `-- name: ListProspects :many
-SELECT c.id, c.email, c.name, c.source, c.validation_status, c.created_at, ls.list_id, el.name AS list_name, ls.status
+const listProspectSubscriptions = `-- name: ListProspectSubscriptions :many
+SELECT ls.contact_id, el.id AS list_id, el.name AS list_name, ls.status
 FROM list_subscribers ls
 JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'
-JOIN contacts c ON c.id = ls.contact_id
-WHERE el.org_id = ?1 AND (?2 = 0 OR ls.list_id = ?2)
-ORDER BY ls.subscribed_at DESC
-LIMIT ?3
+WHERE el.org_id = ?1 AND ls.contact_id IN (/*SLICE:contact_ids*/?)
+ORDER BY el.name
+`
+
+type ListProspectSubscriptionsParams struct {
+	OrgID      string   `json:"org_id"`
+	ContactIds []string `json:"contact_ids"`
+}
+
+type ListProspectSubscriptionsRow struct {
+	ContactID string         `json:"contact_id"`
+	ListID    int64          `json:"list_id"`
+	ListName  string         `json:"list_name"`
+	Status    sql.NullString `json:"status"`
+}
+
+// The outreach lists of some people, with their status on each.
+func (q *Queries) ListProspectSubscriptions(ctx context.Context, arg ListProspectSubscriptionsParams) ([]ListProspectSubscriptionsRow, error) {
+	query := listProspectSubscriptions
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.OrgID)
+	if len(arg.ContactIds) > 0 {
+		for _, v := range arg.ContactIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:contact_ids*/?", strings.Repeat(",?", len(arg.ContactIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:contact_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProspectSubscriptionsRow
+	for rows.Next() {
+		var i ListProspectSubscriptionsRow
+		if err := rows.Scan(
+			&i.ContactID,
+			&i.ListID,
+			&i.ListName,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProspects = `-- name: ListProspects :many
+SELECT p.id, p.email, p.name, p.source, p.validation_status, p.created_at, p.added_at,
+       p.prospect, p.in_campaign, p.suppressed, CAST(COUNT(*) OVER () AS INTEGER) AS total
+FROM (
+    SELECT c.id, c.email, c.name, c.source, c.validation_status, c.created_at,
+           CAST(MAX(ls.subscribed_at) AS TEXT) AS added_at,
+           CAST(MAX(CASE WHEN ls.status = 'prospect' THEN 1 ELSE 0 END) AS INTEGER) AS prospect,
+           CAST(EXISTS (
+               SELECT 1 FROM contact_sequence_state css
+               JOIN email_sequences es ON es.id = css.sequence_id AND es.sequence_type = 'outreach'
+               WHERE css.contact_id = c.id AND css.is_active = 1
+           ) AS INTEGER) AS in_campaign,
+           CAST((
+               (SELECT COUNT(*) FROM email_bounce b WHERE b.email_lower = LOWER(c.email) AND b.bounce_type = 'Permanent') +
+               (SELECT COUNT(*) FROM email_complaint ec WHERE ec.email_lower = LOWER(c.email)) +
+               (SELECT COUNT(*) FROM suppression_list sl WHERE sl.org_id = el.org_id AND sl.email_lower = LOWER(c.email)) +
+               (SELECT COUNT(*) FROM blocked_domains bd WHERE bd.org_id = el.org_id AND bd.domain = LOWER(SUBSTR(c.email, INSTR(c.email, '@') + 1)))
+           ) > 0 AS INTEGER) AS suppressed
+    FROM list_subscribers ls
+    JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'
+    JOIN contacts c ON c.id = ls.contact_id
+    WHERE el.org_id = ?1
+      AND (CAST(?2 AS INTEGER) = 0 OR ls.list_id = ?2)
+      AND (CAST(?3 AS TEXT) = '' OR ls.status = ?3)
+      AND (CAST(?4 AS TEXT) = '' OR c.email LIKE '%' || ?4 || '%' OR c.name LIKE '%' || ?4 || '%')
+    GROUP BY c.id
+) p
+WHERE (CAST(?5 AS INTEGER) = 0 OR (p.prospect = 1 AND p.in_campaign = 0 AND p.suppressed = 0))
+ORDER BY p.added_at DESC, p.id
+LIMIT ?7 OFFSET ?6
 `
 
 type ListProspectsParams struct {
-	OrgID      string      `json:"org_id"`
-	ListID     interface{} `json:"list_id"`
-	LimitCount int64       `json:"limit_count"`
+	OrgID       string `json:"org_id"`
+	ListID      int64  `json:"list_id"`
+	Status      string `json:"status"`
+	Search      string `json:"search"`
+	Enrollable  int64  `json:"enrollable"`
+	OffsetCount int64  `json:"offset_count"`
+	LimitCount  int64  `json:"limit_count"`
 }
 
 type ListProspectsRow struct {
@@ -1577,14 +1751,27 @@ type ListProspectsRow struct {
 	Source           sql.NullString `json:"source"`
 	ValidationStatus sql.NullString `json:"validation_status"`
 	CreatedAt        sql.NullString `json:"created_at"`
-	ListID           int64          `json:"list_id"`
-	ListName         string         `json:"list_name"`
-	Status           sql.NullString `json:"status"`
+	AddedAt          string         `json:"added_at"`
+	Prospect         int64          `json:"prospect"`
+	InCampaign       int64          `json:"in_campaign"`
+	Suppressed       int64          `json:"suppressed"`
+	Total            int64          `json:"total"`
 }
 
-// Prospects on a brand's outreach lists, newest first.
+// One row per person on a brand's outreach lists, newest first, with what
+// decides whether they can be enrolled: a 'prospect' status (on the list
+// filtered by, else on any), an active outreach campaign, and suppression
+// (the check IsSendBlocked makes). total counts every matching person.
 func (q *Queries) ListProspects(ctx context.Context, arg ListProspectsParams) ([]ListProspectsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listProspects, arg.OrgID, arg.ListID, arg.LimitCount)
+	rows, err := q.db.QueryContext(ctx, listProspects,
+		arg.OrgID,
+		arg.ListID,
+		arg.Status,
+		arg.Search,
+		arg.Enrollable,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1599,9 +1786,11 @@ func (q *Queries) ListProspects(ctx context.Context, arg ListProspectsParams) ([
 			&i.Source,
 			&i.ValidationStatus,
 			&i.CreatedAt,
-			&i.ListID,
-			&i.ListName,
-			&i.Status,
+			&i.AddedAt,
+			&i.Prospect,
+			&i.InCampaign,
+			&i.Suppressed,
+			&i.Total,
 		); err != nil {
 			return nil, err
 		}

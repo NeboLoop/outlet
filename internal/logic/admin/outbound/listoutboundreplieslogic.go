@@ -43,7 +43,7 @@ func ListOutboundReplies(ctx context.Context, svcCtx *svc.ServiceContext, org db
 	out := &types.OutboundReplyList{Replies: make([]types.OutboundReplyInfo, 0, len(rows))}
 	for _, r := range rows {
 		out.Replies = append(out.Replies, types.OutboundReplyInfo{
-			Id: r.ID, MailboxId: r.MailboxID, ContactId: r.ContactID.String, SequenceId: r.SequenceID.String, FromEmail: r.FromEmail,
+			Id: r.ID, MailboxId: r.MailboxID, ContactId: r.ContactID.String, SequenceId: r.SequenceID.String, CampaignName: r.CampaignName, FromEmail: r.FromEmail,
 			Subject: r.Subject, Body: r.Body, Classification: r.Classification, Handled: r.Handled == 1, ReceivedAt: r.ReceivedAt,
 		})
 	}

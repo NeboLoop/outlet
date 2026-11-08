@@ -109,14 +109,55 @@ UPDATE email_lists SET kind = ?, updated_at = datetime('now') WHERE id = ? AND o
 SELECT * FROM email_lists WHERE org_id = ? AND kind = 'outreach' ORDER BY created_at;
 
 -- name: ListProspects :many
--- Prospects on a brand's outreach lists, newest first.
-SELECT c.id, c.email, c.name, c.source, c.validation_status, c.created_at, ls.list_id, el.name AS list_name, ls.status
+-- One row per person on a brand's outreach lists, newest first, with what
+-- decides whether they can be enrolled: a 'prospect' status (on the list
+-- filtered by, else on any), an active outreach campaign, and suppression
+-- (the check IsSendBlocked makes). total counts every matching person.
+SELECT p.id, p.email, p.name, p.source, p.validation_status, p.created_at, p.added_at,
+       p.prospect, p.in_campaign, p.suppressed, CAST(COUNT(*) OVER () AS INTEGER) AS total
+FROM (
+    SELECT c.id, c.email, c.name, c.source, c.validation_status, c.created_at,
+           CAST(MAX(ls.subscribed_at) AS TEXT) AS added_at,
+           CAST(MAX(CASE WHEN ls.status = 'prospect' THEN 1 ELSE 0 END) AS INTEGER) AS prospect,
+           CAST(EXISTS (
+               SELECT 1 FROM contact_sequence_state css
+               JOIN email_sequences es ON es.id = css.sequence_id AND es.sequence_type = 'outreach'
+               WHERE css.contact_id = c.id AND css.is_active = 1
+           ) AS INTEGER) AS in_campaign,
+           CAST((
+               (SELECT COUNT(*) FROM email_bounce b WHERE b.email_lower = LOWER(c.email) AND b.bounce_type = 'Permanent') +
+               (SELECT COUNT(*) FROM email_complaint ec WHERE ec.email_lower = LOWER(c.email)) +
+               (SELECT COUNT(*) FROM suppression_list sl WHERE sl.org_id = el.org_id AND sl.email_lower = LOWER(c.email)) +
+               (SELECT COUNT(*) FROM blocked_domains bd WHERE bd.org_id = el.org_id AND bd.domain = LOWER(SUBSTR(c.email, INSTR(c.email, '@') + 1)))
+           ) > 0 AS INTEGER) AS suppressed
+    FROM list_subscribers ls
+    JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'
+    JOIN contacts c ON c.id = ls.contact_id
+    WHERE el.org_id = sqlc.arg(org_id)
+      AND (CAST(sqlc.arg(list_id) AS INTEGER) = 0 OR ls.list_id = sqlc.arg(list_id))
+      AND (CAST(sqlc.arg(status) AS TEXT) = '' OR ls.status = sqlc.arg(status))
+      AND (CAST(sqlc.arg(search) AS TEXT) = '' OR c.email LIKE '%' || sqlc.arg(search) || '%' OR c.name LIKE '%' || sqlc.arg(search) || '%')
+    GROUP BY c.id
+) p
+WHERE (CAST(sqlc.arg(enrollable) AS INTEGER) = 0 OR (p.prospect = 1 AND p.in_campaign = 0 AND p.suppressed = 0))
+ORDER BY p.added_at DESC, p.id
+LIMIT sqlc.arg(limit_count) OFFSET sqlc.arg(offset_count);
+
+-- name: ListProspectSubscriptions :many
+-- The outreach lists of some people, with their status on each.
+SELECT ls.contact_id, el.id AS list_id, el.name AS list_name, ls.status
 FROM list_subscribers ls
 JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'
-JOIN contacts c ON c.id = ls.contact_id
-WHERE el.org_id = sqlc.arg(org_id) AND (sqlc.arg(list_id) = 0 OR ls.list_id = sqlc.arg(list_id))
-ORDER BY ls.subscribed_at DESC
-LIMIT sqlc.arg(limit_count);
+WHERE el.org_id = sqlc.arg(org_id) AND ls.contact_id IN (sqlc.slice(contact_ids))
+ORDER BY el.name;
+
+-- name: ListActiveOutreachCampaignsFor :many
+-- The outreach campaigns some people are in now.
+SELECT css.contact_id, es.id, es.name
+FROM contact_sequence_state css
+JOIN email_sequences es ON es.id = css.sequence_id AND es.sequence_type = 'outreach'
+WHERE es.org_id = sqlc.arg(org_id) AND css.is_active = 1 AND css.contact_id IN (sqlc.slice(contact_ids))
+ORDER BY es.name;
 
 -- name: SetOutreachSequenceOptions :exec
 UPDATE email_sequences
@@ -186,12 +227,15 @@ LEFT JOIN email_templates et ON et.id = eq.template_id
 WHERE eq.message_id = ? AND eq.kind = 'outreach' LIMIT 1;
 
 -- name: ListOutreachEmails :many
--- A brand's outreach emails with one status, oldest first.
-SELECT eq.*, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email
+-- A brand's outreach emails with one status, oldest first, with the
+-- campaign and step each belongs to.
+SELECT eq.*, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email,
+       CAST(COALESCE(es.id, '') AS TEXT) AS campaign_id, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
 JOIN mailboxes m ON m.id = eq.mailbox_id
 LEFT JOIN email_templates et ON et.id = eq.template_id
+LEFT JOIN email_sequences es ON es.id = et.sequence_id
 WHERE c.org_id = sqlc.arg(org_id) AND eq.kind = 'outreach' AND eq.status = sqlc.arg(status)
 ORDER BY eq.scheduled_for
 LIMIT sqlc.arg(limit_count);
@@ -278,7 +322,11 @@ RETURNING *;
 SELECT * FROM email_replies WHERE id = ? AND org_id = ?;
 
 -- name: ListEmailReplies :many
-SELECT * FROM email_replies WHERE org_id = ? AND handled = ? ORDER BY received_at DESC LIMIT ?;
+-- Replies with the name of the campaign each answers.
+SELECT r.*, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
+FROM email_replies r
+LEFT JOIN email_sequences es ON es.id = r.sequence_id
+WHERE r.org_id = ? AND r.handled = ? ORDER BY r.received_at DESC LIMIT ?;
 
 -- name: SetEmailReplyClassification :exec
 UPDATE email_replies SET classification = ?, handled = ? WHERE id = ? AND org_id = ?;
@@ -348,7 +396,7 @@ SET open_count = open_count + 1, opened_at = COALESCE(opened_at, sqlc.arg(at))
 WHERE tracking_token = sqlc.arg(token) AND kind = 'outreach' AND status = 'sent' AND sent_at <= sqlc.arg(counted_after);
 
 -- name: ListOutreachEmailsForSequence :many
-SELECT eq.*, c.email AS to_email, m.email AS from_email
+SELECT eq.*, c.email AS to_email, m.email AS from_email, et.position
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id

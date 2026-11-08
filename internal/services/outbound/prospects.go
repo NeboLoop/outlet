@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -80,7 +81,7 @@ func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.
 		res.Status, res.Reason = "refused", "not an email address"
 		return res
 	case strings.TrimSpace(in.EmailSource) == "":
-		res.Status, res.Reason = "refused", "email_source is required: where the address was published for business (channel About page, bio, website)"
+		res.Status, res.Reason = "refused", "the source is required: where the address was published for business (channel About page, bio, website)"
 		return res
 	case seen[address]:
 		res.Status, res.Reason = "duplicate", "listed twice in this batch"
@@ -149,6 +150,124 @@ func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.
 		res.Status = "added"
 	}
 	return res
+}
+
+// ProspectQuery picks prospects: those on one list (empty: any), with one
+// status there, matching a search of email and name, or only those free to
+// enroll. Limit and Offset page through them, newest first.
+type ProspectQuery struct {
+	ListID     string
+	Status     string
+	Search     string
+	Enrollable bool
+	Limit      int
+	Offset     int
+}
+
+// ListRef names one outreach list.
+type ListRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ProspectListStatus is a person's status on one outreach list.
+type ProspectListStatus struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+// CampaignRef names one outreach campaign.
+type CampaignRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ProspectInfo is one person on the brand's outreach lists. Enrollable says
+// whether a campaign can take them now: a prospect (on the list the query
+// names), in no outreach campaign, and not suppressed.
+type ProspectInfo struct {
+	ID               string               `json:"id"`
+	Email            string               `json:"email"`
+	Name             string               `json:"name"`
+	EmailSource      string               `json:"email_source"`
+	ValidationStatus string               `json:"validation_status"`
+	CreatedAt        string               `json:"created_at"`
+	Lists            []ProspectListStatus `json:"lists"`
+	Campaigns        []CampaignRef        `json:"campaigns"`
+	Suppressed       bool                 `json:"suppressed"`
+	Enrollable       bool                 `json:"enrollable"`
+}
+
+// ProspectPage is one page of prospects, how many match in all, and the
+// brand's outreach lists to filter by.
+type ProspectPage struct {
+	Prospects []ProspectInfo `json:"prospects"`
+	Total     int64          `json:"total"`
+	Lists     []ListRef      `json:"lists"`
+}
+
+// ListProspects reads the brand's prospects, one row per person.
+func (s *Service) ListProspects(ctx context.Context, org db.Organization, q ProspectQuery) (ProspectPage, error) {
+	page := ProspectPage{Prospects: []ProspectInfo{}, Lists: []ListRef{}}
+	var listID int64
+	if q.ListID != "" {
+		id, err := strconv.ParseInt(q.ListID, 10, 64)
+		if err != nil {
+			return page, refuse("No such outreach list.")
+		}
+		listID = id
+	}
+	if q.Limit <= 0 || q.Limit > 500 {
+		q.Limit = 50
+	}
+	lists, err := s.db.ListOutreachLists(ctx, org.ID)
+	if err != nil {
+		return page, err
+	}
+	for _, l := range lists {
+		page.Lists = append(page.Lists, ListRef{ID: strconv.FormatInt(l.ID, 10), Name: l.Name})
+	}
+	rows, err := s.db.ListProspects(ctx, db.ListProspectsParams{
+		OrgID: org.ID, ListID: listID, Status: strings.TrimSpace(q.Status), Search: strings.TrimSpace(q.Search),
+		Enrollable: boolInt(q.Enrollable), LimitCount: int64(q.Limit), OffsetCount: int64(max(q.Offset, 0)),
+	})
+	if err != nil || len(rows) == 0 {
+		return page, err
+	}
+	ids := make([]string, 0, len(rows))
+	byID := map[string]int{}
+	for i, r := range rows {
+		ids = append(ids, r.ID)
+		byID[r.ID] = i
+		page.Total = r.Total
+		page.Prospects = append(page.Prospects, ProspectInfo{
+			ID: r.ID, Email: r.Email, Name: r.Name, EmailSource: r.Source.String, ValidationStatus: r.ValidationStatus.String,
+			CreatedAt: r.CreatedAt.String, Lists: []ProspectListStatus{}, Campaigns: []CampaignRef{},
+			Suppressed: r.Suppressed == 1, Enrollable: r.Prospect == 1 && r.InCampaign == 0 && r.Suppressed == 0,
+		})
+	}
+	subs, err := s.db.ListProspectSubscriptions(ctx, db.ListProspectSubscriptionsParams{OrgID: org.ID, ContactIds: ids})
+	if err != nil {
+		return page, err
+	}
+	for _, sub := range subs {
+		p := &page.Prospects[byID[sub.ContactID]]
+		p.Lists = append(p.Lists, ProspectListStatus{ID: strconv.FormatInt(sub.ListID, 10), Name: sub.ListName, Status: sub.Status.String})
+	}
+	nullIDs := make([]sql.NullString, 0, len(ids))
+	for _, id := range ids {
+		nullIDs = append(nullIDs, sql.NullString{String: id, Valid: true})
+	}
+	camps, err := s.db.ListActiveOutreachCampaignsFor(ctx, db.ListActiveOutreachCampaignsForParams{OrgID: sql.NullString{String: org.ID, Valid: true}, ContactIds: nullIDs})
+	if err != nil {
+		return page, err
+	}
+	for _, c := range camps {
+		p := &page.Prospects[byID[c.ContactID.String]]
+		p.Campaigns = append(p.Campaigns, CampaignRef{ID: c.ID, Name: c.Name})
+	}
+	return page, nil
 }
 
 // outreachList finds the brand's outreach list by name, or makes it.

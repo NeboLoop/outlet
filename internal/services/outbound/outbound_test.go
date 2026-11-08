@@ -283,11 +283,11 @@ func (h *harness) setup() (sam, pat db.Mailbox) {
 	t := h.t
 	_, err := h.svc.UpdateSettings(h.ctx, h.org, SettingsInput{MailingAddress: "NeboAI, 123 Main St, Provo, UT 84601", Timezone: "UTC"})
 	require.NoError(t, err)
-	d, pending, check, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com"})
+	added, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com"})
 	require.NoError(t, err)
-	assert.True(t, check.OK())
-	assert.Equal(t, "success", d.VerificationStatus.String)
-	assert.NotEmpty(t, pending, "a manual domain returns the records to paste")
+	assert.True(t, added.Check.OK())
+	assert.Equal(t, "success", added.Domain.VerificationStatus.String)
+	assert.NotEmpty(t, added.RecordsToAdd, "a manual domain returns the records to paste")
 	res, err := h.svc.AddMailboxes(h.ctx, h.org, []MailboxInput{h.mailbox("sam@getexample.com", "pw-sam"), h.mailbox("pat@getexample.com", "pw-pat")})
 	require.NoError(t, err)
 	for _, r := range res {
@@ -335,9 +335,9 @@ func TestOutreachEndToEnd(t *testing.T) {
 	ctx := h.ctx
 
 	// Protected and the brand's own domains are refused.
-	_, _, _, err := h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "neboai.com"})
+	_, err := h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "neboai.com"})
 	assert.ErrorContains(t, err, "protected")
-	_, _, _, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "mail.neboloop.com"})
+	_, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "mail.neboloop.com"})
 	assert.ErrorContains(t, err, "protected")
 
 	// Campaigns need a mailing address.
@@ -345,7 +345,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 	assert.ErrorContains(t, err, "mailing address")
 
 	// A mailbox that can't log in is reported and not saved.
-	_, _, _, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com"})
+	_, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com"})
 	require.NoError(t, err)
 	res, err := h.svc.AddMailboxes(ctx, h.org, []MailboxInput{h.mailbox("sam@getexample.com", "wrong")})
 	require.NoError(t, err)
@@ -377,6 +377,8 @@ func TestOutreachEndToEnd(t *testing.T) {
 	dry, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "Creators", Steps: threeSteps, ProspectIDs: ids, DryRun: true})
 	require.NoError(t, err)
 	assert.Equal(t, 2, dry.Enrolled)
+	assert.Len(t, dry.Previews, 2)
+	assert.Empty(t, dry.Drafts, "nothing is saved, so there is no draft to approve")
 	assert.Contains(t, dry.Skipped[got["cal@example.org"].ID], "recent_video", "a missing tag skips, never sends a blank")
 	assert.Contains(t, dry.Skipped[got["risky@example.org"].ID], "held")
 	camps, _ := h.store.ListOutreachSequences(ctx, sql.NullString{String: h.org.ID, Valid: true})
@@ -395,6 +397,10 @@ func TestOutreachEndToEnd(t *testing.T) {
 	var draftIDs []string
 	for _, d := range camp.Drafts {
 		draftIDs = append(draftIDs, d.MessageID)
+		assert.NotEmpty(t, d.MessageID)
+		assert.Equal(t, camp.CampaignID, d.CampaignID)
+		assert.Equal(t, "Creators", d.CampaignName)
+		assert.EqualValues(t, 1, d.Step)
 		assert.NotContains(t, d.Body, "{{")
 		assert.Contains(t, d.Body, "123 Main St")
 	}
@@ -439,6 +445,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 	require.Len(t, replies, 1)
 	assert.Equal(t, "needs_review", replies[0].Classification)
 	assert.Equal(t, "Sounds fun, tell me more!", replies[0].Body)
+	assert.Equal(t, "Creators", replies[0].CampaignName, "a reply says the campaign it answers")
 	assert.Equal(t, "replied", h.state(got["ava@example.org"].ID, camp.CampaignID).StoppedReason)
 	assert.Equal(t, "bounced", h.state(got["ben@example.org"].ID, camp.CampaignID).StoppedReason)
 	assert.True(t, h.svc.suppressed(ctx, h.org.ID, "ben@example.org"), "a bounce goes on the suppression list")
@@ -524,6 +531,23 @@ func TestSafetyLimits(t *testing.T) {
 	assert.EqualValues(t, 30, allow(40, sql.NullInt64{}))
 	assert.EqualValues(t, 50, allow(40, sql.NullInt64{Int64: 50, Valid: true}), "a mailbox's own limit, reached through the warm-up")
 
+	// Health says the limit in use, the warm-up and the domain.
+	o, err := h.svc.Overview(ctx, h.org)
+	require.NoError(t, err)
+	require.NotEmpty(t, o.Mailboxes)
+	mh := o.Mailboxes[0]
+	assert.EqualValues(t, 30, mh.LimitInUse, "the pool's")
+	assert.True(t, mh.WarmingUp)
+	assert.Less(t, mh.AllowToday, mh.LimitInUse, "the ramp holds it below the limit")
+	assert.Equal(t, "getexample.com", mh.Domain)
+	why, err := h.svc.Explain(ctx, h.org, "", mh.ID, "")
+	require.NoError(t, err)
+	assert.Contains(t, why, "warming up")
+	assert.Contains(t, why, "30 a day")
+	require.NoError(t, h.mailer.SetMailboxDailyLimit(ctx, h.org.ID, mh.ID, ptr(int64(80))))
+	o, _ = h.svc.Overview(ctx, h.org)
+	assert.EqualValues(t, 80, o.Mailboxes[0].LimitInUse, "its own limit, above the pool's, as set")
+
 	// Not enabled in config: refused.
 	other, _ := h.store.GetOrganizationByID(ctx, "org-2")
 	_, err = h.svc.DraftOutreach(ctx, other, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{"p"}})
@@ -559,7 +583,7 @@ func TestSafetyLimits(t *testing.T) {
 	assert.Contains(t, sam.PausedReason, "bounce rate")
 	err = h.svc.Pause(ctx, h.org, "mailbox", sam.ID, true)
 	assert.ErrorContains(t, err, "still over a health limit")
-	why, err := h.svc.Explain(ctx, h.org, "", sam.ID, "")
+	why, err = h.svc.Explain(ctx, h.org, "", sam.ID, "")
 	require.NoError(t, err)
 	assert.Contains(t, why, "reputation")
 
@@ -692,11 +716,17 @@ func TestOperations(t *testing.T) {
 	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: threeSteps, ProspectIDs: []string{got["ivy@example.org"].ID}})
 	require.NoError(t, err)
 	draft := camp.Drafts[0].MessageID
+	waiting, err := h.svc.ListDrafts(ctx, h.org, 10)
+	require.NoError(t, err)
+	require.Len(t, waiting, 1)
+	assert.Equal(t, Draft{MessageID: draft, CampaignID: camp.CampaignID, CampaignName: "C", Step: 1, Preview: camp.Drafts[0].Preview}, waiting[0],
+		"a waiting draft says its campaign and step")
 
 	o, err := h.svc.Overview(ctx, h.org)
 	require.NoError(t, err)
 	assert.True(t, o.Enabled)
 	assert.EqualValues(t, 1, o.Messages["draft"])
+	assert.EqualValues(t, 1, o.DraftsWaiting)
 	assert.Len(t, o.Mailboxes, 2)
 	assert.Contains(t, strings.Join(o.Next, " "), "drafts wait")
 
@@ -736,7 +766,7 @@ func TestOperations(t *testing.T) {
 	tagged, _ := h.store.HasContactTag(ctx, db.HasContactTagParams{ContactID: sql.NullString{String: ivy, Valid: true}, Tag: "interested"})
 	assert.EqualValues(t, 1, tagged)
 	require.NoError(t, h.svc.MarkPartner(ctx, h.org, ivy))
-	assert.ErrorContains(t, h.svc.Classify(ctx, h.org, replies[0].ID, "maybe"), "must be one of")
+	assert.ErrorContains(t, h.svc.Classify(ctx, h.org, replies[0].ID, "maybe"), "A reply sorts as")
 }
 
 // DigitalOcean: missing records are added, an existing SPF is never doubled.
@@ -764,17 +794,191 @@ func TestDigitalOceanRecords(t *testing.T) {
 	defer api.Close()
 	h.svc.doAPI = api.URL
 
-	_, _, _, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com", DNSHost: "digitalocean"})
+	_, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com", DNSHost: "digitalocean"})
 	assert.ErrorContains(t, err, "No DigitalOcean token")
 	require.NoError(t, h.svc.SetDNSToken(h.ctx, h.org.ID, "do-token"))
-	_, pending, _, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com", DNSHost: "digitalocean", DKIMValue: "v=DKIM1; k=rsa; p=abc"})
+	h.refresh()
+	added, err := h.svc.AddDomain(h.ctx, h.org, DomainInput{Domain: "getexample.com", DNSHost: "digitalocean", DKIMValue: "v=DKIM1; k=rsa; p=abc"})
 	require.NoError(t, err)
-	assert.Empty(t, pending)
+	assert.Empty(t, added.RecordsToAdd)
+	assert.Empty(t, added.DNSError)
 	var kinds []string
 	for _, r := range posted {
 		kinds = append(kinds, r.Type+" "+r.Name)
 	}
 	assert.ElementsMatch(t, []string{"MX @", "TXT _dmarc", "TXT google._domainkey"}, kinds, "SPF already existed and is not doubled")
+}
+
+// Messages people see in the app say what to do in plain words, never an
+// MCP call; the MCP tool descriptions explain the tools.
+func TestMessagesReadInTheApp(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	var said []string
+
+	o, err := h.svc.Overview(ctx, h.org)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Set the brand's mailing address in Outbound, Setup."}, o.Next)
+	said = append(said, o.Next...)
+
+	_, err = h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{"p"}})
+	require.Error(t, err)
+	assert.Equal(t, "Set the brand's mailing address in Outbound, Setup first. Every outreach email carries it.", err.Error())
+	said = append(said, err.Error())
+
+	_, err = h.svc.UpdateSettings(ctx, h.org, SettingsInput{MailingAddress: "123 Main St"})
+	require.NoError(t, err)
+	h.refresh()
+	o, _ = h.svc.Overview(ctx, h.org)
+	said = append(said, o.Next...)
+	_, err = h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{"p"}})
+	require.Error(t, err)
+	said = append(said, err.Error())
+	res, err := h.svc.AddMailboxes(ctx, h.org, []MailboxInput{h.mailbox("sam@elsewhere.com", "pw")})
+	require.NoError(t, err)
+	said = append(said, res[0].Error)
+
+	for _, m := range said {
+		assert.NotContains(t, m, "(action:", m)
+		assert.NotContains(t, m, "setup_sending", m)
+	}
+}
+
+// The prospect list is one row per person, with their lists and the
+// campaigns they are in, and can show only those a campaign can take.
+func TestListProspects(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	h.setup()
+	got := h.prospects(creator("ivy@example.org", "Ivy", "a"), creator("kai@example.org", "Kai", "b"),
+		creator("risky@example.org", "Risky", "c"), creator("ola@example.org", "Ola", "d"))
+	_, err := h.svc.AddProspects(ctx, h.org, "Second", []ProspectInput{creator("ivy@example.org", "Ivy", "a")})
+	require.NoError(t, err)
+	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "Spring", Steps: threeSteps, ProspectIDs: []string{got["kai@example.org"].ID}})
+	require.NoError(t, err)
+	h.svc.suppress(ctx, h.org.ID, "ola@example.org", "opted out elsewhere")
+
+	all, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{})
+	require.NoError(t, err)
+	assert.EqualValues(t, 4, all.Total, "one row per person")
+	require.Len(t, all.Prospects, 4)
+	require.Len(t, all.Lists, 2)
+	byEmail := map[string]ProspectInfo{}
+	for _, p := range all.Prospects {
+		byEmail[p.Email] = p
+	}
+	ivy, kai := byEmail["ivy@example.org"], byEmail["kai@example.org"]
+	assert.Len(t, ivy.Lists, 2)
+	assert.True(t, ivy.Enrollable)
+	assert.Equal(t, []CampaignRef{{ID: camp.CampaignID, Name: "Spring"}}, kai.Campaigns)
+	assert.False(t, kai.Enrollable, "already in a campaign")
+	assert.False(t, byEmail["risky@example.org"].Enrollable, "held")
+	assert.True(t, byEmail["ola@example.org"].Suppressed)
+	assert.False(t, byEmail["ola@example.org"].Enrollable)
+
+	// The list agrees with what enrolling accepts.
+	list, err := h.svc.outreachList(ctx, h.org, "")
+	require.NoError(t, err)
+	for _, p := range all.Prospects {
+		_, reason := h.svc.enrollable(ctx, h.org, list, p.ID)
+		inCampaign := len(p.Campaigns) > 0
+		assert.Equal(t, reason == "" && !inCampaign, p.Enrollable, p.Email)
+	}
+
+	free, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Enrollable: true})
+	require.NoError(t, err)
+	require.Len(t, free.Prospects, 1)
+	assert.Equal(t, "ivy@example.org", free.Prospects[0].Email)
+
+	held, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Status: "held"})
+	require.NoError(t, err)
+	require.Len(t, held.Prospects, 1)
+	assert.Equal(t, "risky@example.org", held.Prospects[0].Email)
+
+	found, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Search: "kai"})
+	require.NoError(t, err)
+	require.Len(t, found.Prospects, 1)
+
+	var second string
+	for _, l := range all.Lists {
+		if l.Name == "Second" {
+			second = l.ID
+		}
+	}
+	onSecond, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{ListID: second})
+	require.NoError(t, err)
+	require.Len(t, onSecond.Prospects, 1)
+	assert.Equal(t, "ivy@example.org", onSecond.Prospects[0].Email)
+	assert.Len(t, onSecond.Prospects[0].Lists, 2, "still shows every list the person is on")
+
+	p1, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Limit: 3})
+	require.NoError(t, err)
+	p2, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Limit: 3, Offset: 3})
+	require.NoError(t, err)
+	assert.Len(t, p1.Prospects, 3)
+	require.Len(t, p2.Prospects, 1)
+	assert.EqualValues(t, 4, p2.Total)
+	for _, p := range p1.Prospects {
+		assert.NotEqual(t, p.ID, p2.Prospects[0].ID)
+	}
+
+	_, err = h.svc.ListProspects(ctx, h.org, ProspectQuery{ListID: "nope"})
+	assert.ErrorContains(t, err, "No such outreach list")
+}
+
+// A domain keeps the records it needs; each later read says which the last
+// check found. When DigitalOcean fails, the domain is added all the same and
+// the answer carries the records to add by hand.
+func TestDomainRecordsKept(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	added, err := h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com", DKIMValue: "v=DKIM1; k=rsa; p=abc", ClickTracking: true})
+	require.NoError(t, err)
+
+	d, err := h.store.GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: added.Domain.ID, OrgID: h.org.ID})
+	require.NoError(t, err)
+	present := map[string]bool{}
+	for _, r := range DomainInfoOf(d).Records {
+		present[r.Type+" "+r.Name] = r.Present
+	}
+	assert.Equal(t, map[string]bool{"MX @": true, "TXT @": true, "TXT _dmarc": true, "TXT google._domainkey": true, "CNAME go": false}, present,
+		"the tracking CNAME doesn't point here yet; the rest were found")
+
+	// DigitalOcean refuses one record: the domain is added, and that record is to add by hand.
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"domain_records":[]}`))
+			return
+		}
+		var rec doRecord
+		_ = json.NewDecoder(r.Body).Decode(&rec)
+		if rec.Type == "MX" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"message":"bad record"}`))
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer api.Close()
+	h.svc.doAPI = api.URL
+	require.NoError(t, h.svc.SetDNSToken(ctx, h.org.ID, "do-token"))
+	h.refresh()
+	h.dns.ok["getoutreach.com"] = true
+	res, err := h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getoutreach.com", DNSHost: "digitalocean"})
+	require.NoError(t, err)
+	assert.Contains(t, res.DNSError, "DigitalOcean refused 1 record")
+	require.Len(t, res.RecordsToAdd, 1)
+	assert.Equal(t, "MX", res.RecordsToAdd[0].Type)
+	assert.Equal(t, "getoutreach.com", res.Domain.Domain)
+	assert.Len(t, DomainInfoOf(res.Domain).Records, 3, "MX, SPF and DMARC; no DKIM value was given")
+
+	// DigitalOcean can't be reached at all: every record is to add by hand.
+	h.svc.doAPI = "http://127.0.0.1:1"
+	res, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getoutreach.com", DNSHost: "digitalocean"})
+	require.NoError(t, err)
+	assert.NotEmpty(t, res.DNSError)
+	assert.Len(t, res.RecordsToAdd, 3)
 }
 
 // Results tell whether a campaign works: reached, replied, reply rate and,
@@ -791,7 +995,7 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 
 	_, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
 	assert.ErrorContains(t, err, "no tracking subdomain")
-	_, _, _, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com", ClickTracking: true})
+	_, err = h.svc.AddDomain(ctx, h.org, DomainInput{Domain: "getexample.com", ClickTracking: true})
 	require.NoError(t, err)
 	_, err = h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
 	assert.ErrorContains(t, err, "doesn't point at this server")
@@ -838,6 +1042,16 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 	assert.EqualValues(t, 2, r.Reached)
 	assert.EqualValues(t, 1, r.Replied)
 	assert.EqualValues(t, 50, r.ReplyRate)
+	assert.EqualValues(t, 50, o.ReplyRate, "replied over reached, across campaigns")
+	assert.EqualValues(t, 3, r.BounceLimit, "the outreach pool's own pause threshold, in percent")
+	pool, err := h.store.GetPathwayForKind(ctx, db.GetPathwayForKindParams{OrgID: h.org.ID, Kind: "outreach"})
+	require.NoError(t, err)
+	limits := email.LimitsOf(pool)
+	limits.PauseBounceRate = 0.05
+	_, err = h.mailer.UpdatePathway(ctx, h.org.ID, pool.ID, email.PathwayInput{Kinds: email.KindsOf(pool), Limits: &limits})
+	require.NoError(t, err)
+	o, _ = h.svc.Overview(ctx, h.org)
+	assert.EqualValues(t, 5, o.Campaigns[0].BounceLimit, "changing the threshold changes what the screens color")
 	assert.EqualValues(t, 1, r.Clicked, "the scanner-speed click isn't counted; the later one is, once per person")
 	assert.EqualValues(t, 50, r.ClickRate)
 
@@ -855,6 +1069,8 @@ func kaiBox(m *mail.Message) string {
 	a, _ := mail.ParseAddress(m.Header.Get("From"))
 	return a.Address
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func mustCampaign(t *testing.T, h *harness, id string) db.EmailSequence {
 	c, err := h.store.GetOutreachSequence(h.ctx, db.GetOutreachSequenceParams{ID: id, OrgID: sql.NullString{String: h.org.ID, Valid: true}})

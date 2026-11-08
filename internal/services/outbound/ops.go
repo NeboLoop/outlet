@@ -31,23 +31,34 @@ type MailboxHealth struct {
 	PoolID       string `json:"pool_id,omitempty"`     // its mailbox pool (sending pathway)
 	DailyLimit   *int64 `json:"daily_limit,omitempty"` // its own daily limit; empty uses the pool's
 	Limited      bool   `json:"limited"`               // false: no daily limit applies, whatever allowed_today says
+	// LimitInUse is the daily limit it sends under: its own, else its
+	// pool's. 0 is no limit.
+	LimitInUse int64 `json:"limit_in_use"`
+	// WarmingUp says the pool's warm-up still holds it below that limit:
+	// allowed_today is today's step of the ramp, which climbs to LimitInUse
+	// (with no limit, it keeps climbing).
+	WarmingUp bool   `json:"warming_up"`
+	Domain    string `json:"domain"`
 }
 
-// DomainInfo is one outreach domain and its last DNS check.
+// DomainInfo is one outreach domain, its last DNS check, and the records it
+// needs with which of them that check found.
 type DomainInfo struct {
-	ID           string   `json:"id"`
-	Domain       string   `json:"domain"`
-	Status       string   `json:"status"`
-	TrackingHost string   `json:"tracking_host,omitempty"`
-	Check        DNSCheck `json:"check"`
-	CheckedAt    string   `json:"checked_at,omitempty"`
+	ID           string         `json:"id"`
+	Domain       string         `json:"domain"`
+	Status       string         `json:"status"`
+	TrackingHost string         `json:"tracking_host,omitempty"`
+	Check        DNSCheck       `json:"check"`
+	CheckedAt    string         `json:"checked_at,omitempty"`
+	Records      []DomainRecord `json:"records"`
 }
 
-// DomainInfoOf reads a domain row and its stored check.
+// DomainInfoOf reads a domain row, its stored check and its records.
 func DomainInfoOf(d db.DomainIdentity) DomainInfo {
 	var c DNSCheck
 	_ = json.Unmarshal([]byte(d.DnsCheck), &c)
-	return DomainInfo{ID: d.ID, Domain: d.Domain, Status: d.VerificationStatus.String, TrackingHost: d.TrackingHost, Check: c, CheckedAt: d.LastCheckedAt.String}
+	return DomainInfo{ID: d.ID, Domain: d.Domain, Status: d.VerificationStatus.String, TrackingHost: d.TrackingHost, Check: c, CheckedAt: d.LastCheckedAt.String,
+		Records: domainRecords(d, c)}
 }
 
 // Overview is a brand's outreach at a glance, with the next things to do.
@@ -63,14 +74,18 @@ type Overview struct {
 	Prospects      map[string]int64  `json:"prospects"`
 	Messages       map[string]int64  `json:"messages"`
 	RepliesWaiting int64             `json:"replies_waiting"`
-	Campaigns      []CampaignResults `json:"campaigns"`
+	DraftsWaiting  int64             `json:"drafts_waiting"`
+	// ReplyRate is people who replied over people reached, across every
+	// campaign, in percent.
+	ReplyRate float64           `json:"reply_rate"`
+	Campaigns []CampaignResults `json:"campaigns"`
 	Next           []string          `json:"next"`
 }
 
 func (s *Service) mailboxHealth(ctx context.Context, mb db.Mailbox, org db.Organization) MailboxHealth {
 	out := MailboxHealth{
 		ID: mb.ID, Email: mb.Email, FromName: mb.FromName, Status: mb.Status, Reason: mb.PausedReason,
-		LastError: mb.LastError,
+		LastError: mb.LastError, Domain: domainOf(mb.Email),
 	}
 	if mb.DailyLimit.Valid {
 		out.DailyLimit = &mb.DailyLimit.Int64
@@ -82,7 +97,10 @@ func (s *Service) mailboxHealth(ctx context.Context, mb db.Mailbox, org db.Organ
 	now := s.now()
 	out.PoolID = p.ID
 	out.SentToday, _ = s.mailer.SentSince(ctx, org, p.ID, mb.ID, now)
-	out.AllowToday, out.Limited = email.Allowance(p, parseTS(mb.WarmupStartedAt), mb.DailyLimit, now)
+	start := parseTS(mb.WarmupStartedAt)
+	out.AllowToday, out.Limited = email.Allowance(p, start, mb.DailyLimit, now)
+	out.LimitInUse = email.DailyLimitOf(p, mb.DailyLimit)
+	out.WarmingUp = email.WarmingUp(p, start, mb.DailyLimit, now)
 	out.Sent7d, out.Bounces7d, out.SpamBlocks7d, out.Complaints7d = h.Sent, h.Bounces, h.SpamBlocks, h.Complaints
 	return out
 }
@@ -113,38 +131,50 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 		}
 	}
 	o.RepliesWaiting, _ = s.db.CountUnhandledEmailReplies(ctx, org.ID)
+	o.DraftsWaiting = o.Messages["draft"]
 	seqs, _ := s.db.ListOutreachSequences(ctx, sql.NullString{String: org.ID, Valid: true})
+	var reached, replied int64
 	for _, c := range seqs {
 		if r, err := s.CampaignResults(ctx, c, false); err == nil {
 			o.Campaigns = append(o.Campaigns, r)
+			reached, replied = reached+r.Reached, replied+r.Replied
 		}
 	}
+	o.ReplyRate = pct(replied, reached)
 
 	switch {
 	case !o.Enabled:
-		o.Next = append(o.Next, "Outbound is off for this brand. Its admin turns it on in the Outlet app (Outbound, Settings).")
+		o.Next = append(o.Next, "Outbound is off for this brand. Its admin turns it on in the Outlet app, in Outbound, Setup.")
 	case org.MailingAddress == "":
-		o.Next = append(o.Next, "Set the mailing address: setup_sending(action: settings, mailing_address: ...).")
+		o.Next = append(o.Next, "Set the brand's mailing address in Outbound, Setup.")
 	case len(domains) == 0:
-		o.Next = append(o.Next, "Add an outreach domain: setup_sending(action: add_domain, domain: ...).")
+		o.Next = append(o.Next, "Add an outreach domain in Outbound, Setup.")
 	case len(mbs) == 0:
-		o.Next = append(o.Next, "Connect mailboxes: setup_sending(action: add_mailboxes, mailboxes: [...]).")
+		o.Next = append(o.Next, "Connect mailboxes in Outbound, Setup.")
 	}
 	if o.Paused != "" {
-		o.Next = append(o.Next, "All outreach is paused ("+o.Paused+"); pause(action: resume, scope: all) restarts it.")
+		o.Next = append(o.Next, "All outreach is paused ("+o.Paused+"). Resume it to send again.")
 	}
 	for _, mb := range o.Mailboxes {
 		if mb.Status == "paused" {
-			o.Next = append(o.Next, fmt.Sprintf("%s is paused (%s); explain(mailbox_id: %q) says how to fix it.", mb.Email, mb.Reason, mb.ID))
+			o.Next = append(o.Next, fmt.Sprintf("%s is paused (%s). Explaining the mailbox says how to fix it.", mb.Email, mb.Reason))
 		}
 	}
-	if n := o.Messages["draft"]; n > 0 {
-		o.Next = append(o.Next, fmt.Sprintf("%d drafts wait for approval: review_drafts(action: list).", n))
+	if o.DraftsWaiting > 0 {
+		o.Next = append(o.Next, fmt.Sprintf("%d drafts wait for approval.", o.DraftsWaiting))
 	}
 	if o.RepliesWaiting > 0 {
-		o.Next = append(o.Next, fmt.Sprintf("%d replies need you: conversations(action: list).", o.RepliesWaiting))
+		o.Next = append(o.Next, fmt.Sprintf("%d replies need you.", o.RepliesWaiting))
 	}
 	return o, nil
+}
+
+// perDay says a daily limit in words.
+func perDay(limit int64) string {
+	if limit <= 0 {
+		return "no daily limit"
+	}
+	return fmt.Sprintf("%d a day", limit)
 }
 
 // SettingsInput changes the brand's outreach settings. None of them is a limit.
@@ -163,7 +193,7 @@ func (s *Service) UpdateSettings(ctx context.Context, org db.Organization, in Se
 	}
 	if in.Timezone != "" {
 		if _, err := time.LoadLocation(in.Timezone); err != nil {
-			return org, refuse("unknown time zone %q; use an IANA name like America/Denver", in.Timezone)
+			return org, refuse("Unknown time zone %q; use a name like America/Denver.", in.Timezone)
 		}
 		org.OutboundTimezone = in.Timezone
 	}
@@ -183,7 +213,8 @@ func (s *Service) ListDrafts(ctx context.Context, org db.Organization, limit int
 	}
 	out := make([]Draft, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, Draft{MessageID: r.ID, ProspectID: r.ContactID.String, To: r.ToEmail, From: r.FromEmail, Subject: r.Subject.String, Body: r.Body.String, SendsAfter: r.ScheduledFor})
+		out = append(out, Draft{MessageID: r.ID, CampaignID: r.CampaignID, CampaignName: r.CampaignName, Step: r.Position,
+			Preview: Preview{ProspectID: r.ContactID.String, To: r.ToEmail, From: r.FromEmail, Subject: r.Subject.String, Body: r.Body.String, SendsAfter: r.ScheduledFor}})
 	}
 	return out, nil
 }
@@ -197,7 +228,7 @@ type ReviewResult struct {
 // Review approves or skips drafts by ID.
 func (s *Service) Review(ctx context.Context, org db.Organization, action string, ids []string) (ReviewResult, error) {
 	if len(ids) == 0 || len(ids) > maxBatch {
-		return ReviewResult{}, refuse("pass 1 to %d ids", maxBatch)
+		return ReviewResult{}, refuse("Pick 1 to %d drafts.", maxBatch)
 	}
 	if action == "approve" {
 		if err := s.requireEnabled(org); err != nil {
@@ -248,8 +279,9 @@ func (s *Service) EditDraft(ctx context.Context, org db.Organization, id, subjec
 	return err
 }
 
-// ListReplies returns replies, unhandled ones by default.
-func (s *Service) ListReplies(ctx context.Context, org db.Organization, handled bool, limit int) ([]db.EmailReply, error) {
+// ListReplies returns replies, unhandled ones by default, each with the name
+// of the campaign it answers.
+func (s *Service) ListReplies(ctx context.Context, org db.Organization, handled bool, limit int) ([]db.ListEmailRepliesRow, error) {
 	if limit <= 0 || limit > maxBatch {
 		limit = 25
 	}
@@ -264,7 +296,7 @@ var classes = map[string]bool{
 // Classify records what a reply means and applies it.
 func (s *Service) Classify(ctx context.Context, org db.Organization, replyID, class string) error {
 	if !classes[class] {
-		return refuse("classification must be one of interested, not_interested, question, out_of_office, wrong_person, unsubscribe, complaint")
+		return refuse("A reply sorts as interested, not interested, question, out of office, wrong person, unsubscribe or complaint.")
 	}
 	r, err := s.db.GetEmailReply(ctx, db.GetEmailReplyParams{ID: replyID, OrgID: org.ID})
 	if err != nil {
@@ -382,7 +414,7 @@ func (s *Service) Pause(ctx context.Context, org db.Organization, scope, id stri
 		}
 		return s.db.SetSequenceActive(ctx, db.SetSequenceActiveParams{IsActive: sql.NullInt64{Int64: boolInt(resume), Valid: true}, ID: id, OrgID: sql.NullString{String: org.ID, Valid: true}})
 	}
-	return refuse("scope must be all, mailbox or campaign")
+	return refuse("Pause all outreach, one mailbox or one campaign.")
 }
 
 // Explain answers "why didn't this send?" and "why is this mailbox paused?"
@@ -397,7 +429,7 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 		}
 		switch m.Status.String {
 		case "draft":
-			return "It is a draft waiting for approval: review_drafts(action: approve, ids: [\"" + m.ID + "\"]).", nil
+			return "It is a draft waiting for approval.", nil
 		case "sent":
 			return "It was sent at " + m.SentAt.String + " UTC.", nil
 		case "cancelled":
@@ -448,16 +480,19 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 			if !h.Limited {
 				return fmt.Sprintf("%s is active, with no daily limit; it sent %d today.", mb.Email, h.SentToday), nil
 			}
-			return fmt.Sprintf("%s is active; its pool's limits allow %d today (warm-up included) and it sent %d.", mb.Email, h.AllowToday, h.SentToday), nil
+			if h.WarmingUp {
+				return fmt.Sprintf("%s is active and warming up: %d allowed today, climbing each day to %s; it sent %d.", mb.Email, h.AllowToday, perDay(h.LimitInUse), h.SentToday), nil
+			}
+			return fmt.Sprintf("%s is active; it may send %s and sent %d today.", mb.Email, perDay(h.LimitInUse), h.SentToday), nil
 		}
 		r := mb.PausedReason
 		switch {
 		case strings.HasPrefix(r, "DNS:"):
-			return mb.Email + " is paused because " + strings.TrimPrefix(r, "DNS: ") + ". Fix those records, then pause(action: resume, scope: mailbox, id).", nil
+			return mb.Email + " is paused because " + strings.TrimPrefix(r, "DNS: ") + ". Fix those records, then resume the mailbox.", nil
 		case strings.HasPrefix(r, "Health:"):
 			return mb.Email + " is paused to protect its reputation: " + strings.TrimPrefix(r, "Health: ") + ". Check the bounced, blocked and complaining addresses, verify the rest of the list, and resume once the 7-day window clears.", nil
 		}
-		return mb.Email + " is paused: " + r + ". Resume with pause(action: resume, scope: mailbox, id).", nil
+		return mb.Email + " is paused: " + r + ". Resume the mailbox to send again.", nil
 	case prospectID != "":
 		c, err := s.db.GetContactByID(ctx, prospectID)
 		if err != nil || c.OrgID.String != org.ID {
@@ -468,5 +503,5 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 		}
 		return c.Email + " can be enrolled in an outreach campaign if it's on an outreach list with status prospect.", nil
 	}
-	return "", refuse("pass message_id, mailbox_id or prospect_id")
+	return "", refuse("Name an email, a mailbox or a prospect to explain.")
 }

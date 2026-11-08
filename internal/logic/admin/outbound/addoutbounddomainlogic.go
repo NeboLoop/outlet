@@ -41,17 +41,17 @@ func AddOutboundDomain(ctx context.Context, svcCtx *svc.ServiceContext, org db.O
 	if err != nil {
 		return nil, err
 	}
-	d, pending, _, err := svcCtx.Outbound.AddDomain(ctx, org, in)
+	res, err := svcCtx.Outbound.AddDomain(ctx, org, in)
 	if err != nil {
 		return nil, apiErr(err)
 	}
-	info, err := convert[types.OutboundDomainInfo](outbound.DomainInfoOf(d))
+	info, err := convert[types.OutboundDomainInfo](outbound.DomainInfoOf(res.Domain))
 	if err != nil {
 		return nil, err
 	}
-	recs, err := convert[[]types.OutboundDNSRecord](pending)
-	if err != nil {
-		return nil, err
+	recs := make([]types.OutboundDNSRecord, 0, len(res.RecordsToAdd))
+	for _, r := range res.RecordsToAdd {
+		recs = append(recs, types.OutboundDNSRecord{Type: r.Type, Name: r.Name, Data: r.Data, Priority: r.Priority})
 	}
-	return &types.OutboundDomainResponse{Domain: *info, RecordsToAdd: *recs}, nil
+	return &types.OutboundDomainResponse{Domain: *info, RecordsToAdd: recs, DNSError: res.DNSError}, nil
 }

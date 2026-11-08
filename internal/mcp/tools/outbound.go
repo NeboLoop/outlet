@@ -128,24 +128,34 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 		if in.Domain == "" {
 			return nil, mcpctx.NewValidationError("domain is required", "domain")
 		}
-		d, pending, check, err := o.AddDomain(ctx, brand, outbound.DomainInput{
+		res, err := o.AddDomain(ctx, brand, outbound.DomainInput{
 			Domain: in.Domain, DNSHost: in.DNSHost, MailProvider: in.MailProvider, MXHosts: in.MXHosts,
 			SPFInclude: in.SPFInclude, DKIMSelector: in.DKIMSelector, DKIMValue: in.DKIMValue, DMARCReport: in.DMARCReport, ClickTracking: in.ClickTracking,
 		})
 		if err != nil {
-			return map[string]any{"records_to_add": pending}, err
+			return nil, err
 		}
 		next := "DNS is complete. Connect mailboxes with setup_sending(action: add_mailboxes)."
-		if !check.OK() {
-			next = "Missing in public DNS: " + fmt.Sprint(check.Missing) + ". Add records_to_add (DKIM comes from the mail provider's admin console), then check_domain. New records can take minutes to appear."
+		if !res.Check.OK() {
+			next = "Missing in public DNS: " + fmt.Sprint(res.Check.Missing) + ". Add records_to_add (DKIM comes from the mail provider's admin console), then check_domain. New records can take minutes to appear."
 		}
-		return map[string]any{"domain_id": d.ID, "status": d.VerificationStatus.String, "tracking_host": d.TrackingHost, "check": check, "records_to_add": pending, "next": next}, nil
+		out := map[string]any{"domain_id": res.Domain.ID, "status": res.Domain.VerificationStatus.String, "tracking_host": res.Domain.TrackingHost, "check": res.Check, "records_to_add": res.RecordsToAdd, "next": next}
+		if res.DNSError != "" {
+			out["dns_error"] = res.DNSError
+		}
+		return out, nil
 	case "check_domain":
 		d, err := t.DB().GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: in.DomainID, OrgID: brand.ID})
 		if err != nil {
 			return nil, mcpctx.NewNotFoundError("no such domain")
 		}
-		return o.CheckDomain(ctx, d)
+		if _, err := o.CheckDomain(ctx, d); err != nil {
+			return nil, err
+		}
+		if d, err = t.DB().GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: in.DomainID, OrgID: brand.ID}); err != nil {
+			return nil, err
+		}
+		return outbound.DomainInfoOf(d), nil
 	case "add_mailboxes":
 		res, err := o.AddMailboxes(ctx, brand, in.Mailboxes)
 		if err != nil {
@@ -404,8 +414,8 @@ var outboundTools = []outboundTool{
 		"Set up where outreach sends from. Outreach uses separate outreach domains, never the brand's own or a protected company domain, and never SES.\n"+
 			"- settings: mailing_address (required before any campaign), opt_out_line, timezone\n"+
 			"- dns_token: store a DigitalOcean token (domain read/write) so add_domain can write DNS\n"+
-			"- add_domain: domain, dns_host (digitalocean|manual), mail_provider (google|other), mx_hosts, spf_include, dkim_selector, dkim_value, dmarc_report, click_tracking. Writes MX, SPF, DMARC and DKIM when on DigitalOcean, otherwise returns records_to_add\n"+
-			"- check_domain: domain_id. Rechecks public DNS (also done daily; failing DNS pauses the domain's mailboxes)\n"+
+			"- add_domain: domain, dns_host (digitalocean|manual), mail_provider (google|other), mx_hosts, spf_include, dkim_selector, dkim_value, dmarc_report, click_tracking. Writes MX, SPF, DMARC and DKIM when on DigitalOcean, otherwise returns records_to_add. When DigitalOcean fails, dns_error says why and records_to_add holds what to add by hand\n"+
+			"- check_domain: domain_id. Rechecks public DNS (also done daily; failing DNS pauses the domain's mailboxes) and returns the records the domain needs, each marked present or not\n"+
 			"- add_mailboxes: mailboxes [{email, from_name, signature, provider: google, password (an app password), daily_limit (optional, its own)} or custom smtp_/imap_ hosts]. Each must log in\n"+
 			"- list: the brand's mailbox pools with their limits (daily limit, warm-up, spacing, health pauses), and each mailbox with its own limit and today's sends\n"+
 			"- set_limits: limits (all of them), pool_id (default: the pool carrying outreach). Brand admins only\n"+
@@ -415,13 +425,13 @@ var outboundTools = []outboundTool{
 		"Import up to 100 people to reach into an outreach list (made if missing). They become contacts that never signed up: campaigns and newsletters never reach them. Creator fields (platform, channel_url, audience_size, niche, recent_video, personal_line) and email_source, where the address was published for business. Removes duplicates, checks suppression and verifies every address; risky ones are held and never sent.\n\nExample: add_prospects(action: add, prospects: [{email, first_name, platform: youtube, channel_url, recent_video, personal_line, email_source: \"YouTube About page\"}])",
 		changesOnly(), addProspectsRun),
 	defineOutbound("draft_outreach", "Draft outreach",
-		"Create a campaign of 1 to 5 steps and draft every first email for its prospects. Templates use {{first_name}}, {{name}}, {{channel_url}}, {{recent_video}}, {{personal_line}}, {{sender_first}} and custom fields, and {a|b} variants. A missing value skips that prospect rather than sending a blank. Each prospect gets one mailbox for the whole sequence, and follow-ups reply in the same thread. The opt-out line and mailing address are added. track_clicks and track_opens send links and an open pixel through each domain's go. subdomain (both off by default: reply rate is the main measure, pixels hurt cold delivery, and Apple Mail inflates opens). dry_run renders without saving. Nothing sends until approved (approval_mode every by default).",
+		"Create a campaign of 1 to 5 steps and draft every first email for its prospects. Templates use {{first_name}}, {{name}}, {{channel_url}}, {{recent_video}}, {{personal_line}}, {{sender_first}} and custom fields, and {a|b} variants. A missing value skips that prospect rather than sending a blank. Each prospect gets one mailbox for the whole sequence, and follow-ups reply in the same thread. The opt-out line and mailing address are added. track_clicks and track_opens send links and an open pixel through each domain's go. subdomain (both off by default: reply rate is the main measure, pixels hurt cold delivery, and Apple Mail inflates opens). dry_run returns previews of the first emails without saving anything. Nothing sends until approved (approval_mode every by default).",
 		changesOnly(), draftOutreachRun),
 	defineOutbound("review_drafts", "Review drafts",
-		"List emails waiting for approval, then approve, edit or skip them by id (up to 100 at a time). Approving lets them send, paced per mailbox inside the sending window.",
+		"List emails waiting for approval, each with its message_id, campaign and step, then approve, edit or skip them by message_id (up to 100 at a time). Approving lets them send, paced per mailbox inside the sending window.",
 		sends(), reviewDraftsRun),
 	defineOutbound("conversations", "Conversations",
-		"Replies to outreach. Any reply stops that person's sequence; opt-outs and bounces go on the suppression list. list shows replies needing attention; classify records what one means; reply answers in the same thread from the same mailbox; mark_partner records a creator who said yes.",
+		"Replies to outreach. Any reply stops that person's sequence; opt-outs and bounces go on the suppression list. list shows replies needing attention, each with the campaign it answers; classify records what one means; reply answers in the same thread from the same mailbox; mark_partner records a creator who said yes.",
 		sends(), conversationsRun),
 	defineOutbound("pause", "Pause outreach",
 		"Pause or resume all outreach, one mailbox or one campaign. A mailbox paused for DNS or health resumes only once the problem is gone.",

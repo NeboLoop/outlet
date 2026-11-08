@@ -1225,6 +1225,11 @@ type MarkContactReadResponse struct {
 	Success bool `json:"success"`
 }
 
+type MoveDomainRequest struct {
+	Id        string `path:"id"`
+	PathwayId string `json:"pathway_id"` // an outreach domain moves only to a mailbox pool, a sending domain only to platform, ses or smtp
+}
+
 type NetworkEvent struct {
 	Hash string `json:"hash"`
 	Kind string `json:"kind"` // delivered, hard_bounce, complaint, open, click
@@ -1335,6 +1340,11 @@ type OutboundAnswerRequest struct {
 	Body string `json:"body"`
 }
 
+type OutboundCampaignRef struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type OutboundCampaignRequest struct {
 	Name            string              `json:"name"`
 	List            string              `json:"list,optional"`
@@ -1352,36 +1362,38 @@ type OutboundCampaignRequest struct {
 type OutboundCampaignResponse struct {
 	CampaignId string            `json:"campaign_id,optional"`
 	Enrolled   int               `json:"enrolled"`
-	Drafts     []OutboundDraft   `json:"drafts,optional"`
+	Drafts     []OutboundDraft   `json:"drafts,optional"`   // the saved drafts
+	Previews   []OutboundPreview `json:"previews,optional"` // dry_run: the first emails, not saved
 	Skipped    map[string]string `json:"skipped,optional"`
 	Next       string            `json:"next"`
 }
 
 type OutboundCampaignResults struct {
-	Id         string               `json:"id"`
-	Name       string               `json:"name"`
-	Status     string               `json:"status"`
-	Enrolled   int64                `json:"enrolled"`
-	Reached    int64                `json:"reached"`
-	Replied    int64                `json:"replied"`
-	ReplyRate  float64              `json:"reply_rate"`
-	Opened     int64                `json:"opened"`
-	OpenRate   float64              `json:"open_rate"`
-	Clicked    int64                `json:"clicked"`
-	ClickRate  float64              `json:"click_rate"`
-	Interested int64                `json:"interested"`
-	Partners   int64                `json:"partners"`
-	Bounced    int64                `json:"bounced"`
-	BounceRate float64              `json:"bounce_rate"`
-	SpamBlocks int64                `json:"spam_blocks"`
-	OptedOut   int64                `json:"opted_out"`
-	InProgress int64                `json:"in_progress"`
-	NoReply    int64                `json:"finished_no_reply"`
-	Waiting    int64                `json:"drafts_waiting"`
-	TrackOpens bool                 `json:"track_opens"`
-	TrackClick bool                 `json:"track_clicks"`
-	Steps      []OutboundStepResult `json:"steps,optional"`
-	Replies    map[string]int64     `json:"replies_by_kind,optional"`
+	Id          string               `json:"id"`
+	Name        string               `json:"name"`
+	Status      string               `json:"status"`
+	Enrolled    int64                `json:"enrolled"`
+	Reached     int64                `json:"reached"`
+	Replied     int64                `json:"replied"`
+	ReplyRate   float64              `json:"reply_rate"`
+	Opened      int64                `json:"opened"`
+	OpenRate    float64              `json:"open_rate"`
+	Clicked     int64                `json:"clicked"`
+	ClickRate   float64              `json:"click_rate"`
+	Interested  int64                `json:"interested"`
+	Partners    int64                `json:"partners"`
+	Bounced     int64                `json:"bounced"`
+	BounceRate  float64              `json:"bounce_rate"`
+	BounceLimit float64              `json:"bounce_limit"` // percent: the outreach pathway pauses a mailbox above it; 0: never
+	SpamBlocks  int64                `json:"spam_blocks"`
+	OptedOut    int64                `json:"opted_out"`
+	InProgress  int64                `json:"in_progress"`
+	NoReply     int64                `json:"finished_no_reply"`
+	Waiting     int64                `json:"drafts_waiting"`
+	TrackOpens  bool                 `json:"track_opens"`
+	TrackClick  bool                 `json:"track_clicks"`
+	Steps       []OutboundStepResult `json:"steps,optional"`
+	Replies     map[string]int64     `json:"replies_by_kind,optional"`
 }
 
 type OutboundClassifyRequest struct {
@@ -1410,12 +1422,21 @@ type OutboundDNSTokenRequest struct {
 }
 
 type OutboundDomainInfo struct {
-	Id           string           `json:"id"`
-	Domain       string           `json:"domain"`
-	Status       string           `json:"status"`
-	TrackingHost string           `json:"tracking_host,optional"`
-	Check        OutboundDNSCheck `json:"check"`
-	CheckedAt    string           `json:"checked_at,optional"`
+	Id           string                 `json:"id"`
+	Domain       string                 `json:"domain"`
+	Status       string                 `json:"status"`
+	TrackingHost string                 `json:"tracking_host,optional"`
+	Check        OutboundDNSCheck       `json:"check"`
+	CheckedAt    string                 `json:"checked_at,optional"`
+	Records      []OutboundDomainRecord `json:"records"` // the records it needs, and which the last check found
+}
+
+type OutboundDomainRecord struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Data     string `json:"data"`
+	Priority int    `json:"priority,optional"`
+	Present  bool   `json:"present"` // the last check found it in public DNS
 }
 
 type OutboundDomainRequest struct {
@@ -1433,17 +1454,21 @@ type OutboundDomainRequest struct {
 
 type OutboundDomainResponse struct {
 	Domain       OutboundDomainInfo  `json:"domain"`
-	RecordsToAdd []OutboundDNSRecord `json:"records_to_add"`
+	RecordsToAdd []OutboundDNSRecord `json:"records_to_add"`     // to add at the DNS host by hand
+	DNSError     string              `json:"dns_error,optional"` // why DigitalOcean didn't take the records; records_to_add holds them
 }
 
 type OutboundDraft struct {
-	MessageId  string `json:"message_id,optional"`
-	ProspectId string `json:"prospect_id"`
-	To         string `json:"to"`
-	From       string `json:"from"`
-	Subject    string `json:"subject"`
-	Body       string `json:"body"`
-	SendsAfter string `json:"sends_after,optional"`
+	MessageId    string `json:"message_id"` // what approve, skip and edit take
+	CampaignId   string `json:"campaign_id"`
+	CampaignName string `json:"campaign_name"`
+	Step         int64  `json:"step"`
+	ProspectId   string `json:"prospect_id"`
+	To           string `json:"to"`
+	From         string `json:"from"`
+	Subject      string `json:"subject"`
+	Body         string `json:"body"`
+	SendsAfter   string `json:"sends_after,optional"`
 }
 
 type OutboundDraftList struct {
@@ -1475,8 +1500,17 @@ type OutboundIDRequest struct {
 }
 
 type OutboundListProspectsRequest struct {
-	ListId int64 `form:"list_id,optional"`
-	Limit  int   `form:"limit,optional,default=100"`
+	ListId     string `form:"list_id,optional"`    // one outreach list; empty: all
+	Status     string `form:"status,optional"`     // their status on it: prospect, held, ...
+	Search     string `form:"search,optional"`     // part of an email or name
+	Enrollable bool   `form:"enrollable,optional"` // only people a campaign can take now
+	Limit      int    `form:"limit,optional,default=50"`
+	Offset     int    `form:"offset,optional"`
+}
+
+type OutboundListRef struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type OutboundListRepliesRequest struct {
@@ -1504,6 +1538,9 @@ type OutboundMailboxHealth struct {
 	PoolId       string `json:"pool_id,optional"`     // its mailbox pool (sending pathway)
 	DailyLimit   *int64 `json:"daily_limit,optional"` // its own daily limit; empty uses the pool's
 	Limited      bool   `json:"limited"`              // false: no daily limit applies
+	LimitInUse   int64  `json:"limit_in_use"`         // the daily limit it sends under: its own, else its pool's; 0: none
+	WarmingUp    bool   `json:"warming_up"`           // the warm-up holds it below limit_in_use; allowed_today is today's step
+	Domain       string `json:"domain"`
 }
 
 type OutboundMailboxInput struct {
@@ -1541,6 +1578,8 @@ type OutboundOverview struct {
 	Prospects      map[string]int64          `json:"prospects"`
 	Messages       map[string]int64          `json:"messages"`
 	RepliesWaiting int64                     `json:"replies_waiting"`
+	DraftsWaiting  int64                     `json:"drafts_waiting"`
+	ReplyRate      float64                   `json:"reply_rate"` // replied over reached across every campaign, percent
 	Campaigns      []OutboundCampaignResults `json:"campaigns"`
 	Next           []string                  `json:"next"`
 }
@@ -1551,16 +1590,26 @@ type OutboundPauseRequest struct {
 	Resume bool   `json:"resume,optional"`
 }
 
+type OutboundPreview struct {
+	ProspectId string `json:"prospect_id"`
+	To         string `json:"to"`
+	From       string `json:"from"`
+	Subject    string `json:"subject"`
+	Body       string `json:"body"`
+	SendsAfter string `json:"sends_after,optional"`
+}
+
 type OutboundProspectInfo struct {
-	Id               string `json:"id"`
-	Email            string `json:"email"`
-	Name             string `json:"name"`
-	EmailSource      string `json:"email_source"`
-	ValidationStatus string `json:"validation_status"`
-	ListId           int64  `json:"list_id"`
-	ListName         string `json:"list_name"`
-	Status           string `json:"status"`
-	CreatedAt        string `json:"created_at"`
+	Id               string                       `json:"id"`
+	Email            string                       `json:"email"`
+	Name             string                       `json:"name"`
+	EmailSource      string                       `json:"email_source"`
+	ValidationStatus string                       `json:"validation_status"`
+	CreatedAt        string                       `json:"created_at"`
+	Lists            []OutboundProspectListStatus `json:"lists"`     // the outreach lists they are on, with their status on each
+	Campaigns        []OutboundCampaignRef        `json:"campaigns"` // the outreach campaigns they are in now
+	Suppressed       bool                         `json:"suppressed"`
+	Enrollable       bool                         `json:"enrollable"` // a campaign can take them now
 }
 
 type OutboundProspectInput struct {
@@ -1580,6 +1629,14 @@ type OutboundProspectInput struct {
 
 type OutboundProspectList struct {
 	Prospects []OutboundProspectInfo `json:"prospects"`
+	Total     int64                  `json:"total"` // every person matching, across pages
+	Lists     []OutboundListRef      `json:"lists"` // the brand's outreach lists
+}
+
+type OutboundProspectListStatus struct {
+	Id     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 type OutboundProspectResult struct {
@@ -1594,6 +1651,7 @@ type OutboundReplyInfo struct {
 	MailboxId      string `json:"mailbox_id"`
 	ContactId      string `json:"contact_id"`
 	SequenceId     string `json:"sequence_id"`
+	CampaignName   string `json:"campaign_name"` // the campaign it answers
 	FromEmail      string `json:"from_email"`
 	Subject        string `json:"subject"`
 	Body           string `json:"body"`
@@ -1817,21 +1875,27 @@ type SendingLimits struct {
 }
 
 type SendingPathway struct {
-	Id              string        `json:"id"`
-	Name            string        `json:"name"`
-	Provider        string        `json:"provider"` // platform, ses, smtp, mailboxes
-	Kinds           []string      `json:"kinds"`    // transactional, marketing, outreach
-	AWSRegion       string        `json:"aws_region,optional"`
-	AWSKeysSet      bool          `json:"aws_keys_set"`
-	SMTPHost        string        `json:"smtp_host,optional"`
-	SMTPPort        int64         `json:"smtp_port,optional"`
-	SMTPUsername    string        `json:"smtp_username,optional"`
-	SMTPPasswordSet bool          `json:"smtp_password_set"`
-	Limits          SendingLimits `json:"limits"`
-	Domains         []string      `json:"domains"`
-	Mailboxes       int64         `json:"mailboxes"`
-	Warning         string        `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
-	CreatedAt       string        `json:"created_at"`
+	Id              string                 `json:"id"`
+	Name            string                 `json:"name"`
+	Provider        string                 `json:"provider"` // platform, ses, smtp, mailboxes
+	Kinds           []string               `json:"kinds"`    // transactional, marketing, outreach
+	AWSRegion       string                 `json:"aws_region,optional"`
+	AWSKeysSet      bool                   `json:"aws_keys_set"`
+	SMTPHost        string                 `json:"smtp_host,optional"`
+	SMTPPort        int64                  `json:"smtp_port,optional"`
+	SMTPUsername    string                 `json:"smtp_username,optional"`
+	SMTPPasswordSet bool                   `json:"smtp_password_set"`
+	Limits          SendingLimits          `json:"limits"`
+	Domains         []SendingPathwayDomain `json:"domains"`
+	Mailboxes       int64                  `json:"mailboxes"`
+	Warning         string                 `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
+	CreatedAt       string                 `json:"created_at"`
+}
+
+type SendingPathwayDomain struct {
+	Id      string `json:"id"`
+	Domain  string `json:"domain"`
+	Purpose string `json:"purpose"` // sending, or outreach (its mailboxes form the pool)
 }
 
 type SendingPathwayIDRequest struct {

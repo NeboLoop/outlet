@@ -41,10 +41,10 @@ type MailboxResult struct {
 func (in *MailboxInput) fill() error {
 	in.Email = normEmail(in.Email)
 	if !strings.Contains(in.Email, "@") {
-		return refuse("email is required")
+		return refuse("An email address is required.")
 	}
 	if strings.TrimSpace(in.FromName) == "" {
-		return refuse("from_name is required: the real person who stands behind this mailbox")
+		return refuse("A from name is required: the real person who stands behind this mailbox.")
 	}
 	switch strings.ToLower(in.Provider) {
 	case "google":
@@ -52,7 +52,7 @@ func (in *MailboxInput) fill() error {
 		in.IMAPHost, in.IMAPPort = "imap.gmail.com", 993
 	case "":
 	default:
-		return refuse("provider must be google, or leave it empty and pass smtp_host and imap_host")
+		return refuse("The provider must be Google, or custom with SMTP and IMAP hosts.")
 	}
 	if in.SMTPUsername == "" {
 		in.SMTPUsername = in.Email
@@ -73,10 +73,10 @@ func (in *MailboxInput) fill() error {
 		in.IMAPPort = 993
 	}
 	if in.SMTPHost == "" || in.IMAPHost == "" || in.SMTPPassword == "" || in.IMAPPassword == "" {
-		return refuse("smtp_host, imap_host and a password are required (or provider: google with an app password)")
+		return refuse("SMTP and IMAP hosts and a password are required (or Google with an app password).")
 	}
 	if in.DailyLimit != nil && *in.DailyLimit < 1 {
-		return refuse("daily_limit is at least 1; leave it out to use the pool's")
+		return refuse("A mailbox's own daily limit is at least 1; leave it empty to use the pool's.")
 	}
 	return nil
 }
@@ -119,7 +119,7 @@ func (s *Service) addMailbox(ctx context.Context, org db.Organization, domains m
 	}
 	d, ok := domains[domainOf(in.Email)]
 	if !ok {
-		return db.Mailbox{}, refuse("%s is not on one of this brand's outreach domains; add the domain first with setup_sending(action: add_domain)", in.Email)
+		return db.Mailbox{}, refuse("%s is not on one of this brand's outreach domains. Add its domain in Outbound, Setup first.", in.Email)
 	}
 	if existing, err := s.db.GetMailboxByEmail(ctx, in.Email); err == nil {
 		if existing.OrgID != org.ID {

@@ -171,6 +171,15 @@ func TestWarmupRamp(t *testing.T) {
 	assert.EqualValues(t, 50, n, "a mailbox's own limit, reached through the ramp")
 	_, limited = Allowance(db.SendingPathway{}, start, sql.NullInt64{}, start)
 	assert.False(t, limited, "no limit set")
+
+	// Warming up until the ramp reaches the limit in use; the mailbox's own
+	// limit is its choice, never capped to the pathway's.
+	assert.EqualValues(t, 3, DailyLimitOf(row, sql.NullInt64{}))
+	assert.EqualValues(t, 50, DailyLimitOf(row, sql.NullInt64{Int64: 50, Valid: true}))
+	assert.True(t, WarmingUp(row, start, sql.NullInt64{}, start.Add(24*time.Hour)))
+	assert.False(t, WarmingUp(row, start, sql.NullInt64{}, start.Add(2*24*time.Hour)), "day 3 reaches the limit of 3")
+	assert.True(t, WarmingUp(row, start, sql.NullInt64{Int64: 50, Valid: true}, start.Add(10*24*time.Hour)), "an own limit of 50 takes longer to reach")
+	assert.False(t, WarmingUp(db.SendingPathway{DailyLimit: 30}, start, sql.NullInt64{}, start), "no warm-up")
 }
 
 // Two sends from one sender are at least the minimum gap apart.
@@ -227,6 +236,64 @@ func TestPoolPicksLeastUsedMailbox(t *testing.T) {
 	mb, err := h.store.GetMailbox(ctx, db.GetMailboxParams{ID: "mb-2", OrgID: "org-a"})
 	require.NoError(t, err)
 	assert.False(t, mb.DailyLimit.Valid)
+}
+
+// A domain moves between the brand's pathways only where its purpose fits;
+// an outreach domain takes its mailboxes, and their day's sends, along.
+func TestMoveDomain(t *testing.T) {
+	h := newPathwayHarness(t)
+	ctx := context.Background()
+	relay := h.relay(t, Limits{}, "transactional")
+	poolA, err := h.s.CreatePathway(ctx, "org-a", PathwayInput{Provider: ProviderMailboxes})
+	require.NoError(t, err)
+	poolB, err := h.s.CreatePathway(ctx, "org-a", PathwayInput{Name: "Second pool", Provider: ProviderMailboxes, Kinds: []string{"outreach"}})
+	require.NoError(t, err)
+	_, err = h.store.GetDB().Exec(`INSERT INTO domain_identities (id, org_id, domain, purpose, pathway_id) VALUES ('d-out', 'org-a', 'getexample.com', 'outreach', ?)`, poolA.ID)
+	require.NoError(t, err)
+	pw, err := h.s.cryptoSvc.EncryptString("pw")
+	require.NoError(t, err)
+	_, err = h.store.GetDB().Exec(`INSERT INTO mailboxes (id, org_id, domain_id, email, from_name, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc)
+		VALUES ('mb-1', 'org-a', 'd-out', 'sam@getexample.com', 'Sam', '127.0.0.1', 1, 'sam', ?, '127.0.0.1', 1, 'sam', ?)`, pw, pw)
+	require.NoError(t, err)
+	_, err = h.store.GetDB().Exec(`INSERT INTO send_counts (pathway_id, sender_id, day, n) VALUES (?, 'mb-1', '2026-03-02', 4), (?, 'mb-1', '2026-03-02', 1)`, poolA.ID, poolB.ID)
+	require.NoError(t, err)
+
+	_, err = h.s.MoveDomain(ctx, "org-a", "d-out", relay.ID)
+	assert.ErrorContains(t, err, "outreach domains belong to a mailbox pool")
+	_, err = h.s.MoveDomain(ctx, "org-a", "d-a", poolB.ID)
+	assert.ErrorContains(t, err, "sending domains belong to a platform, ses or smtp pathway")
+	_, err = h.s.MoveDomain(ctx, "org-b", "d-out", poolB.ID)
+	assert.ErrorContains(t, err, "no such domain", "another brand's domain")
+	assert.ErrorContains(t, h.s.DeletePathway(ctx, "org-a", poolA.ID), "move them to another pathway first")
+
+	to, err := h.s.MoveDomain(ctx, "org-a", "d-out", poolB.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Second pool", to.Name)
+	got, err := h.store.GetMailboxPathway(ctx, "mb-1")
+	require.NoError(t, err)
+	assert.Equal(t, poolB.ID, got.ID, "the mailbox moved with its domain")
+	n, err := h.store.SumSendCountsSince(ctx, db.SumSendCountsSinceParams{PathwayID: poolB.ID, SenderID: "mb-1", SinceDay: "2026-03-02"})
+	require.NoError(t, err)
+	assert.EqualValues(t, 5, n, "the day's sends count in the new pool")
+	n, err = h.store.SumSendCountsSince(ctx, db.SumSendCountsSinceParams{PathwayID: poolA.ID, SenderID: "mb-1", SinceDay: "2026-03-02"})
+	require.NoError(t, err)
+	assert.Zero(t, n)
+
+	// The emptied pool can go now.
+	require.NoError(t, h.s.DeletePathway(ctx, "org-a", poolA.ID))
+
+	// A sending domain moves between sending pathways.
+	platform, err := h.s.CreatePathway(ctx, "org-a", PathwayInput{Provider: ProviderPlatform})
+	require.NoError(t, err)
+	_, err = h.s.MoveDomain(ctx, "org-a", "d-a", platform.ID)
+	require.NoError(t, err)
+	views, err := h.s.ListPathways(ctx, "org-a")
+	require.NoError(t, err)
+	for _, v := range views {
+		if v.ID == platform.ID {
+			assert.Equal(t, []PathwayDomain{{ID: "d-a", Domain: "a.example", Purpose: "sending"}}, v.Domains)
+		}
+	}
 }
 
 // The health thresholds are the pathway's.

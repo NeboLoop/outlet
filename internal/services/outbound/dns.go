@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/email"
 
 	"github.com/google/uuid"
 )
@@ -161,7 +162,7 @@ func wantedRecords(in DomainInput) ([]DNSRecord, error) {
 		spf = "v=spf1 include:_spf.google.com ~all"
 	default:
 		if len(in.MXHosts) == 0 || in.SPFInclude == "" {
-			return nil, refuse("For mail provider %q, pass mx_hosts and spf_include (from the provider's setup page).", in.MailProvider)
+			return nil, refuse("For mail provider %q, give its MX hosts and SPF include (from the provider's setup page).", in.MailProvider)
 		}
 		for i, h := range in.MXHosts {
 			recs = append(recs, DNSRecord{Type: "MX", Name: "@", Data: strings.TrimSuffix(h, ".") + ".", Priority: 10 * (i + 1)})
@@ -183,10 +184,22 @@ func wantedRecords(in DomainInput) ([]DNSRecord, error) {
 	return recs, nil
 }
 
+// DomainResult is what adding a domain did.
+type DomainResult struct {
+	Domain db.DomainIdentity
+	// RecordsToAdd are the records still to add at the DNS host by hand: all
+	// of them for a manual domain, the ones DigitalOcean didn't take otherwise.
+	RecordsToAdd []DNSRecord
+	Check        DNSCheck
+	// DNSError says why writing the records through DigitalOcean failed. The
+	// domain is added all the same; RecordsToAdd holds what to add by hand.
+	DNSError string
+}
+
 // AddDomain registers an outreach domain, refusing the brand's own and
-// protected domains. With dns_host digitalocean it writes the missing mail
-// records; otherwise it returns them to paste.
-func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainInput) (db.DomainIdentity, []DNSRecord, DNSCheck, error) {
+// protected domains, and keeps the records it needs. With dns_host
+// digitalocean it writes the missing ones; otherwise it returns them to paste.
+func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainInput) (DomainResult, error) {
 	in.Domain = normDomain(in.Domain)
 	if in.DKIMSelector == "" {
 		in.DKIMSelector = "google"
@@ -195,59 +208,115 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 		in.DNSHost = "manual"
 	}
 	if in.DNSHost != "manual" && in.DNSHost != "digitalocean" {
-		return db.DomainIdentity{}, nil, DNSCheck{}, refuse("dns_host must be digitalocean or manual.")
+		return DomainResult{}, refuse("The DNS host must be DigitalOcean or manual (you add the records yourself).")
 	}
 	if err := s.allowedDomain(ctx, org, in.Domain); err != nil {
-		return db.DomainIdentity{}, nil, DNSCheck{}, err
+		return DomainResult{}, err
+	}
+	if in.DNSHost == "digitalocean" && (len(org.DnsTokenEnc) == 0 || s.crypto == nil) {
+		return DomainResult{}, refuse("No DigitalOcean token is saved for this brand. Save one with domain read and write access first, or add the records yourself.")
 	}
 	trackingHost := ""
 	if in.ClickTracking {
 		if s.tracking == "" {
-			return db.DomainIdentity{}, nil, DNSCheck{}, refuse("Click tracking needs this server's public host (APP_DOMAIN) in its config.")
+			return DomainResult{}, refuse("Click tracking needs this server's public host (APP_DOMAIN) in its config.")
 		}
 		in.trackingTarget, trackingHost = s.tracking, "go."+in.Domain
 	}
 	recs, err := wantedRecords(in)
 	if err != nil {
-		return db.DomainIdentity{}, nil, DNSCheck{}, err
+		return DomainResult{}, err
 	}
 	d, err := s.db.GetAnyDomainIdentity(ctx, in.Domain)
 	switch {
 	case err == nil && (d.OrgID != org.ID || d.Purpose != "outreach"):
-		return db.DomainIdentity{}, nil, DNSCheck{}, refuse("%s is already in use (another brand's, or this brand's sending domain); outreach needs a domain of its own.", in.Domain)
+		return DomainResult{}, refuse("%s is already in use (another brand's, or this brand's sending domain); outreach needs a domain of its own.", in.Domain)
 	case err != nil:
 		pool, perr := s.mailer.DomainPathway(ctx, org.ID, "outreach", in.PathwayID)
 		if perr != nil {
-			return db.DomainIdentity{}, nil, DNSCheck{}, perr
+			return DomainResult{}, perr
 		}
 		d, err = s.db.CreateOutreachDomain(ctx, db.CreateOutreachDomainParams{
 			ID: uuid.NewString(), OrgID: org.ID, Domain: in.Domain, DnsHost: in.DNSHost, DkimSelector: in.DKIMSelector,
 			TrackingHost: trackingHost, PathwayID: sql.NullString{String: pool.ID, Valid: true},
 		})
 		if err != nil {
-			return d, nil, DNSCheck{}, err
+			return DomainResult{Domain: d}, err
 		}
 	}
 	if trackingHost != "" && d.TrackingHost != trackingHost {
 		if err := s.db.SetOutreachDomainTrackingHost(ctx, db.SetOutreachDomainTrackingHostParams{TrackingHost: trackingHost, ID: d.ID}); err != nil {
-			return d, nil, DNSCheck{}, err
+			return DomainResult{Domain: d}, err
 		}
 		d.TrackingHost = trackingHost
 	}
-	var pending []DNSRecord
+	if _, err := s.db.UpdateDomainIdentityDNSRecords(ctx, db.UpdateDomainIdentityDNSRecordsParams{DnsRecords: storeRecords(recs), ID: d.ID}); err != nil {
+		return DomainResult{Domain: d}, err
+	}
+	res := DomainResult{RecordsToAdd: recs}
 	if in.DNSHost == "digitalocean" {
-		pending, err = s.writeDigitalOcean(ctx, org.ID, in.Domain, recs)
-		if err != nil {
-			return d, recs, DNSCheck{}, err
+		if res.RecordsToAdd, err = s.writeDigitalOcean(ctx, org.ID, in.Domain, recs); err != nil {
+			res.DNSError = err.Error()
 		}
-	} else {
-		pending = recs
 	}
-	c, err := s.CheckDomain(ctx, d)
+	res.Check, err = s.CheckDomain(ctx, d)
 	if err == nil {
-		d, err = s.db.GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: d.ID, OrgID: org.ID})
+		res.Domain, err = s.db.GetOutreachDomain(ctx, db.GetOutreachDomainParams{ID: d.ID, OrgID: org.ID})
 	}
-	return d, pending, c, err
+	return res, err
+}
+
+// storeRecords keeps a domain's wanted records in its dns_records column, in
+// the shape every domain's records take there.
+func storeRecords(recs []DNSRecord) sql.NullString {
+	stored := make([]*email.DNSRecord, 0, len(recs))
+	for _, r := range recs {
+		stored = append(stored, &email.DNSRecord{Type: r.Type, Name: r.Name, Value: r.Data, Priority: r.Priority})
+	}
+	raw, _ := email.DNSRecordsToJSON(stored)
+	return sql.NullString{String: raw, Valid: true}
+}
+
+// DomainRecord is one record a domain needs, and whether the last check
+// found it in public DNS.
+type DomainRecord struct {
+	DNSRecord
+	Present bool `json:"present"`
+}
+
+// domainRecords reads a domain's stored records against its last check.
+func domainRecords(d db.DomainIdentity, c DNSCheck) []DomainRecord {
+	out := []DomainRecord{}
+	if !d.DnsRecords.Valid || d.DnsRecords.String == "" {
+		return out
+	}
+	stored, err := email.DNSRecordsFromJSON(d.DnsRecords.String)
+	if err != nil {
+		return out
+	}
+	for _, r := range stored {
+		rec := DNSRecord{Type: r.Type, Name: r.Name, Data: r.Value, Priority: r.Priority}
+		out = append(out, DomainRecord{DNSRecord: rec, Present: c.has(rec)})
+	}
+	return out
+}
+
+// has says whether the check found the record's kind: the check reads MX,
+// SPF, DMARC, DKIM and the tracking CNAME, one answer each.
+func (c DNSCheck) has(r DNSRecord) bool {
+	switch {
+	case r.Type == "MX":
+		return c.MX
+	case r.Type == "CNAME":
+		return c.Tracking != nil && *c.Tracking
+	case r.Name == "_dmarc":
+		return c.DMARC
+	case strings.HasSuffix(r.Name, "._domainkey"):
+		return c.DKIM
+	case r.Type == "TXT":
+		return c.SPF
+	}
+	return false
 }
 
 // allowedDomain refuses protected domains, the brand's own sending domain
@@ -290,14 +359,12 @@ type doRecord struct {
 
 // writeDigitalOcean adds the records the domain lacks. It never adds a second
 // SPF or DMARC record, and never touches records it didn't ask for. It
-// returns the records it could not write (none, when all went in).
+// returns the records it could not write (none, when all went in; all of
+// them, when DigitalOcean couldn't be read).
 func (s *Service) writeDigitalOcean(ctx context.Context, orgID, domain string, want []DNSRecord) ([]DNSRecord, error) {
 	org, err := s.db.GetOrganizationByID(ctx, orgID)
 	if err != nil {
-		return nil, err
-	}
-	if len(org.DnsTokenEnc) == 0 || s.crypto == nil {
-		return want, refuse("No DigitalOcean token is set. Call setup_sending(action: dns_token, token: ...) with a token limited to domain read and write, or use dns_host: manual.")
+		return want, err
 	}
 	token, err := s.crypto.DecryptString(org.DnsTokenEnc)
 	if err != nil {
@@ -378,7 +445,7 @@ func (s *Service) doCall(ctx context.Context, token, method, path string, in, ou
 		return refuse("DigitalOcean has no zone for this domain. Point the domain's nameservers at DigitalOcean and add it there first.")
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("digitalocean %s %s: HTTP %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
+		return fmt.Errorf("DigitalOcean answered HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	if out != nil {
 		return json.Unmarshal(raw, out)

@@ -10,6 +10,27 @@ import (
 	"database/sql"
 )
 
+const carryDomainSendCounts = `-- name: CarryDomainSendCounts :exec
+INSERT INTO send_counts (pathway_id, sender_id, day, n)
+SELECT ?1, sc.sender_id, sc.day, sc.n FROM send_counts sc
+WHERE sc.pathway_id = ?2
+  AND sc.sender_id IN (SELECT m.id FROM mailboxes m WHERE m.domain_id = ?3)
+ON CONFLICT (pathway_id, sender_id, day) DO UPDATE SET n = send_counts.n + excluded.n
+`
+
+type CarryDomainSendCountsParams struct {
+	ToPathwayID   string `json:"to_pathway_id"`
+	FromPathwayID string `json:"from_pathway_id"`
+	DomainID      string `json:"domain_id"`
+}
+
+// The send counts of a moved domain's mailboxes go to their new pool, so a
+// move never resets a mailbox's day.
+func (q *Queries) CarryDomainSendCounts(ctx context.Context, arg CarryDomainSendCountsParams) error {
+	_, err := q.db.ExecContext(ctx, carryDomainSendCounts, arg.ToPathwayID, arg.FromPathwayID, arg.DomainID)
+	return err
+}
+
 const claimMailboxSpacing = `-- name: ClaimMailboxSpacing :execrows
 UPDATE mailboxes SET next_send_at = ?1
 WHERE id = ?2 AND (next_send_at IS NULL OR next_send_at <= ?3)
@@ -192,6 +213,22 @@ type DeferQueuedEmailParams struct {
 // A sequence email held back by a pathway limit waits, unclaimed and still pending.
 func (q *Queries) DeferQueuedEmail(ctx context.Context, arg DeferQueuedEmailParams) error {
 	_, err := q.db.ExecContext(ctx, deferQueuedEmail, arg.ScheduledFor, arg.ID)
+	return err
+}
+
+const deleteDomainSendCounts = `-- name: DeleteDomainSendCounts :exec
+DELETE FROM send_counts
+WHERE pathway_id = ?1
+  AND sender_id IN (SELECT m.id FROM mailboxes m WHERE m.domain_id = ?2)
+`
+
+type DeleteDomainSendCountsParams struct {
+	PathwayID string `json:"pathway_id"`
+	DomainID  string `json:"domain_id"`
+}
+
+func (q *Queries) DeleteDomainSendCounts(ctx context.Context, arg DeleteDomainSendCountsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteDomainSendCounts, arg.PathwayID, arg.DomainID)
 	return err
 }
 
@@ -616,6 +653,27 @@ func (q *Queries) ReleaseKindsFromOtherPathways(ctx context.Context, arg Release
 		arg.ID,
 	)
 	return err
+}
+
+const setDomainPathway = `-- name: SetDomainPathway :execrows
+UPDATE domain_identities SET pathway_id = ?1, updated_at = datetime('now')
+WHERE id = ?2 AND org_id = ?3
+`
+
+type SetDomainPathwayParams struct {
+	PathwayID sql.NullString `json:"pathway_id"`
+	ID        string         `json:"id"`
+	OrgID     string         `json:"org_id"`
+}
+
+// Moves a domain to another of the brand's pathways; an outreach domain's
+// mailboxes go with it (a mailbox belongs to its domain's pool).
+func (q *Queries) SetDomainPathway(ctx context.Context, arg SetDomainPathwayParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setDomainPathway, arg.PathwayID, arg.ID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setMailboxDailyLimit = `-- name: SetMailboxDailyLimit :execrows

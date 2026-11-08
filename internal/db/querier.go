@@ -32,6 +32,9 @@ type Querier interface {
 	CancelOpenOutreachForContact(ctx context.Context, contactID sql.NullString) error
 	CancelPendingEmailsForContactSequence(ctx context.Context, arg CancelPendingEmailsForContactSequenceParams) error
 	CancelValidationJob(ctx context.Context, arg CancelValidationJobParams) (int64, error)
+	// The send counts of a moved domain's mailboxes go to their new pool, so a
+	// move never resets a mailbox's day.
+	CarryDomainSendCounts(ctx context.Context, arg CarryDomainSendCountsParams) error
 	CheckCampaignSendExists(ctx context.Context, arg CheckCampaignSendExistsParams) (int64, error)
 	CheckEmailExists(ctx context.Context, email string) (int64, error)
 	// Check if an event has already been processed by a rule
@@ -203,6 +206,7 @@ type Querier interface {
 	DeleteCustomFieldsByList(ctx context.Context, listID int64) error
 	DeleteDomainIdentity(ctx context.Context, id string) error
 	DeleteDomainIdentityByOrg(ctx context.Context, arg DeleteDomainIdentityByOrgParams) error
+	DeleteDomainSendCounts(ctx context.Context, arg DeleteDomainSendCountsParams) error
 	DeleteEmailBounce(ctx context.Context, email string) error
 	DeleteEmailComplaint(ctx context.Context, email string) error
 	DeleteEmailDesign(ctx context.Context, arg DeleteEmailDesignParams) error
@@ -488,6 +492,8 @@ type Querier interface {
 	ListActiveListSubscriberEmails(ctx context.Context, listID int64) ([]string, error)
 	// Every mailbox the sender works, across brands.
 	ListActiveMailboxes(ctx context.Context) ([]Mailbox, error)
+	// The outreach campaigns some people are in now.
+	ListActiveOutreachCampaignsFor(ctx context.Context, arg ListActiveOutreachCampaignsForParams) ([]ListActiveOutreachCampaignsForRow, error)
 	ListActiveOutreachStatesForContact(ctx context.Context, contactID sql.NullString) ([]ContactSequenceState, error)
 	ListAllContactTags(ctx context.Context) ([]ListAllContactTagsRow, error)
 	ListAllMailboxes(ctx context.Context) ([]Mailbox, error)
@@ -510,7 +516,8 @@ type Querier interface {
 	ListEmailDesignsByCategory(ctx context.Context, arg ListEmailDesignsByCategoryParams) ([]EmailDesign, error)
 	ListEmailLists(ctx context.Context, orgID string) ([]EmailList, error)
 	ListEmailQueueByOrg(ctx context.Context, arg ListEmailQueueByOrgParams) ([]ListEmailQueueByOrgRow, error)
-	ListEmailReplies(ctx context.Context, arg ListEmailRepliesParams) ([]EmailReply, error)
+	// Replies with the name of the campaign each answers.
+	ListEmailReplies(ctx context.Context, arg ListEmailRepliesParams) ([]ListEmailRepliesRow, error)
 	ListEntryRulesByList(ctx context.Context, sourceID string) ([]ListEntryRulesByListRow, error)
 	ListEntryRulesBySequence(ctx context.Context, sequenceID string) ([]ListEntryRulesBySequenceRow, error)
 	ListImportJobs(ctx context.Context, arg ListImportJobsParams) ([]ImportJob, error)
@@ -521,7 +528,8 @@ type Querier interface {
 	ListNetworkInstances(ctx context.Context) ([]NetworkInstance, error)
 	ListOrganizations(ctx context.Context) ([]Organization, error)
 	ListOutreachDomains(ctx context.Context, orgID string) ([]DomainIdentity, error)
-	// A brand's outreach emails with one status, oldest first.
+	// A brand's outreach emails with one status, oldest first, with the
+	// campaign and step each belongs to.
 	ListOutreachEmails(ctx context.Context, arg ListOutreachEmailsParams) ([]ListOutreachEmailsRow, error)
 	ListOutreachEmailsForSequence(ctx context.Context, sequenceID sql.NullString) ([]ListOutreachEmailsForSequenceRow, error)
 	ListOutreachLists(ctx context.Context, orgID string) ([]EmailList, error)
@@ -535,7 +543,12 @@ type Querier interface {
 	ListPlatformSettings(ctx context.Context) ([]PlatformSetting, error)
 	ListPoolMailboxes(ctx context.Context, pathwayID sql.NullString) ([]Mailbox, error)
 	ListProcessingValidationJobs(ctx context.Context) ([]ValidationJob, error)
-	// Prospects on a brand's outreach lists, newest first.
+	// The outreach lists of some people, with their status on each.
+	ListProspectSubscriptions(ctx context.Context, arg ListProspectSubscriptionsParams) ([]ListProspectSubscriptionsRow, error)
+	// One row per person on a brand's outreach lists, newest first, with what
+	// decides whether they can be enrolled: a 'prospect' status (on the list
+	// filtered by, else on any), an active outreach campaign, and suppression
+	// (the check IsSendBlocked makes). total counts every matching person.
 	ListProspects(ctx context.Context, arg ListProspectsParams) ([]ListProspectsRow, error)
 	ListRecentBounces(ctx context.Context, arg ListRecentBouncesParams) ([]EmailBounce, error)
 	ListRecentComplaints(ctx context.Context, arg ListRecentComplaintsParams) ([]EmailComplaint, error)
@@ -637,6 +650,9 @@ type Querier interface {
 	ScheduleCampaign(ctx context.Context, arg ScheduleCampaignParams) (EmailCampaign, error)
 	SetCampaignRecipientsCount(ctx context.Context, arg SetCampaignRecipientsCountParams) error
 	SetContactVerificationToken(ctx context.Context, arg SetContactVerificationTokenParams) error
+	// Moves a domain to another of the brand's pathways; an outreach domain's
+	// mailboxes go with it (a mailbox belongs to its domain's pool).
+	SetDomainPathway(ctx context.Context, arg SetDomainPathwayParams) (int64, error)
 	SetEmailReplyClassification(ctx context.Context, arg SetEmailReplyClassificationParams) error
 	SetEmailReplyHandled(ctx context.Context, arg SetEmailReplyHandledParams) error
 	SetImportJobErrors(ctx context.Context, arg SetImportJobErrorsParams) error
