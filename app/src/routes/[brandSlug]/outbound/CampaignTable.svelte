@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import type { OutboundCampaignResults } from '$lib/api';
 	import { Badge } from '$lib/components/ui';
-	import { BOUNCE_LIMIT, percent } from './shared';
+	import { overBounceLimit, percent } from './shared';
 
 	let { campaigns }: { campaigns: OutboundCampaignResults[] } = $props();
 
@@ -57,9 +57,9 @@
 							<span class="text-text-muted">Off</span>
 						{/if}
 					</td>
-					<td class="text-right" class:text-error={c.bounce_rate > BOUNCE_LIMIT}>
+					<td class="text-right" class:text-error={overBounceLimit(c)}>
 						{c.bounced}
-						<span class="block text-xs" class:text-text-muted={c.bounce_rate <= BOUNCE_LIMIT}>{percent(c.bounce_rate)}</span>
+						<span class="block text-xs" class:text-text-muted={!overBounceLimit(c)}>{percent(c.bounce_rate)}</span>
 					</td>
 					<td class="text-right" class:text-error={c.spam_blocks > 0}>{c.spam_blocks}</td>
 					<td class="text-right">{c.opted_out}</td>

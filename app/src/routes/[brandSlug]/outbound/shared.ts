@@ -1,6 +1,6 @@
 // Helpers shared by the Outbound screens.
 
-import type { OutboundMailboxHealth } from '$lib/api';
+import type { OutboundCampaignResults, OutboundMailboxHealth } from '$lib/api';
 
 export function errorMessage(err: unknown, fallback: string): string {
 	return err instanceof Error && err.message ? err.message : fallback;
@@ -26,7 +26,11 @@ export function mailboxLimit(m: OutboundMailboxHealth): string {
 	return m.limit_in_use ? `${limit} (${whose})` : 'No daily limit';
 }
 
-export const BOUNCE_LIMIT = 3;
+// Whether a campaign bounces above the rate at which its outreach pathway
+// pauses a mailbox (a limit of 0 never pauses).
+export function overBounceLimit(c: OutboundCampaignResults): boolean {
+	return c.bounce_limit > 0 && c.bounce_rate > c.bounce_limit;
+}
 
 export const CLASSIFICATIONS: { value: string; label: string }[] = [
 	{ value: 'interested', label: 'Interested' },

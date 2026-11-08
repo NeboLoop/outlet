@@ -3,7 +3,7 @@
 	import { getOutboundCampaign, pauseOutbound, type OutboundCampaignResults } from '$lib/api';
 	import { Button, Alert, LoadingSpinner, Badge } from '$lib/components/ui';
 	import { ArrowLeft, Pause, Play } from '@lucide/svelte';
-	import { BOUNCE_LIMIT, classificationLabel, errorMessage, percent } from '../../shared';
+	import { classificationLabel, errorMessage, overBounceLimit, percent } from '../../shared';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -110,9 +110,9 @@
 				<p class="text-2xl font-semibold text-text-muted">Off</p>
 			{/if}
 		</div>
-		<div class="rounded-lg border p-4" class:border-border={campaign.bounce_rate <= BOUNCE_LIMIT} class:border-error={campaign.bounce_rate > BOUNCE_LIMIT}>
+		<div class="rounded-lg border p-4" class:border-border={!overBounceLimit(campaign)} class:border-error={overBounceLimit(campaign)}>
 			<p class="text-xs text-text-muted">Bounced</p>
-			<p class="text-2xl font-semibold" class:text-text={campaign.bounce_rate <= BOUNCE_LIMIT} class:text-error={campaign.bounce_rate > BOUNCE_LIMIT}>
+			<p class="text-2xl font-semibold" class:text-text={!overBounceLimit(campaign)} class:text-error={overBounceLimit(campaign)}>
 				{campaign.bounced} <span class="text-sm font-normal">{percent(campaign.bounce_rate)}</span>
 			</p>
 		</div>

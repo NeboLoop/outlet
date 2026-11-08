@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { OutboundMailboxHealth } from '$lib/api';
-import { mailboxLimit, pageRange } from './shared';
+import type { OutboundCampaignResults, OutboundMailboxHealth } from '$lib/api';
+import { mailboxLimit, overBounceLimit, pageRange } from './shared';
 
 describe('pageRange', () => {
 	it('says which rows a page shows', () => {
@@ -45,5 +45,20 @@ describe('mailboxLimit', () => {
 
 	it('says when nothing limits it', () => {
 		expect(mailboxLimit(box({ limit_in_use: 0, limited: false }))).toBe('No daily limit');
+	});
+});
+
+describe('overBounceLimit', () => {
+	const campaign = (bounce_rate: number, bounce_limit: number) =>
+		({ bounce_rate, bounce_limit }) as OutboundCampaignResults;
+
+	it("uses the outreach pathway's threshold", () => {
+		expect(overBounceLimit(campaign(4, 3))).toBe(true);
+		expect(overBounceLimit(campaign(4, 5))).toBe(false);
+		expect(overBounceLimit(campaign(3, 3))).toBe(false);
+	});
+
+	it('never flags when the pathway never pauses', () => {
+		expect(overBounceLimit(campaign(40, 0))).toBe(false);
 	});
 });

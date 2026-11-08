@@ -1043,6 +1043,15 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 	assert.EqualValues(t, 1, r.Replied)
 	assert.EqualValues(t, 50, r.ReplyRate)
 	assert.EqualValues(t, 50, o.ReplyRate, "replied over reached, across campaigns")
+	assert.EqualValues(t, 3, r.BounceLimit, "the outreach pool's own pause threshold, in percent")
+	pool, err := h.store.GetPathwayForKind(ctx, db.GetPathwayForKindParams{OrgID: h.org.ID, Kind: "outreach"})
+	require.NoError(t, err)
+	limits := email.LimitsOf(pool)
+	limits.PauseBounceRate = 0.05
+	_, err = h.mailer.UpdatePathway(ctx, h.org.ID, pool.ID, email.PathwayInput{Kinds: email.KindsOf(pool), Limits: &limits})
+	require.NoError(t, err)
+	o, _ = h.svc.Overview(ctx, h.org)
+	assert.EqualValues(t, 5, o.Campaigns[0].BounceLimit, "changing the threshold changes what the screens color")
 	assert.EqualValues(t, 1, r.Clicked, "the scanner-speed click isn't counted; the later one is, once per person")
 	assert.EqualValues(t, 50, r.ClickRate)
 

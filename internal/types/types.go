@@ -1369,30 +1369,31 @@ type OutboundCampaignResponse struct {
 }
 
 type OutboundCampaignResults struct {
-	Id         string               `json:"id"`
-	Name       string               `json:"name"`
-	Status     string               `json:"status"`
-	Enrolled   int64                `json:"enrolled"`
-	Reached    int64                `json:"reached"`
-	Replied    int64                `json:"replied"`
-	ReplyRate  float64              `json:"reply_rate"`
-	Opened     int64                `json:"opened"`
-	OpenRate   float64              `json:"open_rate"`
-	Clicked    int64                `json:"clicked"`
-	ClickRate  float64              `json:"click_rate"`
-	Interested int64                `json:"interested"`
-	Partners   int64                `json:"partners"`
-	Bounced    int64                `json:"bounced"`
-	BounceRate float64              `json:"bounce_rate"`
-	SpamBlocks int64                `json:"spam_blocks"`
-	OptedOut   int64                `json:"opted_out"`
-	InProgress int64                `json:"in_progress"`
-	NoReply    int64                `json:"finished_no_reply"`
-	Waiting    int64                `json:"drafts_waiting"`
-	TrackOpens bool                 `json:"track_opens"`
-	TrackClick bool                 `json:"track_clicks"`
-	Steps      []OutboundStepResult `json:"steps,optional"`
-	Replies    map[string]int64     `json:"replies_by_kind,optional"`
+	Id          string               `json:"id"`
+	Name        string               `json:"name"`
+	Status      string               `json:"status"`
+	Enrolled    int64                `json:"enrolled"`
+	Reached     int64                `json:"reached"`
+	Replied     int64                `json:"replied"`
+	ReplyRate   float64              `json:"reply_rate"`
+	Opened      int64                `json:"opened"`
+	OpenRate    float64              `json:"open_rate"`
+	Clicked     int64                `json:"clicked"`
+	ClickRate   float64              `json:"click_rate"`
+	Interested  int64                `json:"interested"`
+	Partners    int64                `json:"partners"`
+	Bounced     int64                `json:"bounced"`
+	BounceRate  float64              `json:"bounce_rate"`
+	BounceLimit float64              `json:"bounce_limit"` // percent: the outreach pathway pauses a mailbox above it; 0: never
+	SpamBlocks  int64                `json:"spam_blocks"`
+	OptedOut    int64                `json:"opted_out"`
+	InProgress  int64                `json:"in_progress"`
+	NoReply     int64                `json:"finished_no_reply"`
+	Waiting     int64                `json:"drafts_waiting"`
+	TrackOpens  bool                 `json:"track_opens"`
+	TrackClick  bool                 `json:"track_clicks"`
+	Steps       []OutboundStepResult `json:"steps,optional"`
+	Replies     map[string]int64     `json:"replies_by_kind,optional"`
 }
 
 type OutboundClassifyRequest struct {

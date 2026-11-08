@@ -1481,6 +1481,7 @@ export interface OutboundCampaignResults {
 	partners: number
 	bounced: number
 	bounce_rate: number
+	bounce_limit: number // percent: the outreach pathway pauses a mailbox above it; 0: never
 	spam_blocks: number
 	opted_out: number
 	in_progress: number
