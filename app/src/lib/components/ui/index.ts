@@ -9,6 +9,7 @@
 export { default as Page } from './Page.svelte';
 export { default as PageHeader } from './PageHeader.svelte';
 export { default as Card } from './Card.svelte';
+export { default as BrandMark } from './BrandMark.svelte';
 export { default as Divider } from './Divider.svelte';
 
 // Feedback Components

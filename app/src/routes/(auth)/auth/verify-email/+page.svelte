@@ -33,64 +33,59 @@
 	<title>Verify Email - Outlet</title>
 </svelte:head>
 
-<div class="space-y-8">
-	<div class="text-center">
-		<h1 class="text-4xl font-bold text-text">Outlet</h1>
-		<h2 class="mt-6 text-2xl font-semibold text-text">Email Verification</h2>
-	</div>
+<header class="auth-header">
+	<h1 class="auth-title">Email Verification</h1>
+</header>
 
-	<Card>
-		{#if verifying}
-			<div class="text-center space-y-4 py-4">
-				<div class="mx-auto flex items-center justify-center h-12 w-12">
-					<Spinner size={32} class="text-primary" />
-				</div>
-				<div>
-					<h3 class="text-lg font-medium text-text">Verifying your email...</h3>
-					<p class="mt-2 text-sm text-text-muted">
-						Please wait while we verify your email address.
-					</p>
-				</div>
+<Card class="auth-card">
+	{#if verifying}
+		<div class="auth-status">
+			<div class="auth-status-icon">
+				<Spinner size={32} class="text-primary" />
 			</div>
-		{:else if verified}
-			<div class="text-center space-y-4 py-4">
-				<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-success/10">
-					<CheckCircle class="h-6 w-6 text-success" />
-				</div>
-				<div>
-					<h3 class="text-lg font-medium text-text">Email verified successfully</h3>
-					<p class="mt-2 text-sm text-text-muted">
-						Your email address has been verified. You can now access all features of your Outlet account.
-					</p>
-				</div>
-				<div class="pt-4">
-					<Button
-						href="/auth/login"
-						type="primary"
-						size="lg"
-						class="justify-center"
-					>
-						Continue to login
-					</Button>
-				</div>
+			<div>
+				<h2 class="auth-status-title">Verifying your email...</h2>
+				<p class="auth-status-text">
+					Please wait while we verify your email address.
+				</p>
 			</div>
-		{:else if error}
-			<div class="text-center space-y-4 py-4">
-				<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-error/10">
-					<XCircle class="h-6 w-6 text-error" />
-				</div>
-				<div>
-					<h3 class="text-lg font-medium text-text">Verification failed</h3>
-					<p class="mt-2 text-sm text-text-muted">
-						{error}
-					</p>
-				</div>
-				<div class="pt-4">
-					<a href="/auth/login" class="block text-sm font-medium text-primary hover:underline">
-						Return to login
-					</a>
-				</div>
+		</div>
+	{:else if verified}
+		<div class="auth-status">
+			<div class="auth-status-icon bg-success/10">
+				<CheckCircle class="h-6 w-6 text-success" />
 			</div>
-		{/if}
-	</Card>
-</div>
+			<div>
+				<h2 class="auth-status-title">Email verified successfully</h2>
+				<p class="auth-status-text">
+					Your email address has been verified. You can now access all features of your Outlet account.
+				</p>
+			</div>
+			<div class="pt-2">
+				<Button
+					href="/auth/login"
+					type="primary"
+					size="lg"
+					class="w-full justify-center"
+				>
+					Continue to login
+				</Button>
+			</div>
+		</div>
+	{:else if error}
+		<div class="auth-status">
+			<div class="auth-status-icon bg-error/10">
+				<XCircle class="h-6 w-6 text-error" />
+			</div>
+			<div>
+				<h2 class="auth-status-title">Verification failed</h2>
+				<p class="auth-status-text">
+					{error}
+				</p>
+			</div>
+			<div class="pt-2">
+				<a href="/auth/login" class="auth-link">Return to login</a>
+			</div>
+		</div>
+	{/if}
+</Card>

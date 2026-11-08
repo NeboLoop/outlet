@@ -73,9 +73,14 @@
 				: icon
 	);
 
-	const alertClass = $derived(
-		alertType === 'security' ? 'alert alert-warning' : `alert alert-${alertType}`
-	);
+	// Whole class names, so Tailwind finds each one in the source and builds it
+	const alertClass = $derived({
+		info: 'alert alert-info',
+		success: 'alert alert-success',
+		warning: 'alert alert-warning',
+		error: 'alert alert-error',
+		security: 'alert alert-warning'
+	}[alertType]);
 
 	const iconColorClass = $derived({
 		info: 'text-info',
@@ -88,7 +93,7 @@
 
 {#if visible}
 	<div class="{alertClass} {canDismiss ? 'pr-12' : ''} {extraClass}">
-		<Icon class="h-6 w-6 shrink-0 {iconColorClass}" />
+		<Icon class="alert-icon {iconColorClass}" />
 		<div class="flex flex-col gap-1">
 			{#if title}
 				<h3 class="font-semibold">{title}</h3>
