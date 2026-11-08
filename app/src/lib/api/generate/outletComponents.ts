@@ -1270,6 +1270,16 @@ export interface ListValidationResultsResponse {
 	limit: number
 }
 
+export interface ListWebhookDeliveriesRequest {
+}
+export interface ListWebhookDeliveriesRequestParams {
+	limit?: number // default 50, max 200
+}
+
+export interface ListWebhookDeliveriesResponse {
+	deliveries: Array<WebhookDeliveryInfo>
+}
+
 export interface ListWebhookLogsRequest {
 }
 export interface ListWebhookLogsRequestParams {
@@ -1994,6 +2004,17 @@ export interface RemoveContactTagsRequestParams {
 export interface RemoveSubscriberRequest {
 }
 export interface RemoveSubscriberRequestParams {
+}
+
+export interface ResendWebhookDeliveryRequest {
+}
+export interface ResendWebhookDeliveryRequestParams {
+}
+
+export interface ResendWebhookDeliveryResponse {
+	delivery: WebhookDeliveryInfo
+	success: boolean
+	error?: string
 }
 
 export interface ResetPasswordRequest {
@@ -2749,6 +2770,19 @@ export interface VersionInfo {
 	arch: string
 }
 
+export interface WebhookDeliveryInfo {
+	id: string
+	event: string
+	status: string // pending (waiting to retry), sending, succeeded, failed
+	attempts: number
+	max_attempts: number
+	last_status_code?: number // HTTP status of the last try
+	last_error?: string
+	next_retry_at?: string // when pending
+	created_at: string
+	updated_at: string
+}
+
 export interface WebhookInfo {
 	id: string
 	url: string
@@ -2761,6 +2795,9 @@ export interface WebhookInfo {
 	deliveries_failed: number
 	last_delivery_at?: string
 	last_status?: number // HTTP status code
+	// Retries (admin list): deliveries waiting for another try, and when the next one is
+	waiting_deliveries?: number
+	next_retry_at?: string
 }
 
 export interface WebhookLogInfo {

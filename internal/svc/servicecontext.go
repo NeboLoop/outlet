@@ -139,7 +139,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	trackingService := tracking.New(store, eventSubject)
 
 	// Initialize and start Webhook Dispatcher for outbound webhook delivery
-	webhookDispatcher := webhook.NewDispatcher(store.Queries, eventSubject)
+	webhookDispatcher := webhook.NewDispatcher(store.Queries, eventSubject, webhook.DefaultRetryConfig())
 	if err := webhookDispatcher.Start(context.Background()); err != nil {
 		log.Printf("Warning: Failed to start webhook dispatcher: %v", err)
 	} else {
