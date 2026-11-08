@@ -74,7 +74,11 @@ type Overview struct {
 	Prospects      map[string]int64  `json:"prospects"`
 	Messages       map[string]int64  `json:"messages"`
 	RepliesWaiting int64             `json:"replies_waiting"`
-	Campaigns      []CampaignResults `json:"campaigns"`
+	DraftsWaiting  int64             `json:"drafts_waiting"`
+	// ReplyRate is people who replied over people reached, across every
+	// campaign, in percent.
+	ReplyRate float64           `json:"reply_rate"`
+	Campaigns []CampaignResults `json:"campaigns"`
 	Next           []string          `json:"next"`
 }
 
@@ -127,12 +131,16 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 		}
 	}
 	o.RepliesWaiting, _ = s.db.CountUnhandledEmailReplies(ctx, org.ID)
+	o.DraftsWaiting = o.Messages["draft"]
 	seqs, _ := s.db.ListOutreachSequences(ctx, sql.NullString{String: org.ID, Valid: true})
+	var reached, replied int64
 	for _, c := range seqs {
 		if r, err := s.CampaignResults(ctx, c, false); err == nil {
 			o.Campaigns = append(o.Campaigns, r)
+			reached, replied = reached+r.Reached, replied+r.Replied
 		}
 	}
+	o.ReplyRate = pct(replied, reached)
 
 	switch {
 	case !o.Enabled:
@@ -152,8 +160,8 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 			o.Next = append(o.Next, fmt.Sprintf("%s is paused (%s). Explaining the mailbox says how to fix it.", mb.Email, mb.Reason))
 		}
 	}
-	if n := o.Messages["draft"]; n > 0 {
-		o.Next = append(o.Next, fmt.Sprintf("%d drafts wait for approval.", n))
+	if o.DraftsWaiting > 0 {
+		o.Next = append(o.Next, fmt.Sprintf("%d drafts wait for approval.", o.DraftsWaiting))
 	}
 	if o.RepliesWaiting > 0 {
 		o.Next = append(o.Next, fmt.Sprintf("%d replies need you.", o.RepliesWaiting))

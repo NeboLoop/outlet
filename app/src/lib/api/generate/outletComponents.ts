@@ -1679,6 +1679,8 @@ export interface OutboundOverview {
 	prospects: { [key: string]: number }
 	messages: { [key: string]: number }
 	replies_waiting: number
+	drafts_waiting: number
+	reply_rate: number // replied over reached across every campaign, percent
 	campaigns: Array<OutboundCampaignResults>
 	next: Array<string>
 }

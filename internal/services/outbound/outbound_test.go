@@ -726,6 +726,7 @@ func TestOperations(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, o.Enabled)
 	assert.EqualValues(t, 1, o.Messages["draft"])
+	assert.EqualValues(t, 1, o.DraftsWaiting)
 	assert.Len(t, o.Mailboxes, 2)
 	assert.Contains(t, strings.Join(o.Next, " "), "drafts wait")
 
@@ -1041,6 +1042,7 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 	assert.EqualValues(t, 2, r.Reached)
 	assert.EqualValues(t, 1, r.Replied)
 	assert.EqualValues(t, 50, r.ReplyRate)
+	assert.EqualValues(t, 50, o.ReplyRate, "replied over reached, across campaigns")
 	assert.EqualValues(t, 1, r.Clicked, "the scanner-speed click isn't counted; the later one is, once per person")
 	assert.EqualValues(t, 50, r.ClickRate)
 

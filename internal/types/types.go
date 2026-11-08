@@ -1572,6 +1572,8 @@ type OutboundOverview struct {
 	Prospects      map[string]int64          `json:"prospects"`
 	Messages       map[string]int64          `json:"messages"`
 	RepliesWaiting int64                     `json:"replies_waiting"`
+	DraftsWaiting  int64                     `json:"drafts_waiting"`
+	ReplyRate      float64                   `json:"reply_rate"` // replied over reached across every campaign, percent
 	Campaigns      []OutboundCampaignResults `json:"campaigns"`
 	Next           []string                  `json:"next"`
 }
