@@ -755,14 +755,15 @@ type GDPRConsentRequest struct {
 type GDPRDeleteRequest struct {
 	ContactId   string `path:"contact_id"`
 	Confirm     bool   `json:"confirm"`               // Must be true to proceed
-	DeleteEmail bool   `json:"delete_email,optional"` // Also delete from email provider logs if possible
+	DeleteEmail bool   `json:"delete_email,optional"` // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
 }
 
 type GDPRDeleteResponse struct {
-	Success       bool   `json:"success"`
-	Message       string `json:"message"`
-	DeletedData   string `json:"deleted_data"` // Summary of what was deleted
-	AuditRecordId string `json:"audit_record_id"`
+	Success         bool                 `json:"success"`
+	Message         string               `json:"message"`
+	DeletedData     string               `json:"deleted_data"`     // Summary of what was deleted
+	AuditRecordId   string               `json:"audit_record_id"`  // The deletion's row in the GDPR audit log
+	ProviderResults []GDPRProviderResult `json:"provider_results"` // Set when delete_email was asked for
 }
 
 type GDPRExportRequest struct {
@@ -783,6 +784,13 @@ type GDPRLookupResponse struct {
 	Found     bool   `json:"found"`
 	ContactId string `json:"contact_id,omitempty"`
 	Email     string `json:"email,omitempty"`
+}
+
+type GDPRProviderResult struct {
+	Pathway  string `json:"pathway"`
+	Provider string `json:"provider"` // Amazon SES, SMTP relay, Mailboxes
+	Result   string `json:"result"`
+	Failed   bool   `json:"failed"`
 }
 
 type GetBackupRequest struct {

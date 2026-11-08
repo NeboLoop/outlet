@@ -1813,13 +1813,21 @@ type (
 	GDPRDeleteRequest {
 		ContactId   string `path:"contact_id"`
 		Confirm     bool   `json:"confirm"` // Must be true to proceed
-		DeleteEmail bool   `json:"delete_email,optional"` // Also delete from email provider logs if possible
+		DeleteEmail bool   `json:"delete_email,optional"` // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
+	}
+	// What one sending pathway's provider did with a request to forget an address
+	GDPRProviderResult {
+		Pathway  string `json:"pathway"`
+		Provider string `json:"provider"` // Amazon SES, SMTP relay, Mailboxes
+		Result   string `json:"result"`
+		Failed   bool   `json:"failed"`
 	}
 	GDPRDeleteResponse {
-		Success       bool   `json:"success"`
-		Message       string `json:"message"`
-		DeletedData   string `json:"deleted_data"` // Summary of what was deleted
-		AuditRecordId string `json:"audit_record_id"`
+		Success         bool                 `json:"success"`
+		Message         string               `json:"message"`
+		DeletedData     string               `json:"deleted_data"` // Summary of what was deleted
+		AuditRecordId   string               `json:"audit_record_id"` // The deletion's row in the GDPR audit log
+		ProviderResults []GDPRProviderResult `json:"provider_results"` // Set when delete_email was asked for
 	}
 	GDPRConsentRequest {
 		ContactId string `path:"contact_id"`

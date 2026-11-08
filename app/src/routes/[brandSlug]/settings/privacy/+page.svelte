@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { formatDate } from '$lib/dates';
 	import * as api from '$lib/api';
-	import type { GDPRConsentInfo, GDPRExportResponse, GDPRDeleteResponse } from '$lib/api';
+	import type { GDPRConsentInfo, GDPRExportResponse, GDPRDeleteResponse, GDPRProviderResult } from '$lib/api';
 	import { Button, Card, Input, Alert, LoadingSpinner, Badge, Toggle, AlertDialog } from '$lib/components/ui';
 	import { Search, Download, Trash2, Shield, UserX, FileText } from '@lucide/svelte';
 
@@ -20,6 +20,8 @@
 	let showDeleteConfirm = $state(false);
 	let deleting = $state(false);
 	let deleteAlsoEmail = $state(false);
+	// What each email provider did, when they were asked to forget the address
+	let providerResults = $state<GDPRProviderResult[]>([]);
 
 	// Update state
 	let saving = $state(false);
@@ -125,9 +127,10 @@
 
 		deleting = true;
 		error = '';
+		providerResults = [];
 
 		try {
-			await api.deleteContactData({}, {
+			const res = await api.deleteContactData({}, {
 				confirm: true,
 				delete_email: deleteAlsoEmail
 			}, contactId);
@@ -136,10 +139,11 @@
 			consentInfo = null;
 			contactId = '';
 			searchEmail = '';
-			success = 'Contact data deleted successfully';
-		} catch (err: any) {
+			providerResults = res.provider_results ?? [];
+			success = `Contact data deleted. Audit record ${res.audit_record_id}.`;
+		} catch (err) {
 			console.error('Failed to delete data:', err);
-			error = err.message || 'Failed to delete contact data';
+			error = err instanceof Error ? err.message : 'Failed to delete contact data';
 		} finally {
 			deleting = false;
 		}
@@ -163,6 +167,17 @@
 	<div class="mb-6">
 		<Alert type="success" title="Success">
 			<p>{success}</p>
+			{#if providerResults.length > 0}
+				<p class="mt-2 font-medium">What each email provider did:</p>
+				<ul class="mt-1 list-disc pl-5 space-y-1">
+					{#each providerResults as r (r.pathway)}
+						<li>
+							<span class="font-medium">{r.pathway} ({r.provider}):</span>
+							<span class={r.failed ? 'text-error' : ''}>{r.result}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		</Alert>
 	</div>
 {/if}
@@ -344,7 +359,19 @@
 	<div class="mt-4">
 		<label class="flex items-center gap-2">
 			<input type="checkbox" bind:checked={deleteAlsoEmail} class="rounded" />
-			<span class="text-sm text-text">Also request deletion from email provider logs (if supported)</span>
+			<span class="text-sm text-text">Also ask the brand's email providers to delete what they keep about this address</span>
 		</label>
+		<ul class="mt-2 ml-6 list-disc space-y-1 text-xs text-text-muted">
+			<li>
+				Amazon SES: the address comes off the SES account's suppression list, the only per-recipient record SES's
+				API can delete. SES keeps no sending log that can be deleted.
+			</li>
+			<li>
+				SMTP relays and mailboxes have no way to ask, so nothing is sent to them. The result names each one, so you
+				can ask its operator yourself.
+			</li>
+			<li>Outlet keeps its own bounce and suppression records for the address, so it isn't mailed again.</li>
+			<li>The request is recorded in the GDPR audit log either way.</li>
+		</ul>
 	</div>
 </AlertDialog>

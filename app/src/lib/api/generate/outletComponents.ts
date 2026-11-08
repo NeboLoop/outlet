@@ -790,7 +790,7 @@ export interface GDPRConsentRequestParams {
 
 export interface GDPRDeleteRequest {
 	confirm: boolean // Must be true to proceed
-	delete_email?: boolean // Also delete from email provider logs if possible
+	delete_email?: boolean // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
 }
 export interface GDPRDeleteRequestParams {
 }
@@ -799,7 +799,8 @@ export interface GDPRDeleteResponse {
 	success: boolean
 	message: string
 	deleted_data: string // Summary of what was deleted
-	audit_record_id: string
+	audit_record_id: string // The deletion's row in the GDPR audit log
+	provider_results: Array<GDPRProviderResult> // Set when delete_email was asked for
 }
 
 export interface GDPRExportRequest {
@@ -823,6 +824,13 @@ export interface GDPRLookupResponse {
 	found: boolean
 	contact_id?: string
 	email?: string
+}
+
+export interface GDPRProviderResult {
+	pathway: string
+	provider: string // Amazon SES, SMTP relay, Mailboxes
+	result: string
+	failed: boolean
 }
 
 export interface GetBackupRequest {
