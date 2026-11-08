@@ -114,33 +114,38 @@ func TestEveryEventReachesAWebhook(t *testing.T) {
 	assert.Equal(t, "ann@example.com", p.Data["email"])
 
 	// email.sent for a campaign send, a queued (sequence) email and a
-	// transactional send
+	// transactional send reports the subject the person got, its merge tags
+	// filled, not the template's
 	for _, q := range []string{
-		`INSERT INTO email_campaigns (id, org_id, name, subject, html_body) VALUES ('camp1', 'org1', 'Launch', 'Hello', '<p>hi</p>')`,
+		`INSERT INTO email_campaigns (id, org_id, name, subject, html_body) VALUES ('camp1', 'org1', 'Launch', 'Hello {{first_name}}', '<p>hi</p>')`,
 		`INSERT INTO campaign_sends (id, campaign_id, contact_id, list_id, tracking_token) VALUES ('cs1', 'camp1', 'c1', 7, 'tok-campaign')`,
-		`INSERT INTO email_queue (id, contact_id, scheduled_for, tracking_token, subject) VALUES ('eq1', 'c1', datetime('now'), 'tok-queue', 'Welcome')`,
-		`INSERT INTO transactional_emails (id, org_id, name, slug, subject, html_body) VALUES ('te1', 'org1', 'Receipt', 'receipt', 'Your receipt', '<p>r</p>')`,
-		`INSERT INTO transactional_sends (id, template_id, org_id, to_email) VALUES ('ts1', 'te1', 'org1', 'buyer@example.com')`,
+		`INSERT INTO email_templates (id, subject, html_body, position) VALUES ('et1', 'Welcome {{name}}', '<p>w</p>', 1)`,
+		`INSERT INTO email_queue (id, contact_id, template_id, scheduled_for, tracking_token) VALUES ('eq1', 'c1', 'et1', datetime('now'), 'tok-queue')`,
+		`INSERT INTO transactional_emails (id, org_id, name, slug, subject, html_body) VALUES ('te1', 'org1', 'Receipt', 'receipt', 'Your receipt, {{name}}', '<p>r</p>')`,
+		`INSERT INTO transactional_sends (id, template_id, org_id, to_email, subject) VALUES ('ts1', 'te1', 'org1', 'buyer@example.com', 'Your receipt, Bea')`,
 	} {
 		_, err := conn.Exec(q)
 		require.NoError(t, err)
 	}
-	require.NoError(t, store.MarkCampaignSendSent(ctx, "cs1"))
+	require.NoError(t, store.MarkCampaignSendSent(ctx, db.MarkCampaignSendSentParams{ID: "cs1", Subject: sql.NullString{String: "Hello Ann", Valid: true}}))
 	p = rcv.wait(t, events.TopicEmailSent)
 	assert.Equal(t, "camp1", p.Data["campaign_id"])
-	assert.Equal(t, "Hello", p.Data["subject"])
-	require.NoError(t, store.MarkEmailSent(ctx, "eq1"))
+	assert.Equal(t, "Hello Ann", p.Data["subject"])
+	require.NoError(t, store.MarkEmailSent(ctx, db.MarkEmailSentParams{ID: "eq1", Subject: sql.NullString{String: "Welcome Ann", Valid: true}}))
 	p = rcv.wait(t, events.TopicEmailSent)
 	assert.Equal(t, "eq1", p.Data["email_id"])
+	assert.Equal(t, "Welcome Ann", p.Data["subject"])
 	require.NoError(t, store.UpdateTransactionalSendStatus(ctx, db.UpdateTransactionalSendStatusParams{ID: "ts1", Status: sql.NullString{String: "sent", Valid: true}}))
 	p = rcv.wait(t, events.TopicEmailSent)
 	assert.Equal(t, "buyer@example.com", p.Data["email"])
+	assert.Equal(t, "Your receipt, Bea", p.Data["subject"])
 
 	// email.opened and email.clicked for campaign and queued mail
 	tr := tracking.New(store, bus)
 	require.NoError(t, tr.RecordOpen(ctx, "tok-campaign"))
 	p = rcv.wait(t, events.TopicEmailOpened)
 	assert.Equal(t, "camp1", p.Data["campaign_id"])
+	assert.Equal(t, "Hello Ann", p.Data["subject"])
 	require.NoError(t, tr.RecordClick(ctx, "tok-campaign", "https://example.com/a"))
 	p = rcv.wait(t, events.TopicEmailClicked)
 	assert.Equal(t, "https://example.com/a", p.Data["clicked_url"])

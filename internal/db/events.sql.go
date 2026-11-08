@@ -81,7 +81,7 @@ func (q *Queries) GetBrandEmailStats(ctx context.Context, arg GetBrandEmailStats
 }
 
 const getCampaignSendEvent = `-- name: GetCampaignSendEvent :one
-SELECT cs.id, ec.org_id, cs.contact_id, c.email, ec.subject, cs.campaign_id,
+SELECT cs.id, ec.org_id, cs.contact_id, c.email, COALESCE(cs.subject, ec.subject) AS subject, cs.campaign_id,
     COALESCE(cs.list_id, 0) AS list_id
 FROM campaign_sends cs
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
@@ -151,7 +151,7 @@ func (q *Queries) GetQueuedEmailEvent(ctx context.Context, id string) (GetQueued
 }
 
 const getTransactionalSendEvent = `-- name: GetTransactionalSendEvent :one
-SELECT ts.id, ts.org_id, COALESCE(ts.contact_id, '') AS contact_id, ts.to_email, te.subject
+SELECT ts.id, ts.org_id, COALESCE(ts.contact_id, '') AS contact_id, ts.to_email, COALESCE(ts.subject, te.subject) AS subject
 FROM transactional_sends ts
 JOIN transactional_emails te ON te.id = ts.template_id
 WHERE ts.id = ?1

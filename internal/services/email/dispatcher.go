@@ -205,33 +205,34 @@ func (d *Dispatcher) worker(id int) {
 		}
 
 		// Send the email
-		err := d.sendEmail(job)
+		subject, err := d.sendEmail(job)
 		if d.sequenceService.deferIfTemporary(d.ctx, job.Email, err) {
 			continue
 		}
 		if err != nil {
 			d.handleSendError(job, err)
 		} else {
-			d.handleSendSuccess(job)
+			d.handleSendSuccess(job, subject)
 		}
 	}
 }
 
-// sendEmail processes and sends a single email
-func (d *Dispatcher) sendEmail(job EmailJob) error {
+// sendEmail processes and sends a single email, and returns the subject it
+// went with
+func (d *Dispatcher) sendEmail(job EmailJob) (string, error) {
 	email := job.Email
 	subject, htmlBody := d.sequenceService.renderQueued(d.ctx, email)
 
 	// Send via SMTP
-	return d.sequenceService.sender.Send(d.ctx, d.sequenceService.sequenceMessage(email, subject, htmlBody))
+	return subject, d.sequenceService.sender.Send(d.ctx, d.sequenceService.sequenceMessage(email, subject, htmlBody))
 }
 
-// handleSendSuccess processes a successful send
-func (d *Dispatcher) handleSendSuccess(job EmailJob) {
+// handleSendSuccess processes a successful send of an email with this subject
+func (d *Dispatcher) handleSendSuccess(job EmailJob, subject string) {
 	email := job.Email
 
 	// Mark as sent in database
-	if err := d.db.MarkEmailSent(d.ctx, email.ID); err != nil {
+	if err := d.db.MarkEmailSent(d.ctx, db.MarkEmailSentParams{ID: email.ID, Subject: sql.NullString{String: subject, Valid: true}}); err != nil {
 		logx.Errorf("Failed to mark email %s as sent: %v", email.ID, err)
 	}
 

@@ -458,7 +458,8 @@ func (s *CampaignScheduler) sendWorker(id int) {
 
 		// Send the email. One held back by its pathway's limit waits, still
 		// pending, until the limit lifts; it never fails or pauses the campaign.
-		if err := s.sendCampaignEmail(send); deferCampaignSend(s.ctx, s.store, send.ID, err) {
+		subject, err := s.sendCampaignEmail(send)
+		if deferCampaignSend(s.ctx, s.store, send.ID, err) {
 			continue
 		} else if errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
 			// The recipient can never be sent to: record it, never retry it,
@@ -477,7 +478,7 @@ func (s *CampaignScheduler) sendWorker(id int) {
 				s.pauseCampaign(send.CampaignID, "Too many consecutive errors")
 			}
 		} else {
-			s.markSendSent(send.ID)
+			s.markSendSent(send.ID, subject)
 			s.totalSent.Add(1)
 			pipe.RecordSent()
 
@@ -490,9 +491,10 @@ func (s *CampaignScheduler) sendWorker(id int) {
 	}
 }
 
-// sendCampaignEmail sends a single campaign email
-func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow) error {
-	return s.emailService.Send(s.ctx, s.emailService.CampaignMessage(email.CampaignEmail{
+// sendCampaignEmail sends a single campaign email and returns the subject it
+// went with, its merge tags filled
+func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow) (string, error) {
+	msg := s.emailService.CampaignMessage(email.CampaignEmail{
 		OrgID:         send.OrgID,
 		FromName:      send.FromName.String,
 		FromEmail:     send.FromEmail.String,
@@ -507,7 +509,8 @@ func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow
 		TrackingToken: send.TrackingToken.String,
 		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
 		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
-	}))
+	})
+	return msg.Subject, s.emailService.Send(s.ctx, msg)
 }
 
 // deferCampaignSend puts a campaign send held back by a temporary failure
@@ -524,9 +527,9 @@ func deferCampaignSend(ctx context.Context, store *db.Store, id string, err erro
 	return true
 }
 
-// markSendSent marks a campaign send as sent
-func (s *CampaignScheduler) markSendSent(id string) {
-	if err := s.store.MarkCampaignSendSent(s.ctx, id); err != nil {
+// markSendSent marks a campaign send as sent with the subject it went with
+func (s *CampaignScheduler) markSendSent(id, subject string) {
+	if err := s.store.MarkCampaignSendSent(s.ctx, db.MarkCampaignSendSentParams{ID: id, Subject: sql.NullString{String: subject, Valid: true}}); err != nil {
 		logx.Errorf("Failed to mark send %s as sent: %v", id, err)
 	}
 }

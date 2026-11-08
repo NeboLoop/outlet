@@ -172,7 +172,7 @@ func (w *RetryWorker) retrySend(send db.GetFailedCampaignSendsForRetryRow) {
 
 	// Try to send. One held back by its pathway's limit goes back to
 	// pending without using up a retry.
-	err := w.sendEmail(send)
+	subject, err := w.sendEmail(send)
 	if deferCampaignSend(w.ctx, w.store, send.ID, err) {
 		return
 	}
@@ -192,15 +192,15 @@ func (w *RetryWorker) retrySend(send db.GetFailedCampaignSendsForRetryRow) {
 		})
 	} else {
 		logx.Infof("Retry succeeded for send %s", send.ID)
-		w.store.MarkCampaignSendSent(w.ctx, send.ID)
+		w.store.MarkCampaignSendSent(w.ctx, db.MarkCampaignSendSentParams{ID: send.ID, Subject: sql.NullString{String: subject, Valid: true}})
 		w.store.IncrementCampaignSent(w.ctx, send.CampaignID)
 		w.succeeded.Add(1)
 	}
 }
 
 // sendEmail sends the email for a retry, built exactly like the first attempt
-func (w *RetryWorker) sendEmail(send db.GetFailedCampaignSendsForRetryRow) error {
-	return w.emailService.Send(w.ctx, w.emailService.CampaignMessage(email.CampaignEmail{
+func (w *RetryWorker) sendEmail(send db.GetFailedCampaignSendsForRetryRow) (string, error) {
+	msg := w.emailService.CampaignMessage(email.CampaignEmail{
 		OrgID:         send.OrgID,
 		FromName:      send.FromName.String,
 		FromEmail:     send.FromEmail.String,
@@ -215,7 +215,8 @@ func (w *RetryWorker) sendEmail(send db.GetFailedCampaignSendsForRetryRow) error
 		TrackingToken: send.TrackingToken.String,
 		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
 		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
-	}))
+	})
+	return msg.Subject, w.emailService.Send(w.ctx, msg)
 }
 
 // markPermanentlyFailed marks a send as permanently failed

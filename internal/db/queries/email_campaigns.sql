@@ -250,8 +250,9 @@ WHERE cs.status = 'pending' AND cs.claim_token = sqlc.arg(claim_token)
 ORDER BY cs.created_at ASC;
 
 -- name: MarkCampaignSendSent :exec
+-- subject is the subject the person got, its merge tags filled.
 UPDATE campaign_sends
-SET status = 'sent', sent_at = datetime('now')
+SET status = 'sent', sent_at = datetime('now'), subject = sqlc.arg(subject)
 WHERE id = sqlc.arg(id);
 
 -- name: MarkCampaignSendFailed :exec

@@ -141,8 +141,9 @@ WHERE eq.status = 'pending' AND eq.claim_token = sqlc.arg(claim_token)
 ORDER BY eq.scheduled_for;
 
 -- name: MarkEmailSent :exec
+-- subject is the subject the person got, its merge tags filled.
 UPDATE email_queue
-SET status = 'sent', sent_at = datetime('now')
+SET status = 'sent', sent_at = datetime('now'), subject = sqlc.arg(subject)
 WHERE id = sqlc.arg(id);
 
 -- name: MarkEmailFailed :exec

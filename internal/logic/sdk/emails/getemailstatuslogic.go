@@ -62,7 +62,7 @@ func (l *GetEmailStatusLogic) GetEmailStatus(req *types.GetEmailStatusRequest) (
 	resp = &types.EmailStatusResponse{
 		MessageId: req.MessageId,
 		To:        send.ToEmail,
-		Subject:   send.Subject,
+		Subject:   send.SentSubject,
 		Status:    status,
 		Opens:     opens,
 		Clicks:    clicks,

@@ -56,11 +56,12 @@ WHERE org_id = sqlc.arg(org_id);
 -- Sends (Logging)
 
 -- name: CreateTransactionalSend :one
+-- subject is the subject the person gets, its merge tags filled.
 INSERT INTO transactional_sends (
     id, template_id, org_id, to_email, to_name, contact_id,
-    status, tracking_token, context_data, created_at
+    status, tracking_token, context_data, subject, created_at
 )
-VALUES (sqlc.arg(id), sqlc.arg(template_id), sqlc.arg(org_id), sqlc.arg(to_email), sqlc.arg(to_name), sqlc.arg(contact_id), sqlc.arg(status), sqlc.arg(tracking_token), sqlc.arg(context_data), datetime('now'))
+VALUES (sqlc.arg(id), sqlc.arg(template_id), sqlc.arg(org_id), sqlc.arg(to_email), sqlc.arg(to_name), sqlc.arg(contact_id), sqlc.arg(status), sqlc.arg(tracking_token), sqlc.arg(context_data), sqlc.arg(subject), datetime('now'))
 RETURNING *;
 
 -- name: GetTransactionalSend :one
@@ -72,7 +73,9 @@ SELECT * FROM transactional_sends
 WHERE tracking_token = sqlc.arg(tracking_token);
 
 -- name: GetTransactionalSendByTrackingAndOrg :one
-SELECT ts.*, te.subject
+-- sent_subject is the subject the person got; sends from before it was kept
+-- fall back to the template's.
+SELECT ts.*, COALESCE(ts.subject, te.subject) AS sent_subject
 FROM transactional_sends ts
 JOIN transactional_emails te ON ts.template_id = te.id
 WHERE ts.tracking_token = sqlc.arg(tracking_token) AND ts.org_id = sqlc.arg(org_id);

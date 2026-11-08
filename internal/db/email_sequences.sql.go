@@ -1583,12 +1583,18 @@ func (q *Queries) MarkEmailFailed(ctx context.Context, arg MarkEmailFailedParams
 
 const markEmailSent = `-- name: MarkEmailSent :exec
 UPDATE email_queue
-SET status = 'sent', sent_at = datetime('now')
-WHERE id = ?1
+SET status = 'sent', sent_at = datetime('now'), subject = ?1
+WHERE id = ?2
 `
 
-func (q *Queries) MarkEmailSent(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, markEmailSent, id)
+type MarkEmailSentParams struct {
+	Subject sql.NullString `json:"subject"`
+	ID      string         `json:"id"`
+}
+
+// subject is the subject the person got, its merge tags filled.
+func (q *Queries) MarkEmailSent(ctx context.Context, arg MarkEmailSentParams) error {
+	_, err := q.db.ExecContext(ctx, markEmailSent, arg.Subject, arg.ID)
 	return err
 }
 
