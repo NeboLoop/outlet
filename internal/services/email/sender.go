@@ -204,13 +204,14 @@ func (s *Service) PoolStats() (pooled, created int) {
 
 // sendEmail sends an HTML email via AWS SES (preferred) or SMTP (fallback)
 // Loads config from platform_settings database
-func (s *Service) sendEmail(to, subject, htmlBody string) error {
+func (s *Service) sendEmail(to, subject, htmlBody string, opts ...SendOption) error {
 	ctx := context.Background()
+	o := applyOpts(opts)
 
 	// Try AWS SES first (preferred for high-volume sending)
 	sesConfig, err := s.getSESConfig(ctx)
 	if err == nil && s.hasSESConfig(sesConfig) {
-		return SendEmailViaSES(ctx, sesConfig, to, subject, htmlBody, "")
+		return sendViaSES(ctx, sesConfig, to, subject, htmlBody, o)
 	}
 
 	// Fall back to SMTP if SES not configured
@@ -225,17 +226,17 @@ func (s *Service) sendEmail(to, subject, htmlBody string) error {
 	}
 
 	// Build email message for SMTP
-	headers := fmt.Sprintf("From: %s <%s>\r\n", smtpConfig.FromName, smtpConfig.FromAddress)
-	headers += fmt.Sprintf("To: %s\r\n", to)
-	if smtpConfig.ReplyTo != "" {
-		headers += fmt.Sprintf("Reply-To: %s\r\n", smtpConfig.ReplyTo)
+	message, err := rawMessage{
+		From:    fmt.Sprintf("%s <%s>", smtpConfig.FromName, smtpConfig.FromAddress),
+		To:      to,
+		ReplyTo: smtpConfig.ReplyTo,
+		Subject: subject,
+		HTML:    htmlBody,
+		opts:    o,
+	}.build()
+	if err != nil {
+		return fmt.Errorf("build message: %w", err)
 	}
-	headers += fmt.Sprintf("Subject: %s\r\n", subject)
-	headers += "MIME-Version: 1.0\r\n"
-	headers += "Content-Type: text/html; charset=UTF-8\r\n"
-	headers += "\r\n"
-
-	message := []byte(headers + htmlBody)
 
 	// SMTP auth
 	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
@@ -419,18 +420,7 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 		if fromName != "" {
 			sesConfig.FromName = fromName
 		}
-		if len(o.attachments) > 0 {
-			from := sesConfig.FromAddress
-			if sesConfig.FromName != "" {
-				from = fmt.Sprintf("%s <%s>", sesConfig.FromName, sesConfig.FromAddress)
-			}
-			raw, err := buildRawMessage(from, to, subject, htmlBody, o.attachments)
-			if err != nil {
-				return fmt.Errorf("build attachment message: %w", err)
-			}
-			return SendRawEmailViaSES(ctx, sesConfig, raw)
-		}
-		return SendEmailViaSES(ctx, sesConfig, to, subject, htmlBody, o.text)
+		return sendViaSES(ctx, sesConfig, to, subject, htmlBody, o)
 	}
 
 	// Fall back to SMTP
@@ -456,33 +446,26 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
 	addr := fmt.Sprintf("%s:%d", smtpConfig.Host, smtpConfig.Port)
 
-	if len(o.attachments) > 0 {
-		raw, err := buildRawMessage(fmt.Sprintf("%s <%s>", name, from), to, subject, htmlBody, o.attachments)
-		if err != nil {
-			return fmt.Errorf("build attachment message: %w", err)
-		}
-		return smtp.SendMail(addr, auth, from, []string{to}, raw)
+	message, err := rawMessage{
+		From:    fmt.Sprintf("%s <%s>", name, from),
+		To:      to,
+		ReplyTo: smtpConfig.ReplyTo,
+		Subject: subject,
+		HTML:    htmlBody,
+		opts:    o,
+	}.build()
+	if err != nil {
+		return fmt.Errorf("build message: %w", err)
 	}
-
-	headers := fmt.Sprintf("From: %s <%s>\r\n", name, from)
-	headers += fmt.Sprintf("To: %s\r\n", to)
-	if smtpConfig.ReplyTo != "" {
-		headers += fmt.Sprintf("Reply-To: %s\r\n", smtpConfig.ReplyTo)
-	}
-	headers += fmt.Sprintf("Subject: %s\r\n", subject)
-	headers += "MIME-Version: 1.0\r\n"
-	headers += "Content-Type: text/html; charset=UTF-8\r\n"
-	headers += "\r\n"
-
-	message := []byte(headers + htmlBody)
 
 	return smtp.SendMail(addr, auth, from, []string{to}, message)
 }
 
 // SendCampaignEmail sends a campaign email with custom from/reply-to
 // Uses AWS SES (preferred), SMTP connection pooling, or standard SMTP as fallback
-func (s *Service) SendCampaignEmail(to, subject, htmlBody, fromName, fromEmail, replyTo string) error {
+func (s *Service) SendCampaignEmail(to, subject, htmlBody, fromName, fromEmail, replyTo string, opts ...SendOption) error {
 	ctx := context.Background()
+	o := applyOpts(opts)
 
 	// Try AWS SES first (preferred for high-volume sending)
 	sesConfig, err := s.getSESConfig(ctx)
@@ -497,7 +480,7 @@ func (s *Service) SendCampaignEmail(to, subject, htmlBody, fromName, fromEmail, 
 		if replyTo != "" {
 			sesConfig.ReplyTo = replyTo
 		}
-		return SendEmailViaSES(ctx, sesConfig, to, subject, htmlBody, "")
+		return sendViaSES(ctx, sesConfig, to, subject, htmlBody, o)
 	}
 
 	// Fall back to SMTP
@@ -521,17 +504,17 @@ func (s *Service) SendCampaignEmail(to, subject, htmlBody, fromName, fromEmail, 
 		replyTo = smtpConfig.ReplyTo
 	}
 
-	headers := fmt.Sprintf("From: %s <%s>\r\n", fromName, fromEmail)
-	headers += fmt.Sprintf("To: %s\r\n", to)
-	if replyTo != "" {
-		headers += fmt.Sprintf("Reply-To: %s\r\n", replyTo)
+	message, err := rawMessage{
+		From:    fmt.Sprintf("%s <%s>", fromName, fromEmail),
+		To:      to,
+		ReplyTo: replyTo,
+		Subject: subject,
+		HTML:    htmlBody,
+		opts:    o,
+	}.build()
+	if err != nil {
+		return fmt.Errorf("build message: %w", err)
 	}
-	headers += fmt.Sprintf("Subject: %s\r\n", subject)
-	headers += "MIME-Version: 1.0\r\n"
-	headers += "Content-Type: text/html; charset=UTF-8\r\n"
-	headers += "\r\n"
-
-	message := []byte(headers + htmlBody)
 
 	// Use pooled SMTP connection if available
 	if s.poolEnabled && s.pool != nil {
@@ -580,8 +563,8 @@ func (s *Service) RewriteLinksForTracking(htmlBody, trackingToken string) string
 
 		originalURL := result[urlStart:urlEnd]
 
-		// Skip special URLs
-		if shouldSkipURL(originalURL) {
+		// Skip special URLs and the unsubscribe page, which must stay a direct link
+		if shouldSkipURL(originalURL) || originalURL == s.UnsubscribeURL(trackingToken) {
 			searchStart = urlEnd
 			continue
 		}

@@ -386,8 +386,13 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RFC 8058 one-click: the mailbox provider POSTs "List-Unsubscribe=One-Click"
+	// from its own unsubscribe button. It must unsubscribe without a confirmation
+	// page and answer with a plain 200, never a redirect.
+	oneClick := r.FormValue("List-Unsubscribe") == "One-Click"
+
 	confirm := r.FormValue("confirm")
-	if confirm != "yes" {
+	if confirm != "yes" && !oneClick {
 		h.renderTemplate(w, "unsubscribe.html", data)
 		return
 	}
@@ -401,6 +406,13 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		if err := h.svcCtx.DB.CancelEmailsForContact(r.Context(), sql.NullString{String: contactID, Valid: true}); err != nil {
 			log.Printf("Error canceling emails for contact: %v", err)
 		}
+	}
+
+	if oneClick {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true}`))
+		return
 	}
 
 	// Redirect to unsubscribe redirect URL if configured

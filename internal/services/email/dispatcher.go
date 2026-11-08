@@ -268,7 +268,8 @@ func (d *Dispatcher) sendEmail(job EmailJob) error {
 	}
 
 	// Send via SMTP
-	return d.sequenceService.sender.sendEmail(email.Email, subject, htmlBody)
+	return d.sequenceService.sender.sendEmail(email.Email, subject, htmlBody,
+		d.sequenceService.marketingSendOptions(isTransactional, email.TrackingToken.String)...)
 }
 
 // handleSendSuccess processes a successful send

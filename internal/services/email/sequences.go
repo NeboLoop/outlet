@@ -384,7 +384,7 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 		}
 
 		// Send the email
-		err = s.sender.sendEmail(email.Email, subject, htmlBody)
+		err = s.sender.sendEmail(email.Email, subject, htmlBody, s.marketingSendOptions(isTransactional, email.TrackingToken.String)...)
 		if err != nil {
 			logx.Errorf("Failed to send email %s to %s: %v", email.ID, email.Email, err)
 			_ = s.db.MarkEmailFailed(ctx, db.MarkEmailFailedParams{
@@ -492,6 +492,15 @@ func (s *SequenceService) processTemplateVariables(content string, ctx TemplateC
 	}
 
 	return content
+}
+
+// marketingSendOptions returns the one-click List-Unsubscribe headers for a
+// marketing email. Transactional mail and sends without a tracking token get none.
+func (s *SequenceService) marketingSendOptions(isTransactional bool, trackingToken string) []SendOption {
+	if isTransactional || trackingToken == "" {
+		return nil
+	}
+	return []SendOption{WithListUnsubscribe(s.sender.UnsubscribeURL(trackingToken))}
 }
 
 // wrapWithSimpleTemplate wraps email content with a simple template (just footer)

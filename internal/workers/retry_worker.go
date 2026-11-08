@@ -204,13 +204,19 @@ func (w *RetryWorker) sendEmail(send db.GetFailedCampaignSendsForRetryRow) error
 		replyTo = send.ReplyTo.String
 	}
 
+	// Personalize and add the unsubscribe link and one-click headers, as on the
+	// first attempt
+	subject, htmlBody, sendOpts := w.emailService.PrepareCampaignEmail(
+		send.Subject, send.HtmlBody, send.Name, send.Email, send.TrackingToken.String)
+
 	return w.emailService.SendCampaignEmail(
 		send.Email,
-		send.Subject,
-		send.HtmlBody,
+		subject,
+		htmlBody,
 		fromName,
 		fromEmail,
 		replyTo,
+		sendOpts...,
 	)
 }
 

@@ -452,14 +452,9 @@ func (s *CampaignScheduler) sendWorker(id int) {
 
 // sendCampaignEmail sends a single campaign email
 func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow) error {
-	// Build email content
-	htmlBody := send.HtmlBody
-
-	// Process template variables (simple replacement for now)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{.Name}}", send.Name)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{.Email}}", send.Email)
-
-	subject := strings.ReplaceAll(send.Subject, "{{.Name}}", send.Name)
+	// Personalize and add the unsubscribe link and one-click headers
+	subject, htmlBody, sendOpts := s.emailService.PrepareCampaignEmail(
+		send.Subject, send.HtmlBody, send.Name, send.Email, send.TrackingToken.String)
 
 	// Add tracking pixel if enabled
 	if send.TrackOpens.Valid && send.TrackOpens.Int64 == 1 && send.TrackingToken.Valid {
@@ -486,7 +481,7 @@ func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow
 		replyTo = send.ReplyTo.String
 	}
 
-	return s.emailService.SendCampaignEmail(send.Email, subject, htmlBody, fromName, fromEmail, replyTo)
+	return s.emailService.SendCampaignEmail(send.Email, subject, htmlBody, fromName, fromEmail, replyTo, sendOpts...)
 }
 
 // markSendSent marks a campaign send as sent

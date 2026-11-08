@@ -118,3 +118,27 @@ func SendRawEmailViaSES(ctx context.Context, sesConfig *SESConfig, raw []byte) e
 	}
 	return nil
 }
+
+// sendViaSES sends through SES, using SendRawEmail when the message carries
+// attachments or extra headers that the body-only SendEmail call cannot.
+func sendViaSES(ctx context.Context, sesConfig *SESConfig, to, subject, htmlBody string, o sendOpts) error {
+	if !o.needsRawMessage() {
+		return SendEmailViaSES(ctx, sesConfig, to, subject, htmlBody, o.text)
+	}
+	from := sesConfig.FromAddress
+	if sesConfig.FromName != "" {
+		from = fmt.Sprintf("%s <%s>", sesConfig.FromName, sesConfig.FromAddress)
+	}
+	raw, err := rawMessage{
+		From:    from,
+		To:      to,
+		ReplyTo: sesConfig.ReplyTo,
+		Subject: subject,
+		HTML:    htmlBody,
+		opts:    o,
+	}.build()
+	if err != nil {
+		return fmt.Errorf("build message: %w", err)
+	}
+	return SendRawEmailViaSES(ctx, sesConfig, raw)
+}

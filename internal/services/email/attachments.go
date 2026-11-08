@@ -17,8 +17,9 @@ type Attachment struct {
 
 // sendOpts holds optional, backward-compatible send behavior.
 type sendOpts struct {
-	attachments []Attachment
-	text        string
+	attachments     []Attachment
+	text            string
+	listUnsubscribe string
 }
 
 // SendOption configures an email send (e.g. attachments) without changing the
@@ -37,6 +38,22 @@ func WithText(text string) SendOption {
 	return func(o *sendOpts) { o.text = text }
 }
 
+// WithListUnsubscribe adds RFC 2369 List-Unsubscribe and RFC 8058
+// List-Unsubscribe-Post headers pointing at url, so mailbox providers can show
+// their own one-click unsubscribe button. Gmail and Yahoo require both headers
+// on marketing mail from bulk senders. The url must accept a POST with the body
+// "List-Unsubscribe=One-Click" and unsubscribe without further confirmation.
+// Never set it on transactional mail.
+func WithListUnsubscribe(url string) SendOption {
+	return func(o *sendOpts) { o.listUnsubscribe = url }
+}
+
+// needsRawMessage reports whether the send needs a full MIME message rather than
+// the body-only SES SendEmail call (which cannot carry attachments or headers).
+func (o sendOpts) needsRawMessage() bool {
+	return len(o.attachments) > 0 || o.listUnsubscribe != ""
+}
+
 func applyOpts(opts []SendOption) sendOpts {
 	var o sendOpts
 	for _, opt := range opts {
@@ -45,9 +62,40 @@ func applyOpts(opts []SendOption) sendOpts {
 	return o
 }
 
-// buildRawMessage builds a complete RFC 822 multipart/mixed message (headers +
-// HTML part + base64 attachments) suitable for both SES SendRawEmail and SMTP.
-func buildRawMessage(from, to, subject, htmlBody string, atts []Attachment) ([]byte, error) {
+// rawMessage is a complete outbound email, built into RFC 5322 bytes by build
+// for SES SendRawEmail and for SMTP.
+type rawMessage struct {
+	From    string // display form, e.g. "Name <addr>"
+	To      string
+	ReplyTo string
+	Subject string
+	HTML    string
+	opts    sendOpts
+}
+
+// build renders the message. With attachments it is multipart/mixed (HTML part
+// plus base64 attachments); otherwise it is a single text/html body.
+func (m rawMessage) build() ([]byte, error) {
+	var msg bytes.Buffer
+	fmt.Fprintf(&msg, "From: %s\r\n", m.From)
+	fmt.Fprintf(&msg, "To: %s\r\n", m.To)
+	if m.ReplyTo != "" {
+		fmt.Fprintf(&msg, "Reply-To: %s\r\n", m.ReplyTo)
+	}
+	fmt.Fprintf(&msg, "Subject: %s\r\n", m.Subject)
+	if m.opts.listUnsubscribe != "" {
+		fmt.Fprintf(&msg, "List-Unsubscribe: <%s>\r\n", m.opts.listUnsubscribe)
+		msg.WriteString("List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n")
+	}
+	msg.WriteString("MIME-Version: 1.0\r\n")
+
+	if len(m.opts.attachments) == 0 {
+		msg.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
+		msg.WriteString("\r\n")
+		msg.WriteString(m.HTML)
+		return msg.Bytes(), nil
+	}
+
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
 
@@ -58,11 +106,11 @@ func buildRawMessage(from, to, subject, htmlBody string, atts []Attachment) ([]b
 	if err != nil {
 		return nil, err
 	}
-	if _, err := htmlPart.Write([]byte(htmlBody)); err != nil {
+	if _, err := htmlPart.Write([]byte(m.HTML)); err != nil {
 		return nil, err
 	}
 
-	for _, a := range atts {
+	for _, a := range m.opts.attachments {
 		ct := a.ContentType
 		if ct == "" {
 			ct = "application/octet-stream"
@@ -91,11 +139,6 @@ func buildRawMessage(from, to, subject, htmlBody string, atts []Attachment) ([]b
 		return nil, err
 	}
 
-	var msg bytes.Buffer
-	fmt.Fprintf(&msg, "From: %s\r\n", from)
-	fmt.Fprintf(&msg, "To: %s\r\n", to)
-	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
-	msg.WriteString("MIME-Version: 1.0\r\n")
 	fmt.Fprintf(&msg, "Content-Type: multipart/mixed; boundary=%s\r\n", mw.Boundary())
 	msg.WriteString("\r\n")
 	msg.Write(body.Bytes())

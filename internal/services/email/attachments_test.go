@@ -18,11 +18,15 @@ func TestWithAttachments(t *testing.T) {
 
 func TestBuildRawMessage(t *testing.T) {
 	content := []byte("hello-spreadsheet-bytes")
-	raw, err := buildRawMessage(
-		"Cascade Ops <ops@chc.com>", "mgr@chc.com", "Report",
-		"<p>hi</p>",
-		[]Attachment{{Filename: "report.xlsx", ContentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Content: content}},
-	)
+	raw, err := rawMessage{
+		From:    "Cascade Ops <ops@chc.com>",
+		To:      "mgr@chc.com",
+		Subject: "Report",
+		HTML:    "<p>hi</p>",
+		opts: applyOpts([]SendOption{WithAttachments([]Attachment{
+			{Filename: "report.xlsx", ContentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Content: content},
+		})}),
+	}.build()
 	if err != nil {
 		t.Fatal(err)
 	}
