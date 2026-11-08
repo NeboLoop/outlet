@@ -410,8 +410,8 @@
 						<!-- Template Selection -->
 						{#if designs.length > 0}
 							<div class="border-t border-base-300 pt-6">
-								<h4 class="text-sm font-medium text-base-content mb-1">Template</h4>
-								<p class="text-xs text-base-content/50 mb-3">Your content is placed in the template when the campaign is sent.</p>
+								<h4 class="text-sm font-medium text-base-content mb-1">Design</h4>
+								<p class="text-xs text-base-content/50 mb-3">Your content is placed in the design when the campaign is sent.</p>
 								<div class="space-y-2">
 									<button
 										type="button"
