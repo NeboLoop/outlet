@@ -625,8 +625,10 @@ func registerEmailTrackingRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 				return
 			}
 
-			_ = ctx.Tracking.Unsubscribe(context.Background(), token)
-			http.Redirect(w, r, "/unsubscribed", http.StatusTemporaryRedirect)
+			// Older emails link here. Unsubscribing on GET let link scanners and
+			// prefetchers unsubscribe people, so send them to the confirmation page,
+			// which also handles one-click POSTs.
+			http.Redirect(w, r, "/u/"+url.PathEscape(token), http.StatusSeeOther)
 		},
 	})
 

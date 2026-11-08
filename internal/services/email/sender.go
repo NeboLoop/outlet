@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/smtp"
 	"strconv"
 	"time"
@@ -241,7 +242,7 @@ func (s *Service) sendEmail(to, subject, htmlBody string, opts ...SendOption) er
 	// SMTP auth
 	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
 
-	addr := fmt.Sprintf("%s:%d", smtpConfig.Host, smtpConfig.Port)
+	addr := net.JoinHostPort(smtpConfig.Host, strconv.Itoa(smtpConfig.Port))
 	err = smtp.SendMail(addr, auth, smtpConfig.FromAddress, []string{to}, message)
 	if err != nil {
 		return fmt.Errorf("failed to send email via SMTP: %w", err)
@@ -444,7 +445,7 @@ func (s *Service) SendEmailFrom(ctx context.Context, fromEmail, fromName, to, su
 	}
 
 	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
-	addr := fmt.Sprintf("%s:%d", smtpConfig.Host, smtpConfig.Port)
+	addr := net.JoinHostPort(smtpConfig.Host, strconv.Itoa(smtpConfig.Port))
 
 	message, err := rawMessage{
 		From:    fmt.Sprintf("%s <%s>", name, from),
@@ -523,7 +524,7 @@ func (s *Service) SendCampaignEmail(to, subject, htmlBody, fromName, fromEmail, 
 
 	// Fallback to standard SMTP sending
 	auth := smtp.PlainAuth("", smtpConfig.User, smtpConfig.Password, smtpConfig.Host)
-	addr := fmt.Sprintf("%s:%d", smtpConfig.Host, smtpConfig.Port)
+	addr := net.JoinHostPort(smtpConfig.Host, strconv.Itoa(smtpConfig.Port))
 
 	return smtp.SendMail(addr, auth, fromEmail, []string{to}, message)
 }

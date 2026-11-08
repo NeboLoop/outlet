@@ -12,7 +12,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/events"
 	"github.com/outlet-sh/outlet/internal/svc"
-	"github.com/zeromicro/go-zero/rest/httpx"
+	"github.com/zeromicro/go-zero/rest/pathvar"
 )
 
 // SESWebhookRequest defines the path parameters for SES webhook
@@ -91,14 +91,14 @@ type sesMailInfo struct {
 // This must be a raw handler (not go-zero) to access the raw body for SNS notifications
 // The orgID is extracted from the URL path: /webhooks/ses/:orgId
 func SESHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
+	return sesHandler(svcCtx, defaultSNSVerifier)
+}
+
+func sesHandler(svcCtx *svc.ServiceContext, verifier *snsVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Parse path parameters using httpx
-		var req SESWebhookRequest
-		if err := httpx.Parse(r, &req); err != nil {
-			fmt.Printf("[SES Webhook] Failed to parse request: %v\n", err)
-			httpx.ErrorCtx(r.Context(), w, err)
-			return
-		}
+		// Read the org ID from the path only. httpx.Parse would also consume a
+		// JSON body, which must stay intact for signature verification.
+		req := SESWebhookRequest{OrgID: pathvar.Vars(r)["orgId"]}
 
 		if req.OrgID == "" {
 			fmt.Printf("[SES Webhook] No org ID in path: %s\n", r.URL.Path)
@@ -125,10 +125,22 @@ func SESHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 
+		// Only act on messages Amazon SNS really signed
+		if err := verifier.verify(r.Context(), &snsMsg); err != nil {
+			fmt.Printf("[SES Webhook] Rejected unverified message for org %s: %v\n", req.OrgID, err)
+			http.Error(w, "Invalid signature", http.StatusForbidden)
+			return
+		}
+
 		ctx := context.Background()
 
 		// Handle SNS subscription confirmation
 		if snsMsg.Type == "SubscriptionConfirmation" {
+			if !verifier.urlOK(snsMsg.SubscribeURL) {
+				fmt.Printf("[SES Webhook] Rejected SubscribeURL outside Amazon SNS: %s\n", snsMsg.SubscribeURL)
+				http.Error(w, "Invalid subscribe URL", http.StatusBadRequest)
+				return
+			}
 			fmt.Printf("[SES Webhook] SNS subscription confirmation received for org %s, confirming...\n", req.OrgID)
 			if err := confirmSNSSubscription(snsMsg.SubscribeURL); err != nil {
 				fmt.Printf("[SES Webhook] Failed to confirm subscription: %v\n", err)

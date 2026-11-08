@@ -9,7 +9,11 @@ import (
 // token. The page shows a confirmation form on GET and also accepts the RFC 8058
 // one-click POST that mailbox providers send from their own unsubscribe button.
 func (s *Service) UnsubscribeURL(trackingToken string) string {
-	return fmt.Sprintf("%s/u/%s", strings.TrimRight(s.baseURL, "/"), trackingToken)
+	return unsubscribeURL(s.baseURL, trackingToken)
+}
+
+func unsubscribeURL(baseURL, trackingToken string) string {
+	return fmt.Sprintf("%s/u/%s", strings.TrimRight(baseURL, "/"), trackingToken)
 }
 
 // PrepareCampaignEmail personalizes a campaign's subject and body for one

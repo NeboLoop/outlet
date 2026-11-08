@@ -40,7 +40,7 @@ func TestSESHandler_SubscriptionConfirmation(t *testing.T) {
 	defer mockServer.Close()
 
 	svcCtx := createSESServiceContext()
-	handler := SESHandler(svcCtx)
+	handler := testSESHandler(svcCtx)
 
 	snsMsg := snsMessage{
 		Type:         "SubscriptionConfirmation",
@@ -78,7 +78,7 @@ func TestSESHandler_SubscriptionConfirmationFailure(t *testing.T) {
 	defer mockServer.Close()
 
 	svcCtx := createSESServiceContext()
-	handler := SESHandler(svcCtx)
+	handler := testSESHandler(svcCtx)
 
 	snsMsg := snsMessage{
 		Type:         "SubscriptionConfirmation",
@@ -192,7 +192,7 @@ func TestSESHandler_ComplaintNotification(t *testing.T) {
 // TestSESHandler_DeliveryNotification tests handling of delivery notifications (should be ignored)
 func TestSESHandler_DeliveryNotification(t *testing.T) {
 	svcCtx := createSESServiceContext()
-	handler := SESHandler(svcCtx)
+	handler := testSESHandler(svcCtx)
 
 	deliveryNotif := sesNotification{
 		NotificationType: "Delivery",
@@ -235,7 +235,7 @@ func TestSESHandler_DeliveryNotification(t *testing.T) {
 // TestSESHandler_InvalidJSON tests handling of invalid JSON payload
 func TestSESHandler_InvalidJSON(t *testing.T) {
 	svcCtx := createSESServiceContext()
-	handler := SESHandler(svcCtx)
+	handler := testSESHandler(svcCtx)
 
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader([]byte(`{invalid json`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -250,7 +250,7 @@ func TestSESHandler_InvalidJSON(t *testing.T) {
 // TestSESHandler_InvalidInnerJSON tests handling of valid SNS message with invalid inner JSON
 func TestSESHandler_InvalidInnerJSON(t *testing.T) {
 	svcCtx := createSESServiceContext()
-	handler := SESHandler(svcCtx)
+	handler := testSESHandler(svcCtx)
 
 	snsMsg := snsMessage{
 		Type:      "Notification",
@@ -274,7 +274,7 @@ func TestSESHandler_InvalidInnerJSON(t *testing.T) {
 // TestSESHandler_EmptyBody tests handling of empty request body
 func TestSESHandler_EmptyBody(t *testing.T) {
 	svcCtx := createSESServiceContext()
-	handler := SESHandler(svcCtx)
+	handler := testSESHandler(svcCtx)
 
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", bytes.NewReader([]byte{}))
 	req.Header.Set("Content-Type", "application/json")
@@ -288,7 +288,7 @@ func TestSESHandler_EmptyBody(t *testing.T) {
 // TestSESHandler_UnknownMessageType tests handling of unknown SNS message types
 func TestSESHandler_UnknownMessageType(t *testing.T) {
 	svcCtx := createSESServiceContext()
-	handler := SESHandler(svcCtx)
+	handler := testSESHandler(svcCtx)
 
 	snsMsg := snsMessage{
 		Type:      "UnknownType",
@@ -316,7 +316,7 @@ func TestSESHandler_UnknownMessageType(t *testing.T) {
 // TestSESHandler_ReadBodyError tests handling of body read errors
 func TestSESHandler_ReadBodyError(t *testing.T) {
 	svcCtx := createSESServiceContext()
-	handler := SESHandler(svcCtx)
+	handler := testSESHandler(svcCtx)
 
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/ses", &errorReader{})
 	req.Header.Set("Content-Type", "application/json")
@@ -462,7 +462,7 @@ func TestSESHandler_ComplaintTypes(t *testing.T) {
 // This tests non-DB-touching operations like delivery notifications
 func TestSESHandler_ConcurrentRequests(t *testing.T) {
 	svcCtx := createSESServiceContext()
-	handler := SESHandler(svcCtx)
+	handler := testSESHandler(svcCtx)
 
 	// Use Delivery notification type which doesn't touch DB
 	deliveryNotif := sesNotification{

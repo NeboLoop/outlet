@@ -481,8 +481,8 @@ func (s *SequenceService) processTemplateVariables(content string, ctx TemplateC
 
 	// Replace unsubscribe URL if tracking token is available
 	if ctx.TrackingToken != "" {
-		unsubscribeURL := fmt.Sprintf("%s/api/e/u/%s", s.baseURL, ctx.TrackingToken)
-		content = strings.ReplaceAll(content, "{{unsubscribe_url}}", unsubscribeURL)
+		link := unsubscribeURL(s.baseURL, ctx.TrackingToken)
+		content = strings.ReplaceAll(content, "{{unsubscribe_url}}", link)
 	}
 
 	// Replace custom field merge tags
@@ -500,15 +500,15 @@ func (s *SequenceService) marketingSendOptions(isTransactional bool, trackingTok
 	if isTransactional || trackingToken == "" {
 		return nil
 	}
-	return []SendOption{WithListUnsubscribe(s.sender.UnsubscribeURL(trackingToken))}
+	return []SendOption{WithListUnsubscribe(unsubscribeURL(s.baseURL, trackingToken))}
 }
 
 // wrapWithSimpleTemplate wraps email content with a simple template (just footer)
 func (s *SequenceService) wrapWithSimpleTemplate(content string, isTransactional bool, trackingToken string) string {
 	unsubscribeSection := ""
 	if !isTransactional && trackingToken != "" {
-		unsubscribeURL := fmt.Sprintf("%s/api/e/u/%s", s.baseURL, trackingToken)
-		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, unsubscribeURL)
+		link := unsubscribeURL(s.baseURL, trackingToken)
+		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, link)
 	}
 
 	// Use baseURL for footer link, fall back to empty if not set
@@ -545,8 +545,8 @@ func (s *SequenceService) wrapWithSimpleTemplate(content string, isTransactional
 func (s *SequenceService) wrapWithBrandedTemplate(content string, isTransactional bool, trackingToken string) string {
 	unsubscribeSection := ""
 	if !isTransactional && trackingToken != "" {
-		unsubscribeURL := fmt.Sprintf("%s/api/e/u/%s", s.baseURL, trackingToken)
-		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, unsubscribeURL)
+		link := unsubscribeURL(s.baseURL, trackingToken)
+		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, link)
 	}
 
 	// Use baseURL for footer link, fall back to empty if not set
