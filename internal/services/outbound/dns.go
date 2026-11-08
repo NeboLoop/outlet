@@ -63,7 +63,11 @@ func (s *Service) checkDNS(ctx context.Context, d db.DomainIdentity) DNSCheck {
 	}
 	c.SPF = hasTXT(ctx, s.dns, d.Domain, "v=spf1")
 	c.DMARC = hasTXT(ctx, s.dns, "_dmarc."+d.Domain, "v=dmarc1")
-	c.DKIM = hasTXT(ctx, s.dns, d.DkimSelector+"._domainkey."+d.Domain, "v=dkim1") ||
+	// A domain whose mailbox service runs its DNS is signed under the
+	// service's own DKIM selector, which its API doesn't name: with no
+	// selector known, DKIM can't be looked up, so it isn't held against it.
+	c.DKIM = (d.DnsHost == dnsHostService && d.DkimSelector == "") ||
+		hasTXT(ctx, s.dns, d.DkimSelector+"._domainkey."+d.Domain, "v=dkim1") ||
 		hasTXT(ctx, s.dns, d.DkimSelector+"._domainkey."+d.Domain, "p=")
 	for name, ok := range map[string]bool{"MX": c.MX, "SPF": c.SPF, "DKIM (" + d.DkimSelector + "._domainkey)": c.DKIM, "DMARC": c.DMARC} {
 		if !ok {
@@ -140,6 +144,7 @@ type DomainInput struct {
 	PathwayID string `json:"pathway_id,omitempty"`
 
 	trackingTarget string // this server's host, filled by AddDomain
+	serviceDNS     bool   // the pool's mailbox service runs the domain's DNS and writes its records
 }
 
 // DNSRecord is one record outbound wants on a domain.
@@ -188,7 +193,7 @@ func wantedRecords(in DomainInput) ([]DNSRecord, error) {
 // records; otherwise it returns them to paste.
 func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainInput) (db.DomainIdentity, []DNSRecord, DNSCheck, error) {
 	in.Domain = normDomain(in.Domain)
-	if in.DKIMSelector == "" {
+	if in.DKIMSelector == "" && !in.serviceDNS {
 		in.DKIMSelector = "google"
 	}
 	if in.DNSHost == "" {
@@ -196,6 +201,9 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 	}
 	if in.DNSHost != "manual" && in.DNSHost != "digitalocean" {
 		return db.DomainIdentity{}, nil, DNSCheck{}, refuse("dns_host must be digitalocean or manual.")
+	}
+	if in.serviceDNS {
+		in.DNSHost = dnsHostService
 	}
 	if err := s.allowedDomain(ctx, org, in.Domain); err != nil {
 		return db.DomainIdentity{}, nil, DNSCheck{}, err
@@ -207,9 +215,12 @@ func (s *Service) AddDomain(ctx context.Context, org db.Organization, in DomainI
 		}
 		in.trackingTarget, trackingHost = s.tracking, "go."+in.Domain
 	}
-	recs, err := wantedRecords(in)
-	if err != nil {
-		return db.DomainIdentity{}, nil, DNSCheck{}, err
+	var recs []DNSRecord // a mailbox service writes its own domain's records
+	if !in.serviceDNS {
+		var err error
+		if recs, err = wantedRecords(in); err != nil {
+			return db.DomainIdentity{}, nil, DNSCheck{}, err
+		}
 	}
 	d, err := s.db.GetAnyDomainIdentity(ctx, in.Domain)
 	switch {
