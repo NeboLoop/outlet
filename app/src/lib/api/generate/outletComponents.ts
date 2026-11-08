@@ -1639,6 +1639,9 @@ export interface OutboundMailboxHealth {
 	pool_id?: string // its mailbox pool (sending pathway)
 	daily_limit?: number // its own daily limit; empty uses the pool's
 	limited: boolean // false: no daily limit applies
+	limit_in_use: number // the daily limit it sends under: its own, else its pool's; 0: none
+	warming_up: boolean // the warm-up holds it below limit_in_use; allowed_today is today's step
+	domain: string
 }
 
 export interface OutboundMailboxInput {

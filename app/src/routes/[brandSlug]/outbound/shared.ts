@@ -1,5 +1,7 @@
 // Helpers shared by the Outbound screens.
 
+import type { OutboundMailboxHealth } from '$lib/api';
+
 export function errorMessage(err: unknown, fallback: string): string {
 	return err instanceof Error && err.message ? err.message : fallback;
 }
@@ -13,6 +15,15 @@ export function percent(rate: number): string {
 export function pageRange(offset: number, shown: number, total: number): string {
 	if (shown === 0) return `0 of ${total}`;
 	return `${offset + 1} to ${offset + shown} of ${total}`;
+}
+
+// A mailbox's daily limit in words: its own or its pool's, and the warm-up
+// that holds it below that limit.
+export function mailboxLimit(m: OutboundMailboxHealth): string {
+	const limit = m.limit_in_use ? `${m.limit_in_use} a day` : 'no daily limit';
+	const whose = m.daily_limit ? 'its own' : "the pool's";
+	if (m.warming_up) return `Warming up: ${m.allowed_today} today, climbing to ${limit} (${whose})`;
+	return m.limit_in_use ? `${limit} (${whose})` : 'No daily limit';
 }
 
 export const BOUNCE_LIMIT = 3;

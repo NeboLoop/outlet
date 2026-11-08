@@ -31,6 +31,14 @@ type MailboxHealth struct {
 	PoolID       string `json:"pool_id,omitempty"`     // its mailbox pool (sending pathway)
 	DailyLimit   *int64 `json:"daily_limit,omitempty"` // its own daily limit; empty uses the pool's
 	Limited      bool   `json:"limited"`               // false: no daily limit applies, whatever allowed_today says
+	// LimitInUse is the daily limit it sends under: its own, else its
+	// pool's. 0 is no limit.
+	LimitInUse int64 `json:"limit_in_use"`
+	// WarmingUp says the pool's warm-up still holds it below that limit:
+	// allowed_today is today's step of the ramp, which climbs to LimitInUse
+	// (with no limit, it keeps climbing).
+	WarmingUp bool   `json:"warming_up"`
+	Domain    string `json:"domain"`
 }
 
 // DomainInfo is one outreach domain, its last DNS check, and the records it
@@ -73,7 +81,7 @@ type Overview struct {
 func (s *Service) mailboxHealth(ctx context.Context, mb db.Mailbox, org db.Organization) MailboxHealth {
 	out := MailboxHealth{
 		ID: mb.ID, Email: mb.Email, FromName: mb.FromName, Status: mb.Status, Reason: mb.PausedReason,
-		LastError: mb.LastError,
+		LastError: mb.LastError, Domain: domainOf(mb.Email),
 	}
 	if mb.DailyLimit.Valid {
 		out.DailyLimit = &mb.DailyLimit.Int64
@@ -85,7 +93,10 @@ func (s *Service) mailboxHealth(ctx context.Context, mb db.Mailbox, org db.Organ
 	now := s.now()
 	out.PoolID = p.ID
 	out.SentToday, _ = s.mailer.SentSince(ctx, org, p.ID, mb.ID, now)
-	out.AllowToday, out.Limited = email.Allowance(p, parseTS(mb.WarmupStartedAt), mb.DailyLimit, now)
+	start := parseTS(mb.WarmupStartedAt)
+	out.AllowToday, out.Limited = email.Allowance(p, start, mb.DailyLimit, now)
+	out.LimitInUse = email.DailyLimitOf(p, mb.DailyLimit)
+	out.WarmingUp = email.WarmingUp(p, start, mb.DailyLimit, now)
 	out.Sent7d, out.Bounces7d, out.SpamBlocks7d, out.Complaints7d = h.Sent, h.Bounces, h.SpamBlocks, h.Complaints
 	return out
 }
@@ -148,6 +159,14 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 		o.Next = append(o.Next, fmt.Sprintf("%d replies need you.", o.RepliesWaiting))
 	}
 	return o, nil
+}
+
+// perDay says a daily limit in words.
+func perDay(limit int64) string {
+	if limit <= 0 {
+		return "no daily limit"
+	}
+	return fmt.Sprintf("%d a day", limit)
 }
 
 // SettingsInput changes the brand's outreach settings. None of them is a limit.
@@ -453,7 +472,10 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 			if !h.Limited {
 				return fmt.Sprintf("%s is active, with no daily limit; it sent %d today.", mb.Email, h.SentToday), nil
 			}
-			return fmt.Sprintf("%s is active; its pool's limits allow %d today (warm-up included) and it sent %d.", mb.Email, h.AllowToday, h.SentToday), nil
+			if h.WarmingUp {
+				return fmt.Sprintf("%s is active and warming up: %d allowed today, climbing each day to %s; it sent %d.", mb.Email, h.AllowToday, perDay(h.LimitInUse), h.SentToday), nil
+			}
+			return fmt.Sprintf("%s is active; it may send %s and sent %d today.", mb.Email, perDay(h.LimitInUse), h.SentToday), nil
 		}
 		r := mb.PausedReason
 		switch {

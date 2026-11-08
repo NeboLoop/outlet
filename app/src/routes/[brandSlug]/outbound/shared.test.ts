@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pageRange } from './shared';
+import type { OutboundMailboxHealth } from '$lib/api';
+import { mailboxLimit, pageRange } from './shared';
 
 describe('pageRange', () => {
 	it('says which rows a page shows', () => {
@@ -9,5 +10,40 @@ describe('pageRange', () => {
 
 	it('says when a page shows none', () => {
 		expect(pageRange(0, 0, 0)).toBe('0 of 0');
+	});
+});
+
+describe('mailboxLimit', () => {
+	const box = (m: Partial<OutboundMailboxHealth>): OutboundMailboxHealth => ({
+		id: 'm1',
+		email: 'sam@getexample.com',
+		from_name: 'Sam',
+		status: 'active',
+		sent_today: 0,
+		allowed_today: 30,
+		sent_7d: 0,
+		bounces_7d: 0,
+		spam_blocks_7d: 0,
+		complaints_7d: 0,
+		limited: true,
+		limit_in_use: 30,
+		warming_up: false,
+		domain: 'getexample.com',
+		...m
+	});
+
+	it("says the pool's limit, or the mailbox's own", () => {
+		expect(mailboxLimit(box({}))).toBe("30 a day (the pool's)");
+		expect(mailboxLimit(box({ daily_limit: 80, limit_in_use: 80 }))).toBe('80 a day (its own)');
+	});
+
+	it('says the warm-up and where it climbs to', () => {
+		expect(mailboxLimit(box({ warming_up: true, allowed_today: 7 }))).toBe(
+			"Warming up: 7 today, climbing to 30 a day (the pool's)"
+		);
+	});
+
+	it('says when nothing limits it', () => {
+		expect(mailboxLimit(box({ limit_in_use: 0, limited: false }))).toBe('No daily limit');
 	});
 });

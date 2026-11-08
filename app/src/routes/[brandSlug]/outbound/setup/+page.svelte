@@ -18,7 +18,7 @@
 	import { Button, Alert, LoadingSpinner, Badge, Input, Textarea, Toggle, Select, SlideForm } from '$lib/components/ui';
 	import { Plus, Check, X, Copy } from '@lucide/svelte';
 	import { page } from '$app/stores';
-	import { errorMessage } from '../shared';
+	import { errorMessage, mailboxLimit } from '../shared';
 
 	let brandSlug = $derived($page.params.brandSlug);
 
@@ -674,7 +674,7 @@
 							<tr>
 								<th class="text-left">Mailbox</th>
 								<th class="text-left">Status</th>
-								<th class="text-right">Sent today</th>
+								<th class="text-right">Sent today and limit</th>
 								<th class="text-left">Own daily limit</th>
 							</tr>
 						</thead>
@@ -683,7 +683,7 @@
 								<tr>
 									<td>
 										<span class="font-medium text-text block">{m.email}</span>
-										<span class="text-xs text-text-muted">{m.from_name}</span>
+										<span class="text-xs text-text-muted">{m.from_name}, on {m.domain}</span>
 									</td>
 									<td>
 										<Badge variant={m.status === 'paused' ? 'error' : 'success'} size="sm">
@@ -695,6 +695,7 @@
 									</td>
 									<td class="text-right whitespace-nowrap">
 										{m.sent_today} of {m.limited ? m.allowed_today : 'no limit'}
+										<span class="text-xs text-text-muted block">{mailboxLimit(m)}</span>
 									</td>
 									<td>
 										<div class="flex items-center gap-2">

@@ -108,14 +108,20 @@ func (l Limits) validate() error {
 	return nil
 }
 
+// DailyLimitOf is a sender's daily limit: the mailbox's own when it has
+// one, else its pathway's. 0 is no limit.
+func DailyLimitOf(p db.SendingPathway, override sql.NullInt64) int64 {
+	if override.Valid {
+		return override.Int64
+	}
+	return p.DailyLimit
+}
+
 // Allowance is how many emails one sender may send on the day of now: the
 // warm-up ramp from the sender's start, up to the daily limit (the
 // mailbox's own when it has one). limited is false when nothing caps it.
 func Allowance(p db.SendingPathway, start time.Time, override sql.NullInt64, now time.Time) (n int64, limited bool) {
-	limit := p.DailyLimit
-	if override.Valid {
-		limit = override.Int64
-	}
+	limit := DailyLimitOf(p, override)
 	if p.WarmupStart <= 0 {
 		return limit, limit > 0
 	}
@@ -128,6 +134,17 @@ func Allowance(p db.SendingPathway, start time.Time, override sql.NullInt64, now
 		return min(limit, ramp), true
 	}
 	return ramp, true
+}
+
+// WarmingUp says whether the warm-up ramp still holds a sender below its
+// daily limit on the day of now. With no daily limit the ramp never ends.
+func WarmingUp(p db.SendingPathway, start time.Time, override sql.NullInt64, now time.Time) bool {
+	if p.WarmupStart <= 0 {
+		return false
+	}
+	limit := DailyLimitOf(p, override)
+	allow, _ := Allowance(p, start, override, now)
+	return limit == 0 || allow < limit
 }
 
 // Health is one sender's last 7 days.

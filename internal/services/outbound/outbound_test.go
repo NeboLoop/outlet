@@ -531,6 +531,23 @@ func TestSafetyLimits(t *testing.T) {
 	assert.EqualValues(t, 30, allow(40, sql.NullInt64{}))
 	assert.EqualValues(t, 50, allow(40, sql.NullInt64{Int64: 50, Valid: true}), "a mailbox's own limit, reached through the warm-up")
 
+	// Health says the limit in use, the warm-up and the domain.
+	o, err := h.svc.Overview(ctx, h.org)
+	require.NoError(t, err)
+	require.NotEmpty(t, o.Mailboxes)
+	mh := o.Mailboxes[0]
+	assert.EqualValues(t, 30, mh.LimitInUse, "the pool's")
+	assert.True(t, mh.WarmingUp)
+	assert.Less(t, mh.AllowToday, mh.LimitInUse, "the ramp holds it below the limit")
+	assert.Equal(t, "getexample.com", mh.Domain)
+	why, err := h.svc.Explain(ctx, h.org, "", mh.ID, "")
+	require.NoError(t, err)
+	assert.Contains(t, why, "warming up")
+	assert.Contains(t, why, "30 a day")
+	require.NoError(t, h.mailer.SetMailboxDailyLimit(ctx, h.org.ID, mh.ID, ptr(int64(80))))
+	o, _ = h.svc.Overview(ctx, h.org)
+	assert.EqualValues(t, 80, o.Mailboxes[0].LimitInUse, "its own limit, above the pool's, as set")
+
 	// Not enabled in config: refused.
 	other, _ := h.store.GetOrganizationByID(ctx, "org-2")
 	_, err = h.svc.DraftOutreach(ctx, other, CampaignInput{Name: "x", Steps: threeSteps, ProspectIDs: []string{"p"}})
@@ -566,7 +583,7 @@ func TestSafetyLimits(t *testing.T) {
 	assert.Contains(t, sam.PausedReason, "bounce rate")
 	err = h.svc.Pause(ctx, h.org, "mailbox", sam.ID, true)
 	assert.ErrorContains(t, err, "still over a health limit")
-	why, err := h.svc.Explain(ctx, h.org, "", sam.ID, "")
+	why, err = h.svc.Explain(ctx, h.org, "", sam.ID, "")
 	require.NoError(t, err)
 	assert.Contains(t, why, "reputation")
 
@@ -1041,6 +1058,8 @@ func kaiBox(m *mail.Message) string {
 	a, _ := mail.ParseAddress(m.Header.Get("From"))
 	return a.Address
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func mustCampaign(t *testing.T, h *harness, id string) db.EmailSequence {
 	c, err := h.store.GetOutreachSequence(h.ctx, db.GetOutreachSequenceParams{ID: id, OrgID: sql.NullString{String: h.org.ID, Valid: true}})

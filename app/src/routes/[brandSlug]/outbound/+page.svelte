@@ -10,7 +10,7 @@
 	import { Button, Alert, LoadingSpinner, Badge, EmptyState } from '$lib/components/ui';
 	import { Send, Pause, Play } from '@lucide/svelte';
 	import CampaignTable from './CampaignTable.svelte';
-	import { errorMessage, percent } from './shared';
+	import { errorMessage, mailboxLimit, percent } from './shared';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -166,6 +166,7 @@
 						<th class="text-left">Mailbox</th>
 						<th class="text-left">Status</th>
 						<th class="text-right">Today</th>
+						<th class="text-left">Daily limit</th>
 						<th class="text-right">Sent 7d</th>
 						<th class="text-right">Bounces</th>
 						<th class="text-right">Spam blocks</th>
@@ -178,7 +179,7 @@
 						<tr class={mailboxFlagged(m) ? 'bg-error/5' : ''}>
 							<td>
 								<span class="font-medium text-text block">{m.email}</span>
-								<span class="text-xs text-text-muted block">{m.from_name}</span>
+								<span class="text-xs text-text-muted block">{m.from_name}, on {m.domain}</span>
 								{#if m.last_error}
 									<span class="text-xs text-error block mt-1">{m.last_error}</span>
 								{/if}
@@ -193,7 +194,8 @@
 									<Badge variant="success" size="sm">Active</Badge>
 								{/if}
 							</td>
-							<td class="text-right">{m.sent_today}/{m.allowed_today}</td>
+							<td class="text-right">{m.sent_today}{m.limited ? `/${m.allowed_today}` : ''}</td>
+							<td class="text-xs text-text-muted">{mailboxLimit(m)}</td>
 							<td class="text-right">{m.sent_7d}</td>
 							<td class="text-right">{m.bounces_7d}</td>
 							<td class="text-right" class:text-error={m.spam_blocks_7d > 0}>{m.spam_blocks_7d}</td>

@@ -1532,6 +1532,9 @@ type OutboundMailboxHealth struct {
 	PoolId       string `json:"pool_id,optional"`     // its mailbox pool (sending pathway)
 	DailyLimit   *int64 `json:"daily_limit,optional"` // its own daily limit; empty uses the pool's
 	Limited      bool   `json:"limited"`              // false: no daily limit applies
+	LimitInUse   int64  `json:"limit_in_use"`         // the daily limit it sends under: its own, else its pool's; 0: none
+	WarmingUp    bool   `json:"warming_up"`           // the warm-up holds it below limit_in_use; allowed_today is today's step
+	Domain       string `json:"domain"`
 }
 
 type OutboundMailboxInput struct {
