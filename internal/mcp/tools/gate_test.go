@@ -174,5 +174,12 @@ func TestOutboundScopes(t *testing.T) {
 	assert.NoError(t, check(send, "review_drafts", `{"action":"approve"}`))
 	assert.ErrorContains(t, check(send, "contact", `{"action":"list"}`), "mcp:full")
 	assert.ErrorContains(t, check(write, "setup_sending", `{"action":"add_mailboxes"}`), "admin")
+	// A member may price an order at the pool's mailbox service; changing the
+	// service or its key, buying, syncing and deleting need the brand's admin.
+	assert.NoError(t, check(write, "setup_sending", `{"action":"quote"}`))
+	assert.NoError(t, check(read, "setup_sending", `{"action":"service_inventory"}`))
+	for _, action := range []string{"mailbox_service", "connect_domain", "buy", "sync", "delete_mailbox"} {
+		assert.ErrorContains(t, check(write, "setup_sending", `{"action":"`+action+`","confirm":true}`), "admin", action)
+	}
 	assert.NoError(t, check([]string{"mcp:full"}, "conversations", `{"action":"list"}`))
 }
