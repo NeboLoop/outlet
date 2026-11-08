@@ -58,7 +58,7 @@ const countInactiveContacts = `-- name: CountInactiveContacts :one
 
 SELECT COUNT(*) as count FROM contacts c
 WHERE c.org_id = ?1
-    AND c.email_verified = 1
+    AND EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status = 'active')
     AND c.unsubscribed_at IS NULL
     -- A contact must have been here for the whole window to have had the
     -- chance to open, or to click.
@@ -93,7 +93,8 @@ type CountInactiveContactsParams struct {
 	ClicksModifier interface{}    `json:"clicks_modifier"`
 }
 
-// Inactive contacts: confirmed, still subscribed, with no open in the opens
+// Inactive contacts: on a list as an active subscriber (added, imported or
+// confirmed), not unsubscribed, with no open in the opens
 // window and no click in the clicks window. Count and Delete share the one
 // predicate, so the preview is what the delete removes.
 func (q *Queries) CountInactiveContacts(ctx context.Context, arg CountInactiveContactsParams) (int64, error) {
@@ -104,10 +105,12 @@ func (q *Queries) CountInactiveContacts(ctx context.Context, arg CountInactiveCo
 }
 
 const countUnconfirmedContactsOlderThan = `-- name: CountUnconfirmedContactsOlderThan :one
-SELECT COUNT(*) as count FROM contacts
-WHERE org_id = ?1
-AND email_verified = 0
-AND datetime(created_at) < datetime('now', ?2)
+
+SELECT COUNT(*) as count FROM contacts c
+WHERE c.org_id = ?1
+AND EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status = 'pending'
+    AND datetime(COALESCE(ls.verification_sent_at, ls.subscribed_at)) < datetime('now', ?2))
+AND NOT EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status <> 'pending')
 `
 
 type CountUnconfirmedContactsOlderThanParams struct {
@@ -115,6 +118,11 @@ type CountUnconfirmedContactsOlderThanParams struct {
 	DaysModifier interface{}    `json:"days_modifier"`
 }
 
+// Unconfirmed contacts: double opt-in signups who never confirmed. A contact
+// is one when a subscription of theirs has waited for confirmation longer
+// than the window and they have no other subscription: someone added by
+// hand, imported, confirmed or found for outreach is never one. Count and
+// Delete share the one predicate, so the preview is what the delete removes.
 func (q *Queries) CountUnconfirmedContactsOlderThan(ctx context.Context, arg CountUnconfirmedContactsOlderThanParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countUnconfirmedContactsOlderThan, arg.OrgID, arg.DaysModifier)
 	var count int64
@@ -189,7 +197,7 @@ DELETE FROM contacts
 WHERE contacts.id IN (
     SELECT c.id FROM contacts c
     WHERE c.org_id = ?1
-    AND c.email_verified = 1
+    AND EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status = 'active')
     AND c.unsubscribed_at IS NULL
     -- A contact must have been here for the whole window to have had the
     -- chance to open, or to click.
@@ -235,9 +243,13 @@ func (q *Queries) DeleteInactiveContacts(ctx context.Context, arg DeleteInactive
 
 const deleteUnconfirmedContactsOlderThan = `-- name: DeleteUnconfirmedContactsOlderThan :execrows
 DELETE FROM contacts
-WHERE org_id = ?1
-AND email_verified = 0
-AND datetime(created_at) < datetime('now', ?2)
+WHERE contacts.id IN (
+    SELECT c.id FROM contacts c
+    WHERE c.org_id = ?1
+    AND EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status = 'pending'
+        AND datetime(COALESCE(ls.verification_sent_at, ls.subscribed_at)) < datetime('now', ?2))
+    AND NOT EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status <> 'pending')
+)
 `
 
 type DeleteUnconfirmedContactsOlderThanParams struct {

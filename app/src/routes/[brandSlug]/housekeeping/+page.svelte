@@ -139,7 +139,7 @@
 				<div class="flex-1">
 					<h2 class="text-lg font-medium text-text">Inactive Contacts</h2>
 					<p class="mt-1 text-sm text-text-muted">
-						Remove confirmed contacts who haven't opened any email in the first window and haven't clicked any in the second: campaigns, sequences, outreach and transactional emails all count. Contacts newer than either window are kept. This helps improve your deliverability and open rates.
+						Remove subscribers (added, imported or confirmed, and still subscribed) who haven't opened any email in the first window and haven't clicked any in the second: campaigns, sequences, outreach and transactional emails all count. Contacts newer than either window are kept. This helps improve your deliverability and open rates.
 					</p>
 
 					<div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -231,7 +231,7 @@
 				<div class="flex-1">
 					<h2 class="text-lg font-medium text-text">Unconfirmed Subscriptions</h2>
 					<p class="mt-1 text-sm text-text-muted">
-						Remove pending subscriptions from contacts who never confirmed their email. This cleans up contacts who signed up but didn't complete double opt-in.
+						Remove contacts who signed up on a double opt-in list and never confirmed, waiting longer than the days below. Anyone on a list as a subscriber, or found for outreach, is kept.
 					</p>
 
 					<div class="mt-4 max-w-xs">

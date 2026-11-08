@@ -396,6 +396,7 @@ type CreateSequenceRequest struct {
 	Name         string `json:"name"`
 	TriggerEvent string `json:"trigger_event,optional,default=manual"`
 	SequenceType string `json:"sequence_type,optional,default=lifecycle"` // lifecycle or transactional
+	IsActive     *bool  `json:"is_active,optional"`                       // Omitted starts it active
 }
 
 type CreateTemplateRequest struct {
@@ -769,9 +770,9 @@ type GDPRExportRequest struct {
 }
 
 type GDPRExportResponse struct {
-	DownloadURL string `json:"download_url"`
-	ExpiresAt   string `json:"expires_at"`
-	Format      string `json:"format"` // json, csv
+	Filename string `json:"filename"`
+	Format   string `json:"format"` // json
+	Data     string `json:"data"`   // the contact's data, as JSON
 }
 
 type GDPRLookupRequest struct {

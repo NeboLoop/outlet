@@ -25,21 +25,25 @@
 	} from '$lib/components/ui';
 	import { ArrowLeft, Save, FileText, X, TestTube } from '@lucide/svelte';
 
-	// With a campaign, edits it; without one, creates a draft
+	// With a campaign, edits it; without one, creates a draft, starting from
+	// copyOf's content when given (Duplicate)
 	let {
 		campaign = undefined,
+		copyOf = undefined,
 		onsaved = undefined,
 		onclose = undefined
 	}: {
 		campaign?: CampaignInfo;
+		copyOf?: CampaignInfo;
 		onsaved?: (c: CampaignInfo) => void;
 		onclose?: () => void;
 	} = $props();
 
-	// Form state, starting from the campaign being edited
+	// Form state, starting from the campaign being edited or copied
 	// svelte-ignore state_referenced_locally
-	const initial = campaign;
-	let name = $state(initial?.name ?? '');
+	const initial = campaign ?? copyOf;
+	// svelte-ignore state_referenced_locally
+	let name = $state(copyOf ? `Copy of ${copyOf.name}` : (initial?.name ?? ''));
 	let subject = $state(initial?.subject ?? '');
 	let previewText = $state(initial?.preview_text ?? '');
 	let fromName = $state(initial?.from_name ?? '');

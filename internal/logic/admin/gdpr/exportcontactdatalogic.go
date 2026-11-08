@@ -5,15 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
-	"github.com/google/uuid"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -46,7 +44,7 @@ func (l *ExportContactDataLogic) ExportContactData(req *types.GDPRExportRequest)
 	contact, err := l.svcCtx.DB.GetContact(l.ctx, req.ContactId)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("contact not found")
+			return nil, errorx.NewNotFoundError("Contact not found")
 		}
 		return nil, err
 	}
@@ -87,32 +85,14 @@ func (l *ExportContactDataLogic) ExportContactData(req *types.GDPRExportRequest)
 	// Get email activity
 	export.Activity = l.getEmailActivity(contact.ID)
 
-	// Write export to file
-	exportDir := filepath.Join(".", "exports", "gdpr")
-	if err := os.MkdirAll(exportDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create export directory: %w", err)
-	}
-
-	exportID := uuid.New().String()
-	filename := fmt.Sprintf("gdpr-export-%s-%s.json", contact.ID[:8], exportID[:8])
-	filePath := filepath.Join(exportDir, filename)
-
 	exportData, err := json.MarshalIndent(export, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize export: %w", err)
 	}
-
-	if err := os.WriteFile(filePath, exportData, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write export file: %w", err)
-	}
-
-	// Generate download URL (expires in 24 hours)
-	expiresAt := time.Now().Add(24 * time.Hour)
-
 	return &types.GDPRExportResponse{
-		DownloadURL: fmt.Sprintf("/api/admin/gdpr/export/%s/download", exportID),
-		ExpiresAt:   expiresAt.Format(time.RFC3339),
-		Format:      "json",
+		Filename: fmt.Sprintf("gdpr-export-%s.json", contact.ID),
+		Format:   "json",
+		Data:     string(exportData),
 	}, nil
 }
 

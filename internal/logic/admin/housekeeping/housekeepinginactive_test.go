@@ -34,6 +34,7 @@ func TestHousekeepingInactive_UsesBothWindowsAndEveryKindOfEmail(t *testing.T) {
 		`INSERT INTO users (id, email, password_hash, name, role, status) VALUES ('anne', 'anne@example.com', 'x', 'Anne', 'agent', 'active')`,
 		`INSERT INTO organizations (id, name, slug, api_key) VALUES ('org1', 'One', 'one', 'k1')`,
 		`INSERT INTO org_users (org_id, user_id, role) VALUES ('org1', 'anne', 'admin')`,
+		`INSERT INTO email_lists (id, public_id, org_id, name, slug) VALUES (1, 'news', 'org1', 'News', 'news')`,
 		`INSERT INTO email_campaigns (id, org_id, name, subject, html_body) VALUES ('camp', 'org1', 'C', 'S', 'B')`,
 		`INSERT INTO email_sequences (id, org_id, slug, name, trigger_event) VALUES ('seq', 'org1', 's', 'S', 'manual')`,
 		`INSERT INTO email_templates (id, org_id, sequence_id, position, subject, html_body) VALUES ('tpl', 'org1', 'seq', 1, 'S', 'B')`,
@@ -59,6 +60,11 @@ func TestHousekeepingInactive_UsesBothWindowsAndEveryKindOfEmail(t *testing.T) {
 			('q3', 'click_120', 'tpl', datetime('now'), NULL, datetime('now', '-120 days'), 'marketing')`,
 		`INSERT INTO transactional_sends (id, template_id, org_id, to_email, opened_at) VALUES
 			('t1', 'tx', 'org1', 'Transactional_Open@example.com', datetime('now', '-3 days'))`,
+		// Every contact above is on the list; a prospect found for outreach
+		// never subscribed, so it is never an inactive subscriber.
+		`INSERT INTO list_subscribers (id, list_id, contact_id, status) SELECT 'ls-' || id, 1, id, 'active' FROM contacts`,
+		contact("prospect"),
+		`INSERT INTO list_subscribers (id, list_id, contact_id, status) VALUES ('ls-prospect', 1, 'prospect', 'prospect')`,
 	} {
 		_, err := conn.Exec(q)
 		require.NoError(t, err, q)
@@ -92,7 +98,7 @@ func TestHousekeepingInactive_UsesBothWindowsAndEveryKindOfEmail(t *testing.T) {
 		left = append(left, id)
 	}
 	require.NoError(t, rows.Close())
-	assert.Equal(t, []string{"campaign_click", "campaign_open", "click_120", "newcomer", "outreach_click", "sequence_open", "transactional_open"}, left)
+	assert.Equal(t, []string{"campaign_click", "campaign_open", "click_120", "newcomer", "outreach_click", "prospect", "sequence_open", "transactional_open"}, left)
 
 	_, err = NewHousekeepingInactiveLogic(asAdmin, &svc.ServiceContext{DB: store}).HousekeepingInactive(&types.HousekeepingInactiveRequest{NoOpensDays: -1, NoClicksDays: 10, DryRun: true})
 	assert.Error(t, err)

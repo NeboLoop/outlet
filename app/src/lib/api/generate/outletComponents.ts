@@ -407,6 +407,7 @@ export interface CreateSequenceRequest {
 	name: string
 	trigger_event?: string
 	sequence_type?: string // lifecycle or transactional
+	is_active?: boolean // Omitted starts it active
 }
 
 export interface CreateTemplateRequest {
@@ -807,9 +808,9 @@ export interface GDPRExportRequestParams {
 }
 
 export interface GDPRExportResponse {
-	download_url: string
-	expires_at: string
-	format: string // json, csv
+	filename: string
+	format: string // json
+	data: string // the contact's data, as JSON
 }
 
 export interface GDPRLookupRequest {

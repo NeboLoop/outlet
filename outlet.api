@@ -547,6 +547,7 @@ type (
 		Name         string `json:"name"`
 		TriggerEvent string `json:"trigger_event,optional,default=manual"`
 		SequenceType string `json:"sequence_type,optional,default=lifecycle"` // lifecycle or transactional
+		IsActive     *bool  `json:"is_active,optional"` // Omitted starts it active
 	}
 	UpdateSequenceRequest {
 		Id                     string  `path:"id"`
@@ -1798,10 +1799,11 @@ type (
 	GDPRExportRequest {
 		ContactId string `path:"contact_id"`
 	}
+	// The export itself, for the app to save as a file: nothing is kept on the server
 	GDPRExportResponse {
-		DownloadURL string `json:"download_url"`
-		ExpiresAt   string `json:"expires_at"`
-		Format      string `json:"format"` // json, csv
+		Filename string `json:"filename"`
+		Format   string `json:"format"` // json
+		Data     string `json:"data"` // the contact's data, as JSON
 	}
 	GDPRDeleteRequest {
 		ContactId   string `path:"contact_id"`

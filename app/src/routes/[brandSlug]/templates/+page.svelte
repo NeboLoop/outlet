@@ -121,6 +121,28 @@
 		}
 	}
 
+	// A copy of a design under a slug no design of the brand has, opened to edit
+	async function duplicateTemplate(template: EmailDesignInfo) {
+		error = '';
+		const taken = new Set(templates.map((t) => t.slug));
+		let slug = `${template.slug}-copy`;
+		for (let n = 2; taken.has(slug); n++) slug = `${template.slug}-copy-${n}`;
+		try {
+			const copy = await createEmailDesign({
+				name: `Copy of ${template.name}`,
+				slug,
+				description: template.description,
+				category: template.category,
+				html_body: template.html_body,
+				plain_text: template.plain_text,
+				is_active: template.is_active
+			});
+			goto(`${basePath}/templates/${copy.id}`);
+		} catch (err: any) {
+			error = err.message || 'Failed to duplicate the template';
+		}
+	}
+
 	let showDeleteConfirm = $state(false);
 	let deleteTemplateItem = $state<EmailDesignInfo | null>(null);
 	let deleting = $state(false);
@@ -319,7 +341,7 @@
 										{
 											label: 'Duplicate',
 											icon: Copy,
-											onclick: () => goto(`${basePath}/templates/new?duplicate=${template.id}`)
+											onclick: () => duplicateTemplate(template)
 										},
 										{ divider: true },
 										{

@@ -279,7 +279,7 @@
 										{
 											label: 'View stats',
 											icon: BarChart3,
-											onclick: () => goto(`${basePath}/campaigns/${campaign.id}/stats`)
+											onclick: () => goto(`${basePath}/campaigns/${campaign.id}`)
 										},
 										{
 											label: 'Duplicate',

@@ -138,9 +138,9 @@
 			<div class="mt-4">
 				{#if apiCodeTab === 'curl'}
 					<div class="bg-bg-secondary p-4 rounded-md overflow-x-auto max-w-full">
-						<pre class="text-sm font-mono text-text whitespace-pre-wrap break-all">{`curl -X POST ${embedCode?.base_url || 'https://your-outlet-instance.com'}/api/sdk/v1/lists/${ctx.list?.slug || 'your-list-slug'}/subscribe \\
+						<pre class="text-sm font-mono text-text whitespace-pre-wrap break-all">{`curl -X POST ${embedCode?.base_url || 'https://your-outlet-instance.com'}/sdk/v1/lists/${ctx.list?.slug || 'your-list-slug'}/subscribe \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer your-api-key" \\
+  -H "X-API-Key: your-api-key" \\
   -d '{
     "email": "user@example.com",
     "name": "John Doe"

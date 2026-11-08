@@ -82,7 +82,8 @@ type Querier interface {
 	CountCustomFieldsByList(ctx context.Context, listID int64) (int64, error)
 	CountEmailDesigns(ctx context.Context, orgID string) (int64, error)
 	CountEmailDesignsByCategory(ctx context.Context, arg CountEmailDesignsByCategoryParams) (int64, error)
-	// Inactive contacts: confirmed, still subscribed, with no open in the opens
+	// Inactive contacts: on a list as an active subscriber (added, imported or
+	// confirmed), not unsubscribed, with no open in the opens
 	// window and no click in the clicks window. Count and Delete share the one
 	// predicate, so the preview is what the delete removes.
 	CountInactiveContacts(ctx context.Context, arg CountInactiveContactsParams) (int64, error)
@@ -108,6 +109,11 @@ type Querier interface {
 	CountTemplatesBySequence(ctx context.Context, sequenceID sql.NullString) (int64, error)
 	CountTransactionalEmails(ctx context.Context, orgID string) (int64, error)
 	CountTransactionalSends(ctx context.Context, templateID string) (int64, error)
+	// Unconfirmed contacts: double opt-in signups who never confirmed. A contact
+	// is one when a subscription of theirs has waited for confirmation longer
+	// than the window and they have no other subscription: someone added by
+	// hand, imported, confirmed or found for outreach is never one. Count and
+	// Delete share the one predicate, so the preview is what the delete removes.
 	CountUnconfirmedContactsOlderThan(ctx context.Context, arg CountUnconfirmedContactsOlderThanParams) (int64, error)
 	CountUnhandledEmailReplies(ctx context.Context, orgID string) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)

@@ -85,6 +85,17 @@
 		}
 	}
 
+	// Saves the export the server returned as a file on this computer
+	function downloadExport() {
+		if (!exportResult) return;
+		const url = URL.createObjectURL(new Blob([exportResult.data], { type: 'application/json' }));
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = exportResult.filename;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
 	async function exportData() {
 		if (!contactId) return;
 
@@ -95,7 +106,8 @@
 		try {
 			const result = await api.exportContactData({}, contactId);
 			exportResult = result;
-			success = 'Data export created successfully';
+			downloadExport();
+			success = 'Data export downloaded';
 		} catch (err: any) {
 			console.error('Failed to export data:', err);
 			error = err.message || 'Failed to export contact data';
@@ -290,20 +302,12 @@
 					<div class="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
 						<p class="text-sm font-medium text-text mb-2">Export Ready</p>
 						<p class="text-xs text-text-muted mb-3">
-							Format: {exportResult.format}
-							{#if exportResult.expires_at}
-								<br />Expires: {formatDate(exportResult.expires_at, 'datetime') || 'Never'}
-							{/if}
+							{exportResult.filename} ({exportResult.format})
 						</p>
-						{#if exportResult.download_url}
-							<Button
-								type="primary"
-								onclick={() => window.open(exportResult?.download_url, '_blank')}
-							>
-								<Download class="mr-2 h-4 w-4" />
-								Download Export
-							</Button>
-						{/if}
+						<Button type="primary" onclick={downloadExport}>
+							<Download class="mr-2 h-4 w-4" />
+							Download Export
+						</Button>
 					</div>
 				{/if}
 
