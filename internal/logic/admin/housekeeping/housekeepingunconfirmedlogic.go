@@ -7,6 +7,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -33,9 +34,10 @@ func (l *HousekeepingUnconfirmedLogic) HousekeepingUnconfirmed(req *types.Housek
 		return nil, err
 	}
 
+	// The API defaults a missing value to 30; 0 means every unconfirmed contact
 	days := req.OlderThanDays
-	if days <= 0 {
-		days = 30
+	if days < 0 {
+		return nil, errorx.NewBadRequestError("Days can't be negative.")
 	}
 
 	l.Infof("HousekeepingUnconfirmed called for org %s: OlderThanDays=%d, DryRun=%v",
