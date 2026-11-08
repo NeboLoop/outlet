@@ -1743,6 +1743,7 @@ type SDKContactInfo struct {
 }
 
 type SESQuotaResponse struct {
+	Configured      bool    `json:"configured"` // false: the platform sends through SMTP, not SES
 	Max24HourSend   float64 `json:"max_24_hour_send"`
 	MaxSendRate     float64 `json:"max_send_rate"`
 	SentLast24Hours float64 `json:"sent_last_24_hours"`

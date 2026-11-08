@@ -1854,6 +1854,7 @@ export interface SDKContactInfo {
 }
 
 export interface SESQuotaResponse {
+	configured: boolean // false: the platform sends through SMTP, not SES
 	max_24_hour_send: number
 	max_send_rate: number
 	sent_last_24_hours: number

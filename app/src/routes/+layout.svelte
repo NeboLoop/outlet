@@ -7,21 +7,27 @@
 
 	let { children } = $props();
 
+	// Nothing renders, and so nothing calls the API, until we know the
+	// platform is set up: a fresh install goes straight to /setup.
+	let ready = $state(false);
+
 	onMount(async () => {
 		// Skip setup check if already on setup page
 		if ($page.url.pathname.startsWith('/setup')) {
+			ready = true;
 			return;
 		}
 
 		try {
 			const status = await getPublicSetupStatus();
 			if (status.setup_required) {
-				goto('/setup');
+				await goto('/setup');
 			}
 		} catch (err) {
-			// If API fails, might be first run - try setup page
+			// If we can't tell, show the app; its own requests report the problem
 			console.error('Failed to check setup status:', err);
 		}
+		ready = true;
 	});
 </script>
 
@@ -29,4 +35,6 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-{@render children()}
+{#if ready}
+	{@render children()}
+{/if}
