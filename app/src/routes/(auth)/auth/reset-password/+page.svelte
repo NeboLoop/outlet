@@ -1,30 +1,43 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { resetPassword } from '$lib/api';
 	import { Card, Input, Button, Alert } from '$lib/components/ui';
 	import { ArrowLeft, CheckCircle } from '@lucide/svelte';
 
 	let password = $state('');
 	let confirmPassword = $state('');
 	let submitted = $state(false);
+	let loading = $state(false);
 	let error = $state('');
 
-	function handleSubmit(e: Event) {
+	const token = $page.url.searchParams.get('token') ?? '';
+
+	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		error = '';
 
+		if (!token) {
+			error = 'This reset link is incomplete. Request a new one.';
+			return;
+		}
 		if (password !== confirmPassword) {
 			error = 'Passwords do not match';
 			return;
 		}
-
 		if (password.length < 8) {
 			error = 'Password must be at least 8 characters';
 			return;
 		}
 
-		console.log('Password reset with token:', $page.url.searchParams.get('token'));
-		console.log('New password:', password);
-		submitted = true;
+		loading = true;
+		try {
+			await resetPassword({ token, new_password: password, confirm_password: confirmPassword });
+			submitted = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Could not reset your password. Please try again.';
+		} finally {
+			loading = false;
+		}
 	}
 </script>
 
@@ -53,6 +66,9 @@
 			{#if error}
 				<Alert type="error" title="Error">
 					<p>{error}</p>
+					{#if !token || error.includes('expired')}
+						<p class="mt-2"><a href="/auth/forgot-password" class="font-medium text-primary hover:underline">Request a new link</a></p>
+					{/if}
 				</Alert>
 				<div class="mt-6"></div>
 			{/if}
@@ -82,6 +98,8 @@
 					type="primary"
 					size="lg"
 					class="w-full justify-center"
+					{loading}
+					disabled={loading}
 				>
 					Reset password
 				</Button>

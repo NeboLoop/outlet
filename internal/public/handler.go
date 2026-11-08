@@ -234,6 +234,7 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		subscriberID = subscriber.ID
+		h.subscriptionActivated(r.Context(), contactID, list.ID)
 	}
 
 	// Save custom field values if any
@@ -292,6 +293,7 @@ func (h *Handler) HandleConfirm(w http.ResponseWriter, r *http.Request) {
 			h.renderError(w, "Error", "Something went wrong. Please try again later.", http.StatusInternalServerError)
 			return
 		}
+		h.subscriptionActivated(r.Context(), subscriber.ContactID, subscriber.ListID)
 	case "active":
 	default:
 		h.renderError(w, "Invalid Link", "This confirmation link is no longer valid.", http.StatusNotFound)
@@ -481,6 +483,15 @@ func (h *Handler) HandleWebView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.renderTemplate(w, "web_view.html", data)
+}
+
+// subscriptionActivated starts the list's signup sequence for a subscription
+// that just became active. The subscriber sees success either way; a failure
+// is logged.
+func (h *Handler) subscriptionActivated(ctx context.Context, contactID string, listID int64) {
+	if err := h.svcCtx.Sequences.SubscriptionActivated(ctx, contactID, listID); err != nil {
+		log.Printf("Error starting signup sequence for contact %s on list %d: %v", contactID, listID, err)
+	}
 }
 
 // sendConfirmationEmail sends the double opt-in confirmation email

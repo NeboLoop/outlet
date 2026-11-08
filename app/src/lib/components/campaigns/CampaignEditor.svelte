@@ -6,12 +6,12 @@
 		listEmailDesigns,
 		createCampaign,
 		updateCampaign,
+		sendCampaignTest,
 		type ListInfo,
 		type EmailDesignInfo,
 		type CampaignInfo,
 		type CreateCampaignRequest
 	} from '$lib/api';
-	import { sendWithBrandKey } from '$lib/sendTest';
 	import {
 		Button,
 		Input,
@@ -118,17 +118,10 @@
 		}
 	}
 
+	// The design wraps the content when the campaign is sent; the editor
+	// holds only the content
 	function handleDesignSelect(designId: string) {
 		selectedDesignId = designId;
-		if (designId) {
-			const design = designs.find((d) => d.id === designId);
-			if (design) {
-				htmlBody = design.html_body;
-				if (design.plain_text) {
-					plainText = design.plain_text;
-				}
-			}
-		}
 	}
 
 	function toggleList(listId: string) {
@@ -174,7 +167,7 @@
 			};
 
 			const saved = campaign
-				? await updateCampaign({}, { ...request, preview_text: previewText.trim(), from_name: fromName.trim(), from_email: fromEmail.trim(), reply_to: replyTo.trim(), plain_text: plainText.trim(), exclude_list_ids: excludeListIds }, campaign.id)
+				? await updateCampaign({}, { ...request, preview_text: previewText.trim(), from_name: fromName.trim(), from_email: fromEmail.trim(), reply_to: replyTo.trim(), plain_text: plainText.trim(), exclude_list_ids: excludeListIds, design_id: selectedDesignId }, campaign.id)
 				: await createCampaign(request);
 			if (onsaved) {
 				onsaved(saved);
@@ -200,21 +193,17 @@
 		testSuccess = '';
 
 		try {
-			// Fill subscriber tags with sample values, as a subscriber would see them
-			const sample = (text: string) =>
-				text
-					.replace(/\{\{\s*(name|first_name)\s*(,\s*fallback\s*=[^}]*)?\}\}/g, 'Test Subscriber')
-					.replace(/\{\{\s*email\s*\}\}/g, testEmailAddress.trim())
-					.replace(/\{\{\s*(unsubscribe_url|web_version_url)\s*\}\}/g, '#');
-			await sendWithBrandKey($page.params.brandSlug as string, {
+			// Built on the server as a real send is: the design, merge tags with
+			// sample subscriber details, and the unsubscribe link
+			await sendCampaignTest({
 				to: testEmailAddress.trim(),
-				subject: `[Test] ${sample(subject.trim())}`,
-				body: sample(htmlBody),
-				text_body: plainText.trim() ? sample(plainText.trim()) : undefined,
+				subject: subject.trim(),
+				html_body: htmlBody,
+				plain_text: plainText.trim() || undefined,
+				design_id: selectedDesignId || undefined,
 				from_name: fromName.trim() || undefined,
 				from_email: fromEmail.trim() || undefined,
-				reply_to: replyTo.trim() || undefined,
-				tags: ['campaign-test']
+				reply_to: replyTo.trim() || undefined
 			});
 			testSuccess = `Test email sent to ${testEmailAddress}`;
 			setTimeout(() => { testSuccess = ''; }, 5000);
@@ -417,7 +406,8 @@
 						<!-- Template Selection -->
 						{#if designs.length > 0}
 							<div class="border-t border-base-300 pt-6">
-								<h4 class="text-sm font-medium text-base-content mb-3">Template</h4>
+								<h4 class="text-sm font-medium text-base-content mb-1">Template</h4>
+								<p class="text-xs text-base-content/50 mb-3">Your content is placed in the template when the campaign is sent.</p>
 								<div class="space-y-2">
 									<button
 										type="button"
@@ -426,8 +416,8 @@
 									>
 										<FileText class="h-5 w-5 text-base-content/50" />
 										<div>
-											<span class="text-sm font-medium text-base-content block">Blank</span>
-											<span class="text-xs text-base-content/50">Start from scratch</span>
+											<span class="text-sm font-medium text-base-content block">None</span>
+											<span class="text-xs text-base-content/50">Send the content as it is</span>
 										</div>
 									</button>
 									{#each designs as design}

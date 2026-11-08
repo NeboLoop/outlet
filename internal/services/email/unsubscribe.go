@@ -18,22 +18,27 @@ func unsubscribeURL(baseURL, trackingToken string) string {
 
 // CampaignEmail is one campaign send to one recipient.
 type CampaignEmail struct {
-	OrgID         string
-	FromName      string
-	FromEmail     string
-	ReplyTo       string
-	To            string
-	Name          string
-	Subject       string
-	HTML          string
-	Text          string
+	OrgID     string
+	FromName  string
+	FromEmail string
+	ReplyTo   string
+	To        string
+	Name      string
+	Subject   string
+	HTML      string
+	Text      string
+	// The campaign's design (email_designs), if it has one: the HTML and
+	// plain text its content is placed into at {{content}}.
+	DesignHTML    string
+	DesignText    string
 	TrackingToken string
 	TrackOpens    bool
 	TrackClicks   bool
 }
 
 // CampaignMessage builds the Message for a campaign send, the same way for the
-// first attempt and every retry. It fills merge tags, adds a footer
+// first attempt, every retry and a test send. It places the content in the
+// campaign's design, fills merge tags, adds a footer
 // unsubscribe link when the body has none, adds open and click tracking when
 // enabled (never on the unsubscribe link), and sets the one-click
 // List-Unsubscribe headers.
@@ -46,9 +51,11 @@ func (s *Service) CampaignMessage(c CampaignEmail) Message {
 		ReplyTo:   c.ReplyTo,
 		To:        c.To,
 		Subject:   fillMergeTags(c.Subject, tags, false),
-		Text:      fillMergeTags(c.Text, tags, false),
 	}
-	htmlBody := fillMergeTags(c.HTML, tags, true)
+	if c.Text != "" {
+		m.Text = fillMergeTags(ApplyDesign(c.DesignText, c.Text), tags, false)
+	}
+	htmlBody := fillMergeTags(ApplyDesign(c.DesignHTML, c.HTML), tags, true)
 	if c.TrackingToken == "" {
 		m.HTML = htmlBody
 		return m

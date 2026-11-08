@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { verifyEmail } from '$lib/api';
 	import { Card, Button, Spinner } from '$lib/components/ui';
 	import { CheckCircle, XCircle } from '@lucide/svelte';
 
@@ -18,19 +19,14 @@
 		}
 
 		try {
-			console.log('Verifying email with token:', token);
-			await new Promise(resolve => setTimeout(resolve, 1500));
+			await verifyEmail({ token });
 			verified = true;
-			verifying = false;
 		} catch (err) {
-			error = 'Verification failed. Please try again or request a new verification link.';
+			error = err instanceof Error ? err.message : 'Verification failed.';
+		} finally {
 			verifying = false;
 		}
 	});
-
-	function resendVerification() {
-		console.log('Resending verification email');
-	}
 </script>
 
 <svelte:head>
@@ -89,15 +85,7 @@
 						{error}
 					</p>
 				</div>
-				<div class="pt-4 space-y-3">
-					<Button
-						type="primary"
-						size="lg"
-						class="w-full justify-center"
-						onclick={resendVerification}
-					>
-						Resend verification email
-					</Button>
+				<div class="pt-4">
 					<a href="/auth/login" class="block text-sm font-medium text-primary hover:underline">
 						Return to login
 					</a>

@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -162,6 +163,72 @@ func (s *Service) getGlobalSMTPConfig(ctx context.Context) (*SMTPConfig, error) 
 	}
 
 	return config, nil
+}
+
+// PlatformEmailStatus says what the platform's email settings can do: send
+// through SES, send through an SMTP relay, and send platform mail (password
+// resets, invitations) from a default From address.
+type PlatformEmailStatus struct {
+	HasSES  bool
+	HasSMTP bool
+	HasFrom bool
+	// Missing names the settings still needed: from_email, and when neither
+	// provider is set up, the keys each one lacks.
+	Missing []string
+}
+
+// Configured reports whether email can go out at all and platform mail has a
+// From address.
+func (p PlatformEmailStatus) Configured() bool {
+	return (p.HasSES || p.HasSMTP) && p.HasFrom
+}
+
+// PlatformStatus reads the platform email settings the same way Send does, so
+// setup screens report what sending will actually find.
+func (s *Service) PlatformStatus(ctx context.Context) (PlatformEmailStatus, error) {
+	ses, err := s.getSESConfig(ctx)
+	if err != nil {
+		return PlatformEmailStatus{}, err
+	}
+	smtpConfig, err := s.getGlobalSMTPConfig(ctx)
+	if err != nil {
+		return PlatformEmailStatus{}, err
+	}
+
+	smtpMissing := missingKeys(map[string]bool{
+		"smtp_host":     smtpConfig.Host != "",
+		"smtp_port":     smtpConfig.Port > 0,
+		"smtp_user":     smtpConfig.User != "",
+		"smtp_password": smtpConfig.Password != "",
+	})
+	sesMissing := missingKeys(map[string]bool{
+		"aws_access_key": ses.AccessKey != "",
+		"aws_secret_key": ses.SecretKey != "",
+	})
+	status := PlatformEmailStatus{
+		HasSES:  s.hasSESConfig(ses),
+		HasSMTP: len(smtpMissing) == 0,
+		HasFrom: smtpConfig.FromAddress != "",
+	}
+	if !status.HasFrom {
+		status.Missing = append(status.Missing, "from_email")
+	}
+	if !status.HasSES && !status.HasSMTP {
+		status.Missing = append(status.Missing, append(sesMissing, smtpMissing...)...)
+	}
+	return status, nil
+}
+
+// missingKeys returns the keys whose value is false, in sorted order.
+func missingKeys(set map[string]bool) []string {
+	var missing []string
+	for key, ok := range set {
+		if !ok {
+			missing = append(missing, key)
+		}
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 // EnablePool enables SMTP connection pooling for high-throughput sending

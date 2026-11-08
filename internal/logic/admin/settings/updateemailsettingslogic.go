@@ -4,9 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/mail"
+	"strings"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -162,45 +165,14 @@ func (l *UpdateEmailSettingsLogic) UpdateEmailSettings(req *types.UpdateEmailSet
 		}
 	}
 
-	// Save From Email (non-sensitive)
+	// The platform's default sender (From address, From name, Reply-To) is
+	// saved as one: platform mail such as password resets and invitations
+	// goes out from it, and brands without their own sender fall back to it.
+	// Sending a From address saves all three, so a blank name or Reply-To
+	// clears it.
 	if req.FromEmail != "" {
-		_, err := l.svcCtx.DB.UpsertPlatformSetting(l.ctx, db.UpsertPlatformSettingParams{
-			Key:         "from_email",
-			ValueText:   sql.NullString{String: req.FromEmail, Valid: true},
-			Description: sql.NullString{String: "Default from email address", Valid: true},
-			Category:    smtpCategory,
-			IsSensitive: sql.NullInt64{Int64: 0, Valid: true},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to save from_email: %w", err)
-		}
-	}
-
-	// Save From Name (non-sensitive)
-	if req.FromName != "" {
-		_, err := l.svcCtx.DB.UpsertPlatformSetting(l.ctx, db.UpsertPlatformSettingParams{
-			Key:         "from_name",
-			ValueText:   sql.NullString{String: req.FromName, Valid: true},
-			Description: sql.NullString{String: "Default from name", Valid: true},
-			Category:    smtpCategory,
-			IsSensitive: sql.NullInt64{Int64: 0, Valid: true},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to save from_name: %w", err)
-		}
-	}
-
-	// Save Reply-To (non-sensitive)
-	if req.ReplyTo != "" {
-		_, err := l.svcCtx.DB.UpsertPlatformSetting(l.ctx, db.UpsertPlatformSettingParams{
-			Key:         "reply_to",
-			ValueText:   sql.NullString{String: req.ReplyTo, Valid: true},
-			Description: sql.NullString{String: "Default reply-to email address", Valid: true},
-			Category:    smtpCategory,
-			IsSensitive: sql.NullInt64{Int64: 0, Valid: true},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to save reply_to: %w", err)
+		if err := l.saveSender(req.FromEmail, req.FromName, req.ReplyTo); err != nil {
+			return nil, err
 		}
 	}
 
@@ -208,4 +180,36 @@ func (l *UpdateEmailSettingsLogic) UpdateEmailSettings(req *types.UpdateEmailSet
 		Success: true,
 		Message: "Settings saved successfully",
 	}, nil
+}
+
+// saveSender validates and stores the platform's default sender.
+func (l *UpdateEmailSettingsLogic) saveSender(fromEmail, fromName, replyTo string) error {
+	fromEmail, fromName, replyTo = strings.TrimSpace(fromEmail), strings.TrimSpace(fromName), strings.TrimSpace(replyTo)
+	if addr, err := mail.ParseAddress(fromEmail); err != nil || addr.Address != fromEmail {
+		return errorx.NewBadRequestError("Enter a valid From address.")
+	}
+	if replyTo != "" {
+		if addr, err := mail.ParseAddress(replyTo); err != nil || addr.Address != replyTo {
+			return errorx.NewBadRequestError("Enter a valid Reply-To address.")
+		}
+	}
+	if strings.ContainsAny(fromName, "\r\n") {
+		return errorx.NewBadRequestError("The From name can't contain a line break.")
+	}
+	for _, s := range []struct{ key, value, description string }{
+		{"from_email", fromEmail, "Default from email address"},
+		{"from_name", fromName, "Default from name"},
+		{"reply_to", replyTo, "Default reply-to email address"},
+	} {
+		if _, err := l.svcCtx.DB.UpsertPlatformSetting(l.ctx, db.UpsertPlatformSettingParams{
+			Key:         s.key,
+			ValueText:   sql.NullString{String: s.value, Valid: true},
+			Description: sql.NullString{String: s.description, Valid: true},
+			Category:    "email",
+			IsSensitive: sql.NullInt64{Int64: 0, Valid: true},
+		}); err != nil {
+			return fmt.Errorf("failed to save %s: %w", s.key, err)
+		}
+	}
+	return nil
 }

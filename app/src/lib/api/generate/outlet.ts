@@ -240,6 +240,14 @@ export function getCampaignStats(params: components.GetCampaignRequestParams, id
 }
 
 /**
+ * @description "Send a test of a campaign to one address, built as a real send is (design, merge tags, unsubscribe link)"
+ * @param req
+ */
+export function sendCampaignTest(req: components.SendCampaignTestRequest) {
+	return webapi.post<components.Response>(`/api/admin/campaigns/test`, req)
+}
+
+/**
  * @description 
  * @param params
  */
@@ -900,6 +908,14 @@ export function getSequenceStats(params: components.SequenceStatsRequestParams, 
 }
 
 /**
+ * @description "Enroll a contact of the brand in one of its sequences, as the signed-in member (the same enrollment as the SDK route)"
+ * @param req
+ */
+export function adminEnrollInSequence(req: components.EnrollSequenceRequest) {
+	return webapi.post<components.EnrollSequenceResponse>(`/api/admin/sequences/enroll`, req)
+}
+
+/**
  * @description 
  * @param req
  */
@@ -1061,6 +1077,14 @@ export function deleteTransactionalEmail(params: components.DeleteTransactionalE
  */
 export function getTransactionalEmailStats(params: components.GetTransactionalEmailRequestParams, id: string) {
 	return webapi.get<components.TransactionalStatsResponse>(`/api/admin/transactional-emails/${id}/stats`, params)
+}
+
+/**
+ * @description "Send a test transactional email as the signed-in member, through the same send as the SDK route"
+ * @param req
+ */
+export function sendTransactionalTest(req: components.SendEmailRequest) {
+	return webapi.post<components.SendEmailResponse>(`/api/admin/transactional-emails/test`, req)
 }
 
 /**

@@ -360,7 +360,7 @@ type Querier interface {
 	GetOutreachSequence(ctx context.Context, arg GetOutreachSequenceParams) (EmailSequence, error)
 	GetOutreachSequenceBySlug(ctx context.Context, arg GetOutreachSequenceBySlugParams) (EmailSequence, error)
 	GetPendingAuthToken(ctx context.Context, arg GetPendingAuthTokenParams) (AuthToken, error)
-	// Returns the sends claimed with claim_token.
+	// Returns the sends claimed with claim_token, with the campaign's design.
 	GetPendingCampaignSends(ctx context.Context, claimToken sql.NullString) ([]GetPendingCampaignSendsRow, error)
 	// Returns the sequence emails claimed with claim_token.
 	GetPendingEmails(ctx context.Context, claimToken sql.NullString) ([]GetPendingEmailsRow, error)

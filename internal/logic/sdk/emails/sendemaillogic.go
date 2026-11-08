@@ -44,6 +44,15 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 			Message: "Organization not found in context",
 		}, nil
 	}
+	return Send(l.ctx, l.svcCtx, org, req)
+}
+
+// Send sends one transactional email for a brand and records it. It is the
+// one transactional send: the SDK route calls it for the API key's brand, and
+// the admin test route for the brand the signed-in member works in. A send
+// that fails comes back with Success false and a message, not an error.
+func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.SendEmailRequest) (*types.SendEmailResponse, error) {
+	l := logx.WithContext(ctx)
 
 	// Validate required fields
 	if req.To == "" {
@@ -82,7 +91,7 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 	var tmplFromName, tmplFromEmail, tmplReplyTo string
 
 	if req.TemplateSlug != "" {
-		template, err := l.svcCtx.DB.GetTransactionalEmailBySlug(l.ctx, db.GetTransactionalEmailBySlugParams{
+		template, err := svcCtx.DB.GetTransactionalEmailBySlug(ctx, db.GetTransactionalEmailBySlugParams{
 			Slug:  req.TemplateSlug,
 			OrgID: org.ID,
 		})
@@ -153,7 +162,7 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 	if templateID == "" {
 		// For ad-hoc sends without a template, we need at least one template to exist
 		// Create or get a default "adhoc" template for the org
-		adhocTemplate, err := l.getOrCreateAdhocTemplate(org.ID)
+		adhocTemplate, err := getOrCreateAdhocTemplate(ctx, svcCtx.DB, org.ID)
 		if err != nil {
 			l.Errorf("Failed to get adhoc template: %v", err)
 			return &types.SendEmailResponse{
@@ -165,7 +174,7 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 		templateID = adhocTemplate.ID
 	}
 
-	send, err := l.svcCtx.DB.CreateTransactionalSend(l.ctx, db.CreateTransactionalSendParams{
+	send, err := svcCtx.DB.CreateTransactionalSend(ctx, db.CreateTransactionalSendParams{
 		ID:            uuid.New().String(),
 		TemplateID:    templateID,
 		OrgID:         org.ID,
@@ -185,11 +194,11 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 		}, nil
 	}
 
-	sendErr := l.svcCtx.EmailService.Send(l.ctx, message)
+	sendErr := svcCtx.EmailService.Send(ctx, message)
 
 	if sendErr != nil {
 		// Update status to failed
-		_ = l.svcCtx.DB.UpdateTransactionalSendStatus(l.ctx, db.UpdateTransactionalSendStatusParams{
+		_ = svcCtx.DB.UpdateTransactionalSendStatus(ctx, db.UpdateTransactionalSendStatusParams{
 			ID:           send.ID,
 			Status:       sql.NullString{String: "failed", Valid: true},
 			ErrorMessage: sql.NullString{String: sendErr.Error(), Valid: true},
@@ -213,7 +222,7 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 	}
 
 	// Update status to sent
-	_ = l.svcCtx.DB.UpdateTransactionalSendStatus(l.ctx, db.UpdateTransactionalSendStatusParams{
+	_ = svcCtx.DB.UpdateTransactionalSendStatus(ctx, db.UpdateTransactionalSendStatusParams{
 		ID:           send.ID,
 		Status:       sql.NullString{String: "sent", Valid: true},
 		ErrorMessage: sql.NullString{},
@@ -244,8 +253,8 @@ func generateTrackingToken() string {
 	return hex.EncodeToString(bytes)
 }
 
-func (l *SendEmailLogic) getOrCreateAdhocTemplate(orgID string) (db.TransactionalEmail, error) {
-	template, err := l.svcCtx.DB.GetTransactionalEmailBySlug(l.ctx, db.GetTransactionalEmailBySlugParams{
+func getOrCreateAdhocTemplate(ctx context.Context, store *db.Store, orgID string) (db.TransactionalEmail, error) {
+	template, err := store.GetTransactionalEmailBySlug(ctx, db.GetTransactionalEmailBySlugParams{
 		Slug:  "_adhoc",
 		OrgID: orgID,
 	})
@@ -253,7 +262,7 @@ func (l *SendEmailLogic) getOrCreateAdhocTemplate(orgID string) (db.Transactiona
 		return template, nil
 	}
 
-	template, err = l.svcCtx.DB.CreateTransactionalEmail(l.ctx, db.CreateTransactionalEmailParams{
+	template, err = store.CreateTransactionalEmail(ctx, db.CreateTransactionalEmailParams{
 		ID:          uuid.New().String(),
 		OrgID:       orgID,
 		DesignID:    sql.NullInt64{},

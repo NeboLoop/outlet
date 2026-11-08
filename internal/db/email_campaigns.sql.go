@@ -633,10 +633,13 @@ const getFailedCampaignSendsForRetry = `-- name: GetFailedCampaignSendsForRetry 
 SELECT cs.id, cs.campaign_id, cs.contact_id, cs.tracking_token, cs.retry_count, cs.failed_at,
        c.email, c.name,
        ec.org_id, ec.subject, ec.html_body, ec.plain_text, ec.from_name, ec.from_email, ec.reply_to,
-       ec.track_opens, ec.track_clicks
+       ec.track_opens, ec.track_clicks,
+       CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html,
+       CAST(COALESCE(d.plain_text, '') AS TEXT) AS design_text
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
+LEFT JOIN email_designs d ON d.id = ec.design_id AND d.org_id = ec.org_id
 WHERE cs.status = 'failed' AND cs.retry_count < 3
   AND ec.status IN ('sending', 'sent')
   AND c.unsubscribed_at IS NULL
@@ -662,6 +665,8 @@ type GetFailedCampaignSendsForRetryRow struct {
 	ReplyTo       sql.NullString `json:"reply_to"`
 	TrackOpens    sql.NullInt64  `json:"track_opens"`
 	TrackClicks   sql.NullInt64  `json:"track_clicks"`
+	DesignHtml    string         `json:"design_html"`
+	DesignText    string         `json:"design_text"`
 }
 
 // Retry Worker Queries
@@ -692,6 +697,8 @@ func (q *Queries) GetFailedCampaignSendsForRetry(ctx context.Context, limitCount
 			&i.ReplyTo,
 			&i.TrackOpens,
 			&i.TrackClicks,
+			&i.DesignHtml,
+			&i.DesignText,
 		); err != nil {
 			return nil, err
 		}
@@ -710,10 +717,13 @@ const getPendingCampaignSends = `-- name: GetPendingCampaignSends :many
 SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.tracking_token, cs.status,
        c.email, c.name,
        ec.subject, ec.html_body, ec.plain_text, ec.from_name, ec.from_email, ec.reply_to,
-       ec.track_opens, ec.track_clicks, ec.org_id
+       ec.track_opens, ec.track_clicks, ec.org_id,
+       CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html,
+       CAST(COALESCE(d.plain_text, '') AS TEXT) AS design_text
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
+LEFT JOIN email_designs d ON d.id = ec.design_id AND d.org_id = ec.org_id
 WHERE cs.status = 'pending' AND cs.claim_token = ?1
 ORDER BY cs.created_at ASC
 `
@@ -736,9 +746,11 @@ type GetPendingCampaignSendsRow struct {
 	TrackOpens    sql.NullInt64  `json:"track_opens"`
 	TrackClicks   sql.NullInt64  `json:"track_clicks"`
 	OrgID         string         `json:"org_id"`
+	DesignHtml    string         `json:"design_html"`
+	DesignText    string         `json:"design_text"`
 }
 
-// Returns the sends claimed with claim_token.
+// Returns the sends claimed with claim_token, with the campaign's design.
 func (q *Queries) GetPendingCampaignSends(ctx context.Context, claimToken sql.NullString) ([]GetPendingCampaignSendsRow, error) {
 	rows, err := q.db.QueryContext(ctx, getPendingCampaignSends, claimToken)
 	if err != nil {
@@ -766,6 +778,8 @@ func (q *Queries) GetPendingCampaignSends(ctx context.Context, claimToken sql.Nu
 			&i.TrackOpens,
 			&i.TrackClicks,
 			&i.OrgID,
+			&i.DesignHtml,
+			&i.DesignText,
 		); err != nil {
 			return nil, err
 		}
@@ -1340,8 +1354,10 @@ SET name = COALESCE(NULLIF(?1, ''), name),
     segment_filter = COALESCE(NULLIF(?11, ''), segment_filter),
     track_opens = COALESCE(?12, track_opens),
     track_clicks = COALESCE(?13, track_clicks),
+    -- set_design 1 replaces the design (a NULL design_id clears it); 0 keeps it
+    design_id = CASE WHEN CAST(?14 AS INTEGER) = 1 THEN ?15 ELSE design_id END,
     updated_at = datetime('now')
-WHERE id = ?14 AND org_id = ?15 AND status = 'draft'
+WHERE id = ?16 AND org_id = ?17 AND status = 'draft'
 RETURNING id, org_id, design_id, name, subject, preview_text, from_name, from_email, reply_to, html_body, plain_text, list_ids, exclude_list_ids, segment_filter, status, scheduled_at, started_at, completed_at, track_opens, track_clicks, recipients_count, sent_count, delivered_count, opened_count, clicked_count, bounced_count, complained_count, unsubscribed_count, created_at, updated_at
 `
 
@@ -1359,6 +1375,8 @@ type UpdateCampaignParams struct {
 	SegmentFilter  interface{}   `json:"segment_filter"`
 	TrackOpens     sql.NullInt64 `json:"track_opens"`
 	TrackClicks    sql.NullInt64 `json:"track_clicks"`
+	SetDesign      int64         `json:"set_design"`
+	DesignID       sql.NullInt64 `json:"design_id"`
 	ID             string        `json:"id"`
 	OrgID          string        `json:"org_id"`
 }
@@ -1378,6 +1396,8 @@ func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) 
 		arg.SegmentFilter,
 		arg.TrackOpens,
 		arg.TrackClicks,
+		arg.SetDesign,
+		arg.DesignID,
 		arg.ID,
 		arg.OrgID,
 	)

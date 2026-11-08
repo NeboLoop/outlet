@@ -235,6 +235,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/campaigns/:id/stats",
 					Handler: admincampaigns.GetCampaignStatsHandler(serverCtx),
 				},
+				{
+					// Send a test of a campaign to one address, built as a real send is (design, merge tags, unsubscribe link)
+					Method:  http.MethodPost,
+					Path:    "/campaigns/test",
+					Handler: admincampaigns.SendCampaignTestHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/admin"),
@@ -723,6 +729,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: adminsequences.GetSequenceStatsHandler(serverCtx),
 				},
 				{
+					// Enroll a contact of the brand in one of its sequences, as the signed-in member (the same enrollment as the SDK route)
+					Method:  http.MethodPost,
+					Path:    "/sequences/enroll",
+					Handler: adminsequences.AdminEnrollInSequenceHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodPost,
 					Path:    "/templates",
 					Handler: adminsequences.CreateTemplateHandler(serverCtx),
@@ -862,6 +874,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodGet,
 					Path:    "/transactional-emails/:id/stats",
 					Handler: admintransactional.GetTransactionalEmailStatsHandler(serverCtx),
+				},
+				{
+					// Send a test transactional email as the signed-in member, through the same send as the SDK route
+					Method:  http.MethodPost,
+					Path:    "/transactional-emails/test",
+					Handler: admintransactional.SendTransactionalTestHandler(serverCtx),
 				},
 			}...,
 		),

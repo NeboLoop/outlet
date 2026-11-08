@@ -107,8 +107,8 @@
 
 			if (!status.has_admin) {
 				currentStep = 'admin';
-			} else if (!status.has_aws) {
-				// Admin exists but no AWS credentials - check if logged in
+			} else if (!status.has_aws && !status.has_smtp) {
+				// Admin exists but no email provider - check if logged in
 				// Mark admin step as already completed
 				completedSteps.add('admin');
 				if (authStore.isAuthenticated) {

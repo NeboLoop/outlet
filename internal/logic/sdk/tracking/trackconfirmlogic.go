@@ -30,6 +30,9 @@ func (l *TrackConfirmLogic) TrackConfirm(req *types.TrackConfirmRequest) (resp *
 	subscriber, err := l.svcCtx.DB.ConfirmListSubscription(l.ctx, sql.NullString{String: req.Token, Valid: true})
 	if err == nil {
 		l.Infof("List subscription confirmed: subscriber_id=%s", subscriber.ID)
+		if err := l.svcCtx.Sequences.SubscriptionActivated(l.ctx, subscriber.ContactID, subscriber.ListID); err != nil {
+			l.Errorf("Failed to start signup sequence: %v", err)
+		}
 		return &types.TrackConfirmResponse{
 			Success: true,
 			Message: "Subscription confirmed",
