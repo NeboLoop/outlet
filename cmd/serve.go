@@ -27,6 +27,7 @@ import (
 	mcpoauth "github.com/outlet-sh/outlet/internal/mcp/oauth"
 	"github.com/outlet-sh/outlet/internal/middleware"
 	publicpages "github.com/outlet-sh/outlet/internal/public"
+	"github.com/outlet-sh/outlet/internal/services/listexport"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/webhook"
@@ -184,6 +185,9 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	// Custom webhook handlers (need raw body access)
 	registerWebhookRoutes(server, ctx)
+
+	// List CSV exports (stream the file, which a generated handler can't)
+	registerListExportRoutes(server, ctx)
 
 	// MCP OAuth endpoints (well-known, DCR, authorize, token)
 	registerMCPOAuthRoutes(server, ctx, c.App.BaseURL)
@@ -701,6 +705,29 @@ func registerWebhookRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 		Path:    "/webhooks/ses/:orgId",
 		Handler: webhook.SESHandler(ctx),
 	})
+}
+
+// registerListExportRoutes adds the list CSV downloads. They stream rows as
+// they are read, so they are written here rather than in outlet.api, whose
+// handlers answer with JSON. The timeout matches the HTTPS server's write
+// timeout.
+func registerListExportRoutes(server *rest.Server, ctx *svc.ServiceContext) {
+	server.AddRoutes(
+		rest.WithMiddlewares([]rest.Middleware{ctx.Auth}, rest.Route{
+			Method:  http.MethodGet,
+			Path:    "/api/admin/lists/:id/export",
+			Handler: listexport.AdminHandler(ctx.DB),
+		}),
+		rest.WithTimeout(30*time.Second),
+	)
+	server.AddRoutes(
+		rest.WithMiddlewares([]rest.Middleware{ctx.APIKeyAuth}, rest.Route{
+			Method:  http.MethodGet,
+			Path:    "/sdk/v1/lists/:slug/export",
+			Handler: listexport.SDKHandler(ctx.DB),
+		}),
+		rest.WithTimeout(30*time.Second),
+	)
 }
 
 // registerMCPOAuthRoutes adds MCP OAuth 2.1 endpoints for ChatGPT and other AI integrations
