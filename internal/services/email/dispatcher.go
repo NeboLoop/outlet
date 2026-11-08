@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,12 +27,6 @@ type DispatcherConfig struct {
 	BatchSize       int           // Emails per batch fetch (default: 100)
 	PollInterval    time.Duration // How often to poll for new emails (default: 5s)
 
-	// Retry settings
-	MaxRetries      int           // Max retry attempts (default: 3)
-	InitialBackoff  time.Duration // Initial retry delay (default: 1s)
-	MaxBackoff      time.Duration // Max retry delay (default: 30s)
-	BackoffFactor   float64       // Backoff multiplier (default: 2.0)
-
 	// Circuit breaker
 	CircuitThreshold   int           // Failures before opening circuit (default: 10)
 	CircuitTimeout     time.Duration // How long circuit stays open (default: 60s)
@@ -47,10 +40,6 @@ func DefaultDispatcherConfig() DispatcherConfig {
 		RateBurst:          50,
 		BatchSize:          100,
 		PollInterval:       5 * time.Second,
-		MaxRetries:         3,
-		InitialBackoff:     1 * time.Second,
-		MaxBackoff:         30 * time.Second,
-		BackoffFactor:      2.0,
 		CircuitThreshold:   10,
 		CircuitTimeout:     60 * time.Second,
 	}
@@ -58,9 +47,7 @@ func DefaultDispatcherConfig() DispatcherConfig {
 
 // EmailJob represents an email to be sent
 type EmailJob struct {
-	Email       db.GetPendingEmailsRow
-	Attempt     int
-	NextAttempt time.Time
+	Email db.GetPendingEmailsRow
 }
 
 // circuitState represents circuit breaker state
@@ -72,8 +59,10 @@ const (
 	circuitHalfOpen
 )
 
-// Dispatcher handles high-volume email sending with worker pools,
-// rate limiting, retries, and circuit breaker
+// Dispatcher handles high-volume email sending with worker pools, rate
+// limiting and a circuit breaker. A send that fails for now goes back to the
+// queue in the database (deferIfTemporary), the one way a queued email is
+// tried again; one that fails for good is marked failed and never retried.
 type Dispatcher struct {
 	config          DispatcherConfig
 	sequenceService *SequenceService
@@ -88,8 +77,7 @@ type Dispatcher struct {
 	circuitOpenedAt  atomic.Int64
 
 	// Worker pool
-	jobs    chan EmailJob
-	retries chan EmailJob
+	jobs chan EmailJob
 
 	// Lifecycle
 	ctx    context.Context
@@ -113,7 +101,6 @@ func NewDispatcher(sequenceService *SequenceService, db *db.Store, config Dispat
 		db:              db,
 		limiter:         rate.NewLimiter(rate.Limit(config.RateLimit), config.RateBurst),
 		jobs:            make(chan EmailJob, config.BatchSize*2),
-		retries:         make(chan EmailJob, config.BatchSize),
 		ctx:             ctx,
 		cancel:          cancel,
 	}
@@ -132,10 +119,6 @@ func (d *Dispatcher) Start() {
 		go d.worker(i)
 	}
 
-	// Start retry processor
-	d.wg.Add(1)
-	go d.retryProcessor()
-
 	// Start batch fetcher
 	d.wg.Add(1)
 	go d.batchFetcher()
@@ -148,10 +131,9 @@ func (d *Dispatcher) Start() {
 // Stop gracefully shuts down the dispatcher
 func (d *Dispatcher) Stop() {
 	logx.Info("Stopping email dispatcher...")
+	// Cancelling stops every goroutine. The channel stays open: the fetcher
+	// may still be sending, and a send on a closed channel panics.
 	d.cancel()
-
-	// Close job channel to signal workers to stop
-	close(d.jobs)
 
 	// Wait for workers with timeout
 	done := make(chan struct{})
@@ -166,8 +148,6 @@ func (d *Dispatcher) Stop() {
 	case <-time.After(30 * time.Second):
 		logx.Error("Email dispatcher shutdown timed out")
 	}
-
-	close(d.retries)
 }
 
 // worker processes email jobs from the channel
@@ -175,23 +155,22 @@ func (d *Dispatcher) worker(id int) {
 	defer d.wg.Done()
 	logx.Infof("Email worker %d started", id)
 
-	for job := range d.jobs {
+	for {
+		var job EmailJob
 		select {
 		case <-d.ctx.Done():
+			logx.Infof("Email worker %d stopped", id)
 			return
-		default:
+		case job = <-d.jobs:
 		}
 
-		// Check circuit breaker
+		// While the circuit is open the email waits in the queue, unsent
 		if d.isCircuitOpen() {
-			// Put back in retry queue with delay
-			job.NextAttempt = time.Now().Add(d.config.CircuitTimeout / 2)
-			select {
-			case d.retries <- job:
-			default:
-				// Retry queue full, mark as failed
-				d.markFailed(job.Email, "circuit breaker open, retry queue full")
-			}
+			d.sequenceService.deferIfTemporary(d.ctx, job.Email, &DeliveryError{
+				Temporary: true,
+				RetryAt:   time.Now().Add(d.config.CircuitTimeout / 2),
+				Err:       fmt.Errorf("circuit breaker open"),
+			})
 			continue
 		}
 
@@ -205,78 +184,35 @@ func (d *Dispatcher) worker(id int) {
 		}
 
 		// Send the email
-		err := d.sendEmail(job)
+		subject, err := d.sendEmail(job)
+		if d.sequenceService.deferIfTemporary(d.ctx, job.Email, err) {
+			d.retried.Add(1)
+			continue
+		}
 		if err != nil {
 			d.handleSendError(job, err)
 		} else {
-			d.handleSendSuccess(job)
+			d.handleSendSuccess(job, subject)
 		}
 	}
-
-	logx.Infof("Email worker %d stopped", id)
 }
 
-// sendEmail processes and sends a single email
-func (d *Dispatcher) sendEmail(job EmailJob) error {
+// sendEmail processes and sends a single email, and returns the subject it
+// went with
+func (d *Dispatcher) sendEmail(job EmailJob) (string, error) {
 	email := job.Email
-
-	// Build template context
-	tplCtx := TemplateContext{
-		Name:          email.Name,
-		Email:         email.Email,
-		TrackingToken: email.TrackingToken.String,
-		CustomFields:  make(map[string]string),
-	}
-
-	// Fetch custom fields if this is a sequence email with a contact
-	if email.ContactID.Valid && email.TemplateID.Valid {
-		template, err := d.db.GetTemplateByID(d.ctx, email.TemplateID.String)
-		if err == nil && template.SequenceID.Valid {
-			sequence, err := d.db.GetSequenceByID(d.ctx, template.SequenceID.String)
-			if err == nil && sequence.ListID.Valid {
-				tplCtx.CustomFields = d.sequenceService.GetCustomFieldsForContact(
-					d.ctx, email.ContactID.String, sequence.ListID.Int64)
-			}
-		}
-	}
-
-	// Process template variables
-	htmlBody := d.sequenceService.processTemplateVariables(email.HtmlBody, tplCtx)
-	subject := d.sequenceService.processTemplateVariables(email.Subject, tplCtx)
-
-	// Rewrite links for tracking
-	if email.TrackingToken.Valid && email.TrackingToken.String != "" {
-		htmlBody = d.sequenceService.rewriteLinksForTracking(htmlBody, email.TrackingToken.String)
-	}
-
-	// Apply template wrapping
-	isTransactional := email.IsTransactional.Valid && email.IsTransactional.Int64 == 1
-	templateType := "simple"
-	if email.TemplateType.Valid {
-		templateType = email.TemplateType.String
-	}
-
-	switch templateType {
-	case "none":
-		// Raw HTML
-	case "branded":
-		htmlBody = d.sequenceService.wrapWithBrandedTemplate(htmlBody, isTransactional, email.TrackingToken.String)
-	case "simple":
-		fallthrough
-	default:
-		htmlBody = d.sequenceService.wrapWithSimpleTemplate(htmlBody, isTransactional, email.TrackingToken.String)
-	}
+	subject, htmlBody := d.sequenceService.renderQueued(d.ctx, email)
 
 	// Send via SMTP
-	return d.sequenceService.sender.sendEmail(email.Email, subject, htmlBody)
+	return subject, d.sequenceService.sender.Send(d.ctx, d.sequenceService.sequenceMessage(email, subject, htmlBody))
 }
 
-// handleSendSuccess processes a successful send
-func (d *Dispatcher) handleSendSuccess(job EmailJob) {
+// handleSendSuccess processes a successful send of an email with this subject
+func (d *Dispatcher) handleSendSuccess(job EmailJob, subject string) {
 	email := job.Email
 
 	// Mark as sent in database
-	if err := d.db.MarkEmailSent(d.ctx, email.ID); err != nil {
+	if err := d.db.MarkEmailSent(d.ctx, db.MarkEmailSentParams{ID: email.ID, Subject: sql.NullString{String: subject, Valid: true}}); err != nil {
 		logx.Errorf("Failed to mark email %s as sent: %v", email.ID, err)
 	}
 
@@ -293,11 +229,9 @@ func (d *Dispatcher) handleSendSuccess(job EmailJob) {
 	d.updateSequenceState(email)
 }
 
-// handleSendError processes a failed send
+// handleSendError records a send that failed for good: retrying can't help,
+// so the email is marked failed.
 func (d *Dispatcher) handleSendError(job EmailJob, err error) {
-	email := job.Email
-	job.Attempt++
-
 	// Increment consecutive failures for circuit breaker
 	fails := d.consecutiveFails.Add(1)
 	if fails >= int32(d.config.CircuitThreshold) && d.circuit.Load() == int32(circuitClosed) {
@@ -306,25 +240,7 @@ func (d *Dispatcher) handleSendError(job EmailJob, err error) {
 		logx.Errorf("Circuit breaker OPENED after %d consecutive failures", fails)
 	}
 
-	// Check if we should retry
-	if job.Attempt < d.config.MaxRetries {
-		// Calculate backoff with jitter
-		backoff := d.calculateBackoff(job.Attempt)
-		job.NextAttempt = time.Now().Add(backoff)
-
-		select {
-		case d.retries <- job:
-			d.retried.Add(1)
-			logx.Infof("Email %s queued for retry %d/%d in %v: %v",
-				email.ID, job.Attempt, d.config.MaxRetries, backoff, err)
-		default:
-			// Retry queue full
-			d.markFailed(email, fmt.Sprintf("retry queue full after %d attempts: %v", job.Attempt, err))
-		}
-	} else {
-		// Max retries exceeded
-		d.markFailed(email, fmt.Sprintf("max retries (%d) exceeded: %v", d.config.MaxRetries, err))
-	}
+	d.markFailed(job.Email, err.Error())
 }
 
 // markFailed marks an email as permanently failed
@@ -337,18 +253,6 @@ func (d *Dispatcher) markFailed(email db.GetPendingEmailsRow, errMsg string) {
 	}
 	d.failed.Add(1)
 	logx.Errorf("Email %s to %s permanently failed: %s", email.ID, email.Email, errMsg)
-}
-
-// calculateBackoff returns the backoff duration with jitter
-func (d *Dispatcher) calculateBackoff(attempt int) time.Duration {
-	backoff := float64(d.config.InitialBackoff) * math.Pow(d.config.BackoffFactor, float64(attempt-1))
-	if backoff > float64(d.config.MaxBackoff) {
-		backoff = float64(d.config.MaxBackoff)
-	}
-
-	// Add 10-20% jitter to prevent thundering herd
-	jitter := backoff * (0.1 + 0.1*float64(time.Now().UnixNano()%100)/100)
-	return time.Duration(backoff + jitter)
 }
 
 // isCircuitOpen checks if the circuit breaker is open
@@ -371,44 +275,6 @@ func (d *Dispatcher) isCircuitOpen() bool {
 		return false
 	default:
 		return false
-	}
-}
-
-// retryProcessor handles the retry queue
-func (d *Dispatcher) retryProcessor() {
-	defer d.wg.Done()
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	var pendingRetries []EmailJob
-
-	for {
-		select {
-		case <-d.ctx.Done():
-			return
-		case job, ok := <-d.retries:
-			if !ok {
-				return
-			}
-			pendingRetries = append(pendingRetries, job)
-		case <-ticker.C:
-			// Process due retries
-			now := time.Now()
-			var remaining []EmailJob
-			for _, job := range pendingRetries {
-				if job.NextAttempt.Before(now) || job.NextAttempt.Equal(now) {
-					select {
-					case d.jobs <- job:
-					default:
-						// Job queue full, keep for later
-						remaining = append(remaining, job)
-					}
-				} else {
-					remaining = append(remaining, job)
-				}
-			}
-			pendingRetries = remaining
-		}
 	}
 }
 
@@ -438,10 +304,7 @@ func (d *Dispatcher) fetchBatch() {
 		return
 	}
 
-	pendingEmails, err := d.db.GetPendingEmails(d.ctx, db.GetPendingEmailsParams{
-		ScheduledBefore: time.Now().Format(time.RFC3339),
-		LimitCount:      int64(d.config.BatchSize),
-	})
+	pendingEmails, err := claimDueEmails(d.ctx, d.db, int64(d.config.BatchSize))
 	if err != nil {
 		logx.Errorf("Failed to fetch pending emails: %v", err)
 		return
@@ -454,10 +317,7 @@ func (d *Dispatcher) fetchBatch() {
 	logx.Infof("Fetched %d pending emails", len(pendingEmails))
 
 	for _, email := range pendingEmails {
-		job := EmailJob{
-			Email:   email,
-			Attempt: 0,
-		}
+		job := EmailJob{Email: email}
 		select {
 		case d.jobs <- job:
 		case <-d.ctx.Done():
@@ -466,44 +326,9 @@ func (d *Dispatcher) fetchBatch() {
 	}
 }
 
-// updateSequenceState updates sequence position and queues next email
+// updateSequenceState advances the sequence after a successful send
 func (d *Dispatcher) updateSequenceState(email db.GetPendingEmailsRow) {
-	if !email.ContactID.Valid || !email.TemplateID.Valid {
-		return
-	}
-
-	template, err := d.db.GetTemplateByID(d.ctx, email.TemplateID.String)
-	if err != nil {
-		return
-	}
-
-	// Update position
-	_ = d.db.UpdateContactSequencePosition(d.ctx, db.UpdateContactSequencePositionParams{
-		ContactID:       email.ContactID,
-		SequenceID:      template.SequenceID,
-		CurrentPosition: sql.NullInt64{Int64: template.Position, Valid: true},
-	})
-
-	// Queue next email
-	if template.SequenceID.Valid {
-		err = d.sequenceService.queueNextEmail(d.ctx, email.ContactID.String, template.SequenceID.String, template.Position+1)
-		if err != nil {
-			logx.Errorf("Failed to queue next email: %v", err)
-		}
-
-		// Check if sequence complete
-		nextTemplate, err := d.db.GetNextTemplate(d.ctx, db.GetNextTemplateParams{
-			SequenceID: template.SequenceID,
-			Position:   template.Position + 1,
-		})
-		if err != nil || nextTemplate.ID == "" {
-			_ = d.db.CompleteContactSequence(d.ctx, db.CompleteContactSequenceParams{
-				ContactID:  email.ContactID,
-				SequenceID: template.SequenceID,
-			})
-			logx.Infof("Completed sequence for contact %s", email.ContactID.String)
-		}
-	}
+	d.sequenceService.advanceSequence(d.ctx, email)
 }
 
 // metricsReporter periodically logs metrics

@@ -79,6 +79,27 @@ type (
 		ExpiresAt string `json:"expires_at"` // when the invitation stops working
 		EmailSent bool   `json:"email_sent"` // whether the invitation email went out; if not, invite again
 	}
+	ListOrgPeopleRequest {
+		Id string `path:"id"` // brand ID
+	}
+	OrgMember {
+		UserId   string `json:"user_id"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Role     string `json:"role"` // admin or member
+		JoinedAt string `json:"joined_at"`
+	}
+	OrgPendingInvitation {
+		Email     string `json:"email"`
+		Role      string `json:"role"` // admin or member
+		ExpiresAt string `json:"expires_at"`
+		Expired   bool   `json:"expired"` // the link no longer works; invite again
+		CreatedAt string `json:"created_at"`
+	}
+	ListOrgPeopleResponse {
+		Members     []OrgMember            `json:"members"`
+		Invitations []OrgPendingInvitation `json:"invitations"` // not yet accepted
+	}
 	RefreshTokenRequest {
 		RefreshToken string `json:"refresh_token"`
 	}
@@ -309,13 +330,15 @@ type (
 		Status string `form:"status,optional"`
 	}
 	ListSubscriberInfo {
-		Id             string `json:"id"`
-		ContactId      string `json:"contact_id"`
-		Email          string `json:"email"`
-		Name           string `json:"name"`
-		Status         string `json:"status"`
-		SubscribedAt   string `json:"subscribed_at"`
-		UnsubscribedAt string `json:"unsubscribed_at,omitempty"`
+		Id                  string `json:"id"`
+		ContactId           string `json:"contact_id"`
+		Email               string `json:"email"`
+		Name                string `json:"name"`
+		Status              string `json:"status"`
+		SubscribedAt        string `json:"subscribed_at"`
+		UnsubscribedAt      string `json:"unsubscribed_at,omitempty"`
+		ValidationStatus    string `json:"validation_status,optional"`
+		ValidationSubStatus string `json:"validation_sub_status,optional"`
 	}
 	ListSubscribersResponse {
 		Subscribers []ListSubscriberInfo `json:"subscribers"`
@@ -326,6 +349,20 @@ type (
 	RemoveSubscriberRequest {
 		Id           string `path:"id"`
 		SubscriberId string `path:"subscriberId"`
+	}
+	// An admin adds one person to a list: active at once, no confirmation email
+	AddListSubscriberRequest {
+		Id    string `path:"id"` // list ID
+		Email string `json:"email"`
+		Name  string `json:"name,optional"`
+	}
+	// A CSV with an email column (and optionally name) to add to a list; the
+	// import worker runs it as an import job
+	ImportListSubscribersRequest {
+		Id          string `path:"id"` // list ID
+		Filename    string `json:"filename"`
+		Csv         string `json:"csv"`
+		StartSignup bool   `json:"start_signup,optional,default=true"` // Start the list's sign-up emails for the people added; off for an old list that shouldn't get them
 	}
 	// Subscriber Detail for modal view
 	GetSubscriberDetailRequest {
@@ -459,16 +496,18 @@ type (
 	}
 	// ========== Subscriber Types ==========
 	SubscriberInfo {
-		Id             string `json:"id"`
-		Name           string `json:"name"`
-		Email          string `json:"email"`
-		Status         string `json:"status"`
-		EmailVerified  bool   `json:"email_verified"`
-		Source         string `json:"source"`
-		CreatedAt      string `json:"created_at"`
-		VerifiedAt     string `json:"verified_at,optional"`
-		UnsubscribedAt string `json:"unsubscribed_at,optional"`
-		BlockedAt      string `json:"blocked_at,optional"`
+		Id                  string `json:"id"`
+		Name                string `json:"name"`
+		Email               string `json:"email"`
+		Status              string `json:"status"`
+		EmailVerified       bool   `json:"email_verified"`
+		Source              string `json:"source"`
+		CreatedAt           string `json:"created_at"`
+		VerifiedAt          string `json:"verified_at,optional"`
+		UnsubscribedAt      string `json:"unsubscribed_at,optional"`
+		BlockedAt           string `json:"blocked_at,optional"`
+		ValidationStatus    string `json:"validation_status,optional"`
+		ValidationSubStatus string `json:"validation_sub_status,optional"`
 	}
 	SubscriberActionRequest {
 		Id string `path:"id"`
@@ -494,7 +533,7 @@ type (
 	EntryRuleInfo {
 		Id          string `json:"id"`
 		SequenceId  string `json:"sequence_id"`
-		TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added, manual
+		TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added
 		SourceId    string `json:"source_id,optional"`
 		SourceName  string `json:"source_name,optional"` // list name or sequence name
 		Priority    int    `json:"priority"`
@@ -530,6 +569,7 @@ type (
 		Name         string `json:"name"`
 		TriggerEvent string `json:"trigger_event,optional,default=manual"`
 		SequenceType string `json:"sequence_type,optional,default=lifecycle"` // lifecycle or transactional
+		IsActive     *bool  `json:"is_active,optional"` // Omitted starts it active
 	}
 	UpdateSequenceRequest {
 		Id                     string  `path:"id"`
@@ -545,7 +585,7 @@ type (
 	// Entry Rule management
 	CreateEntryRuleRequest {
 		SequenceId  string `json:"sequence_id"`
-		TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added, manual
+		TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added
 		SourceId    string `json:"source_id,optional"`
 		Priority    int    `json:"priority,optional,default=0"`
 	}
@@ -705,6 +745,7 @@ type (
 	}
 	UpdateCampaignRequest {
 		Id             string   `path:"id"`
+		DesignId       *string  `json:"design_id,optional"` // Omitted keeps the design; "" removes it
 		Name           string   `json:"name,optional"`
 		Subject        string   `json:"subject,optional"`
 		PreviewText    string   `json:"preview_text,optional"`
@@ -727,6 +768,17 @@ type (
 	}
 	SendCampaignNowRequest {
 		Id string `path:"id"`
+	}
+	// A test of a campaign as it is in the editor, sent to one address
+	SendCampaignTestRequest {
+		To        string `json:"to"`
+		Subject   string `json:"subject"`
+		HtmlBody  string `json:"html_body"`
+		PlainText string `json:"plain_text,optional"`
+		DesignId  string `json:"design_id,optional"`
+		FromName  string `json:"from_name,optional"`
+		FromEmail string `json:"from_email,optional"`
+		ReplyTo   string `json:"reply_to,optional"`
 	}
 	CampaignStatsResponse {
 		Campaign CampaignInfo       `json:"campaign"`
@@ -777,17 +829,18 @@ type (
 		IsActive    bool    `json:"is_active,optional,default=true"`
 	}
 	UpdateTransactionalEmailRequest {
-		Id          string `path:"id"`
-		Name        string `json:"name,optional"`
-		Slug        string `json:"slug,optional"`
-		Description string `json:"description,optional"`
-		Subject     string `json:"subject,optional"`
-		HtmlBody    string `json:"html_body,optional"`
-		PlainText   string `json:"plain_text,optional"`
-		FromName    string `json:"from_name,optional"`
-		FromEmail   string `json:"from_email,optional"`
-		ReplyTo     string `json:"reply_to,optional"`
-		IsActive    bool   `json:"is_active,optional"`
+		Id          string  `path:"id"`
+		DesignId    *string `json:"design_id,optional"` // Omitted keeps the design; "" removes it
+		Name        string  `json:"name,optional"`
+		Slug        string  `json:"slug,optional"`
+		Description string  `json:"description,optional"`
+		Subject     string  `json:"subject,optional"`
+		HtmlBody    string  `json:"html_body,optional"`
+		PlainText   string  `json:"plain_text,optional"`
+		FromName    string  `json:"from_name,optional"`
+		FromEmail   string  `json:"from_email,optional"`
+		ReplyTo     string  `json:"reply_to,optional"`
+		IsActive    bool    `json:"is_active,optional"`
 	}
 	DeleteTransactionalEmailRequest {
 		Id string `path:"id"`
@@ -1047,11 +1100,15 @@ type (
 		Tags         []string          `json:"tags,optional"` // For tracking/filtering
 		Meta         map[string]string `json:"meta,optional"` // Custom metadata
 		Attachments  []EmailAttachment `json:"attachments,optional"` // Optional file attachments
+		Type         string            `json:"type,optional"` // transactional (default) or marketing
+		ListSlug     string            `json:"list_slug,optional"` // Marketing only, and required for it: the list the recipient subscribed to. Sent only to an active subscriber, with an unsubscribe link
+		TrackOpens   bool              `json:"track_opens,optional"` // Add an open pixel
+		TrackClicks  bool              `json:"track_clicks,optional"` // Send links through click tracking
 	}
 	SendEmailResponse {
 		Success   bool   `json:"success"`
 		MessageId string `json:"message_id"` // For tracking
-		Status    string `json:"status"` // queued, sent, failed
+		Status    string `json:"status"` // queued, sent, failed, suppressed, limited (over the brand's sending pathway limit; try again later)
 		Message   string `json:"message,optional"`
 	}
 	GetEmailStatusRequest {
@@ -1212,6 +1269,9 @@ type (
 		DeliveriesFailed  int    `json:"deliveries_failed"`
 		LastDeliveryAt    string `json:"last_delivery_at,omitempty"`
 		LastStatus        int    `json:"last_status,omitempty"` // HTTP status code
+		// Retries (admin list): deliveries waiting for another try, and when the next one is
+		WaitingDeliveries int    `json:"waiting_deliveries,omitempty"`
+		NextRetryAt       string `json:"next_retry_at,omitempty"`
 	}
 	ListWebhooksResponse {
 		Webhooks []WebhookInfo `json:"webhooks"`
@@ -1253,6 +1313,35 @@ type (
 	}
 	ListWebhookLogsResponse {
 		Logs []WebhookLogInfo `json:"logs"`
+	}
+	// One event for one webhook, tried until it succeeds or runs out of tries
+	WebhookDeliveryInfo {
+		Id             string `json:"id"`
+		Event          string `json:"event"`
+		Status         string `json:"status"` // pending (waiting to retry), sending, succeeded, failed
+		Attempts       int    `json:"attempts"`
+		MaxAttempts    int    `json:"max_attempts"`
+		LastStatusCode int    `json:"last_status_code,omitempty"` // HTTP status of the last try
+		LastError      string `json:"last_error,omitempty"`
+		NextRetryAt    string `json:"next_retry_at,omitempty"` // when pending
+		CreatedAt      string `json:"created_at"`
+		UpdatedAt      string `json:"updated_at"`
+	}
+	ListWebhookDeliveriesRequest {
+		Id    string `path:"id"`
+		Limit int    `form:"limit,optional"` // default 50, max 200
+	}
+	ListWebhookDeliveriesResponse {
+		Deliveries []WebhookDeliveryInfo `json:"deliveries"`
+	}
+	ResendWebhookDeliveryRequest {
+		Id         string `path:"id"`
+		DeliveryId string `path:"delivery_id"`
+	}
+	ResendWebhookDeliveryResponse {
+		Delivery WebhookDeliveryInfo `json:"delivery"`
+		Success  bool                `json:"success"`
+		Error    string              `json:"error,optional"`
 	}
 	// ========== SDK Stats Types ==========
 	GetStatsOverviewRequest {
@@ -1445,6 +1534,133 @@ type (
 	CancelImportJobRequest {
 		Id string `path:"id"`
 	}
+	// ========== Email Validation Types ==========
+	// Statuses follow the ZeroBounce v2 scheme: valid, invalid, catch-all, unknown, spamtrap, abuse, do_not_mail
+	ValidationResult {
+		Address       string `json:"address"`
+		Status        string `json:"status"`
+		SubStatus     string `json:"sub_status"`
+		FreeEmail     bool   `json:"free_email"`
+		DidYouMean    string `json:"did_you_mean"`
+		Account       string `json:"account"`
+		Domain        string `json:"domain"`
+		DomainAgeDays int    `json:"domain_age_days,optional"` // 0 = unknown
+		SmtpProvider  string `json:"smtp_provider"`
+		MxFound       bool   `json:"mx_found"`
+		MxRecord      string `json:"mx_record"`
+		ProcessedAt   string `json:"processed_at"`
+	}
+	ValidateEmailRequest {
+		Email string `json:"email"`
+	}
+	ValidateBatchRequest {
+		Emails []string `json:"emails"` // max 100
+	}
+	ValidateBatchResponse {
+		Job     ValidationJobInfo  `json:"job"` // status completed when every address is checked
+		Results []ValidationResult `json:"results"` // one per address, in address order; status pending until checked
+	}
+	ValidationJobInfo {
+		Id          string `json:"id"`
+		Name        string `json:"name"`
+		ListId      string `json:"list_id,optional"`
+		Source      string `json:"source"` // list, upload
+		Status      string `json:"status"` // pending, processing, completed, failed, cancelled
+		Total       int    `json:"total"`
+		Processed   int    `json:"processed"`
+		Valid       int    `json:"valid"`
+		Invalid     int    `json:"invalid"`
+		CatchAll    int    `json:"catch_all"`
+		Unknown     int    `json:"unknown"`
+		Spamtrap    int    `json:"spamtrap"`
+		Abuse       int    `json:"abuse"`
+		DoNotMail   int    `json:"do_not_mail"`
+		Error       string `json:"error,optional"`
+		StartedAt   string `json:"started_at,optional"`
+		CompletedAt string `json:"completed_at,optional"`
+		CreatedAt   string `json:"created_at"`
+	}
+	CreateValidationJobRequest {
+		Name   string   `json:"name,optional"`
+		ListId string   `json:"list_id,optional"` // validate a list's subscribers; starts immediately
+		Emails []string `json:"emails,optional"` // upload source; max 10000 per call, append more, then start
+	}
+	ValidationJobIdRequest {
+		Id string `path:"id"`
+	}
+	AppendValidationJobEmailsRequest {
+		Id     string   `path:"id"`
+		Emails []string `json:"emails"` // max 10000 per call
+	}
+	ListValidationJobsRequest {
+		Page  int `form:"page,optional,default=1"`
+		Limit int `form:"limit,optional,default=20"`
+	}
+	ListValidationJobsResponse {
+		Jobs  []ValidationJobInfo `json:"jobs"`
+		Total int                 `json:"total"`
+		Page  int                 `json:"page"`
+		Limit int                 `json:"limit"`
+	}
+	ListValidationResultsRequest {
+		Id     string `path:"id"`
+		Status string `form:"status,optional"`
+		Page   int    `form:"page,optional,default=1"`
+		Limit  int    `form:"limit,optional,default=50"`
+	}
+	ListValidationResultsResponse {
+		Results []ValidationResult `json:"results"`
+		Total   int                `json:"total"`
+		Page    int                `json:"page"`
+		Limit   int                `json:"limit"`
+	}
+	ApplyValidationJobRequest {
+		Id       string   `path:"id"`
+		Statuses []string `json:"statuses"` // results with these statuses are added to the suppression list
+	}
+	ApplyValidationJobResponse {
+		Suppressed int `json:"suppressed"`
+	}
+	ValidationUsageRequest {
+		From string `form:"from,optional"` // YYYY-MM-DD, default first of this month
+		To   string `form:"to,optional"` // YYYY-MM-DD inclusive, default today
+	}
+	ValidationUsageResponse {
+		From     string         `json:"from"`
+		To       string         `json:"to"`
+		Total    int            `json:"total"`
+		BySource map[string]int `json:"by_source"` // api, admin, job, mcp
+	}
+	// ========== Signal Network Hub Types ==========
+	// Hashes are SHA-256 hex (64 chars) of the trimmed, lowercased address. Times are RFC 3339.
+	NetworkLookupRequest {
+		Hashes []string `json:"hashes"` // max 100
+	}
+	NetworkSignal {
+		Hash          string  `json:"hash"`
+		Senders       int     `json:"senders"`
+		Delivered     int     `json:"delivered"`
+		HardBounces   int     `json:"hard_bounces"`
+		Complaints    int     `json:"complaints"`
+		Engaged       int     `json:"engaged"`
+		LastEngagedAt string  `json:"last_engaged_at"`
+		TrapScore     float64 `json:"trap_score"`
+		Toxic         bool    `json:"toxic"`
+	}
+	NetworkLookupResponse {
+		Signals []NetworkSignal `json:"signals"` // unknown hashes are omitted
+	}
+	NetworkEvent {
+		Hash string `json:"hash"`
+		Kind string `json:"kind"` // delivered, hard_bounce, complaint, open, click
+		At   string `json:"at"`
+	}
+	NetworkReportRequest {
+		Events []NetworkEvent `json:"events"` // max 1000
+	}
+	NetworkReportResponse {
+		Accepted int `json:"accepted"`
+	}
 	// ========== CSV Export Types ==========
 	ExportSubscribersRequest {
 		ListId string `path:"list_id"`
@@ -1474,8 +1690,6 @@ type (
 		SESDailyQuota int64   `json:"ses_daily_quota"` // Daily sending quota
 		WorkerCount   int     `json:"worker_count"` // Number of email workers
 		BatchSize     int     `json:"batch_size"` // Emails per batch
-		AWSRegion     string  `json:"aws_region,optional"`
-		HasOwnCreds   bool    `json:"has_own_credentials"` // Has org-specific AWS credentials
 		FromEmail     string  `json:"from_email,optional"`
 		FromName      string  `json:"from_name,optional"`
 		ReplyTo       string  `json:"reply_to,optional"`
@@ -1490,9 +1704,6 @@ type (
 		SESDailyQuota int64   `json:"ses_daily_quota,optional"`
 		WorkerCount   int     `json:"worker_count,optional"`
 		BatchSize     int     `json:"batch_size,optional"`
-		AWSRegion     string  `json:"aws_region,optional"`
-		AWSAccessKey  string  `json:"aws_access_key,optional"` // Will be encrypted
-		AWSSecretKey  string  `json:"aws_secret_key,optional"` // Will be encrypted
 		FromEmail     string  `json:"from_email,optional"`
 		FromName      string  `json:"from_name,optional"`
 		ReplyTo       string  `json:"reply_to,optional"`
@@ -1500,10 +1711,12 @@ type (
 	DetectSESQuotaRequest {
 		OrgId        string `path:"org_id"`
 		AWSRegion    string `json:"aws_region,optional"`
-		AWSAccessKey string `json:"aws_access_key,optional"` // If empty, use org's stored creds
+		AWSAccessKey string `json:"aws_access_key,optional"` // If empty, use the pathway's
 		AWSSecretKey string `json:"aws_secret_key,optional"`
+		PathwayId    string `json:"pathway_id,optional"` // An ses pathway's keys; empty: the platform's
 	}
 	SESQuotaResponse {
+		Configured      bool    `json:"configured"` // false: the platform sends through SMTP, not SES
 		Max24HourSend   float64 `json:"max_24_hour_send"`
 		MaxSendRate     float64 `json:"max_send_rate"`
 		SentLast24Hours float64 `json:"sent_last_24_hours"`
@@ -1535,6 +1748,7 @@ type (
 		OrgId             string `path:"org_id"`
 		Domain            string `json:"domain"` // If empty, extracted from org's from_email
 		MailFromSubdomain string `json:"mail_from_subdomain,optional"` // Custom MAIL FROM subdomain (default: "mail")
+		PathwayId         string `json:"pathway_id,optional"` // The sending pathway it joins; empty: the one carrying transactional mail
 	}
 	GetDomainIdentityRequest {
 		OrgId string `path:"org_id"`
@@ -1596,9 +1810,6 @@ type (
 	DeleteBackupRequest {
 		Id string `path:"id"`
 	}
-	DownloadBackupRequest {
-		Id string `path:"id"`
-	}
 	BackupSettingsRequest {
 		// S3 settings
 		S3Enabled   bool   `json:"s3_enabled"`
@@ -1644,21 +1855,30 @@ type (
 	GDPRExportRequest {
 		ContactId string `path:"contact_id"`
 	}
+	// The export itself, for the app to save as a file: nothing is kept on the server
 	GDPRExportResponse {
-		DownloadURL string `json:"download_url"`
-		ExpiresAt   string `json:"expires_at"`
-		Format      string `json:"format"` // json, csv
+		Filename string `json:"filename"`
+		Format   string `json:"format"` // json
+		Data     string `json:"data"` // the contact's data, as JSON
 	}
 	GDPRDeleteRequest {
 		ContactId   string `path:"contact_id"`
 		Confirm     bool   `json:"confirm"` // Must be true to proceed
-		DeleteEmail bool   `json:"delete_email,optional"` // Also delete from email provider logs if possible
+		DeleteEmail bool   `json:"delete_email,optional"` // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
+	}
+	// What one sending pathway's provider did with a request to forget an address
+	GDPRProviderResult {
+		Pathway  string `json:"pathway"`
+		Provider string `json:"provider"` // Amazon SES, SMTP relay, Mailboxes
+		Result   string `json:"result"`
+		Failed   bool   `json:"failed"`
 	}
 	GDPRDeleteResponse {
-		Success       bool   `json:"success"`
-		Message       string `json:"message"`
-		DeletedData   string `json:"deleted_data"` // Summary of what was deleted
-		AuditRecordId string `json:"audit_record_id"`
+		Success         bool                 `json:"success"`
+		Message         string               `json:"message"`
+		DeletedData     string               `json:"deleted_data"` // Summary of what was deleted
+		AuditRecordId   string               `json:"audit_record_id"` // The deletion's row in the GDPR audit log
+		ProviderResults []GDPRProviderResult `json:"provider_results"` // Set when delete_email was asked for
 	}
 	GDPRConsentRequest {
 		ContactId string `path:"contact_id"`
@@ -1685,6 +1905,560 @@ type (
 		Found     bool   `json:"found"`
 		ContactId string `json:"contact_id,omitempty"`
 		Email     string `json:"email,omitempty"`
+	}
+	// ========== Outbound (per brand; the same service the MCP tools use) ==========
+	OutboundIDRequest {
+		Id string `path:"id"`
+	}
+	OutboundDNSCheck {
+		Mx       bool     `json:"mx"`
+		Spf      bool     `json:"spf"`
+		Dkim     bool     `json:"dkim"`
+		Dmarc    bool     `json:"dmarc"`
+		Missing  []string `json:"missing,optional"`
+		Tracking *bool    `json:"tracking,optional"`
+	}
+	OutboundDomainInfo {
+		Id           string                 `json:"id"`
+		Domain       string                 `json:"domain"`
+		Status       string                 `json:"status"`
+		TrackingHost string                 `json:"tracking_host,optional"`
+		Check        OutboundDNSCheck       `json:"check"`
+		CheckedAt    string                 `json:"checked_at,optional"`
+		Records      []OutboundDomainRecord `json:"records"` // the records it needs, and which the last check found
+	}
+	OutboundDNSRecord {
+		Type     string `json:"type"`
+		Name     string `json:"name"`
+		Data     string `json:"data"`
+		Priority int    `json:"priority,optional"`
+	}
+	OutboundDomainRecord {
+		Type     string `json:"type"`
+		Name     string `json:"name"`
+		Data     string `json:"data"`
+		Priority int    `json:"priority,optional"`
+		Present  bool   `json:"present"` // the last check found it in public DNS
+	}
+	OutboundMailboxHealth {
+		Id           string `json:"id"`
+		Email        string `json:"email"`
+		FromName     string `json:"from_name"`
+		Status       string `json:"status"`
+		Reason       string `json:"reason,optional"`
+		SentToday    int64  `json:"sent_today"`
+		AllowToday   int64  `json:"allowed_today"`
+		Sent7d       int64  `json:"sent_7d"`
+		Bounces7d    int64  `json:"bounces_7d"`
+		SpamBlocks7d int64  `json:"spam_blocks_7d"`
+		Complaints7d int64  `json:"complaints_7d"`
+		LastError    string `json:"last_error,optional"`
+		PoolId       string `json:"pool_id,optional"` // its mailbox pool (sending pathway)
+		ConnectionId string `json:"connection_id,optional"` // the pool's connection its domain belongs to
+		DailyLimit   *int64 `json:"daily_limit,optional"` // its own daily limit; empty uses its connection's, else the pool's (warm-up: its connection's, else the pool's)
+		Limited      bool   `json:"limited"` // false: no daily limit applies
+		LimitInUse   int64  `json:"limit_in_use"` // the daily limit it sends under: its own, else its connection's, else its pool's; 0: none
+		WarmingUp    bool   `json:"warming_up"` // the warm-up holds it below limit_in_use; allowed_today is today's step
+		Domain       string `json:"domain"`
+	}
+	OutboundStepResult {
+		Step      int64   `json:"step"`
+		Sent      int64   `json:"sent"`
+		Replies   int64   `json:"replies"`
+		ReplyRate float64 `json:"reply_rate"`
+		Opened    int64   `json:"opened,optional"`
+		Clicked   int64   `json:"clicked,optional"`
+	}
+	OutboundCampaignResults {
+		Id          string               `json:"id"`
+		Name        string               `json:"name"`
+		Status      string               `json:"status"`
+		Enrolled    int64                `json:"enrolled"`
+		Reached     int64                `json:"reached"`
+		Replied     int64                `json:"replied"`
+		ReplyRate   float64              `json:"reply_rate"`
+		Opened      int64                `json:"opened"`
+		OpenRate    float64              `json:"open_rate"`
+		Clicked     int64                `json:"clicked"`
+		ClickRate   float64              `json:"click_rate"`
+		Interested  int64                `json:"interested"`
+		Partners    int64                `json:"partners"`
+		Bounced     int64                `json:"bounced"`
+		BounceRate  float64              `json:"bounce_rate"`
+		BounceLimit float64              `json:"bounce_limit"` // percent: the outreach pathway pauses a mailbox above it; 0: never
+		SpamBlocks  int64                `json:"spam_blocks"`
+		OptedOut    int64                `json:"opted_out"`
+		InProgress  int64                `json:"in_progress"`
+		NoReply     int64                `json:"finished_no_reply"`
+		Waiting     int64                `json:"drafts_waiting"`
+		TrackOpens  bool                 `json:"track_opens"`
+		TrackClick  bool                 `json:"track_clicks"`
+		Steps       []OutboundStepResult `json:"steps,optional"`
+		Replies     map[string]int64     `json:"replies_by_kind,optional"`
+	}
+	OutboundOverview {
+		Enabled        bool                      `json:"enabled"`
+		Paused         string                    `json:"paused,optional"`
+		MailingAddress string                    `json:"mailing_address"`
+		OptOutLine     string                    `json:"opt_out_line"`
+		Timezone       string                    `json:"timezone"`
+		DNSTokenSet    bool                      `json:"dns_token_set"`
+		Domains        []OutboundDomainInfo      `json:"domains"`
+		Mailboxes      []OutboundMailboxHealth   `json:"mailboxes"`
+		Prospects      map[string]int64          `json:"prospects"`
+		Messages       map[string]int64          `json:"messages"`
+		RepliesWaiting int64                     `json:"replies_waiting"`
+		DraftsWaiting  int64                     `json:"drafts_waiting"`
+		ReplyRate      float64                   `json:"reply_rate"` // replied over reached across every campaign, percent
+		Campaigns      []OutboundCampaignResults `json:"campaigns"`
+		Next           []string                  `json:"next"`
+	}
+	OutboundEnabledRequest {
+		Enabled bool `json:"enabled"`
+	}
+	OutboundSettingsRequest {
+		MailingAddress string `json:"mailing_address,optional"`
+		OptOutLine     string `json:"opt_out_line,optional"`
+		Timezone       string `json:"timezone,optional"`
+	}
+	OutboundDNSTokenRequest {
+		Token string `json:"token"`
+	}
+	OutboundDomainRequest {
+		Domain        string   `json:"domain"`
+		DNSHost       string   `json:"dns_host,optional"`
+		MailProvider  string   `json:"mail_provider,optional"`
+		MXHosts       []string `json:"mx_hosts,optional"`
+		SPFInclude    string   `json:"spf_include,optional"`
+		DKIMSelector  string   `json:"dkim_selector,optional"`
+		DKIMValue     string   `json:"dkim_value,optional"`
+		DMARCReport   string   `json:"dmarc_report,optional"`
+		ClickTracking bool     `json:"click_tracking,optional"`
+		PathwayId     string   `json:"pathway_id,optional"` // the mailbox pool it joins; empty: the brand's pool
+		ConnectionId  string   `json:"connection_id,optional"` // the pool's manual connection it joins; empty: the pool's first manual one
+	}
+	OutboundDomainResponse {
+		Domain       OutboundDomainInfo  `json:"domain"`
+		RecordsToAdd []OutboundDNSRecord `json:"records_to_add"` // to add at the DNS host by hand
+		DNSError     string              `json:"dns_error,optional"` // why DigitalOcean didn't take the records; records_to_add holds them
+	}
+	OutboundMailboxInput {
+		Email        string `json:"email"`
+		FromName     string `json:"from_name"`
+		Signature    string `json:"signature,optional"`
+		Provider     string `json:"provider,optional"`
+		Password     string `json:"password,optional"`
+		SMTPHost     string `json:"smtp_host,optional"`
+		SMTPPort     int    `json:"smtp_port,optional"`
+		SMTPUsername string `json:"smtp_username,optional"`
+		SMTPPassword string `json:"smtp_password,optional"`
+		IMAPHost     string `json:"imap_host,optional"`
+		IMAPPort     int    `json:"imap_port,optional"`
+		IMAPUsername string `json:"imap_username,optional"`
+		IMAPPassword string `json:"imap_password,optional"`
+		DailyLimit   *int64 `json:"daily_limit,optional"` // its own daily limit; empty uses the pool's
+	}
+	OutboundAddMailboxesRequest {
+		Mailboxes []OutboundMailboxInput `json:"mailboxes"`
+	}
+	OutboundMailboxResult {
+		Email string `json:"email"`
+		Id    string `json:"id,optional"`
+		Error string `json:"error,optional"`
+	}
+	OutboundAddMailboxesResponse {
+		Mailboxes []OutboundMailboxResult `json:"mailboxes"`
+	}
+	OutboundPauseRequest {
+		Scope  string `json:"scope"`
+		Id     string `json:"id,optional"`
+		Resume bool   `json:"resume,optional"`
+	}
+	OutboundProspectInput {
+		Email        string            `json:"email"`
+		FirstName    string            `json:"first_name,optional"`
+		Name         string            `json:"name,optional"`
+		Timezone     string            `json:"timezone,optional"`
+		Platform     string            `json:"platform,optional"`
+		ChannelURL   string            `json:"channel_url,optional"`
+		AudienceSize int64             `json:"audience_size,optional"`
+		Niche        string            `json:"niche,optional"`
+		RecentVideo  string            `json:"recent_video,optional"`
+		PersonalLine string            `json:"personal_line,optional"`
+		EmailSource  string            `json:"email_source"`
+		Fields       map[string]string `json:"fields,optional"`
+	}
+	OutboundAddProspectsRequest {
+		List      string                  `json:"list,optional"`
+		Prospects []OutboundProspectInput `json:"prospects"`
+	}
+	OutboundProspectResult {
+		Email  string `json:"email"`
+		Id     string `json:"id,optional"`
+		Status string `json:"status"`
+		Reason string `json:"reason,optional"`
+	}
+	OutboundAddProspectsResponse {
+		Prospects []OutboundProspectResult `json:"prospects"`
+	}
+	OutboundListProspectsRequest {
+		ListId     string `form:"list_id,optional"` // one outreach list; empty: all
+		Status     string `form:"status,optional"` // their status on it: prospect, held, ...
+		Search     string `form:"search,optional"` // part of an email or name
+		Enrollable bool   `form:"enrollable,optional"` // only people a campaign can take now
+		Limit      int    `form:"limit,optional,default=50"`
+		Offset     int    `form:"offset,optional"`
+	}
+	OutboundListRef {
+		Id   string `json:"id"`
+		Name string `json:"name"`
+	}
+	OutboundProspectListStatus {
+		Id     string `json:"id"`
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+	OutboundCampaignRef {
+		Id   string `json:"id"`
+		Name string `json:"name"`
+	}
+	OutboundProspectInfo {
+		Id               string                       `json:"id"`
+		Email            string                       `json:"email"`
+		Name             string                       `json:"name"`
+		EmailSource      string                       `json:"email_source"`
+		ValidationStatus string                       `json:"validation_status"`
+		CreatedAt        string                       `json:"created_at"`
+		Lists            []OutboundProspectListStatus `json:"lists"` // the outreach lists they are on, with their status on each
+		Campaigns        []OutboundCampaignRef        `json:"campaigns"` // the outreach campaigns they are in now
+		Suppressed       bool                         `json:"suppressed"`
+		Enrollable       bool                         `json:"enrollable"` // a campaign can take them now
+	}
+	OutboundProspectList {
+		Prospects []OutboundProspectInfo `json:"prospects"`
+		Total     int64                  `json:"total"` // every person matching, across pages
+		Lists     []OutboundListRef      `json:"lists"` // the brand's outreach lists
+	}
+	OutboundStepInput {
+		DelayDays int    `json:"delay_days,optional"`
+		Subject   string `json:"subject,optional"`
+		Body      string `json:"body"`
+	}
+	OutboundCampaignRequest {
+		Name            string              `json:"name"`
+		List            string              `json:"list,optional"`
+		Steps           []OutboundStepInput `json:"steps"`
+		ProspectIDs     []string            `json:"prospect_ids"`
+		ApprovalMode    string              `json:"approval_mode,optional"`
+		TrackOpens      bool                `json:"track_opens,optional"`
+		TrackClicks     bool                `json:"track_clicks,optional"`
+		WindowStartHour int                 `json:"window_start_hour,optional"`
+		WindowEndHour   int                 `json:"window_end_hour,optional"`
+		IdempotencyKey  string              `json:"idempotency_key,optional"`
+		DryRun          bool                `json:"dry_run,optional"`
+	}
+	OutboundPreview {
+		ProspectId string `json:"prospect_id"`
+		To         string `json:"to"`
+		From       string `json:"from"`
+		Subject    string `json:"subject"`
+		Body       string `json:"body"`
+		SendsAfter string `json:"sends_after,optional"`
+	}
+	OutboundDraft {
+		MessageId    string `json:"message_id"` // what approve, skip and edit take
+		CampaignId   string `json:"campaign_id"`
+		CampaignName string `json:"campaign_name"`
+		Step         int64  `json:"step"`
+		ProspectId   string `json:"prospect_id"`
+		To           string `json:"to"`
+		From         string `json:"from"`
+		Subject      string `json:"subject"`
+		Body         string `json:"body"`
+		SendsAfter   string `json:"sends_after,optional"`
+	}
+	OutboundCampaignResponse {
+		CampaignId string            `json:"campaign_id,optional"`
+		Enrolled   int               `json:"enrolled"`
+		Drafts     []OutboundDraft   `json:"drafts,optional"` // the saved drafts
+		Previews   []OutboundPreview `json:"previews,optional"` // dry_run: the first emails, not saved
+		Skipped    map[string]string `json:"skipped,optional"`
+		Next       string            `json:"next"`
+	}
+	OutboundListRequest {
+		Limit int `form:"limit,optional,default=25"`
+	}
+	OutboundDraftList {
+		Drafts []OutboundDraft `json:"drafts"`
+	}
+	OutboundReviewRequest {
+		Action string   `json:"action"`
+		Ids    []string `json:"ids"`
+	}
+	OutboundReviewResponse {
+		Done    int               `json:"done"`
+		Refused map[string]string `json:"refused,optional"`
+	}
+	OutboundEditDraftRequest {
+		Id      string `path:"id"`
+		Subject string `json:"subject,optional"`
+		Body    string `json:"body,optional"`
+	}
+	OutboundListRepliesRequest {
+		Handled bool `form:"handled,optional"`
+		Limit   int  `form:"limit,optional,default=25"`
+	}
+	OutboundReplyInfo {
+		Id             string `json:"id"`
+		MailboxId      string `json:"mailbox_id"`
+		ContactId      string `json:"contact_id"`
+		SequenceId     string `json:"sequence_id"`
+		CampaignName   string `json:"campaign_name"` // the campaign it answers
+		FromEmail      string `json:"from_email"`
+		Subject        string `json:"subject"`
+		Body           string `json:"body"`
+		Classification string `json:"classification"`
+		Handled        bool   `json:"handled"`
+		ReceivedAt     string `json:"received_at"`
+	}
+	OutboundReplyList {
+		Replies []OutboundReplyInfo `json:"replies"`
+	}
+	OutboundAnswerRequest {
+		Id   string `path:"id"`
+		Body string `json:"body"`
+	}
+	OutboundClassifyRequest {
+		Id             string `path:"id"`
+		Classification string `json:"classification"`
+	}
+	OutboundExplainRequest {
+		MessageId  string `form:"message_id,optional"`
+		MailboxId  string `form:"mailbox_id,optional"`
+		ProspectId string `form:"prospect_id,optional"`
+	}
+	OutboundExplainResponse {
+		Answer string `json:"answer"`
+	}
+	// ========== Sending pathways (per brand) ==========
+	// A sending pathway is one configured way a brand delivers mail. Each kind
+	// of mail (transactional, marketing, outreach) is carried by one of the
+	// brand's pathways. Credentials are write-only.
+	SendingLimits {
+		DailyLimit      int64   `json:"daily_limit"` // per sender per day; 0: no limit
+		WarmupStart     int64   `json:"warmup_start"` // a new sender's first day; 0: no warm-up
+		WarmupStep      int64   `json:"warmup_step"` // added each day
+		MinGapSeconds   int64   `json:"min_gap_seconds"` // between two sends from one sender
+		MaxGapSeconds   int64   `json:"max_gap_seconds"`
+		PauseBounceRate float64 `json:"pause_bounce_rate"` // a fraction: 0.03 is 3%, over 7 days
+		PauseMinBounces int64   `json:"pause_min_bounces"`
+		PauseSpamBlocks int64   `json:"pause_spam_blocks"`
+		PauseComplaints int64   `json:"pause_complaints"`
+	}
+	SendingPathway {
+		Id              string                 `json:"id"`
+		Name            string                 `json:"name"`
+		Provider        string                 `json:"provider"` // platform, ses, smtp, mailboxes
+		Kinds           []string               `json:"kinds"` // transactional, marketing, outreach
+		AWSRegion       string                 `json:"aws_region,optional"`
+		AWSKeysSet      bool                   `json:"aws_keys_set"`
+		SMTPHost        string                 `json:"smtp_host,optional"`
+		SMTPPort        int64                  `json:"smtp_port,optional"`
+		SMTPUsername    string                 `json:"smtp_username,optional"`
+		SMTPPasswordSet bool                   `json:"smtp_password_set"`
+		Limits          SendingLimits          `json:"limits"`
+		Domains         []SendingPathwayDomain `json:"domains"`
+		Mailboxes       int64                  `json:"mailboxes"`
+		Warning         string                 `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
+		CreatedAt       string                 `json:"created_at"`
+	}
+	SendingPathwayDomain {
+		Id      string `json:"id"`
+		Domain  string `json:"domain"`
+		Purpose string `json:"purpose"` // sending, or outreach (its mailboxes form the pool)
+	}
+	SendingPathwayList {
+		Pathways []SendingPathway `json:"pathways"`
+	}
+	SendingPathwayRequest {
+		Name         string         `json:"name,optional"`
+		Provider     string         `json:"provider"` // platform, ses, smtp, mailboxes
+		Kinds        []string       `json:"kinds,optional"`
+		AWSRegion    string         `json:"aws_region,optional"`
+		AWSAccessKey string         `json:"aws_access_key,optional"`
+		AWSSecretKey string         `json:"aws_secret_key,optional"`
+		SMTPHost     string         `json:"smtp_host,optional"`
+		SMTPPort     int64          `json:"smtp_port,optional"`
+		SMTPUsername string         `json:"smtp_username,optional"`
+		SMTPPassword string         `json:"smtp_password,optional"`
+		Limits       *SendingLimits `json:"limits,optional"` // empty: the provider's defaults
+	}
+	UpdateSendingPathwayRequest {
+		Id           string         `path:"id"`
+		Name         string         `json:"name,optional"`
+		Kinds        []string       `json:"kinds"` // the whole set it carries
+		AWSRegion    string         `json:"aws_region,optional"`
+		AWSAccessKey string         `json:"aws_access_key,optional"` // empty keeps the stored key
+		AWSSecretKey string         `json:"aws_secret_key,optional"`
+		SMTPHost     string         `json:"smtp_host,optional"`
+		SMTPPort     int64          `json:"smtp_port,optional"`
+		SMTPUsername string         `json:"smtp_username,optional"`
+		SMTPPassword string         `json:"smtp_password,optional"` // empty keeps the stored password
+		Limits       *SendingLimits `json:"limits,optional"` // empty keeps them
+	}
+	SendingPathwayIDRequest {
+		Id string `path:"id"`
+	}
+	MoveDomainRequest {
+		Id        string `path:"id"`
+		PathwayId string `json:"pathway_id"` // an outreach domain moves only to a mailbox pool, a sending domain only to platform, ses or smtp
+	}
+	MailboxDailyLimitRequest {
+		Id         string `path:"id"`
+		DailyLimit *int64 `json:"daily_limit,optional"` // empty: use the pool's
+	}
+	// ========== Mailbox connections (per mailbox pool) ==========
+	// A mailbox pool holds any number of connections, side by side: manual
+	// (domains and mailboxes added by hand) or a mailbox service with its
+	// API key, several of one service among them. Each outreach domain
+	// belongs to one connection. The API key is write-only. Buying is a
+	// quote at a connection, then a buy there with the quote's id and
+	// confirm: true; nothing else spends money.
+	MailboxConnectionDomain {
+		Id     string `json:"id"`
+		Domain string `json:"domain"`
+	}
+	MailboxConnection {
+		Id          string                    `json:"id"`
+		PoolId      string                    `json:"pool_id"`
+		Service     string                    `json:"service"` // manual, maildoso, cheapinboxes, infraforge
+		Name        string                    `json:"name"`
+		KeySet      bool                      `json:"key_set"`
+		DailyLimit  *int64                    `json:"daily_limit,optional"` // its mailboxes' daily limit unless one has its own; empty: the pool's
+		WarmupStart *int64                    `json:"warmup_start,optional"` // its mailboxes' warm-up, first day's allowance; empty: the pool's
+		WarmupStep  *int64                    `json:"warmup_step,optional"` // added each day until the daily limit; empty: the pool's
+		Domains     []MailboxConnectionDomain `json:"domains"`
+		Mailboxes   int64                     `json:"mailboxes"`
+		CreatedAt   string                    `json:"created_at"`
+	}
+	MailboxConnectionList {
+		Connections []MailboxConnection `json:"connections"`
+	}
+	MailboxConnectionListRequest {
+		PoolId string `form:"pool_id,optional"` // one pool's; empty: every pool's
+	}
+	MailboxConnectionRequest {
+		PoolId      string `json:"pool_id,optional"` // empty: the pool carrying outreach (made if the brand has none)
+		Service     string `json:"service"` // manual, maildoso, cheapinboxes, infraforge
+		Name        string `json:"name,optional"` // empty: the service's name
+		APIKey      string `json:"api_key,optional"` // required for a service; tried before it is saved
+		DailyLimit  *int64 `json:"daily_limit,optional"` // the three limits all empty: the service's terms (Maildoso 15 a day, warming up from 5 by 1), else the pool's
+		WarmupStart *int64 `json:"warmup_start,optional"`
+		WarmupStep  *int64 `json:"warmup_step,optional"`
+	}
+	UpdateMailboxConnectionRequest {
+		Id          string `path:"id"`
+		Name        string `json:"name,optional"` // empty keeps it
+		APIKey      string `json:"api_key,optional"` // empty keeps the stored key
+		DailyLimit  *int64 `json:"daily_limit,optional"` // set as given; empty: the pool's
+		WarmupStart *int64 `json:"warmup_start,optional"` // set as given; empty: the pool's
+		WarmupStep  *int64 `json:"warmup_step,optional"` // set as given; empty: the pool's
+	}
+	MailboxConnectionIDRequest {
+		Id string `path:"id"` // the connection
+	}
+	MoveDomainConnectionRequest {
+		Id           string `path:"id"` // the outreach domain
+		ConnectionId string `json:"connection_id"` // another connection of the domain's pool
+	}
+	MailboxServiceDomain {
+		Id          string   `json:"id"`
+		Name        string   `json:"name"`
+		Status      string   `json:"status"`
+		Nameservers []string `json:"nameservers,optional"`
+	}
+	MailboxServiceMailbox {
+		Id        string `json:"id"`
+		Email     string `json:"email"`
+		FirstName string `json:"first_name,optional"`
+		LastName  string `json:"last_name,optional"`
+		Status    string `json:"status"`
+		Ready     bool   `json:"ready"`
+	}
+	MailboxServiceInventory {
+		Service   string                  `json:"service"`
+		Domains   []MailboxServiceDomain  `json:"domains"`
+		Mailboxes []MailboxServiceMailbox `json:"mailboxes"`
+	}
+	MailboxServiceConnectRequest {
+		Id     string `path:"id"` // the connection
+		Domain string `json:"domain"`
+	}
+	MailboxServiceConnection {
+		Domain      string   `json:"domain"`
+		Nameservers []string `json:"nameservers,optional"` // set these at the domain's registrar
+		Status      string   `json:"status,optional"`
+		Note        string   `json:"note"`
+	}
+	MailboxServiceDomainResponse {
+		DomainId   string                   `json:"domain_id,optional"`
+		Connection MailboxServiceConnection `json:"connection"`
+		Check      OutboundDNSCheck         `json:"check"`
+	}
+	MailboxServicePerson {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		Local     string `json:"local,optional"` // before the @; empty: first.last
+	}
+	MailboxServiceQuoteRequest {
+		Id     string                 `path:"id"` // the connection
+		Kind   string                 `json:"kind"` // domain, connect, mailboxes
+		Domain string                 `json:"domain"`
+		People []MailboxServicePerson `json:"people,optional"` // for mailboxes
+	}
+	MailboxServiceQuote {
+		Id         string `json:"id"`
+		Service    string `json:"service"`
+		Kind       string `json:"kind"`
+		Domain     string `json:"domain"`
+		Mailboxes  int64  `json:"mailboxes"`
+		PriceCents *int64 `json:"price_cents,optional"` // empty: the service's API gives no price
+		PriceKnown bool   `json:"price_known"`
+		Currency   string `json:"currency,optional"`
+		Summary    string `json:"summary"`
+		ExpiresAt  string `json:"expires_at"`
+	}
+	MailboxServiceBuyRequest {
+		Id      string `path:"id"` // the connection the quote is from
+		QuoteId string `json:"quote_id"`
+		Confirm bool   `json:"confirm"` // must be true: buying spends money
+	}
+	MailboxServiceBuyResponse {
+		Summary      string                   `json:"summary"`
+		ChargedCents *int64                   `json:"charged_cents,optional"`
+		DomainId     string                   `json:"domain_id,optional"`
+		Connection   MailboxServiceConnection `json:"connection"`
+		Check        *OutboundDNSCheck        `json:"check,optional"`
+		Imported     []OutboundMailboxResult  `json:"imported"`
+		Pending      []string                 `json:"pending"` // not finished at the service yet; sync with import later
+	}
+	MailboxServiceSyncRequest {
+		Id     string `path:"id"` // the connection
+		Import bool   `json:"import,optional"` // import the service's mailboxes the pool lacks
+	}
+	MailboxServicePoolMailbox {
+		Id    string `json:"id"`
+		Email string `json:"email"`
+	}
+	MailboxServiceSyncResponse {
+		OnlyAtService []MailboxServiceMailbox     `json:"only_at_service"`
+		OnlyInPool    []MailboxServicePoolMailbox `json:"only_in_pool"`
+		Imported      []OutboundMailboxResult     `json:"imported"`
+		Pending       []string                    `json:"pending"`
+	}
+	MailboxServiceDeleteRequest {
+		Id        string `path:"id"` // the connection
+		MailboxId string `path:"mailbox_id"`
 	}
 )
 
@@ -1806,6 +2580,14 @@ service outlet {
 
 	@handler AdminListWebhookLogs
 	get /:id/logs (ListWebhookLogsRequest) returns (ListWebhookLogsResponse)
+
+	@doc "A webhook's deliveries, newest first: status, tries and next retry"
+	@handler AdminListWebhookDeliveries
+	get /:id/deliveries (ListWebhookDeliveriesRequest) returns (ListWebhookDeliveriesResponse)
+
+	@doc "Send a delivery again now, signed the same way"
+	@handler AdminResendWebhookDelivery
+	post /:id/deliveries/:delivery_id/resend (ResendWebhookDeliveryRequest) returns (ResendWebhookDeliveryResponse)
 }
 
 // Admin Users
@@ -1899,6 +2681,9 @@ service outlet {
 	@handler ListListSubscribers
 	get /lists/:id/subscribers (ListSubscribersRequest) returns (ListSubscribersResponse)
 
+	@handler AddListSubscriber
+	post /lists/:id/subscribers (AddListSubscriberRequest) returns (Response)
+
 	@handler RemoveListSubscriber
 	delete /lists/:id/subscribers/:subscriberId (RemoveSubscriberRequest) returns (Response)
 
@@ -1981,8 +2766,18 @@ service outlet {
 
 	@handler CancelImportJob
 	post /import-jobs/:id/cancel (CancelImportJobRequest) returns (Response)
-// Note: Actual CSV upload endpoints are registered manually in outlet.go
-// because they require multipart/form-data handling
+}
+
+// CSV import upload: the file comes as JSON text, up to 50 MB
+@server (
+	group:      admin/imports
+	prefix:     /api/admin
+	middleware: Auth
+	maxBytes:   52428800
+)
+service outlet {
+	@handler ImportListSubscribers
+	post /lists/:id/import (ImportListSubscribersRequest) returns (ImportJobInfo)
 }
 
 // Admin Housekeeping
@@ -2023,6 +2818,10 @@ service outlet {
 
 	@handler DeleteSequence
 	delete /sequences/:id (GetSequenceRequest) returns (Response)
+
+	@doc "Enroll a contact of the brand in one of its sequences, as the signed-in member (the same enrollment as the SDK route)"
+	@handler AdminEnrollInSequence
+	post /sequences/enroll (EnrollSequenceRequest) returns (EnrollSequenceResponse)
 
 	// Entry Rules
 	@handler CreateEntryRule
@@ -2101,6 +2900,10 @@ service outlet {
 	@handler SendCampaignNow
 	post /campaigns/:id/send (SendCampaignNowRequest) returns (CampaignInfo)
 
+	@doc "Send a test of a campaign to one address, built as a real send is (design, merge tags, unsubscribe link)"
+	@handler SendCampaignTest
+	post /campaigns/test (SendCampaignTestRequest) returns (Response)
+
 	@handler GetCampaignStats
 	get /campaigns/:id/stats (GetCampaignRequest) returns (CampaignStatsResponse)
 }
@@ -2129,6 +2932,10 @@ service outlet {
 
 	@handler GetTransactionalEmailStats
 	get /transactional-emails/:id/stats (GetTransactionalEmailRequest) returns (TransactionalStatsResponse)
+
+	@doc "Send a test transactional email as the signed-in member, through the same send as the SDK route"
+	@handler SendTransactionalTest
+	post /transactional-emails/test (SendEmailRequest) returns (SendEmailResponse)
 }
 
 // Admin Organizations
@@ -2171,6 +2978,10 @@ service outlet {
 	@doc "Invite a person to a brand. Outlet is invite-only: the invitation decides the brand and role."
 	@handler CreateInvitation
 	post /organizations/:id/invitations (CreateInvitationRequest) returns (CreateInvitationResponse)
+
+	@doc "A brand's people: its members with their roles, and invitations not yet accepted with when they expire (brand admins)"
+	@handler ListOrgPeople
+	get /organizations/:id/people (ListOrgPeopleRequest) returns (ListOrgPeopleResponse)
 }
 
 // Platform Settings (Super Admin only)
@@ -2197,7 +3008,8 @@ service outlet {
 	get /ses-quota returns (SESQuotaResponse)
 }
 
-// Backup Management (Super Admin only)
+// Backup Management (Super Admin only). GET /api/admin/backup/:id/download
+// streams the file, so it is registered in cmd/serve.go, not here.
 @server (
 	group:      admin/backup
 	prefix:     /api/admin/backup
@@ -2215,9 +3027,6 @@ service outlet {
 
 	@handler DeleteBackup
 	delete /:id (DeleteBackupRequest) returns (Response)
-
-	@handler DownloadBackup
-	get /:id/download (DownloadBackupRequest)
 
 	@handler GetBackupSettings
 	get /settings returns (BackupSettingsResponse)
@@ -2446,5 +3255,345 @@ service outlet {
 
 	@handler TrackConfirm
 	post /confirm (TrackConfirmRequest) returns (TrackConfirmResponse)
+}
+
+// Admin Email Validation. A single check waits on DNS and an SMTP probe,
+// which the validation service bounds at 20 seconds: its route has the time
+// to finish.
+@server (
+	group:      admin/validation
+	prefix:     /api/admin/validation
+	middleware: Auth
+	timeout:    30s
+)
+service outlet {
+	@handler AdminValidateEmail
+	post /check (ValidateEmailRequest) returns (ValidationResult)
+}
+
+@server (
+	group:      admin/validation
+	prefix:     /api/admin/validation
+	middleware: Auth
+)
+service outlet {
+	@handler CreateValidationJob
+	post /jobs (CreateValidationJobRequest) returns (ValidationJobInfo)
+
+	@handler ListValidationJobs
+	get /jobs (ListValidationJobsRequest) returns (ListValidationJobsResponse)
+
+	@handler GetValidationJob
+	get /jobs/:id (ValidationJobIdRequest) returns (ValidationJobInfo)
+
+	@handler AppendValidationJobEmails
+	post /jobs/:id/emails (AppendValidationJobEmailsRequest) returns (ValidationJobInfo)
+
+	@handler StartValidationJob
+	post /jobs/:id/start (ValidationJobIdRequest) returns (ValidationJobInfo)
+
+	@handler CancelValidationJob
+	post /jobs/:id/cancel (ValidationJobIdRequest) returns (ValidationJobInfo)
+
+	@handler ListValidationResults
+	get /jobs/:id/results (ListValidationResultsRequest) returns (ListValidationResultsResponse)
+
+	@handler ApplyValidationJob
+	post /jobs/:id/apply (ApplyValidationJobRequest) returns (ApplyValidationJobResponse)
+
+	@handler GetValidationUsage
+	get /usage (ValidationUsageRequest) returns (ValidationUsageResponse)
+}
+
+// SDK Email Validation. A single check has the time its probe takes (see
+// the admin check).
+@server (
+	group:      sdk/validation
+	prefix:     /sdk/v1/validate
+	middleware: APIKeyAuth
+	timeout:    30s
+)
+service outlet {
+	@handler ValidateEmail
+	post / (ValidateEmailRequest) returns (ValidationResult)
+}
+
+// A batch is accepted at once as a validation job; the validation worker
+// checks its addresses in the background. Fetch the job and its results with
+// its ID until its status is completed.
+@server (
+	group:      sdk/validation
+	prefix:     /sdk/v1/validate
+	middleware: APIKeyAuth
+)
+service outlet {
+	@handler ValidateBatch
+	post /batch (ValidateBatchRequest) returns (ValidationJobInfo)
+
+	@handler GetValidateBatch
+	get /batch/:id (ValidationJobIdRequest) returns (ValidateBatchResponse)
+}
+
+// Signal Network hub (only served when SignalNet.Hub is true; 404 otherwise)
+@server (
+	group:      network
+	prefix:     /network/v1
+	middleware: NetworkAuth
+)
+service outlet {
+	@handler NetworkLookup
+	post /lookup (NetworkLookupRequest) returns (NetworkLookupResponse)
+
+	@handler NetworkReport
+	post /report (NetworkReportRequest) returns (NetworkReportResponse)
+}
+
+// Outbound: one-to-one outreach for a brand (X-Org-Id). Every route calls the
+// same outbound service as the MCP tools.
+@server (
+	group:      admin/outbound
+	prefix:     /api/admin
+	middleware: Auth
+)
+service outlet {
+	@handler GetOutboundOverview
+	get /outbound returns (OutboundOverview)
+
+	@handler SetOutboundEnabled
+	put /outbound/enabled (OutboundEnabledRequest) returns (Response)
+
+	@handler UpdateOutboundSettings
+	put /outbound/settings (OutboundSettingsRequest) returns (Response)
+
+	@handler SetOutboundDNSToken
+	put /outbound/dns-token (OutboundDNSTokenRequest) returns (Response)
+
+	@handler AddOutboundDomain
+	post /outbound/domains (OutboundDomainRequest) returns (OutboundDomainResponse)
+
+	@handler CheckOutboundDomain
+	post /outbound/domains/:id/check (OutboundIDRequest) returns (OutboundDomainInfo)
+
+	@handler AddOutboundMailboxes
+	post /outbound/mailboxes (OutboundAddMailboxesRequest) returns (OutboundAddMailboxesResponse)
+
+	@handler PauseOutbound
+	post /outbound/pause (OutboundPauseRequest) returns (Response)
+
+	@handler ListOutboundProspects
+	get /outbound/prospects (OutboundListProspectsRequest) returns (OutboundProspectList)
+
+	@handler AddOutboundProspects
+	post /outbound/prospects (OutboundAddProspectsRequest) returns (OutboundAddProspectsResponse)
+
+	@handler MarkOutboundPartner
+	post /outbound/prospects/:id/partner (OutboundIDRequest) returns (Response)
+
+	@handler CreateOutboundCampaign
+	post /outbound/campaigns (OutboundCampaignRequest) returns (OutboundCampaignResponse)
+
+	@handler GetOutboundCampaign
+	get /outbound/campaigns/:id (OutboundIDRequest) returns (OutboundCampaignResults)
+
+	@handler ListOutboundDrafts
+	get /outbound/drafts (OutboundListRequest) returns (OutboundDraftList)
+
+	@handler ReviewOutboundDrafts
+	post /outbound/drafts/review (OutboundReviewRequest) returns (OutboundReviewResponse)
+
+	@handler EditOutboundDraft
+	put /outbound/drafts/:id (OutboundEditDraftRequest) returns (Response)
+
+	@handler ListOutboundReplies
+	get /outbound/replies (OutboundListRepliesRequest) returns (OutboundReplyList)
+
+	@handler AnswerOutboundReply
+	post /outbound/replies/:id/answer (OutboundAnswerRequest) returns (Response)
+
+	@handler ClassifyOutboundReply
+	post /outbound/replies/:id/classify (OutboundClassifyRequest) returns (Response)
+
+	@handler ExplainOutbound
+	get /outbound/explain (OutboundExplainRequest) returns (OutboundExplainResponse)
+}
+
+// Sending pathways for a brand (X-Org-Id). Changing them needs the brand's
+// admin; the same email service the MCP tools use.
+@server (
+	group:      admin/sending
+	prefix:     /api/admin
+	middleware: Auth
+)
+service outlet {
+	@handler ListSendingPathways
+	get /sending/pathways returns (SendingPathwayList)
+
+	@handler CreateSendingPathway
+	post /sending/pathways (SendingPathwayRequest) returns (SendingPathway)
+
+	@handler UpdateSendingPathway
+	put /sending/pathways/:id (UpdateSendingPathwayRequest) returns (SendingPathway)
+
+	@handler DeleteSendingPathway
+	delete /sending/pathways/:id (SendingPathwayIDRequest) returns (Response)
+
+	@handler SetMailboxDailyLimit
+	put /sending/mailboxes/:id/daily-limit (MailboxDailyLimitRequest) returns (Response)
+
+	@handler MoveSendingDomain
+	put /sending/domains/:id/pathway (MoveDomainRequest) returns (Response)
+}
+
+// A mailbox pool's connections to mailbox services, for a brand (X-Org-Id):
+// the same outbound service as the MCP tools. Adding or removing a
+// connection, changing it, moving a domain, connecting a domain, buying,
+// syncing and deleting need the brand's admin.
+@server (
+	group:      admin/outbound
+	prefix:     /api/admin
+	middleware: Auth
+)
+service outlet {
+	@handler ListMailboxConnections
+	get /outbound/connections (MailboxConnectionListRequest) returns (MailboxConnectionList)
+
+	@handler AddMailboxConnection
+	post /outbound/connections (MailboxConnectionRequest) returns (MailboxConnection)
+
+	@handler UpdateMailboxConnection
+	put /outbound/connections/:id (UpdateMailboxConnectionRequest) returns (MailboxConnection)
+
+	@handler RemoveMailboxConnection
+	delete /outbound/connections/:id (MailboxConnectionIDRequest) returns (Response)
+
+	@handler MoveOutboundDomainConnection
+	put /outbound/domains/:id/connection (MoveDomainConnectionRequest) returns (MailboxConnection)
+
+	@handler GetMailboxServiceInventory
+	get /outbound/connections/:id/inventory (MailboxConnectionIDRequest) returns (MailboxServiceInventory)
+
+	@handler ConnectMailboxServiceDomain
+	post /outbound/connections/:id/domains (MailboxServiceConnectRequest) returns (MailboxServiceDomainResponse)
+
+	@handler QuoteMailboxService
+	post /outbound/connections/:id/quotes (MailboxServiceQuoteRequest) returns (MailboxServiceQuote)
+
+	@handler BuyMailboxService
+	post /outbound/connections/:id/buy (MailboxServiceBuyRequest) returns (MailboxServiceBuyResponse)
+
+	@handler SyncMailboxService
+	post /outbound/connections/:id/sync (MailboxServiceSyncRequest) returns (MailboxServiceSyncResponse)
+
+	@handler DeleteMailboxServiceMailbox
+	delete /outbound/connections/:id/mailboxes/:mailbox_id (MailboxServiceDeleteRequest) returns (Response)
+}
+
+// Outbound through a brand's API key, for other systems: the same operations
+// as the admin routes and the MCP tools. Turning outbound on stays with the
+// brand's admin in the app.
+@server (
+	group:      sdk/outbound
+	prefix:     /sdk/v1/outbound
+	middleware: APIKeyAuth
+)
+service outlet {
+	@handler SdkOutboundOverview
+	get / returns (OutboundOverview)
+
+	@handler SdkUpdateOutboundSettings
+	put /settings (OutboundSettingsRequest) returns (Response)
+
+	@handler SdkSetOutboundDNSToken
+	put /dns-token (OutboundDNSTokenRequest) returns (Response)
+
+	@handler SdkAddOutboundDomain
+	post /domains (OutboundDomainRequest) returns (OutboundDomainResponse)
+
+	@handler SdkCheckOutboundDomain
+	post /domains/:id/check (OutboundIDRequest) returns (OutboundDomainInfo)
+
+	@handler SdkAddOutboundMailboxes
+	post /mailboxes (OutboundAddMailboxesRequest) returns (OutboundAddMailboxesResponse)
+
+	@handler SdkPauseOutbound
+	post /pause (OutboundPauseRequest) returns (Response)
+
+	@handler SdkListOutboundProspects
+	get /prospects (OutboundListProspectsRequest) returns (OutboundProspectList)
+
+	@handler SdkAddOutboundProspects
+	post /prospects (OutboundAddProspectsRequest) returns (OutboundAddProspectsResponse)
+
+	@handler SdkMarkOutboundPartner
+	post /prospects/:id/partner (OutboundIDRequest) returns (Response)
+
+	@handler SdkCreateOutboundCampaign
+	post /campaigns (OutboundCampaignRequest) returns (OutboundCampaignResponse)
+
+	@handler SdkGetOutboundCampaign
+	get /campaigns/:id (OutboundIDRequest) returns (OutboundCampaignResults)
+
+	@handler SdkListOutboundDrafts
+	get /drafts (OutboundListRequest) returns (OutboundDraftList)
+
+	@handler SdkReviewOutboundDrafts
+	post /drafts/review (OutboundReviewRequest) returns (OutboundReviewResponse)
+
+	@handler SdkEditOutboundDraft
+	put /drafts/:id (OutboundEditDraftRequest) returns (Response)
+
+	@handler SdkListOutboundReplies
+	get /replies (OutboundListRepliesRequest) returns (OutboundReplyList)
+
+	@handler SdkAnswerOutboundReply
+	post /replies/:id/answer (OutboundAnswerRequest) returns (Response)
+
+	@handler SdkClassifyOutboundReply
+	post /replies/:id/classify (OutboundClassifyRequest) returns (Response)
+
+	@handler SdkExplainOutbound
+	get /explain (OutboundExplainRequest) returns (OutboundExplainResponse)
+}
+
+// A mailbox pool's connections through a brand's API key: the same
+// operations as the admin routes and the MCP tools.
+@server (
+	group:      sdk/outbound
+	prefix:     /sdk/v1/outbound
+	middleware: APIKeyAuth
+)
+service outlet {
+	@handler SdkListMailboxConnections
+	get /connections (MailboxConnectionListRequest) returns (MailboxConnectionList)
+
+	@handler SdkAddMailboxConnection
+	post /connections (MailboxConnectionRequest) returns (MailboxConnection)
+
+	@handler SdkUpdateMailboxConnection
+	put /connections/:id (UpdateMailboxConnectionRequest) returns (MailboxConnection)
+
+	@handler SdkRemoveMailboxConnection
+	delete /connections/:id (MailboxConnectionIDRequest) returns (Response)
+
+	@handler SdkMoveOutboundDomainConnection
+	put /domains/:id/connection (MoveDomainConnectionRequest) returns (MailboxConnection)
+
+	@handler SdkGetMailboxServiceInventory
+	get /connections/:id/inventory (MailboxConnectionIDRequest) returns (MailboxServiceInventory)
+
+	@handler SdkConnectMailboxServiceDomain
+	post /connections/:id/domains (MailboxServiceConnectRequest) returns (MailboxServiceDomainResponse)
+
+	@handler SdkQuoteMailboxService
+	post /connections/:id/quotes (MailboxServiceQuoteRequest) returns (MailboxServiceQuote)
+
+	@handler SdkBuyMailboxService
+	post /connections/:id/buy (MailboxServiceBuyRequest) returns (MailboxServiceBuyResponse)
+
+	@handler SdkSyncMailboxService
+	post /connections/:id/sync (MailboxServiceSyncRequest) returns (MailboxServiceSyncResponse)
+
+	@handler SdkDeleteMailboxServiceMailbox
+	delete /connections/:id/mailboxes/:mailbox_id (MailboxServiceDeleteRequest) returns (Response)
 }
 

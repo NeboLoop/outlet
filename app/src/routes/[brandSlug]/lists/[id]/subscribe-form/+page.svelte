@@ -138,9 +138,9 @@
 			<div class="mt-4">
 				{#if apiCodeTab === 'curl'}
 					<div class="bg-bg-secondary p-4 rounded-md overflow-x-auto max-w-full">
-						<pre class="text-sm font-mono text-text whitespace-pre-wrap break-all">{`curl -X POST ${embedCode?.base_url || 'https://your-outlet-instance.com'}/api/sdk/v1/lists/${ctx.list?.slug || 'your-list-slug'}/subscribe \\
+						<pre class="text-sm font-mono text-text whitespace-pre-wrap break-all">{`curl -X POST ${embedCode?.base_url || 'https://your-outlet-instance.com'}/sdk/v1/lists/${ctx.list?.slug || 'your-list-slug'}/subscribe \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer your-api-key" \\
+  -H "X-API-Key: your-api-key" \\
   -d '{
     "email": "user@example.com",
     "name": "John Doe"
@@ -169,7 +169,7 @@ await client.lists.subscribeToList('${ctx.list?.slug || 'your-list-slug'}', {
 
 import (
     "context"
-    outlet "github.com/localrivet/outlet/sdk/go"
+    outlet "github.com/outlet-sh/outlet/sdk/go"
 )
 
 func main() {
@@ -189,7 +189,7 @@ func main() {
 }`}</pre>
 					</div>
 					<p class="text-xs text-text-muted mt-2">
-						Install: <code class="bg-bg-secondary px-1 py-0.5 rounded">go get github.com/localrivet/outlet/sdk/go</code>
+						Install: <code class="bg-bg-secondary px-1 py-0.5 rounded">go get github.com/outlet-sh/outlet/sdk/go</code>
 					</p>
 				{:else if apiCodeTab === 'python'}
 					<div class="bg-bg-secondary p-4 rounded-md overflow-x-auto max-w-full">

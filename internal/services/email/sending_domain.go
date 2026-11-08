@@ -2,6 +2,8 @@ package email
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,7 +13,8 @@ import (
 
 // Brands verify their sending domains on a shared SES account, and SES
 // accepts any From address on a verified domain. So a domain belongs to one
-// brand (its domain identity), and a brand sends only from its own domains.
+// brand (its domain identity) and one of its sending pathways, and a brand's
+// mail sends only from the domains of the pathway carrying it.
 
 // ClaimDomain refuses a domain another brand already holds.
 func ClaimDomain(ctx context.Context, q db.Querier, orgID, domain string) error {
@@ -33,23 +36,41 @@ func DomainShared(ctx context.Context, q db.Querier, orgID, domain string) (bool
 	return n > 0, err
 }
 
-// CheckSender refuses a From address that isn't on one of the sending
-// brand's domains. An empty From is the platform's own default sender.
-func CheckSender(ctx context.Context, q db.Querier, orgID, from string) error {
-	from = strings.TrimSpace(from)
-	if from == "" {
+// CheckSender refuses a From address whose domain doesn't belong to the
+// brand's pathway carrying this kind of mail. An empty From is the
+// platform's own default sender.
+func CheckSender(ctx context.Context, q db.Querier, orgID string, kind Kind, from string) error {
+	if strings.TrimSpace(from) == "" {
 		return nil
 	}
+	p, err := q.GetPathwayForKind(ctx, db.GetPathwayForKindParams{OrgID: orgID, Kind: kind.Name()})
+	if errors.Is(err, sql.ErrNoRows) {
+		return errorx.NewBadRequestError(fmt.Sprintf("This brand has no sending pathway for %s mail. Add one in Settings, Sending.", kind.Name()))
+	}
+	if err != nil {
+		return err
+	}
+	return checkPathwayDomain(ctx, q, p, kind, from)
+}
+
+func checkPathwayDomain(ctx context.Context, q db.Querier, p db.SendingPathway, kind Kind, from string) error {
+	from = strings.TrimSpace(from)
 	domain := ExtractDomainFromEmail(from)
 	if domain == "" {
 		return errorx.NewBadRequestError(fmt.Sprintf("%s is not an email address.", from))
 	}
-	n, err := q.CountBrandDomain(ctx, db.CountBrandDomainParams{OrgID: orgID, Domain: domain})
+	n, err := q.CountPathwayDomain(ctx, db.CountPathwayDomainParams{PathwayID: sql.NullString{String: p.ID, Valid: true}, Domain: domain})
 	if err != nil {
 		return err
 	}
 	if n == 0 {
-		return errorx.NewBadRequestError(fmt.Sprintf("This brand can't send from %s. Add %s as one of its sending domains first.", from, domain))
+		// Say where the fix is: a domain the brand has goes to the pathway in
+		// Settings, Sending; a new one is added in Settings, Email.
+		where := fmt.Sprintf("Add %s in Settings, Email, under Domain Verification", domain)
+		if _, err := q.GetDomainIdentityByDomain(ctx, db.GetDomainIdentityByDomainParams{OrgID: p.OrgID, Domain: domain}); err == nil {
+			where = fmt.Sprintf("Move %s to it in Settings, Sending", domain)
+		}
+		return errorx.NewBadRequestError(fmt.Sprintf("This brand can't send %s mail from %s: its %q sending pathway has no %s. %s.", kind.Name(), from, p.Name, domain, where))
 	}
 	return nil
 }

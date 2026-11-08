@@ -72,13 +72,15 @@ func (l *ListListSubscribersLogic) ListListSubscribers(req *types.ListSubscriber
 	items := make([]types.ListSubscriberInfo, 0, len(subscribers))
 	for _, sub := range subscribers {
 		items = append(items, types.ListSubscriberInfo{
-			Id:             sub.ID,
-			ContactId:      sub.ContactID,
-			Email:          sub.Email,
-			Name:           sub.Name,
-			Status:         sub.Status.String,
-			SubscribedAt:   utils.FormatNullString(sub.SubscribedAt),
-			UnsubscribedAt: utils.FormatNullString(sub.UnsubscribedAt),
+			Id:                  sub.ID,
+			ContactId:           sub.ContactID,
+			Email:               sub.Email,
+			Name:                sub.Name,
+			Status:              sub.Status.String,
+			SubscribedAt:        utils.FormatNullString(sub.SubscribedAt),
+			UnsubscribedAt:      utils.FormatNullString(sub.UnsubscribedAt),
+			ValidationStatus:    sub.ValidationStatus.String,
+			ValidationSubStatus: sub.ValidationSubStatus.String,
 		})
 	}
 

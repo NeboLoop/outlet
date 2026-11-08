@@ -181,6 +181,11 @@
 		color: var(--color-error);
 	}
 
+	.alert-icon {
+		@apply h-5 w-5 shrink-0;
+		margin-top: 0.125rem;
+	}
+
 	/* ===== Admin Layout ===== */
 	.admin-layout {
 		@apply flex min-h-screen bg-base-50;
@@ -371,6 +376,367 @@
 
 	.sidebar.collapsed .sidebar-collapse-btn {
 		@apply justify-center px-0;
+	}
+}
+
+/* ===== Email Validation ===== */
+@layer components {
+	/* Stacked status bar (SVG rects sized via width attributes) */
+	.vstatus-bar {
+		@apply block w-full h-3 rounded-full overflow-hidden;
+		background-color: var(--color-bg-secondary);
+	}
+
+	.vstatus-dot {
+		@apply inline-block h-2.5 w-2.5 rounded-full flex-shrink-0;
+	}
+
+	.vstatus-bar-valid {
+		fill: var(--color-success);
+		background-color: var(--color-success);
+	}
+
+	.vstatus-bar-invalid {
+		fill: var(--color-error);
+		background-color: var(--color-error);
+	}
+
+	.vstatus-bar-catch-all {
+		fill: #facc15;
+		background-color: #facc15;
+	}
+
+	.vstatus-bar-unknown {
+		fill: var(--color-base-400);
+		background-color: var(--color-base-400);
+	}
+
+	.vstatus-bar-spamtrap {
+		fill: #991b1b;
+		background-color: #991b1b;
+	}
+
+	.vstatus-bar-abuse {
+		fill: #e11d48;
+		background-color: #e11d48;
+	}
+
+	.vstatus-bar-do-not-mail {
+		fill: #f97316;
+		background-color: #f97316;
+	}
+
+	/* Summary tile per status (clickable filter) */
+	.vstatus-tile {
+		@apply flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors;
+		background-color: var(--color-bg);
+		border-color: var(--color-border);
+	}
+
+	.vstatus-tile:hover {
+		background-color: var(--color-bg-secondary);
+	}
+
+	.vstatus-tile.active {
+		border-color: var(--color-primary);
+		background-color: color-mix(in srgb, var(--color-primary) 6%, transparent);
+	}
+
+	/* Key/value grid for a single check result */
+	.vresult-grid {
+		@apply grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm;
+	}
+
+	.vresult-grid dt {
+		color: var(--color-text-muted);
+	}
+
+	.vresult-grid dd {
+		@apply font-medium break-all;
+		color: var(--color-text);
+	}
+}
+
+/* ===== Help ===== */
+@layer components {
+	/* The "Help" link a screen shows to its guide */
+	.help-link {
+		@apply inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors;
+		color: var(--color-text-muted);
+	}
+
+	.help-link:hover {
+		background-color: var(--color-bg-secondary);
+		color: var(--color-text);
+	}
+
+	.help-page {
+		@apply max-w-3xl mx-auto px-4 sm:px-6 py-6;
+	}
+
+	.help-search {
+		@apply w-full rounded-lg border px-4 py-2.5 text-sm;
+		background-color: var(--color-bg);
+		border-color: var(--color-border);
+		color: var(--color-text);
+	}
+
+	.help-section-title {
+		@apply mt-8 mb-3 text-xs font-medium uppercase tracking-wide;
+		color: var(--color-text-muted);
+	}
+
+	.help-card {
+		@apply block rounded-lg border p-4 transition-colors;
+		background-color: var(--color-bg);
+		border-color: var(--color-border);
+	}
+
+	.help-card:hover {
+		border-color: var(--color-primary);
+	}
+
+	.help-card-title {
+		@apply font-medium;
+		color: var(--color-text);
+	}
+
+	.help-card-summary {
+		@apply mt-1 text-sm;
+		color: var(--color-text-muted);
+	}
+
+	.help-back {
+		@apply inline-flex items-center gap-1 text-sm mb-4;
+		color: var(--color-text-muted);
+	}
+
+	.help-back:hover {
+		color: var(--color-text);
+	}
+
+	.help-article {
+		@apply rounded-lg border p-6 sm:p-8;
+		background-color: var(--color-bg);
+		border-color: var(--color-border);
+	}
+
+	.help-related {
+		@apply mt-6 text-sm;
+		color: var(--color-text-muted);
+	}
+}
+
+/* ===== Sign-in, account and setup screens ===== */
+@layer components {
+	/* The page: content near the top on phones, centered from sm up */
+	.auth-shell {
+		@apply flex min-h-dvh flex-col items-center px-4 pt-8 pb-10 sm:justify-center sm:px-6 sm:py-12;
+		background-color: var(--color-base-200);
+		color: var(--color-base-content);
+	}
+
+	/* Setup screens are long: they start at the top on every screen size */
+	.auth-shell-wide {
+		@apply sm:justify-start sm:pt-10;
+	}
+
+	.auth-container {
+		@apply w-full max-w-[25rem];
+	}
+
+	.auth-topbar {
+		@apply mb-6 flex items-center justify-between gap-4;
+	}
+
+	/* The product mark: a small icon tile and the wordmark */
+	.brand-mark {
+		@apply flex items-center gap-2.5;
+	}
+
+	.auth-container > .brand-mark {
+		@apply mb-7 justify-center;
+	}
+
+	.brand-mark-icon {
+		@apply flex h-9 w-9 items-center justify-center rounded-xl;
+		background-color: var(--color-primary);
+		color: var(--color-primary-content);
+		box-shadow: 0 1px 2px color-mix(in oklab, var(--color-primary) 40%, transparent);
+	}
+
+	.brand-mark-name {
+		@apply text-xl font-semibold tracking-tight;
+		color: var(--color-base-content);
+	}
+
+	.auth-header {
+		@apply mb-6 text-center;
+	}
+
+	.auth-title {
+		@apply text-2xl font-semibold tracking-tight;
+		color: var(--color-base-content);
+	}
+
+	.auth-subtitle {
+		@apply mt-2 text-sm leading-6;
+		color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+	}
+
+	.auth-form {
+		@apply space-y-4;
+	}
+
+	.auth-label-row {
+		@apply mb-1 flex items-baseline justify-between gap-3;
+	}
+
+	.auth-label-row .form-label {
+		@apply mb-0;
+	}
+
+	.auth-shell .form-label {
+		color: var(--color-base-content);
+	}
+
+	.auth-hint {
+		@apply mt-1.5 text-xs;
+		color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+	}
+
+	.auth-link {
+		@apply text-sm font-medium underline-offset-4 hover:underline;
+		color: var(--color-primary);
+	}
+
+	.auth-link:focus-visible,
+	.auth-back:focus-visible {
+		@apply rounded-sm;
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
+	}
+
+	.auth-footer {
+		@apply mt-6 text-center text-sm;
+		color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+	}
+
+	.auth-back {
+		@apply inline-flex items-center gap-1.5 text-sm transition-colors;
+		color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+	}
+
+	.auth-back:hover {
+		color: var(--color-base-content);
+	}
+
+	/* The brand and role an invitation joins */
+	.invitation-summary {
+		@apply rounded-xl border px-4 py-3;
+		background-color: var(--color-base-200);
+		border-color: var(--color-base-300);
+	}
+
+	/* A centered status inside a card: icon, heading, text */
+	.auth-status {
+		@apply space-y-4 py-2 text-center;
+	}
+
+	.auth-status-icon {
+		@apply mx-auto flex h-12 w-12 items-center justify-center rounded-full;
+	}
+
+	.auth-status-title {
+		@apply text-lg font-semibold;
+		color: var(--color-base-content);
+	}
+
+	.auth-status-text {
+		@apply mt-2 text-sm leading-6;
+		color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+	}
+}
+
+/* ===== Password field with a show/hide toggle ===== */
+@layer components {
+	.password-toggle {
+		@apply flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors;
+		color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+	}
+
+	.password-toggle:hover {
+		background-color: var(--color-base-200);
+		color: var(--color-base-content);
+	}
+
+	.password-toggle:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 0;
+	}
+
+	.password-toggle:disabled {
+		@apply cursor-not-allowed opacity-50;
+	}
+}
+
+/* ===== Overrides of DaisyUI components =====
+   DaisyUI puts its components in sublayers of "utilities", so a rule that
+   changes one has to sit directly in that layer to win. */
+@layer utilities {
+	/* Alerts: a soft tint of the alert's color with readable body text.
+	   DaisyUI fills the whole box with the solid color, which hides the
+	   colored icon and shouts. */
+	.alert:is(.alert-info, .alert-success, .alert-warning, .alert-error) {
+		align-items: start;
+		gap: 0.75rem;
+		padding: 0.875rem 1rem;
+		color: var(--color-base-content);
+		background-color: color-mix(in oklab, var(--alert-color) 9%, var(--color-base-100));
+		background-image: none;
+		border-color: color-mix(in oklab, var(--alert-color) 30%, var(--color-base-100));
+		box-shadow: none;
+	}
+
+	/* A primary button that is busy keeps its color, so it reads as working
+	   rather than unavailable */
+	.btn-primary[aria-busy='true']:disabled {
+		background-color: var(--color-primary);
+		border-color: var(--color-primary);
+		color: var(--color-primary-content);
+		opacity: 0.85;
+	}
+
+	.auth-card {
+		border: 1px solid var(--color-base-300);
+		--tw-shadow-color: rgb(0 0 0 / 0.05);
+	}
+
+	.auth-card > .card-body {
+		@apply gap-0 p-6 sm:p-8;
+	}
+
+	/* Inputs: 44px tall, and 16px text on phones so iOS doesn't zoom in */
+	.auth-shell .input {
+		@apply h-11 text-base sm:text-sm;
+	}
+
+	.auth-shell .input:focus,
+	.auth-shell .input:focus-within {
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 20%, transparent);
+	}
+
+	.auth-shell .select {
+		@apply h-11;
+	}
+
+	.password-field {
+		@apply pe-1.5;
+	}
+
+	.password-field > input {
+		@apply min-w-0 grow;
 	}
 }
 

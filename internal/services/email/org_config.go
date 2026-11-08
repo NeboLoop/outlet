@@ -20,12 +20,7 @@ type OrgEmailConfig struct {
 	WorkerCount int `json:"worker_count,omitempty"` // Number of email worker goroutines
 	BatchSize   int `json:"batch_size,omitempty"`   // Emails to fetch per batch
 
-	// AWS region (if using org's own credentials)
-	AWSRegion string `json:"aws_region,omitempty"`
-
-	// Optional: Org-specific AWS credentials (encrypted)
-	AWSAccessKey string `json:"aws_access_key,omitempty"`
-	AWSSecretKey string `json:"aws_secret_key,omitempty"`
+	// A brand's own AWS keys live in its ses sending pathway.
 
 	// Override platform from/reply-to
 	FromEmail string `json:"from_email,omitempty"`
@@ -78,15 +73,6 @@ func GetOrgEmailConfig(ctx context.Context, store *db.Store, orgID string) (*Org
 			}
 			if settings.Email.BatchSize > 0 {
 				config.BatchSize = settings.Email.BatchSize
-			}
-			if settings.Email.AWSRegion != "" {
-				config.AWSRegion = settings.Email.AWSRegion
-			}
-			if settings.Email.AWSAccessKey != "" {
-				config.AWSAccessKey = settings.Email.AWSAccessKey
-			}
-			if settings.Email.AWSSecretKey != "" {
-				config.AWSSecretKey = settings.Email.AWSSecretKey
 			}
 			if settings.Email.FromEmail != "" {
 				config.FromEmail = settings.Email.FromEmail
@@ -150,9 +136,4 @@ func SaveOrgEmailConfig(ctx context.Context, store *db.Store, orgID string, conf
 	}
 
 	return nil
-}
-
-// HasOwnAWSCredentials checks if org has its own AWS credentials
-func (c *OrgEmailConfig) HasOwnAWSCredentials() bool {
-	return c.AWSAccessKey != "" && c.AWSSecretKey != ""
 }

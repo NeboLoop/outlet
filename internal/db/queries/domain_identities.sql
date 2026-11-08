@@ -1,8 +1,8 @@
 -- name: CreateDomainIdentity :one
 INSERT INTO domain_identities (
     id, org_id, domain, verification_status, dkim_status,
-    verification_token, dkim_tokens, dns_records, mail_from_domain
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    verification_token, dkim_tokens, dns_records, mail_from_domain, pathway_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetDomainIdentity :one
@@ -14,8 +14,9 @@ SELECT * FROM domain_identities
 WHERE org_id = ? AND domain = ?;
 
 -- name: ListDomainIdentitiesByOrg :many
+-- The brand's sending domains (SES). Outreach domains are listed by outbound.
 SELECT * FROM domain_identities
-WHERE org_id = ?
+WHERE org_id = ? AND purpose = 'sending'
 ORDER BY created_at DESC;
 
 -- name: UpdateDomainIdentityStatus :one
@@ -63,9 +64,10 @@ DELETE FROM domain_identities
 WHERE org_id = ? AND domain = ?;
 
 -- name: ListPendingDomainIdentities :many
+-- Sending domains awaiting SES verification; outreach domains never touch SES.
 SELECT * FROM domain_identities
-WHERE verification_status IN ('pending', 'Pending', 'not_started')
-   OR dkim_status IN ('pending', 'Pending', 'not_started')
+WHERE purpose = 'sending' AND (verification_status IN ('pending', 'Pending', 'not_started')
+   OR dkim_status IN ('pending', 'Pending', 'not_started'))
 ORDER BY created_at ASC;
 
 -- A domain belongs to one brand: brands verify their domains on a shared
@@ -75,7 +77,3 @@ ORDER BY created_at ASC;
 -- name: CountOtherBrandsWithDomain :one
 SELECT COUNT(*) FROM domain_identities
 WHERE LOWER(domain) = LOWER(sqlc.arg(domain)) AND org_id <> sqlc.arg(org_id);
-
--- name: CountBrandDomain :one
-SELECT COUNT(*) FROM domain_identities
-WHERE org_id = sqlc.arg(org_id) AND LOWER(domain) = LOWER(sqlc.arg(domain));

@@ -3,12 +3,12 @@ package webhooks
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -50,12 +50,7 @@ func (l *AdminGetWebhookLogic) AdminGetWebhook(req *types.GetWebhookRequest) (re
 		return nil, fmt.Errorf("failed to get webhook")
 	}
 
-	// Decode events from JSON string
-	var events []string
-	if err := json.Unmarshal([]byte(w.Events), &events); err != nil {
-		l.Errorf("Failed to decode events: %v", err)
-		events = []string{}
-	}
+	events := webhook.DecodeEvents(w.Events)
 
 	info := &types.WebhookInfo{
 		Id:                w.ID,

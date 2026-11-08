@@ -6,10 +6,13 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"html"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	emailsvc "github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -90,11 +93,26 @@ func (l *ForgotPasswordLogic) ForgotPassword(req *types.ForgotPasswordRequest) (
 		return &types.ForgotPasswordResponse{Message: successMessage}, nil
 	}
 
-	// Send password reset email asynchronously
+	// Send the reset email asynchronously, so the answer takes as long
+	// whether or not the address has an account. It is platform mail: Send
+	// gives it the platform's default sender.
+	msg := passwordResetMessage(l.svcCtx.Config.App.BaseURL, email, user.Name, resetToken)
 	go func() {
-		resetURL := fmt.Sprintf("%s/reset-password?token=%s", l.svcCtx.Config.App.BaseURL, resetToken)
-		subject := "Reset your password"
-		body := fmt.Sprintf(`
+		if err := l.svcCtx.EmailService.Send(context.Background(), msg); err != nil {
+			l.Errorf("Error sending password reset email: %v", err)
+		} else {
+			l.Infof("Password reset email sent to: %s", email)
+		}
+	}()
+
+	return &types.ForgotPasswordResponse{Message: successMessage}, nil
+}
+
+// passwordResetMessage is the email with a person's reset link. The link
+// opens the app's reset page, /auth/reset-password.
+func passwordResetMessage(baseURL, to, name, token string) emailsvc.Message {
+	resetURL := fmt.Sprintf("%s/auth/reset-password?token=%s", strings.TrimSuffix(baseURL, "/"), url.QueryEscape(token))
+	body := fmt.Sprintf(`
 <html>
 <body>
 <h2>Password Reset Request</h2>
@@ -106,20 +124,6 @@ func (l *ForgotPasswordLogic) ForgotPassword(req *types.ForgotPasswordRequest) (
 <br>
 <p>Best regards,<br>The Outlet Team</p>
 </body>
-</html>`, user.Name, resetURL)
-
-		err := l.svcCtx.EmailService.SendEmail(
-			context.Background(),
-			email,
-			subject,
-			body,
-		)
-		if err != nil {
-			l.Errorf("Error sending password reset email: %v", err)
-		} else {
-			l.Infof("Password reset email sent to: %s", email)
-		}
-	}()
-
-	return &types.ForgotPasswordResponse{Message: successMessage}, nil
+</html>`, html.EscapeString(name), resetURL)
+	return emailsvc.Message{To: to, Subject: "Reset your password", HTML: body}
 }

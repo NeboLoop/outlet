@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import { getList, type ListInfo } from '$lib/api';
 	import { LoadingSpinner, Alert, Button, Badge, Drawer } from '$lib/components/ui';
@@ -42,8 +43,10 @@
 		loadList();
 	});
 
+	// The spinner shows only while a list is first loading: a reload after a
+	// change keeps the page (and its notices) on screen.
 	async function loadList() {
-		loading = true;
+		loading = list?.id !== listId;
 		error = '';
 		try {
 			list = await getList({}, listId);
@@ -145,7 +148,7 @@
 							</div>
 							<div class="flex justify-between">
 								<span class="text-text-muted">Created</span>
-								<span class="font-medium text-text">{list.created_at ? new Date(list.created_at).toLocaleDateString() : '-'}</span>
+								<span class="font-medium text-text">{formatDate(list.created_at) || '-'}</span>
 							</div>
 						</div>
 					</div>
@@ -187,7 +190,7 @@
 					</div>
 					<div class="flex justify-between">
 						<span class="text-text-muted">Created</span>
-						<span class="font-medium text-text">{list.created_at ? new Date(list.created_at).toLocaleDateString() : '-'}</span>
+						<span class="font-medium text-text">{formatDate(list.created_at) || '-'}</span>
 					</div>
 				</div>
 			</div>

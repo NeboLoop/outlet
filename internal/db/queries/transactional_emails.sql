@@ -30,14 +30,17 @@ ORDER BY created_at DESC;
 UPDATE transactional_emails
 SET name = COALESCE(NULLIF(sqlc.arg(name), ''), name),
     slug = COALESCE(NULLIF(sqlc.arg(slug), ''), slug),
-    description = COALESCE(NULLIF(sqlc.arg(description), ''), description),
     subject = COALESCE(NULLIF(sqlc.arg(subject), ''), subject),
     html_body = COALESCE(NULLIF(sqlc.arg(html_body), ''), html_body),
-    plain_text = COALESCE(NULLIF(sqlc.arg(plain_text), ''), plain_text),
-    from_name = COALESCE(NULLIF(sqlc.arg(from_name), ''), from_name),
-    from_email = COALESCE(NULLIF(sqlc.arg(from_email), ''), from_email),
-    reply_to = COALESCE(NULLIF(sqlc.arg(reply_to), ''), reply_to),
+    -- Optional fields: NULL keeps the current value, '' clears it
+    description = CASE WHEN sqlc.narg(description) IS NULL THEN description ELSE NULLIF(sqlc.narg(description), '') END,
+    plain_text = CASE WHEN sqlc.narg(plain_text) IS NULL THEN plain_text ELSE NULLIF(sqlc.narg(plain_text), '') END,
+    from_name = CASE WHEN sqlc.narg(from_name) IS NULL THEN from_name ELSE NULLIF(sqlc.narg(from_name), '') END,
+    from_email = CASE WHEN sqlc.narg(from_email) IS NULL THEN from_email ELSE NULLIF(sqlc.narg(from_email), '') END,
+    reply_to = CASE WHEN sqlc.narg(reply_to) IS NULL THEN reply_to ELSE NULLIF(sqlc.narg(reply_to), '') END,
     is_active = COALESCE(sqlc.arg(is_active), is_active),
+    -- set_design 1 replaces the design (a NULL design_id clears it); 0 keeps it
+    design_id = CASE WHEN CAST(sqlc.arg(set_design) AS INTEGER) = 1 THEN sqlc.narg(design_id) ELSE design_id END,
     updated_at = datetime('now')
 WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id)
 RETURNING *;
@@ -53,11 +56,12 @@ WHERE org_id = sqlc.arg(org_id);
 -- Sends (Logging)
 
 -- name: CreateTransactionalSend :one
+-- subject is the subject the person gets, its merge tags filled.
 INSERT INTO transactional_sends (
     id, template_id, org_id, to_email, to_name, contact_id,
-    status, tracking_token, context_data, created_at
+    status, tracking_token, context_data, subject, created_at
 )
-VALUES (sqlc.arg(id), sqlc.arg(template_id), sqlc.arg(org_id), sqlc.arg(to_email), sqlc.arg(to_name), sqlc.arg(contact_id), sqlc.arg(status), sqlc.arg(tracking_token), sqlc.arg(context_data), datetime('now'))
+VALUES (sqlc.arg(id), sqlc.arg(template_id), sqlc.arg(org_id), sqlc.arg(to_email), sqlc.arg(to_name), sqlc.arg(contact_id), sqlc.arg(status), sqlc.arg(tracking_token), sqlc.arg(context_data), sqlc.arg(subject), datetime('now'))
 RETURNING *;
 
 -- name: GetTransactionalSend :one
@@ -69,7 +73,9 @@ SELECT * FROM transactional_sends
 WHERE tracking_token = sqlc.arg(tracking_token);
 
 -- name: GetTransactionalSendByTrackingAndOrg :one
-SELECT ts.*, te.subject
+-- sent_subject is the subject the person got; sends from before it was kept
+-- fall back to the template's.
+SELECT ts.*, COALESCE(ts.subject, te.subject) AS sent_subject
 FROM transactional_sends ts
 JOIN transactional_emails te ON ts.template_id = te.id
 WHERE ts.tracking_token = sqlc.arg(tracking_token) AND ts.org_id = sqlc.arg(org_id);

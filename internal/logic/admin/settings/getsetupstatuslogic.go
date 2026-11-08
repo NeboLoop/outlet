@@ -29,55 +29,15 @@ func (l *GetSetupStatusLogic) GetSetupStatus() (resp *types.SetupStatusResponse,
 		return nil, err
 	}
 
-	// Required AWS settings for platform to be fully configured
-	requiredAwsSettings := []string{"aws_access_key", "aws_secret_key", "aws_region"}
-
-	// Get all AWS-related platform settings
-	awsSettings, err := l.svcCtx.DB.GetPlatformSettingsByCategory(l.ctx, "aws")
+	status, err := l.svcCtx.EmailService.PlatformStatus(l.ctx)
 	if err != nil {
-		l.Error("failed to get AWS platform settings:", err)
 		return nil, err
 	}
-
-	// Build a map of configured AWS settings
-	configuredSettings := make(map[string]bool)
-	for _, setting := range awsSettings {
-		// Check if the setting has a value (either text or encrypted)
-		hasValue := (setting.ValueText.Valid && setting.ValueText.String != "") ||
-			(setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "")
-		if hasValue {
-			configuredSettings[setting.Key] = true
-		}
-	}
-
-	// Find missing AWS settings
-	var missingSettings []string
-	for _, required := range requiredAwsSettings {
-		if !configuredSettings[required] {
-			missingSettings = append(missingSettings, required)
-		}
-	}
-
-	hasAws := len(missingSettings) == 0
-
-	// Also check for legacy SMTP settings (deprecated)
-	smtpSettings, _ := l.svcCtx.DB.GetPlatformSettingsByCategory(l.ctx, "email")
-	hasSmtp := false
-	for _, setting := range smtpSettings {
-		if setting.Key == "smtp_host" {
-			hasValue := (setting.ValueText.Valid && setting.ValueText.String != "") ||
-				(setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "")
-			if hasValue {
-				hasSmtp = true
-				break
-			}
-		}
-	}
-
 	return &types.SetupStatusResponse{
-		HasAws:             hasAws,
-		HasSmtp:            hasSmtp,
-		PlatformConfigured: hasAws, // Platform is configured when AWS credentials are set
-		MissingSettings:    missingSettings,
+		HasAdmin:           true,
+		HasAws:             status.HasSES,
+		HasSmtp:            status.HasSMTP,
+		PlatformConfigured: status.Configured(),
+		MissingSettings:    status.Missing,
 	}, nil
 }

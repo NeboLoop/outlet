@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { BrandMark } from '$lib/components/ui';
+
 	let { children } = $props();
 </script>
 
-<div class="min-h-screen bg-base-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-	<div class="max-w-md w-full">
+<div class="auth-shell">
+	<main class="auth-container">
+		<BrandMark />
 		{@render children()}
-	</div>
+	</main>
 </div>

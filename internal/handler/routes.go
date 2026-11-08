@@ -5,6 +5,7 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	adminapikeys "github.com/outlet-sh/outlet/internal/handler/admin/apikeys"
 	adminauth "github.com/outlet-sh/outlet/internal/handler/admin/auth"
@@ -18,21 +19,27 @@ import (
 	adminimports "github.com/outlet-sh/outlet/internal/handler/admin/imports"
 	adminlists "github.com/outlet-sh/outlet/internal/handler/admin/lists"
 	adminorganizations "github.com/outlet-sh/outlet/internal/handler/admin/organizations"
+	adminoutbound "github.com/outlet-sh/outlet/internal/handler/admin/outbound"
+	adminsending "github.com/outlet-sh/outlet/internal/handler/admin/sending"
 	adminsequences "github.com/outlet-sh/outlet/internal/handler/admin/sequences"
 	adminsettings "github.com/outlet-sh/outlet/internal/handler/admin/settings"
 	adminsubscribers "github.com/outlet-sh/outlet/internal/handler/admin/subscribers"
 	adminsystem "github.com/outlet-sh/outlet/internal/handler/admin/system"
 	admintransactional "github.com/outlet-sh/outlet/internal/handler/admin/transactional"
 	adminusers "github.com/outlet-sh/outlet/internal/handler/admin/users"
+	adminvalidation "github.com/outlet-sh/outlet/internal/handler/admin/validation"
 	adminwebhooks "github.com/outlet-sh/outlet/internal/handler/admin/webhooks"
 	auth "github.com/outlet-sh/outlet/internal/handler/auth"
+	network "github.com/outlet-sh/outlet/internal/handler/network"
 	public "github.com/outlet-sh/outlet/internal/handler/public"
 	sdk "github.com/outlet-sh/outlet/internal/handler/sdk"
 	sdkcontacts "github.com/outlet-sh/outlet/internal/handler/sdk/contacts"
 	sdkemails "github.com/outlet-sh/outlet/internal/handler/sdk/emails"
+	sdkoutbound "github.com/outlet-sh/outlet/internal/handler/sdk/outbound"
 	sdksequences "github.com/outlet-sh/outlet/internal/handler/sdk/sequences"
 	sdkstats "github.com/outlet-sh/outlet/internal/handler/sdk/stats"
 	sdktracking "github.com/outlet-sh/outlet/internal/handler/sdk/tracking"
+	sdkvalidation "github.com/outlet-sh/outlet/internal/handler/sdk/validation"
 	sdkwebhooks "github.com/outlet-sh/outlet/internal/handler/sdk/webhooks"
 	"github.com/outlet-sh/outlet/internal/svc"
 
@@ -112,11 +119,6 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodDelete,
 					Path:    "/:id",
 					Handler: adminbackup.DeleteBackupHandler(serverCtx),
-				},
-				{
-					Method:  http.MethodGet,
-					Path:    "/:id/download",
-					Handler: adminbackup.DownloadBackupHandler(serverCtx),
 				},
 				{
 					Method:  http.MethodGet,
@@ -230,6 +232,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodGet,
 					Path:    "/campaigns/:id/stats",
 					Handler: admincampaigns.GetCampaignStatsHandler(serverCtx),
+				},
+				{
+					// Send a test of a campaign to one address, built as a real send is (design, merge tags, unsubscribe link)
+					Method:  http.MethodPost,
+					Path:    "/campaigns/test",
+					Handler: admincampaigns.SendCampaignTestHandler(serverCtx),
 				},
 			}...,
 		),
@@ -401,6 +409,21 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			[]rest.Middleware{serverCtx.Auth},
 			[]rest.Route{
 				{
+					Method:  http.MethodPost,
+					Path:    "/lists/:id/import",
+					Handler: adminimports.ImportListSubscribersHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin"),
+		rest.WithMaxBytes(52428800),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
 					Method:  http.MethodGet,
 					Path:    "/email-stats",
 					Handler: adminlists.GetEmailDashboardStatsHandler(serverCtx),
@@ -444,6 +467,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodGet,
 					Path:    "/lists/:id/subscribers",
 					Handler: adminlists.ListListSubscribersHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/lists/:id/subscribers",
+					Handler: adminlists.AddListSubscriberHandler(serverCtx),
 				},
 				{
 					Method:  http.MethodDelete,
@@ -536,6 +564,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: adminorganizations.CreateInvitationHandler(serverCtx),
 				},
 				{
+					// A brand's people: its members with their roles, and invitations not yet accepted with when they expire (brand admins)
+					Method:  http.MethodGet,
+					Path:    "/organizations/:id/people",
+					Handler: adminorganizations.ListOrgPeopleHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodPost,
 					Path:    "/organizations/:id/regenerate-key",
 					Handler: adminorganizations.RegenerateOrgApiKeyHandler(serverCtx),
@@ -544,6 +578,218 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodGet,
 					Path:    "/organizations/slug/:slug",
 					Handler: adminorganizations.GetOrganizationBySlugHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound",
+					Handler: adminoutbound.GetOutboundOverviewHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/campaigns",
+					Handler: adminoutbound.CreateOutboundCampaignHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/campaigns/:id",
+					Handler: adminoutbound.GetOutboundCampaignHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/dns-token",
+					Handler: adminoutbound.SetOutboundDNSTokenHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/domains",
+					Handler: adminoutbound.AddOutboundDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/domains/:id/check",
+					Handler: adminoutbound.CheckOutboundDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/drafts",
+					Handler: adminoutbound.ListOutboundDraftsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/drafts/:id",
+					Handler: adminoutbound.EditOutboundDraftHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/drafts/review",
+					Handler: adminoutbound.ReviewOutboundDraftsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/enabled",
+					Handler: adminoutbound.SetOutboundEnabledHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/explain",
+					Handler: adminoutbound.ExplainOutboundHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/mailboxes",
+					Handler: adminoutbound.AddOutboundMailboxesHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/pause",
+					Handler: adminoutbound.PauseOutboundHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/prospects",
+					Handler: adminoutbound.ListOutboundProspectsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/prospects",
+					Handler: adminoutbound.AddOutboundProspectsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/prospects/:id/partner",
+					Handler: adminoutbound.MarkOutboundPartnerHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/replies",
+					Handler: adminoutbound.ListOutboundRepliesHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/replies/:id/answer",
+					Handler: adminoutbound.AnswerOutboundReplyHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/replies/:id/classify",
+					Handler: adminoutbound.ClassifyOutboundReplyHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/settings",
+					Handler: adminoutbound.UpdateOutboundSettingsHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/connections",
+					Handler: adminoutbound.ListMailboxConnectionsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/connections",
+					Handler: adminoutbound.AddMailboxConnectionHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/connections/:id",
+					Handler: adminoutbound.UpdateMailboxConnectionHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/outbound/connections/:id",
+					Handler: adminoutbound.RemoveMailboxConnectionHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/connections/:id/buy",
+					Handler: adminoutbound.BuyMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/connections/:id/domains",
+					Handler: adminoutbound.ConnectMailboxServiceDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/connections/:id/inventory",
+					Handler: adminoutbound.GetMailboxServiceInventoryHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/outbound/connections/:id/mailboxes/:mailbox_id",
+					Handler: adminoutbound.DeleteMailboxServiceMailboxHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/connections/:id/quotes",
+					Handler: adminoutbound.QuoteMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/connections/:id/sync",
+					Handler: adminoutbound.SyncMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/domains/:id/connection",
+					Handler: adminoutbound.MoveOutboundDomainConnectionHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPut,
+					Path:    "/sending/domains/:id/pathway",
+					Handler: adminsending.MoveSendingDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/sending/mailboxes/:id/daily-limit",
+					Handler: adminsending.SetMailboxDailyLimitHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/sending/pathways",
+					Handler: adminsending.ListSendingPathwaysHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/sending/pathways",
+					Handler: adminsending.CreateSendingPathwayHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/sending/pathways/:id",
+					Handler: adminsending.UpdateSendingPathwayHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/sending/pathways/:id",
+					Handler: adminsending.DeleteSendingPathwayHandler(serverCtx),
 				},
 			}...,
 		),
@@ -608,6 +854,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodGet,
 					Path:    "/sequences/:id/stats",
 					Handler: adminsequences.GetSequenceStatsHandler(serverCtx),
+				},
+				{
+					// Enroll a contact of the brand in one of its sequences, as the signed-in member (the same enrollment as the SDK route)
+					Method:  http.MethodPost,
+					Path:    "/sequences/enroll",
+					Handler: adminsequences.AdminEnrollInSequenceHandler(serverCtx),
 				},
 				{
 					Method:  http.MethodPost,
@@ -750,6 +1002,12 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/transactional-emails/:id/stats",
 					Handler: admintransactional.GetTransactionalEmailStatsHandler(serverCtx),
 				},
+				{
+					// Send a test transactional email as the signed-in member, through the same send as the SDK route
+					Method:  http.MethodPost,
+					Path:    "/transactional-emails/test",
+					Handler: admintransactional.SendTransactionalTestHandler(serverCtx),
+				},
 			}...,
 		),
 		rest.WithPrefix("/api/admin"),
@@ -794,6 +1052,75 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			[]rest.Middleware{serverCtx.Auth},
 			[]rest.Route{
 				{
+					Method:  http.MethodPost,
+					Path:    "/check",
+					Handler: adminvalidation.AdminValidateEmailHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin/validation"),
+		rest.WithTimeout(30000*time.Millisecond),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs",
+					Handler: adminvalidation.CreateValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/jobs",
+					Handler: adminvalidation.ListValidationJobsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/jobs/:id",
+					Handler: adminvalidation.GetValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs/:id/apply",
+					Handler: adminvalidation.ApplyValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs/:id/cancel",
+					Handler: adminvalidation.CancelValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs/:id/emails",
+					Handler: adminvalidation.AppendValidationJobEmailsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/jobs/:id/results",
+					Handler: adminvalidation.ListValidationResultsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/jobs/:id/start",
+					Handler: adminvalidation.StartValidationJobHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/usage",
+					Handler: adminvalidation.GetValidationUsageHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/api/admin/validation"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.Auth},
+			[]rest.Route{
+				{
 					Method:  http.MethodGet,
 					Path:    "/",
 					Handler: adminwebhooks.AdminListWebhooksHandler(serverCtx),
@@ -817,6 +1144,18 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodDelete,
 					Path:    "/:id",
 					Handler: adminwebhooks.AdminDeleteWebhookHandler(serverCtx),
+				},
+				{
+					// A webhook's deliveries, newest first: status, tries and next retry
+					Method:  http.MethodGet,
+					Path:    "/:id/deliveries",
+					Handler: adminwebhooks.AdminListWebhookDeliveriesHandler(serverCtx),
+				},
+				{
+					// Send a delivery again now, signed the same way
+					Method:  http.MethodPost,
+					Path:    "/:id/deliveries/:delivery_id/resend",
+					Handler: adminwebhooks.AdminResendWebhookDeliveryHandler(serverCtx),
 				},
 				{
 					Method:  http.MethodGet,
@@ -882,6 +1221,25 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			}...,
 		),
 		rest.WithPrefix("/api/v1"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.NetworkAuth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/lookup",
+					Handler: network.NetworkLookupHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/report",
+					Handler: network.NetworkReportHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/network/v1"),
 	)
 
 	server.AddRoutes(
@@ -999,6 +1357,174 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			[]rest.Middleware{serverCtx.APIKeyAuth},
 			[]rest.Route{
 				{
+					Method:  http.MethodGet,
+					Path:    "/",
+					Handler: sdkoutbound.SdkOutboundOverviewHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/campaigns",
+					Handler: sdkoutbound.SdkCreateOutboundCampaignHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/campaigns/:id",
+					Handler: sdkoutbound.SdkGetOutboundCampaignHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/dns-token",
+					Handler: sdkoutbound.SdkSetOutboundDNSTokenHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/domains",
+					Handler: sdkoutbound.SdkAddOutboundDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/domains/:id/check",
+					Handler: sdkoutbound.SdkCheckOutboundDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/drafts",
+					Handler: sdkoutbound.SdkListOutboundDraftsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/drafts/:id",
+					Handler: sdkoutbound.SdkEditOutboundDraftHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/drafts/review",
+					Handler: sdkoutbound.SdkReviewOutboundDraftsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/explain",
+					Handler: sdkoutbound.SdkExplainOutboundHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/mailboxes",
+					Handler: sdkoutbound.SdkAddOutboundMailboxesHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/pause",
+					Handler: sdkoutbound.SdkPauseOutboundHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/prospects",
+					Handler: sdkoutbound.SdkListOutboundProspectsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/prospects",
+					Handler: sdkoutbound.SdkAddOutboundProspectsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/prospects/:id/partner",
+					Handler: sdkoutbound.SdkMarkOutboundPartnerHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/replies",
+					Handler: sdkoutbound.SdkListOutboundRepliesHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/replies/:id/answer",
+					Handler: sdkoutbound.SdkAnswerOutboundReplyHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/replies/:id/classify",
+					Handler: sdkoutbound.SdkClassifyOutboundReplyHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/settings",
+					Handler: sdkoutbound.SdkUpdateOutboundSettingsHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/sdk/v1/outbound"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.APIKeyAuth},
+			[]rest.Route{
+				{
+					Method:  http.MethodGet,
+					Path:    "/connections",
+					Handler: sdkoutbound.SdkListMailboxConnectionsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/connections",
+					Handler: sdkoutbound.SdkAddMailboxConnectionHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/connections/:id",
+					Handler: sdkoutbound.SdkUpdateMailboxConnectionHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/connections/:id",
+					Handler: sdkoutbound.SdkRemoveMailboxConnectionHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/connections/:id/buy",
+					Handler: sdkoutbound.SdkBuyMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/connections/:id/domains",
+					Handler: sdkoutbound.SdkConnectMailboxServiceDomainHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/connections/:id/inventory",
+					Handler: sdkoutbound.SdkGetMailboxServiceInventoryHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/connections/:id/mailboxes/:mailbox_id",
+					Handler: sdkoutbound.SdkDeleteMailboxServiceMailboxHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/connections/:id/quotes",
+					Handler: sdkoutbound.SdkQuoteMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/connections/:id/sync",
+					Handler: sdkoutbound.SdkSyncMailboxServiceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/domains/:id/connection",
+					Handler: sdkoutbound.SdkMoveOutboundDomainConnectionHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/sdk/v1/outbound"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.APIKeyAuth},
+			[]rest.Route{
+				{
 					Method:  http.MethodPost,
 					Path:    "/enroll",
 					Handler: sdksequences.EnrollInSequenceHandler(serverCtx),
@@ -1079,6 +1605,40 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 			}...,
 		),
 		rest.WithPrefix("/sdk/v1/tracking"),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.APIKeyAuth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/",
+					Handler: sdkvalidation.ValidateEmailHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/sdk/v1/validate"),
+		rest.WithTimeout(30000*time.Millisecond),
+	)
+
+	server.AddRoutes(
+		rest.WithMiddlewares(
+			[]rest.Middleware{serverCtx.APIKeyAuth},
+			[]rest.Route{
+				{
+					Method:  http.MethodPost,
+					Path:    "/batch",
+					Handler: sdkvalidation.ValidateBatchHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/batch/:id",
+					Handler: sdkvalidation.GetValidateBatchHandler(serverCtx),
+				},
+			}...,
+		),
+		rest.WithPrefix("/sdk/v1/validate"),
 	)
 
 	server.AddRoutes(

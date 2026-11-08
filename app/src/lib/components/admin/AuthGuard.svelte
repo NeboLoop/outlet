@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { isAuthenticated, getCurrentUser, isAdmin } from '$lib/auth';
+	import { page } from '$app/stores';
+	import { isAuthenticated, getCurrentUser, isAdmin, loginPath } from '$lib/auth';
 
 	interface Props {
 		requireAdmin?: boolean;
@@ -9,7 +10,7 @@
 		children: Snippet;
 	}
 
-	let { requireAdmin = false, redirectTo = '/auth/login', children }: Props = $props();
+	let { requireAdmin = false, redirectTo, children }: Props = $props();
 
 	let isLoading = $state(true);
 	let isAuthorized = $state(false);
@@ -21,7 +22,8 @@
 	function checkAuth() {
 		// Check if user is authenticated
 		if (!isAuthenticated()) {
-			goto(redirectTo);
+			// Sign in, then come back here
+			goto(redirectTo ?? loginPath($page.url.pathname + $page.url.search));
 			return;
 		}
 

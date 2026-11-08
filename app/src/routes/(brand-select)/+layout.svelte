@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { getCurrentUser, logout } from '$lib/auth';
+	import { getCurrentUser, isAuthenticated, logout } from '$lib/auth';
 	import AuthGuard from '$lib/components/admin/AuthGuard.svelte';
+	import HelpLink from '$lib/components/ui/HelpLink.svelte';
 	import { listOrganizations, createOrganization, type OrgInfo } from '$lib/api';
 	import { Modal, Input, Button, Alert } from '$lib/components/ui';
 	import { ChevronDown, Check, Plus, Settings } from '@lucide/svelte';
@@ -21,8 +22,9 @@
 	let creatingBrand = $state(false);
 	let createBrandError = $state('');
 
+	// Signed out, AuthGuard sends you to log in; there's nothing to load
 	$effect(() => {
-		loadOrgs();
+		if (isAuthenticated()) loadOrgs();
 	});
 
 	async function loadOrgs() {
@@ -106,6 +108,7 @@
 				</div>
 
 				<div class="flex items-center space-x-4">
+					<HelpLink />
 					<!-- Brand Switcher -->
 					<div class="brand-switcher relative">
 						<button

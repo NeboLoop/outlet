@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -21,14 +22,17 @@ import (
 	"github.com/outlet-sh/outlet/internal/config"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/handler"
+	adminbackup "github.com/outlet-sh/outlet/internal/logic/admin/backup"
 	publiclogic "github.com/outlet-sh/outlet/internal/logic/public"
 	outletmcp "github.com/outlet-sh/outlet/internal/mcp"
 	mcpoauth "github.com/outlet-sh/outlet/internal/mcp/oauth"
 	"github.com/outlet-sh/outlet/internal/middleware"
 	publicpages "github.com/outlet-sh/outlet/internal/public"
+	"github.com/outlet-sh/outlet/internal/services/listexport"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/webhook"
+	"github.com/outlet-sh/outlet/internal/services/signalnet"
 	"github.com/outlet-sh/outlet/internal/workers"
 	outletsmtp "github.com/outlet-sh/outlet/internal/smtp"
 	outletws "github.com/outlet-sh/outlet/internal/websocket"
@@ -149,13 +153,16 @@ func runServe(cmd *cobra.Command, args []string) {
 	// Create go-zero server with optional embedded SPA
 	var serverOpts []rest.RunOption
 	if err == nil {
-		serverOpts = append(serverOpts,
-			rest.WithFileServer("/", http.FS(spaFS)),
-			rest.WithNotFoundHandler(app.NotFoundHandler(spaFS)),
-		)
+		// Every path that isn't an API route is the app: a file, a prerendered
+		// page (/settings → settings.html), or the app's fallback page. The
+		// same handler serves the HTTPS mode below.
+		serverOpts = append(serverOpts, rest.WithNotFoundHandler(app.SPAHandler(spaFS)))
 	}
+	// One request line per call, without headers or bodies (see RequestLog).
+	c.RestConf.Middlewares.Log = false
 	server := rest.MustNewServer(c.RestConf, serverOpts...)
 	defer server.Stop()
+	server.Use(middleware.RequestLog)
 
 	// Initialize service context (DB, external services)
 	ctx := svc.NewServiceContext(c)
@@ -180,6 +187,9 @@ func runServe(cmd *cobra.Command, args []string) {
 	// Custom webhook handlers (need raw body access)
 	registerWebhookRoutes(server, ctx)
 
+	// List CSV exports (stream the file, which a generated handler can't)
+	registerListExportRoutes(server, ctx)
+
 	// MCP OAuth endpoints (well-known, DCR, authorize, token)
 	registerMCPOAuthRoutes(server, ctx, c.App.BaseURL)
 
@@ -192,6 +202,9 @@ func runServe(cmd *cobra.Command, args []string) {
 	// WebSocket endpoint for real-time updates
 	registerWebSocketRoute(server, ctx)
 
+	// Backup download (streams the file, which a generated handler can't)
+	registerBackupDownloadRoute(server, ctx)
+
 	// Start email worker in background
 	emailWorker := workers.StartEmailWorker(ctx)
 	fmt.Println("Email worker started")
@@ -203,6 +216,22 @@ func runServe(cmd *cobra.Command, args []string) {
 	// Start domain verification worker in background
 	domainVerificationWorker := workers.StartDomainVerificationWorker(ctx)
 	fmt.Println("Domain verification worker started")
+
+	// Start the outbound engine (it sends only for brands whose admin turned it on)
+	outboundWorker := workers.StartOutboundWorker(ctx)
+	fmt.Println("Outbound worker started")
+	// Start Signal Network reporter (nil unless SignalNet.HubURL and InstanceKey are set)
+	signalReporter := signalnet.StartReporter(&signalnet.Client{HubURL: c.SignalNet.HubURL, InstanceKey: c.SignalNet.InstanceKey}, ctx.Events)
+	if signalReporter != nil {
+		fmt.Println("Signal Network reporter started")
+	}
+	// Start email validation job worker in background
+	validationWorker := workers.StartValidationWorker(ctx)
+	fmt.Println("Validation worker started")
+
+	// Start CSV import worker in background
+	importWorker := workers.StartImportWorker(ctx)
+	fmt.Println("Import worker started")
 
 	// Start MCP session cleanup job (runs every hour, cleans sessions older than 30 days)
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
@@ -279,6 +308,15 @@ func runServe(cmd *cobra.Command, args []string) {
 				domainVerificationWorker.Stop()
 				fmt.Println("Domain verification worker stopped")
 			}
+			outboundWorker.Stop()
+			fmt.Println("Outbound worker stopped")
+			signalReporter.Stop()
+			if validationWorker != nil {
+				validationWorker.Stop()
+				fmt.Println("Validation worker stopped")
+			}
+			importWorker.Stop()
+			fmt.Println("Import worker stopped")
 			if smtpServer != nil {
 				smtpServer.Stop()
 				fmt.Println("SMTP server stopped")
@@ -512,6 +550,15 @@ func runServe(cmd *cobra.Command, args []string) {
 		domainVerificationWorker.Stop()
 		fmt.Println("Domain verification worker stopped")
 	}
+	outboundWorker.Stop()
+	fmt.Println("Outbound worker stopped")
+	signalReporter.Stop()
+	if validationWorker != nil {
+		validationWorker.Stop()
+		fmt.Println("Validation worker stopped")
+	}
+	importWorker.Stop()
+	fmt.Println("Import worker stopped")
 	if smtpServer != nil {
 		smtpServer.Stop()
 		fmt.Println("SMTP server stopped")
@@ -587,35 +634,18 @@ func registerEmailTrackingRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 				}
 			}
 
-			// Track the click (fire and forget)
-			go func(token string) {
-				_ = ctx.Tracking.RecordClick(context.Background(), token)
-			}(token)
-
-			http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
-		},
-	})
-
-	// Email unsubscribe
-	server.AddRoute(rest.Route{
-		Method: http.MethodGet,
-		Path:   "/api/e/u/:token",
-		Handler: func(w http.ResponseWriter, r *http.Request) {
-			token := r.PathValue("token")
-			if token == "" {
-				parts := strings.Split(r.URL.Path, "/")
-				if len(parts) >= 4 {
-					token = parts[len(parts)-1]
-				}
-			}
-
-			if token == "" {
-				http.Error(w, "Invalid unsubscribe link", http.StatusBadRequest)
+			// Only follow links Outlet signed, so this is never an open redirect
+			if !ctx.EmailService.VerifyClickLink(token, redirectUrl, r.URL.Query().Get("sig")) {
+				http.Error(w, "Invalid link", http.StatusBadRequest)
 				return
 			}
 
-			_ = ctx.Tracking.Unsubscribe(context.Background(), token)
-			http.Redirect(w, r, "/unsubscribed", http.StatusTemporaryRedirect)
+			// Track the click (fire and forget)
+			go func(token, target string) {
+				_ = ctx.Tracking.RecordClick(context.Background(), token, target)
+			}(token, redirectUrl)
+
+			http.Redirect(w, r, redirectUrl, http.StatusFound)
 		},
 	})
 
@@ -679,6 +709,29 @@ func registerWebhookRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 		Path:    "/webhooks/ses/:orgId",
 		Handler: webhook.SESHandler(ctx),
 	})
+}
+
+// registerListExportRoutes adds the list CSV downloads. They stream rows as
+// they are read, so they are written here rather than in outlet.api, whose
+// handlers answer with JSON. They have no timeout: a download of any size
+// finishes (middleware.Unbounded lifts the write deadline).
+func registerListExportRoutes(server *rest.Server, ctx *svc.ServiceContext) {
+	server.AddRoutes(
+		rest.WithMiddlewares([]rest.Middleware{ctx.Auth}, rest.Route{
+			Method:  http.MethodGet,
+			Path:    "/api/admin/lists/:id/export",
+			Handler: listexport.AdminHandler(ctx.DB),
+		}),
+		rest.WithTimeout(0),
+	)
+	server.AddRoutes(
+		rest.WithMiddlewares([]rest.Middleware{ctx.APIKeyAuth}, rest.Route{
+			Method:  http.MethodGet,
+			Path:    "/sdk/v1/lists/:slug/export",
+			Handler: listexport.SDKHandler(ctx.DB),
+		}),
+		rest.WithTimeout(0),
+	)
 }
 
 // registerMCPOAuthRoutes adds MCP OAuth 2.1 endpoints for ChatGPT and other AI integrations
@@ -815,7 +868,7 @@ func proxyWebSocket(w http.ResponseWriter, r *http.Request, backendHost string, 
 		return
 	}
 
-	backendAddr := fmt.Sprintf("%s:%d", backendHost, backendPort)
+	backendAddr := net.JoinHostPort(backendHost, strconv.Itoa(backendPort))
 	fmt.Printf("[WS Proxy] Dialing backend: %s\n", backendAddr)
 	backendConn, err := net.Dial("tcp", backendAddr)
 	if err != nil {
@@ -927,7 +980,24 @@ func registerWebSocketRoute(server *rest.Server, ctx *svc.ServiceContext) {
 	server.AddRoute(rest.Route{
 		Method:  http.MethodGet,
 		Path:    "/ws",
-		Handler: outletws.Handler(ctx.WebSocketHub),
+		Handler: outletws.Handler(ctx.WebSocketHub, ctx.Config.Auth.AccessSecret),
 	})
 	fmt.Println("WebSocket endpoint registered at /ws")
+}
+
+// registerBackupDownloadRoute adds the backup file download. It streams the
+// file, so it is written here rather than in outlet.api, whose handlers
+// answer with JSON. It sits behind the admin auth middleware like the other
+// backup routes; the handler lets only a super admin through. It has no
+// timeout: a download of any size finishes (middleware.Unbounded lifts the
+// write deadline).
+func registerBackupDownloadRoute(server *rest.Server, ctx *svc.ServiceContext) {
+	server.AddRoutes(
+		rest.WithMiddlewares([]rest.Middleware{ctx.Auth}, rest.Route{
+			Method:  http.MethodGet,
+			Path:    "/api/admin/backup/:id/download",
+			Handler: adminbackup.DownloadHandler(ctx),
+		}),
+		rest.WithTimeout(0),
+	)
 }

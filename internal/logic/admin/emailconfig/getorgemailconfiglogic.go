@@ -42,8 +42,6 @@ func (l *GetOrgEmailConfigLogic) GetOrgEmailConfig(req *types.GetOrgEmailConfigR
 		SESDailyQuota: config.SESDailyQuota,
 		WorkerCount:   config.WorkerCount,
 		BatchSize:     config.BatchSize,
-		AWSRegion:     config.AWSRegion,
-		HasOwnCreds:   config.HasOwnAWSCredentials(),
 		FromEmail:     config.FromEmail,
 		FromName:      config.FromName,
 		ReplyTo:       config.ReplyTo,

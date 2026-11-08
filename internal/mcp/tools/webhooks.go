@@ -1,23 +1,18 @@
 package tools
 
 import (
-	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
+	"github.com/outlet-sh/outlet/internal/services/webhook"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -142,12 +137,10 @@ Actions and Required Fields:
 - test: Send a test event to the webhook (requires: id)
 - logs: Get recent delivery logs (requires: id, optional: limit)
 
-Available Events:
-- contact.created, contact.updated, contact.deleted
-- contact.subscribed, contact.unsubscribed
-- email.sent, email.opened, email.clicked
-- email.bounced, email.complained
-- campaign.sent, campaign.completed
+Available Events ("*" for all):
+- contact.created, contact.unsubscribed
+- email.sent, email.delivered, email.bounced, email.complained
+- email.opened, email.clicked
 
 Examples:
   webhook(action: create, url: "https://example.com/webhook", events: "contact.created,email.sent")
@@ -200,6 +193,10 @@ func handleWebhookCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 	if strings.TrimSpace(input.Events) == "" {
 		return nil, nil, mcpctx.NewValidationError("events is required (comma-separated list)", "events")
 	}
+	events, err := webhook.EncodeEvents(strings.Split(input.Events, ","))
+	if err != nil {
+		return nil, nil, mcpctx.NewValidationError(err.Error(), "events")
+	}
 
 	// Generate a secure secret
 	secretBytes := make([]byte, 32)
@@ -219,7 +216,7 @@ func handleWebhookCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		OrgID:  toolCtx.BrandID(ctx),
 		Url:    input.URL,
 		Secret: secret,
-		Events: input.Events,
+		Events: events,
 		Active: sql.NullInt64{Int64: boolToInt64(active), Valid: true},
 	})
 	if err != nil {
@@ -319,7 +316,13 @@ func handleWebhookUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("webhook %s not found", input.ID))
 	}
 
-	// Use existing values as defaults
+	// Use existing values as defaults; no events keeps the current ones
+	events := ""
+	if strings.TrimSpace(input.Events) != "" {
+		if events, err = webhook.EncodeEvents(strings.Split(input.Events, ",")); err != nil {
+			return nil, nil, mcpctx.NewValidationError(err.Error(), "events")
+		}
+	}
 	active := int64ToBool(existing.Active)
 	if input.Active != nil {
 		active = *input.Active
@@ -329,7 +332,7 @@ func handleWebhookUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		ID:     input.ID,
 		OrgID:  toolCtx.BrandID(ctx),
 		Url:    input.URL,
-		Events: input.Events,
+		Events: events,
 		Active: sql.NullInt64{Int64: boolToInt64(active), Valid: true},
 	})
 	if err != nil {
@@ -394,88 +397,13 @@ func handleWebhookTest(ctx context.Context, toolCtx *mcpctx.ToolContext, input W
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("webhook %s not found", input.ID))
 	}
 
-	// Create test payload
-	testPayload := map[string]interface{}{
-		"event":     "test",
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"data": map[string]interface{}{
-			"message":    "This is a test webhook delivery",
-			"webhook_id": webhook.ID,
-		},
-	}
-
-	payloadBytes, err := json.Marshal(testPayload)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create test payload: %w", err)
-	}
-
-	// Sign the payload
-	mac := hmac.New(sha256.New, []byte(webhook.Secret))
-	mac.Write(payloadBytes)
-	signature := hex.EncodeToString(mac.Sum(nil))
-
-	startTime := time.Now()
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, webhook.Url, bytes.NewReader(payloadBytes))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create test request: %w", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Webhook-Signature", signature)
-	httpReq.Header.Set("X-Webhook-Event", "test")
-	httpReq.Header.Set("X-Webhook-ID", webhook.ID)
-	httpReq.Header.Set("User-Agent", "Outlet-Webhook/1.0")
-
-	httpResp, err := client.Do(httpReq)
-	durationMs := int(time.Since(startTime).Milliseconds())
-
-	var statusCode int
-	var responseBody string
-	var testError string
-	success := false
-
-	if err != nil {
-		testError = err.Error()
-	} else {
-		defer httpResp.Body.Close()
-		statusCode = httpResp.StatusCode
-
-		bodyBytes, _ := io.ReadAll(io.LimitReader(httpResp.Body, 1024))
-		responseBody = string(bodyBytes)
-
-		success = statusCode >= 200 && statusCode < 300
-	}
-
-	// Log the test delivery
-	toolCtx.DB().CreateWebhookLog(ctx, db.CreateWebhookLogParams{
-		ID:         uuid.New().String(),
-		WebhookID:  webhook.ID,
-		Event:      "test",
-		Payload:    string(payloadBytes),
-		StatusCode: sql.NullInt64{Int64: int64(statusCode), Valid: statusCode > 0},
-		Response:   sql.NullString{String: responseBody, Valid: responseBody != ""},
-		Error:      sql.NullString{String: testError, Valid: testError != ""},
-		DurationMs: sql.NullInt64{Int64: int64(durationMs), Valid: true},
-	})
-
-	// Update delivery stats
-	toolCtx.DB().UpdateWebhookDeliveryStats(ctx, db.UpdateWebhookDeliveryStatsParams{
-		ID:         webhook.ID,
-		Success:    success,
-		LastStatus: sql.NullInt64{Int64: int64(statusCode), Valid: statusCode > 0},
-	})
-
+	res := toolCtx.Svc().WebhookDispatcher.Test(ctx, webhook)
 	return nil, WebhookTestOutput{
-		Success:    success,
-		StatusCode: statusCode,
-		Response:   responseBody,
-		Error:      testError,
-		DurationMs: durationMs,
+		Success:    res.Success,
+		StatusCode: res.StatusCode,
+		Response:   res.Response,
+		Error:      res.Error,
+		DurationMs: res.DurationMs,
 	}, nil
 }
 

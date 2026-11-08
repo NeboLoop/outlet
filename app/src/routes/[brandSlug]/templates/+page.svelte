@@ -68,7 +68,7 @@
 			templates = response.designs || [];
 		} catch (err) {
 			console.error('Failed to load templates:', err);
-			error = 'Failed to load templates';
+			error = 'Failed to load designs';
 		} finally {
 			loading = false;
 		}
@@ -108,16 +108,38 @@
 				slug: newSlug,
 				description: newDescription,
 				category: newCategory,
-				html_body: '<p>Start editing your template here...</p>',
+				html_body: '<p>Start editing your design here...</p>',
 				is_active: true
 			});
 			closeCreateForm();
 			await loadData();
 		} catch (err: any) {
 			console.error('Failed to create template:', err);
-			error = err.message || 'Failed to create template';
+			error = err.message || 'Failed to create design';
 		} finally {
 			creating = false;
+		}
+	}
+
+	// A copy of a design under a slug no design of the brand has, opened to edit
+	async function duplicateTemplate(template: EmailDesignInfo) {
+		error = '';
+		const taken = new Set(templates.map((t) => t.slug));
+		let slug = `${template.slug}-copy`;
+		for (let n = 2; taken.has(slug); n++) slug = `${template.slug}-copy-${n}`;
+		try {
+			const copy = await createEmailDesign({
+				name: `Copy of ${template.name}`,
+				slug,
+				description: template.description,
+				category: template.category,
+				html_body: template.html_body,
+				plain_text: template.plain_text,
+				is_active: template.is_active
+			});
+			goto(`${basePath}/templates/${copy.id}`);
+		} catch (err: any) {
+			error = err.message || 'Failed to duplicate the design';
 		}
 	}
 
@@ -138,7 +160,7 @@
 			await loadData();
 		} catch (err: any) {
 			console.error('Failed to delete template:', err);
-			error = err.message || 'Failed to delete template';
+			error = err.message || 'Failed to delete design';
 		} finally {
 			deleting = false;
 		}
@@ -160,19 +182,19 @@
 </script>
 
 <svelte:head>
-	<title>Templates | Outlet</title>
+	<title>Designs | Outlet</title>
 </svelte:head>
 
 <div class="p-6 max-w-5xl mx-auto">
 	<!-- Header -->
 	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
 		<div>
-			<h1 class="text-2xl font-semibold text-text">Templates</h1>
+			<h1 class="text-2xl font-semibold text-text">Designs</h1>
 			<p class="mt-1 text-sm text-text-muted">Reusable email designs for campaigns and sequences</p>
 		</div>
 		<Button type="primary" onclick={openCreateForm} disabled={showCreateForm}>
 			<Plus class="mr-2 h-4 w-4" />
-			New Template
+			New Design
 		</Button>
 	</div>
 
@@ -183,7 +205,7 @@
 	{/if}
 
 	<!-- Inline Create Form -->
-	<SlideForm bind:show={showCreateForm} title="Create New Template">
+	<SlideForm bind:show={showCreateForm} title="Create New Design">
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<label for="template-name" class="form-label">Name</label>
@@ -228,7 +250,7 @@
 				Cancel
 			</Button>
 			<Button type="primary" onclick={submitCreate} disabled={!newName || !newSlug || creating}>
-				{creating ? 'Creating...' : 'Create Template'}
+				{creating ? 'Creating...' : 'Create Design'}
 			</Button>
 		{/snippet}
 	</SlideForm>
@@ -240,12 +262,12 @@
 	{:else if templates.length === 0}
 		<EmptyState
 			icon={FileText}
-			title="No templates yet"
-			description="Create reusable email templates for your campaigns and sequences."
+			title="No designs yet"
+			description="Create reusable email designs for your campaigns and sequences."
 		>
 			<Button type="primary" onclick={openCreateForm}>
 				<Plus class="mr-2 h-4 w-4" />
-				Create Template
+				Create Design
 			</Button>
 		</EmptyState>
 	{:else}
@@ -254,7 +276,7 @@
 			<div class="mb-4">
 				<SearchInput
 					bind:value={searchQuery}
-					placeholder="Search templates..."
+					placeholder="Search designs..."
 				/>
 			</div>
 		{/if}
@@ -264,7 +286,7 @@
 			<table class="w-full">
 				<thead>
 					<tr>
-						<th class="text-left">Template</th>
+						<th class="text-left">Design</th>
 						<th class="text-left">Category</th>
 						<th class="text-center">Status</th>
 						<th class="text-right w-10"></th>
@@ -319,7 +341,7 @@
 										{
 											label: 'Duplicate',
 											icon: Copy,
-											onclick: () => goto(`${basePath}/templates/new?duplicate=${template.id}`)
+											onclick: () => duplicateTemplate(template)
 										},
 										{ divider: true },
 										{
@@ -347,7 +369,7 @@
 
 <AlertDialog
 	bind:open={showDeleteConfirm}
-	title="Delete Template"
+	title="Delete Design"
 	description={`Delete "${deleteTemplateItem?.name || ''}"? This cannot be undone.`}
 	actionLabel={deleting ? 'Deleting...' : 'Delete'}
 	actionType="danger"

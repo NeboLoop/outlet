@@ -2,10 +2,11 @@ package webhooks
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -39,14 +40,19 @@ func (l *AdminListWebhooksLogic) AdminListWebhooks() (resp *types.ListWebhooksRe
 		return nil, fmt.Errorf("failed to list webhooks")
 	}
 
+	waiting, err := l.svcCtx.DB.ListWebhookRetrySummaries(l.ctx, orgID)
+	if err != nil {
+		l.Errorf("Failed to list webhook retries: %v", err)
+		return nil, fmt.Errorf("failed to list webhooks")
+	}
+	retries := make(map[string]db.ListWebhookRetrySummariesRow, len(waiting))
+	for _, r := range waiting {
+		retries[r.WebhookID] = r
+	}
+
 	result := make([]types.WebhookInfo, 0, len(webhooks))
 	for _, w := range webhooks {
-		// Decode events from JSON string
-		var events []string
-		if err := json.Unmarshal([]byte(w.Events), &events); err != nil {
-			l.Errorf("Failed to decode events for webhook %s: %v", w.ID, err)
-			events = []string{}
-		}
+		events := webhook.DecodeEvents(w.Events)
 
 		info := types.WebhookInfo{
 			Id:                w.ID,
@@ -63,6 +69,10 @@ func (l *AdminListWebhooksLogic) AdminListWebhooks() (resp *types.ListWebhooksRe
 		}
 		if w.LastStatus.Valid {
 			info.LastStatus = int(w.LastStatus.Int64)
+		}
+		if r, ok := retries[w.ID]; ok {
+			info.WaitingDeliveries = int(r.Waiting)
+			info.NextRetryAt = r.NextAttemptAt
 		}
 		result = append(result, info)
 	}

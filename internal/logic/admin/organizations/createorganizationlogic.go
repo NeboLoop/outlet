@@ -150,8 +150,7 @@ func (l *CreateOrganizationLogic) seedDefaultDesigns(orgID string, orgName strin
     <div style="background-color: #f3f4f6; padding: 24px 20px; text-align: center; color: #6b7280; font-size: 12px;">
       <p style="margin: 0; font-weight: 500;">` + orgName + `</p>
       <p style="margin: 12px 0 0 0;">
-        <a href="{{unsubscribe_url}}" style="color: #6b7280;">Unsubscribe</a> ·
-        <a href="{{preferences_url}}" style="color: #6b7280;">Email Preferences</a>
+        <a href="{{unsubscribe_url}}" style="color: #6b7280;">Unsubscribe</a>
       </p>
     </div>
   </div>
@@ -215,6 +214,14 @@ func (l *CreateOrganizationLogic) setupDomainIdentity(orgID string, fromEmail st
 		return
 	}
 
+	// The domain joins the brand's platform pathway (every new brand starts
+	// with it)
+	pathway, err := l.svcCtx.EmailService.DomainPathway(l.ctx, orgID, "sending", "")
+	if err != nil {
+		l.Errorf("No sending pathway for %s: %v", domain, err)
+		return
+	}
+
 	// Verify domain identity with AWS SES
 	result, err := email.VerifyDomainIdentity(l.ctx, region, accessKey, secretKey, domain)
 	if err != nil {
@@ -246,6 +253,7 @@ func (l *CreateOrganizationLogic) setupDomainIdentity(orgID string, fromEmail st
 		VerificationToken:  sql.NullString{String: result.VerificationToken, Valid: result.VerificationToken != ""},
 		DkimTokens:         sql.NullString{String: string(dkimTokensJSON), Valid: true},
 		DnsRecords:         sql.NullString{String: dnsRecordsJSON, Valid: true},
+		PathwayID:          sql.NullString{String: pathway.ID, Valid: true},
 	})
 	if err != nil {
 		l.Errorf("Failed to create domain identity record: %v", err)

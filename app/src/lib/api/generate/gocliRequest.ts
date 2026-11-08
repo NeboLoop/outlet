@@ -45,9 +45,11 @@ export function genUrl(url: string, params: any) {
 
     const path: Array<string> = [];
     for (const key of Object.keys(params)) {
-        if (!ps.find((k) => k === key)) {
-            path.push(`${key}=${params[key]}`);
+        const value = params[key];
+        if (ps.find((k) => k === key) || value === undefined || value === null || value === '') {
+            continue;
         }
+        path.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
     }
 
     return url + (path.length > 0 ? `?${path.join('&')}` : '');
@@ -63,44 +65,89 @@ function getCurrentOrgId(): string | null {
     return localStorage.getItem('currentOrgId');
 }
 
+/**
+ * The headers that sign a request in: the token and the chosen brand.
+ */
+function authHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const token = getAuthToken();
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    const orgId = getCurrentOrgId();
+    if (orgId) {
+        headers['X-Org-Id'] = orgId;
+    }
+    return headers;
+}
+
+/**
+ * download fetches a file from an API route that streams one (not JSON),
+ * signed in like every request, and saves it under the name the server
+ * gives, or fallbackName.
+ */
+export async function download(url: string, fallbackName: string): Promise<void> {
+    const response = await fetch(url, { method: 'GET', credentials: 'include', headers: authHeaders() });
+    if (!response.ok) {
+        let message = `Download failed with status ${response.status}`;
+        try {
+            const result = JSON.parse(await response.text());
+            message = result?.error || result?.message || message;
+        } catch {
+            // not JSON: keep the status message
+        }
+        throw new Error(message);
+    }
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const name = /filename="([^"]+)"/.exec(disposition)?.[1] || fallbackName;
+    const href = URL.createObjectURL(await response.blob());
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+}
+
 export async function request({
     method,
     url,
-    data,
-    config = {}
+    data
 }: {
     method: Method;
     url: string;
     data?: unknown;
-    config?: unknown;
 }) {
     const upperMethod = method.toLocaleUpperCase();
     const hasBody = upperMethod !== 'GET' && upperMethod !== 'HEAD';
 
     const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...authHeaders()
     };
-
-    const token = getAuthToken();
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const orgId = getCurrentOrgId();
-    if (orgId) {
-        headers['X-Org-Id'] = orgId;
-    }
 
     const response = await fetch(url, {
         method: upperMethod,
         credentials: 'include',
         headers,
-        body: hasBody && data ? JSON.stringify(data) : undefined,
-        // @ts-ignore
-        ...config
+        body: hasBody && data ? JSON.stringify(data) : undefined
     });
 
-    const result = await response.json();
+    // Not every failure is JSON (a proxy's HTML 404, an empty 502), so read
+    // the text first and report something a person can act on
+    const text = await response.text();
+    let result: any = null;
+    if (text) {
+        try {
+            result = JSON.parse(text);
+        } catch {
+            if (!response.ok) {
+                throw new Error(`Request failed with status ${response.status}`);
+            }
+            throw new Error('The server returned an unexpected response');
+        }
+    }
 
     if (!response.ok) {
         const errorMessage = result?.error || result?.message || `Request failed with status ${response.status}`;
@@ -110,39 +157,23 @@ export async function request({
     return result;
 }
 
-function api<T>(
-    method: Method = 'get',
-    url: string,
-    req: any,
-    config?: unknown
-): Promise<T> {
-    if (url.match(/:/) || method.match(/get|delete/i)) {
-        url = genUrl(url, req.params || req.forms);
-    }
-    method = method.toLocaleLowerCase() as Method;
-
-    switch (method) {
-        case 'get':
-            return request({method: 'get', url, data: req, config});
-        case 'delete':
-            return request({method: 'delete', url, data: req, config});
-        case 'put':
-            return request({method: 'put', url, data: req, config});
-        case 'post':
-            return request({method: 'post', url, data: req, config});
-        case 'patch':
-            return request({method: 'patch', url, data: req, config});
-        default:
-            return request({method: 'post', url, data: req, config});
-    }
+function api<T>(method: Method, url: string, query: any, body?: unknown): Promise<T> {
+    // Path parameters are already interpolated by the generated helpers;
+    // query parameters come from the request's form fields
+    url = genUrl(url, query);
+    return request({method: method.toLocaleLowerCase() as Method, url, data: body});
 }
 
 export const webapi = {
-    get<T>(url: string, req?: unknown, config?: unknown): Promise<T> {
-        return api<T>('get', url, req ?? {}, config);
+    get<T>(url: string, params?: unknown): Promise<T> {
+        return api<T>('get', url, params ?? {});
     },
-    delete<T>(url: string, req?: unknown, config?: unknown): Promise<T> {
-        return api<T>('delete', url, req ?? {}, config);
+    // Generated code has two patterns:
+    // - webapi.delete(url, params) - form params, or the body when the
+    //   request has only JSON fields; sent as both query and body
+    // - webapi.delete(url, params, body) - form params in the query + JSON body
+    delete<T>(url: string, params?: unknown, body?: unknown): Promise<T> {
+        return api<T>('delete', url, params ?? {}, body !== undefined ? body : params);
     },
     // Generated code has two patterns:
     // - webapi.put(url, body) - body only
@@ -150,15 +181,15 @@ export const webapi = {
     // If 3rd arg provided, use it as body; otherwise use 2nd arg as body
     put<T>(url: string, paramsOrBody?: unknown, body?: unknown): Promise<T> {
         const requestBody = body !== undefined ? body : paramsOrBody;
-        return api<T>('put', url, requestBody ?? {});
+        return api<T>('put', url, {}, requestBody ?? {});
     },
     post<T>(url: string, paramsOrBody?: unknown, body?: unknown): Promise<T> {
         const requestBody = body !== undefined ? body : paramsOrBody;
-        return api<T>('post', url, requestBody ?? {});
+        return api<T>('post', url, {}, requestBody ?? {});
     },
     patch<T>(url: string, paramsOrBody?: unknown, body?: unknown): Promise<T> {
         const requestBody = body !== undefined ? body : paramsOrBody;
-        return api<T>('patch', url, requestBody ?? {});
+        return api<T>('patch', url, {}, requestBody ?? {});
     }
 };
 

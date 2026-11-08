@@ -7,7 +7,7 @@ import (
 
 // Custom headers for Outlet.sh SMTP ingress
 const (
-	HeaderOutletList     = "X-Outlet-List"     // List slug to associate with
+	HeaderOutletList     = "X-Outlet-List"     // Marketing: the slug of the list the recipient subscribed to
 	HeaderOutletTags     = "X-Outlet-Tags"     // Comma-separated tags
 	HeaderOutletTemplate = "X-Outlet-Template" // Template slug to use
 	HeaderOutletType     = "X-Outlet-Type"     // "marketing" or "transactional" (default: transactional)

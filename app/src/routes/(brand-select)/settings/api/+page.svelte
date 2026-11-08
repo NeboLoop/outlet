@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { Card, Button, Input, Alert, LoadingSpinner, Badge, Modal, Tabs, CodeBlock, AlertDialog } from '$lib/components/ui';
 	import { Copy, Plus, Trash2, Key, CheckCircle, ExternalLink, Code, Package } from '@lucide/svelte';
 	import { listMCPAPIKeys, createMCPAPIKey, revokeMCPAPIKey, type MCPAPIKeyInfo } from '$lib/api';
@@ -31,172 +32,123 @@
 		{ id: 'nodejs', label: 'Node.js' },
 		{ id: 'python', label: 'Python' },
 		{ id: 'go', label: 'Go' },
-		{ id: 'php', label: 'PHP' }
+		{ id: 'php', label: 'PHP' },
+		{ id: 'smtp', label: 'SMTP' }
 	];
 	let activeCodeTab = $state('curl');
 
-	// Code examples
-	const curlCode = $derived(`# List contacts
-curl -X GET "${apiBaseUrl}/contacts" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "Content-Type: application/json"
-
-# Create a contact
-curl -X POST "${apiBaseUrl}/contacts" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
+	// Code examples. Every brand has its own API key (brand settings), sent in
+	// the X-API-Key header.
+	const curlCode = $derived(`# Send a transactional template
+curl -X POST "${apiBaseUrl}/emails" \\
+  -H "X-API-Key: YOUR_BRAND_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "email": "user@example.com",
-    "name": "John Doe",
-    "tags": ["customer", "newsletter"]
+    "to": "customer@example.com",
+    "template_slug": "password-reset",
+    "variables": { "name": "Ana", "reset_url": "https://app.example.com/reset/abc" }
   }'
 
-# Send transactional email
-curl -X POST "${apiBaseUrl}/emails/send" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
+# Or send without a template
+curl -X POST "${apiBaseUrl}/emails" \\
+  -H "X-API-Key: YOUR_BRAND_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "to": "recipient@example.com",
-    "subject": "Welcome!",
-    "html": "<h1>Hello</h1><p>Welcome to our service.</p>"
-  }'`);
+    "to": "customer@example.com",
+    "subject": "Your receipt",
+    "body": "<p>Thanks for your order.</p>",
+    "text_body": "Thanks for your order."
+  }'
 
-	const nodejsCode = $derived(`import axios from 'axios';
+# Check delivery
+curl "${apiBaseUrl}/emails/MESSAGE_ID" -H "X-API-Key: YOUR_BRAND_API_KEY"`);
 
-const api = axios.create({
-  baseURL: '${apiBaseUrl}',
+	const nodejsCode = $derived(`const res = await fetch('${apiBaseUrl}/emails', {
+  method: 'POST',
   headers: {
-    'Authorization': 'Bearer YOUR_API_KEY',
+    'X-API-Key': process.env.OUTLET_API_KEY,
     'Content-Type': 'application/json'
-  }
+  },
+  body: JSON.stringify({
+    to: 'customer@example.com',
+    template_slug: 'password-reset',
+    variables: { name: 'Ana', reset_url: 'https://app.example.com/reset/abc' }
+  })
 });
+const result = await res.json();
+if (!result.success) throw new Error(result.message); // e.g. status "suppressed"
+console.log(result.message_id);`);
 
-// List contacts
-const contacts = await api.get('/contacts');
-console.log(contacts.data);
+	const pythonCode = $derived(`import os, requests
 
-// Create a contact
-const newContact = await api.post('/contacts', {
-  email: 'user@example.com',
-  name: 'John Doe',
-  tags: ['customer', 'newsletter']
-});
+res = requests.post(
+    '${apiBaseUrl}/emails',
+    headers={'X-API-Key': os.environ['OUTLET_API_KEY']},
+    json={
+        'to': 'customer@example.com',
+        'template_slug': 'password-reset',
+        'variables': {'name': 'Ana', 'reset_url': 'https://app.example.com/reset/abc'},
+    },
+)
+result = res.json()
+if not result['success']:
+    raise RuntimeError(result.get('message'))  # e.g. status "suppressed"
+print(result['message_id'])`);
 
-// Send transactional email
-await api.post('/emails/send', {
-  to: 'recipient@example.com',
-  subject: 'Welcome!',
-  html: '<h1>Hello</h1><p>Welcome to our service.</p>'
-});`);
-
-	const pythonCode = $derived(`import requests
-
-API_KEY = 'YOUR_API_KEY'
-BASE_URL = '${apiBaseUrl}'
-headers = {
-    'Authorization': f'Bearer {API_KEY}',
-    'Content-Type': 'application/json'
-}
-
-# List contacts
-response = requests.get(f'{BASE_URL}/contacts', headers=headers)
-contacts = response.json()
-
-# Create a contact
-new_contact = requests.post(f'{BASE_URL}/contacts', headers=headers, json={
-    'email': 'user@example.com',
-    'name': 'John Doe',
-    'tags': ['customer', 'newsletter']
+	const goCode = $derived(`payload, _ := json.Marshal(map[string]any{
+    "to":            "customer@example.com",
+    "template_slug": "password-reset",
+    "variables":     map[string]string{"name": "Ana", "reset_url": "https://app.example.com/reset/abc"},
 })
+req, _ := http.NewRequest("POST", "${apiBaseUrl}/emails", bytes.NewReader(payload))
+req.Header.Set("X-API-Key", os.Getenv("OUTLET_API_KEY"))
+req.Header.Set("Content-Type", "application/json")
+resp, err := http.DefaultClient.Do(req)
+if err != nil {
+    return err
+}
+defer resp.Body.Close()
 
-# Send transactional email
-requests.post(f'{BASE_URL}/emails/send', headers=headers, json={
-    'to': 'recipient@example.com',
-    'subject': 'Welcome!',
-    'html': '<h1>Hello</h1><p>Welcome to our service.</p>'
-})`);
-
-	const goCode = $derived(`package main
-
-import (
-    "bytes"
-    "encoding/json"
-    "net/http"
-)
-
-const (
-    apiKey  = "YOUR_API_KEY"
-    baseURL = "${apiBaseUrl}"
-)
-
-func main() {
-    client := &http.Client{}
-
-    // Create contact
-    contact := map[string]interface{}{
-        "email": "user@example.com",
-        "name":  "John Doe",
-        "tags":  []string{"customer", "newsletter"},
-    }
-    body, _ := json.Marshal(contact)
-
-    req, _ := http.NewRequest("POST", baseURL+"/contacts", bytes.NewBuffer(body))
-    req.Header.Set("Authorization", "Bearer "+apiKey)
-    req.Header.Set("Content-Type", "application/json")
-
-    resp, _ := client.Do(req)
-    defer resp.Body.Close()
-}`);
+var result struct {
+    Success   bool   \`json:"success"\`
+    MessageID string \`json:"message_id"\`
+    Message   string \`json:"message"\`
+}
+json.NewDecoder(resp.Body).Decode(&result)`);
 
 	const phpCode = $derived(`<?php
-
-$apiKey = 'YOUR_API_KEY';
-$baseUrl = '${apiBaseUrl}';
-
-// Helper function for API requests
-function apiRequest($method, $endpoint, $data = null) {
-    global $apiKey, $baseUrl;
-
-    $ch = curl_init($baseUrl . $endpoint);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Authorization: Bearer ' . $apiKey,
-        'Content-Type: application/json'
-    ]);
-
-    if ($data) {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    }
-
-    $response = curl_exec($ch);
-    curl_close($ch);
-    return json_decode($response, true);
-}
-
-// List contacts
-$contacts = apiRequest('GET', '/contacts');
-
-// Create a contact
-$newContact = apiRequest('POST', '/contacts', [
-    'email' => 'user@example.com',
-    'name' => 'John Doe',
-    'tags' => ['customer', 'newsletter']
+$ch = curl_init('${apiBaseUrl}/emails');
+curl_setopt_array($ch, [
+    CURLOPT_POST => true,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => [
+        'X-API-Key: ' . getenv('OUTLET_API_KEY'),
+        'Content-Type: application/json',
+    ],
+    CURLOPT_POSTFIELDS => json_encode([
+        'to' => 'customer@example.com',
+        'template_slug' => 'password-reset',
+        'variables' => ['name' => 'Ana', 'reset_url' => 'https://app.example.com/reset/abc'],
+    ]),
 ]);
+$result = json_decode(curl_exec($ch), true);`);
 
-// Send transactional email
-apiRequest('POST', '/emails/send', [
-    'to' => 'recipient@example.com',
-    'subject' => 'Welcome!',
-    'html' => '<h1>Hello</h1><p>Welcome to our service.</p>'
-]);`);
+	const smtpCode = $derived(`Host:      ${installDomain.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}
+Port:      587 (STARTTLS)
+Username:  your brand slug
+Password:  your brand API key
+
+Optional headers:
+  X-Outlet-Tags: welcome,onboarding
+  X-Outlet-Meta-OrderID: 12345`);
 
 	let codeExamples = $derived<Record<string, { code: string; language: string }>>({
 		curl: { code: curlCode, language: 'bash' },
 		nodejs: { code: nodejsCode, language: 'javascript' },
 		python: { code: pythonCode, language: 'python' },
 		go: { code: goCode, language: 'go' },
-		php: { code: phpCode, language: 'php' }
+		php: { code: phpCode, language: 'php' },
+		smtp: { code: smtpCode, language: 'text' }
 	});
 
 	let activeExample = $derived(codeExamples[activeCodeTab]);
@@ -268,14 +220,6 @@ apiRequest('POST', '/emails/send', [
 		newKeyValue = '';
 	}
 
-	function formatDate(dateStr: string | null | undefined): string {
-		if (!dateStr) return 'Never';
-		return new Date(dateStr).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		});
-	}
 </script>
 
 <svelte:head>
@@ -299,8 +243,8 @@ apiRequest('POST', '/emails/send', [
 	<Card>
 		<div class="flex items-center justify-between">
 			<div>
-				<h2 class="text-lg font-medium text-text mb-1">API Keys</h2>
-				<p class="text-sm text-text-muted">Manage API keys for REST API and SMTP authentication</p>
+				<h2 class="text-lg font-medium text-text mb-1">MCP keys</h2>
+				<p class="text-sm text-text-muted">For AI assistants such as Claude that manage Outlet through MCP. They don't work for sending email: apps use their brand's API key, below.</p>
 			</div>
 			<Button type="primary" size="sm" onclick={() => (showCreateModal = true)}>
 				<Plus class="mr-1.5 h-4 w-4" />
@@ -315,8 +259,8 @@ apiRequest('POST', '/emails/send', [
 		{:else if apiKeys.length === 0}
 			<div class="mt-6 text-center py-8 text-text-muted">
 				<Key class="mx-auto h-12 w-12 opacity-50" />
-				<p class="mt-2">No API keys yet</p>
-				<p class="text-sm">Create an API key to use the REST API or SMTP</p>
+				<p class="mt-2">No MCP keys yet</p>
+				<p class="text-sm">Create one to connect an AI assistant over MCP</p>
 			</div>
 		{:else}
 			<div class="mt-6 overflow-x-auto">
@@ -335,8 +279,8 @@ apiRequest('POST', '/emails/send', [
 							<tr class="border-b border-border/50">
 								<td class="py-3 font-medium">{key.name}</td>
 								<td class="py-3 font-mono text-text-muted">{key.key_prefix}...</td>
-								<td class="py-3 text-text-muted">{formatDate(key.last_used)}</td>
-								<td class="py-3 text-text-muted">{formatDate(key.created_at)}</td>
+								<td class="py-3 text-text-muted">{formatDate(key.last_used) || 'Never'}</td>
+								<td class="py-3 text-text-muted">{formatDate(key.created_at) || 'Never'}</td>
 								<td class="py-3 text-right">
 									<Button type="danger" size="icon" onclick={() => confirmRevokeKey(key.id)}>
 										<Trash2 class="h-4 w-4" />
@@ -355,8 +299,8 @@ apiRequest('POST', '/emails/send', [
 		<div class="flex items-center gap-3 mb-4">
 			<Code class="h-5 w-5 text-primary" />
 			<div>
-				<h2 class="text-lg font-medium text-text">REST API</h2>
-				<p class="text-sm text-text-muted">Connect to Outlet programmatically via the REST API</p>
+				<h2 class="text-lg font-medium text-text">Sending API and SMTP</h2>
+				<p class="text-sm text-text-muted">How your apps send email. Each brand has its own API key, shown in that brand's settings.</p>
 			</div>
 		</div>
 
@@ -377,8 +321,8 @@ apiRequest('POST', '/emails/send', [
 
 			<div>
 				<label class="form-label">Authentication</label>
-				<p class="text-sm text-text-muted mb-2">Include your API key in the Authorization header:</p>
-				<pre class="bg-surface-tertiary p-3 rounded text-sm overflow-x-auto font-mono">Authorization: Bearer YOUR_API_KEY</pre>
+				<p class="text-sm text-text-muted mb-2">Send the brand's API key in the X-API-Key header:</p>
+				<pre class="bg-surface-tertiary p-3 rounded text-sm overflow-x-auto font-mono">X-API-Key: YOUR_BRAND_API_KEY</pre>
 			</div>
 		</div>
 	</Card>
@@ -394,77 +338,6 @@ apiRequest('POST', '/emails/send', [
 		<CodeBlock code={activeExample.code} language={activeExample.language} />
 	</Card>
 
-	<!-- SDKs -->
-	<Card>
-		<div class="flex items-center gap-3 mb-4">
-			<Package class="h-5 w-5 text-primary" />
-			<div>
-				<h2 class="text-lg font-medium text-text">Official SDKs</h2>
-				<p class="text-sm text-text-muted">Pre-built client libraries for popular languages</p>
-			</div>
-		</div>
-
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-			<div class="p-4 bg-surface-secondary rounded-lg">
-				<div class="flex items-center gap-2 mb-2">
-					<span class="text-lg font-medium text-text">TypeScript</span>
-				</div>
-				<p class="text-sm text-text-muted mb-3">Full TypeScript support with types</p>
-				<code class="block text-xs bg-surface-tertiary px-2 py-1 rounded font-mono text-text-muted">
-					npm install @outlet/sdk
-				</code>
-			</div>
-
-			<div class="p-4 bg-surface-secondary rounded-lg">
-				<div class="flex items-center gap-2 mb-2">
-					<span class="text-lg font-medium text-text">Python</span>
-				</div>
-				<p class="text-sm text-text-muted mb-3">Python 3.8+ support</p>
-				<code class="block text-xs bg-surface-tertiary px-2 py-1 rounded font-mono text-text-muted">
-					pip install outlet-sdk
-				</code>
-			</div>
-
-			<div class="p-4 bg-surface-secondary rounded-lg">
-				<div class="flex items-center gap-2 mb-2">
-					<span class="text-lg font-medium text-text">Go</span>
-				</div>
-				<p class="text-sm text-text-muted mb-3">Go 1.20+ support</p>
-				<code class="block text-xs bg-surface-tertiary px-2 py-1 rounded font-mono text-text-muted">
-					go get github.com/outlet/sdk-go
-				</code>
-			</div>
-
-			<div class="p-4 bg-surface-secondary rounded-lg">
-				<div class="flex items-center gap-2 mb-2">
-					<span class="text-lg font-medium text-text">PHP</span>
-				</div>
-				<p class="text-sm text-text-muted mb-3">PHP 8.0+ support</p>
-				<code class="block text-xs bg-surface-tertiary px-2 py-1 rounded font-mono text-text-muted">
-					composer require outlet/sdk
-				</code>
-			</div>
-		</div>
-
-		<div class="mt-6 pt-4 border-t border-border">
-			<h3 class="font-medium text-text mb-3">SDK Quick Start (TypeScript)</h3>
-			<CodeBlock
-				code={`import { Outlet } from '@outlet/sdk';
-
-const outlet = new Outlet('YOUR_API_KEY', '${apiBaseUrl.replace('/sdk/v1', '')}');
-
-// Send a transactional email
-const result = await outlet.emails.sendEmail({
-  to: 'user@example.com',
-  subject: 'Welcome!',
-  html_body: '<h1>Welcome to our platform</h1>',
-});
-
-console.log('Message ID:', result.message_id);`}
-				language="typescript"
-			/>
-		</div>
-	</Card>
 </div>
 
 <!-- Create Key Modal -->

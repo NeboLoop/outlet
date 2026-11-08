@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,7 +17,6 @@ import (
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 
-	"github.com/google/uuid"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -150,23 +152,24 @@ func (w *ImportWorker) processPendingImports() {
 
 // processImportJob processes a single import job
 func (w *ImportWorker) processImportJob(job db.ImportJob) error {
-	logx.Infof("Processing import job %s: %s (%s)", job.ID, job.Filename, job.Type)
-
-	// Update status to processing
-	err := w.store.UpdateImportJobStatus(w.ctx, db.UpdateImportJobStatusParams{
-		ID:     job.ID,
-		Status: sql.NullString{String: "processing", Valid: true},
-	})
+	// Every import worker sees the same pending jobs: the one that claims the
+	// job runs it, the others leave it.
+	claimed, err := w.store.ClaimImportJob(w.ctx, job.ID)
 	if err != nil {
 		return err
 	}
+	if claimed == 0 {
+		return nil
+	}
+	logx.Infof("Processing import job %s: %s (%s)", job.ID, job.Filename, job.Type)
 
-	// Open CSV file
-	filePath := w.config.UploadDir + "/" + job.Filename
+	// Open CSV file; it holds people's addresses, so it goes when the job ends
+	filePath := ImportFile(w.config.UploadDir, job.ID)
 	file, err := os.Open(filePath)
 	if err != nil {
 		return w.failJob(job.ID, "Failed to open file: "+err.Error())
 	}
+	defer os.Remove(filePath)
 	defer file.Close()
 
 	// Parse CSV
@@ -213,6 +216,11 @@ func (w *ImportWorker) processImportJob(job db.ImportJob) error {
 		logx.Errorf("Failed to set total rows: %v", err)
 	}
 
+	opts, err := ImportOptionsOf(job)
+	if err != nil {
+		return w.failJob(job.ID, "Failed to read the import's options: "+err.Error())
+	}
+
 	// Process rows
 	var processed, success, errors, skipped int64
 	var errorMessages []string
@@ -240,7 +248,7 @@ func (w *ImportWorker) processImportJob(job db.ImportJob) error {
 		var importErr error
 		switch job.Type {
 		case "subscribers":
-			importErr = w.importSubscriber(job, record, colMap)
+			importErr = w.importSubscriber(job, opts, record, colMap)
 		case "suppression":
 			importErr = w.importSuppression(job, record, colMap)
 		case "blocked_domains":
@@ -296,8 +304,26 @@ func (w *ImportWorker) processImportJob(job db.ImportJob) error {
 	return nil
 }
 
+// ImportOptions are an import job's options, stored as JSON in
+// import_jobs.options.
+type ImportOptions struct {
+	// StartSignup starts the list's sign-up emails for each person a
+	// subscriber import adds.
+	StartSignup bool `json:"start_signup"`
+}
+
+// ImportOptionsOf reads a job's options. A job saved without any has none set.
+func ImportOptionsOf(job db.ImportJob) (ImportOptions, error) {
+	var opts ImportOptions
+	if !job.Options.Valid || job.Options.String == "" {
+		return opts, nil
+	}
+	err := json.Unmarshal([]byte(job.Options.String), &opts)
+	return opts, err
+}
+
 // importSubscriber imports a single subscriber row
-func (w *ImportWorker) importSubscriber(job db.ImportJob, record []string, colMap map[string]int) error {
+func (w *ImportWorker) importSubscriber(job db.ImportJob, opts ImportOptions, record []string, colMap map[string]int) error {
 	// Get email (required)
 	emailIdx, ok := colMap["email"]
 	if !ok {
@@ -317,61 +343,9 @@ func (w *ImportWorker) importSubscriber(job db.ImportJob, record []string, colMa
 		name = strings.TrimSpace(record[nameIdx])
 	}
 
-	// Check if contact exists
-	existingContact, err := w.store.GetContactByOrgAndEmail(w.ctx, db.GetContactByOrgAndEmailParams{
-		OrgID: sql.NullString{String: job.OrgID, Valid: true},
-		Email: email,
-	})
-	if err != nil && err != sql.ErrNoRows {
-		return err
+	if _, err := w.store.AddSubscriber(w.ctx, job.OrgID, job.ListID.Int64, email, name, "import", opts.StartSignup); err != nil {
+		return fmt.Errorf("%s: %w", email, err)
 	}
-
-	var contactID string
-	if existingContact.ID != "" {
-		contactID = existingContact.ID
-		// Update name if provided
-		if name != "" && name != existingContact.Name {
-			w.store.UpdateContactName(w.ctx, db.UpdateContactNameParams{
-				ID:   contactID,
-				Name: name,
-			})
-		}
-	} else {
-		// Create new contact
-		contactID = uuid.NewString()
-		_, err = w.store.CreateContact(w.ctx, db.CreateContactParams{
-			ID:    contactID,
-			OrgID: sql.NullString{String: job.OrgID, Valid: true},
-			Email: email,
-			Name:  name,
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// Add to list if list_id is specified
-	if job.ListID.Valid {
-		// Check if already subscribed
-		exists, err := w.store.CheckListSubscription(w.ctx, db.CheckListSubscriptionParams{
-			ListID:    job.ListID.Int64,
-			ContactID: contactID,
-		})
-		if err != nil {
-			return err
-		}
-		if exists == 0 {
-			_, err = w.store.CreateListSubscriber(w.ctx, db.CreateListSubscriberParams{
-				ListID:    job.ListID.Int64,
-				ContactID: contactID,
-				Status:    sql.NullString{String: "active", Valid: true},
-			})
-			if err != nil {
-				return err
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -459,9 +433,15 @@ func (w *ImportWorker) Stats() (processed, failed int64) {
 	return w.processed.Load(), w.failed.Load()
 }
 
+// ImportFile is where an import job's CSV waits for the worker.
+func ImportFile(uploadDir, jobID string) string {
+	return filepath.Join(uploadDir, jobID+".csv")
+}
+
 // StartImportWorker starts the import worker from service context
 func StartImportWorker(svcCtx *svc.ServiceContext) *ImportWorker {
 	config := DefaultImportWorkerConfig()
+	config.UploadDir = svcCtx.UploadDir
 
 	worker := NewImportWorker(svcCtx.DB, config)
 	worker.Start()

@@ -2,10 +2,9 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { Card, Badge, LoadingSpinner, EmptyState } from '$lib/components/ui';
+	import { Card, Badge, LoadingSpinner, EmptyState, Alert } from '$lib/components/ui';
 	import { ChartCard, AreaChart } from '$lib/components/charts';
-	import { getEmailDashboardStats, listLists, listCampaigns, type EmailDashboardStatsResponse, type ListInfo, type CampaignInfo } from '$lib/api';
-	import { getCurrentUser } from '$lib/auth';
+	import { getEmailDashboardStats, listLists, listCampaigns, getCurrentUser, type EmailDashboardStatsResponse, type ListInfo, type CampaignInfo } from '$lib/api';
 	import { TrendingUp, TrendingDown, Users, Mail, Send, MousePointerClick, AlertTriangle, UserMinus, ArrowRight, Plus, RefreshCw } from '@lucide/svelte';
 
 	interface Props {
@@ -16,10 +15,11 @@
 
 	const { data }: Props = $props();
 	let basePath = $derived(data.brandSlug ? `/${data.brandSlug}` : '');
-	let user = $state(getCurrentUser());
+	let userName = $state('');
 
 	let loading = $state(true);
 	let emailStats = $state<EmailDashboardStatsResponse | null>(null);
+	let statsError = $state('');
 	let lists = $state<ListInfo[]>([]);
 	let recentCampaigns = $state<CampaignInfo[]>([]);
 	let orgName = $state('');
@@ -28,8 +28,15 @@
 		loadDashboardData();
 	});
 
+	$effect(() => {
+		getCurrentUser()
+			.then((me) => (userName = me.name || me.email.split('@')[0]))
+			.catch(() => {});
+	});
+
 	async function loadDashboardData() {
 		loading = true;
+		statsError = '';
 
 		try {
 			const orgId = browser ? localStorage.getItem('currentOrgId') : null;
@@ -40,7 +47,10 @@
 
 			// Load email stats, lists, and recent campaigns in parallel
 			const [statsResult, listsResult, campaignsResult] = await Promise.all([
-				getEmailDashboardStats({}).catch(() => null),
+				getEmailDashboardStats({}).catch((err: Error) => {
+					statsError = err.message || 'Failed to load email stats';
+					return null;
+				}),
 				listLists().catch(() => ({ lists: [] })),
 				listCampaigns({ limit: 5 }).catch(() => ({ campaigns: [] }))
 			]);
@@ -67,16 +77,12 @@
 		return num.toString();
 	}
 
-	function formatPercent(num: number | null | undefined): string {
-		if (num == null) return '0%';
-		return num.toFixed(1) + '%';
+	// Rates come as fractions: 0.25 is 25%
+	function formatPercent(rate: number | null | undefined): string {
+		if (rate == null) return '0%';
+		return (rate * 100).toFixed(1) + '%';
 	}
 
-	function formatDate(dateString: string): string {
-		if (!dateString) return 'N/A';
-		const date = new Date(dateString);
-		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-	}
 
 	// Calculate total subscribers across all lists
 	let totalSubscribers = $derived(lists.reduce((sum, list) => sum + (list.subscriber_count || 0), 0));
@@ -93,7 +99,7 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between">
 		<div>
-			<h1 class="text-2xl font-semibold text-text">Welcome back, {user?.name || user?.email?.split('@')[0] || 'there'}</h1>
+			<h1 class="text-2xl font-semibold text-text">Welcome back, {userName || 'there'}</h1>
 			<p class="mt-1 text-sm text-text-muted">{orgName}</p>
 		</div>
 		<button
@@ -105,6 +111,12 @@
 			<RefreshCw class="h-5 w-5 text-text-muted {loading ? 'animate-spin' : ''}" />
 		</button>
 	</div>
+
+	{#if statsError}
+		<Alert type="error" title="Email stats">
+			<p>{statsError}</p>
+		</Alert>
+	{/if}
 
 	{#if loading}
 		<div class="flex items-center justify-center h-64">
@@ -347,8 +359,8 @@
 						<Mail class="h-4 w-4 text-amber-600" />
 					</div>
 					<div>
-						<p class="text-sm font-medium text-text">Templates</p>
-						<p class="text-xs text-text-muted">Email designs</p>
+						<p class="text-sm font-medium text-text">Designs</p>
+						<p class="text-xs text-text-muted">Reusable email layouts</p>
 					</div>
 				</a>
 			</div>

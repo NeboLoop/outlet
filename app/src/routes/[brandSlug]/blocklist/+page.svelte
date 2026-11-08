@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import {
 		listSuppressedEmails,
@@ -284,7 +285,7 @@
 									<Badge variant="default" size="sm">{email.source}</Badge>
 								</td>
 								<td class="text-text-muted text-sm">
-									{new Date(email.created_at).toLocaleDateString()}
+									{formatDate(email.created_at)}
 								</td>
 								<td class="text-right">
 									<Button
@@ -375,7 +376,7 @@
 									{/if}
 								</td>
 								<td class="text-text-muted text-sm">
-									{new Date(domain.created_at).toLocaleDateString()}
+									{formatDate(domain.created_at)}
 								</td>
 								<td class="text-right">
 									<Button

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import * as api from '$lib/api';
 	import type { WebhookInfo } from '$lib/api';
 	import {
@@ -13,7 +14,7 @@
 		Table,
 		AlertDialog
 	} from '$lib/components/ui';
-	import { Plus, Trash2, TestTube, Copy, Eye, EyeOff, Check, X, RefreshCw } from '@lucide/svelte';
+	import { Plus, Trash2, TestTube, Copy, Eye, EyeOff, Check, X, RefreshCw, ListChecks, Send } from '@lucide/svelte';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -40,28 +41,26 @@
 	let deleteWebhookId = $state('');
 	let deleting = $state(false);
 
+	// Deliveries: each event's tries, retries and Send again
+	let showDeliveriesModal = $state(false);
+	let deliveries = $state<api.WebhookDeliveryInfo[]>([]);
+	let deliveriesLoading = $state(false);
+	let deliveriesError = $state('');
+	let resendingId = $state<string | null>(null);
+
 	// Testing state
 	let testingWebhook = $state<string | null>(null);
 	let testResult = $state<api.TestWebhookResponse | null>(null);
 
-	// Available webhook events
+	// Available webhook events: the ones the server delivers
+	// (internal/services/webhook Events)
 	const availableEvents = [
-		{ value: 'checkout.completed', label: 'Checkout Completed', category: 'Orders' },
-		{ value: 'order.created', label: 'Order Created', category: 'Orders' },
-		{ value: 'order.completed', label: 'Order Completed', category: 'Orders' },
-		{ value: 'payment.succeeded', label: 'Payment Succeeded', category: 'Payments' },
-		{ value: 'payment.failed', label: 'Payment Failed', category: 'Payments' },
-		{ value: 'refund.created', label: 'Refund Created', category: 'Payments' },
-		{ value: 'subscription.created', label: 'Subscription Created', category: 'Subscriptions' },
-		{ value: 'subscription.updated', label: 'Subscription Updated', category: 'Subscriptions' },
-		{ value: 'subscription.canceled', label: 'Subscription Canceled', category: 'Subscriptions' },
-		{ value: 'subscription.renewed', label: 'Subscription Renewed', category: 'Subscriptions' },
-		{ value: 'customer.created', label: 'Customer Created', category: 'Customers' },
-		{ value: 'customer.updated', label: 'Customer Updated', category: 'Customers' },
 		{ value: 'contact.created', label: 'Contact Created', category: 'Contacts' },
 		{ value: 'contact.unsubscribed', label: 'Contact Unsubscribed', category: 'Contacts' },
 		{ value: 'email.sent', label: 'Email Sent', category: 'Email' },
+		{ value: 'email.delivered', label: 'Email Delivered', category: 'Email' },
 		{ value: 'email.bounced', label: 'Email Bounced', category: 'Email' },
+		{ value: 'email.complained', label: 'Marked as Spam', category: 'Email' },
 		{ value: 'email.opened', label: 'Email Opened', category: 'Email' },
 		{ value: 'email.clicked', label: 'Email Clicked', category: 'Email' }
 	];
@@ -176,6 +175,52 @@
 		}
 	}
 
+	async function viewDeliveries(id: string) {
+		selectedWebhookId = id;
+		showDeliveriesModal = true;
+		deliveries = [];
+		deliveriesError = '';
+		deliveriesLoading = true;
+		try {
+			const resp = await api.adminListWebhookDeliveries({ limit: 50 }, id);
+			deliveries = resp.deliveries || [];
+		} catch (err) {
+			deliveriesError = err instanceof Error ? err.message : 'Failed to load deliveries';
+		} finally {
+			deliveriesLoading = false;
+		}
+	}
+
+	async function resendDelivery(delivery: api.WebhookDeliveryInfo) {
+		resendingId = delivery.id;
+		deliveriesError = '';
+		try {
+			const resp = await api.adminResendWebhookDelivery({}, selectedWebhookId, delivery.id);
+			deliveries = deliveries.map((d) => (d.id === delivery.id ? resp.delivery : d));
+			if (!resp.success) {
+				deliveriesError = resp.error || 'The endpoint did not accept the delivery';
+			}
+			await loadWebhooks();
+		} catch (err) {
+			deliveriesError = err instanceof Error ? err.message : 'Failed to send again';
+		} finally {
+			resendingId = null;
+		}
+	}
+
+	const deliveryBadge: Record<string, 'success' | 'warning' | 'error' | 'info'> = {
+		succeeded: 'success',
+		pending: 'warning',
+		sending: 'info',
+		failed: 'error'
+	};
+	const deliveryLabel: Record<string, string> = {
+		succeeded: 'Delivered',
+		pending: 'Retrying',
+		sending: 'Sending',
+		failed: 'Failed'
+	};
+
 	function toggleEvent(event: string) {
 		const index = newWebhook.events.indexOf(event);
 		if (index === -1) {
@@ -189,10 +234,6 @@
 		navigator.clipboard.writeText(createdSecret);
 	}
 
-	function formatDate(dateStr?: string): string {
-		if (!dateStr) return 'Never';
-		return new Date(dateStr).toLocaleString();
-	}
 </script>
 
 <div class="space-y-6">
@@ -235,6 +276,7 @@
 						<th>Status</th>
 						<th>Deliveries</th>
 						<th>Last Delivery</th>
+						<th>Retries</th>
 						<th class="text-right">Actions</th>
 					</tr>
 				</thead>
@@ -271,10 +313,29 @@
 								</div>
 							</td>
 							<td class="text-sm text-text-muted">
-								{formatDate(webhook.last_delivery_at)}
+								{formatDate(webhook.last_delivery_at, 'datetime') || 'Never'}
+								{#if webhook.last_status}
+									<span class="block text-xs">Status {webhook.last_status}</span>
+								{/if}
+							</td>
+							<td class="text-sm text-text-muted">
+								{#if webhook.waiting_deliveries}
+									<span class="block text-text">{webhook.waiting_deliveries} waiting</span>
+									<span class="block text-xs">Next {formatDate(webhook.next_retry_at, 'short')}</span>
+								{:else}
+									None
+								{/if}
 							</td>
 							<td>
 								<div class="flex items-center justify-end gap-2">
+									<Button
+										variant="ghost"
+										size="sm"
+										onclick={() => viewDeliveries(webhook.id)}
+										title="Deliveries"
+									>
+										<ListChecks size={16} />
+									</Button>
 									<Button
 										variant="ghost"
 										size="sm"
@@ -456,7 +517,7 @@
 								{log.duration_ms || 0}ms
 							</td>
 							<td class="text-sm text-text-muted">
-								{formatDate(log.delivered_at)}
+								{formatDate(log.delivered_at, 'datetime') || 'Never'}
 							</td>
 						</tr>
 					{/each}
@@ -467,6 +528,90 @@
 
 	{#snippet footer()}
 		<Button variant="secondary" onclick={() => (showLogsModal = false)}>Close</Button>
+	{/snippet}
+</Modal>
+
+<!-- Deliveries Modal -->
+<Modal bind:open={showDeliveriesModal} title="Webhook Deliveries" size="lg">
+	<p class="mb-4 text-sm text-text-muted">
+		When your endpoint fails, an event is tried again with a growing wait until it is delivered or
+		runs out of tries. Every try carries the same payload, signature and
+		<code>X-Webhook-Delivery</code> ID.
+	</p>
+	{#if deliveriesError}
+		<Alert variant="error" class="mb-4">{deliveriesError}</Alert>
+	{/if}
+	{#if deliveriesLoading}
+		<div class="flex justify-center py-8">
+			<LoadingSpinner />
+		</div>
+	{:else if deliveries.length === 0}
+		<p class="text-center text-text-muted py-8">No deliveries yet.</p>
+	{:else}
+		<div class="max-h-96 overflow-y-auto">
+			<Table>
+				<thead>
+					<tr>
+						<th>Event</th>
+						<th>Status</th>
+						<th>Tries</th>
+						<th>Last Response</th>
+						<th>Next Retry</th>
+						<th>Created</th>
+						<th class="text-right">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each deliveries as delivery (delivery.id)}
+						<tr>
+							<td>
+								<Badge variant="secondary">{delivery.event}</Badge>
+							</td>
+							<td>
+								<Badge variant={deliveryBadge[delivery.status] || 'info'}>
+									{deliveryLabel[delivery.status] || delivery.status}
+								</Badge>
+							</td>
+							<td class="text-sm">{delivery.attempts} of {delivery.max_attempts}</td>
+							<td class="text-sm text-text-muted max-w-xs truncate" title={delivery.last_error || ''}>
+								{#if delivery.last_status_code}
+									{delivery.last_status_code}
+								{:else if delivery.last_error}
+									Error
+								{:else}
+									None
+								{/if}
+							</td>
+							<td class="text-sm text-text-muted">
+								{formatDate(delivery.next_retry_at, 'short') || 'None'}
+							</td>
+							<td class="text-sm text-text-muted">
+								{formatDate(delivery.created_at, 'short')}
+							</td>
+							<td class="text-right">
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={() => resendDelivery(delivery)}
+									disabled={resendingId === delivery.id || delivery.status === 'sending'}
+									title="Send again"
+								>
+									{#if resendingId === delivery.id}
+										<RefreshCw size={16} class="animate-spin" />
+									{:else}
+										<Send size={16} />
+									{/if}
+								</Button>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</Table>
+		</div>
+	{/if}
+
+	{#snippet footer()}
+		<Button variant="secondary" onclick={() => (showDeliveriesModal = false)}>Close</Button>
 	{/snippet}
 </Modal>
 

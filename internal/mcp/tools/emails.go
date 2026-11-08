@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
+	"github.com/outlet-sh/outlet/internal/services/email"
+	"github.com/outlet-sh/outlet/internal/services/listexport"
 	"github.com/outlet-sh/outlet/internal/utils"
 
 	"github.com/google/uuid"
@@ -60,7 +63,7 @@ func sameBrand(ctx context.Context, toolCtx *mcpctx.ToolContext, rec access.Reco
 
 // emailActions defines valid actions for each email resource.
 var emailActions = map[string][]string{
-	"list":       {"create", "list", "get", "update", "delete", "stats", "subscribers", "subscribe", "unsubscribe"},
+	"list":       {"create", "list", "get", "update", "delete", "stats", "subscribers", "subscribe", "unsubscribe", "export"},
 	"sequence":   {"create", "list", "get", "update", "delete", "stats"},
 	"template":   {"create", "list", "get", "update", "delete"},
 	"enrollment": {"enroll", "unenroll", "pause", "resume", "list"},
@@ -85,7 +88,7 @@ type EmailInput struct {
 
 	// Sequence fields
 	ListID       string `json:"list_id,omitempty" jsonschema:"List ID to attach sequence to (sequence.create) or filter by (sequence.list)"`
-	TriggerEvent string `json:"trigger_event,omitempty" jsonschema:"Event that starts sequence: on_subscribe, on_purchase, manual"`
+	TriggerEvent string `json:"trigger_event,omitempty" jsonschema:"Event that starts sequence: signup (when a subscription to the list becomes active) or manual"`
 	SequenceType string `json:"sequence_type,omitempty" jsonschema:"Type: lifecycle, promotional, transactional"`
 	Active       *bool  `json:"active,omitempty" jsonschema:"Whether resource is active"`
 
@@ -100,15 +103,16 @@ type EmailInput struct {
 	// Pagination fields for list.subscribers
 	Page     int    `json:"page,omitempty" jsonschema:"Page number (default: 1)"`
 	PageSize int    `json:"page_size,omitempty" jsonschema:"Items per page (default: 20, max: 100)"`
-	Status   string `json:"status,omitempty" jsonschema:"Filter by status: active, pending, unsubscribed (list.subscribers, queue.list)"`
+	Status   string `json:"status,omitempty" jsonschema:"Filter by status: active, pending, unsubscribed (list.subscribers, list.export, queue.list)"`
+	Cursor   string `json:"cursor,omitempty" jsonschema:"Where to continue an export: the next_cursor of the previous list.export call"`
 
 	// Contact/Subscribe fields
 	Email     string `json:"email,omitempty" jsonschema:"Email address (list.subscribe, list.unsubscribe)"`
 	ContactID string `json:"contact_id,omitempty" jsonschema:"Contact ID (enrollment operations, queue.list filter)"`
 
 	// Entry rule fields
-	TriggerType string `json:"trigger_type,omitempty" jsonschema:"Trigger type: list_subscribe, sequence_complete, tag_added (entry_rule.create)"`
-	SourceID    string `json:"source_id,omitempty" jsonschema:"Source ID (list ID or sequence ID) for the trigger (entry_rule.create)"`
+	TriggerType string `json:"trigger_type,omitempty" jsonschema:"When the rule starts its sequence for a contact: list_join (a subscription to the list becomes active), sequence_complete (the contact finishes the sequence), tag_added (the contact is given the tag) (entry_rule.create)"`
+	SourceID    string `json:"source_id,omitempty" jsonschema:"What the trigger waits on: the list ID (list_join), the sequence ID (sequence_complete) or the tag (tag_added) (entry_rule.create)"`
 	Priority    int    `json:"priority,omitempty" jsonschema:"Rule priority (higher runs first, default: 10)"`
 }
 
@@ -126,7 +130,7 @@ Resources:
 - sequence: Automated drip campaigns attached to lists
 - template: Individual emails within a sequence
 - enrollment: Manage contact sequence enrollments
-- entry_rule: Automatic enrollment rules for sequences
+- entry_rule: Automatic enrollment rules for sequences: start a sequence for a contact when a list subscription becomes active (list_join), another sequence is finished (sequence_complete) or a tag is added (tag_added)
 - queue: Pending/scheduled emails
 
 Actions and Required Fields:
@@ -141,6 +145,7 @@ LIST RESOURCE:
 - list.subscribers: List subscribers (requires: id, optional: page, page_size, status)
 - list.subscribe: Subscribe contact to list (requires: id, email)
 - list.unsubscribe: Unsubscribe contact from list (requires: id, email)
+- list.export: Export subscribers as CSV: email, name, status, dates and custom fields (requires: id, optional: status, page_size up to 5000 rows (default 1000), cursor from the previous call's next_cursor)
 
 SEQUENCE RESOURCE:
 - sequence.create: Create a sequence (requires: name, list_id)
@@ -177,10 +182,11 @@ QUEUE RESOURCE:
 Examples:
   email(resource: list, action: create, name: "Newsletter")
   email(resource: list, action: subscribe, id: "1", email: "user@example.com")
+  email(resource: list, action: export, id: "1", status: "active")
   email(resource: sequence, action: create, name: "Welcome Series", list_id: "1")
   email(resource: enrollment, action: enroll, sequence_id: "uuid", contact_id: "uuid")
   email(resource: enrollment, action: list, contact_id: "uuid")
-  email(resource: entry_rule, action: create, sequence_id: "uuid", trigger_type: "list_subscribe", source_id: "1")
+  email(resource: entry_rule, action: create, sequence_id: "uuid", trigger_type: "list_join", source_id: "1")
   email(resource: queue, action: list, status: "pending")`,
 	}, emailHandler(toolCtx))
 }
@@ -330,8 +336,51 @@ func handleList(ctx context.Context, toolCtx *mcpctx.ToolContext, input EmailInp
 		return handleListSubscribe(ctx, toolCtx, input)
 	case "unsubscribe":
 		return handleListUnsubscribe(ctx, toolCtx, input)
+	case "export":
+		return handleListExport(ctx, toolCtx, input)
 	}
 	return nil, nil, nil
+}
+
+// ListExportOutput defines output for list.export.
+type ListExportOutput struct {
+	ListID     string `json:"list_id"`
+	CSV        string `json:"csv"`
+	Rows       int    `json:"rows"`
+	NextCursor string `json:"next_cursor,omitempty"` // more rows follow: pass it as cursor
+}
+
+func handleListExport(ctx context.Context, toolCtx *mcpctx.ToolContext, input EmailInput) (*mcp.CallToolResult, any, error) {
+	if err := toolCtx.RequireBrand(ctx); err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(input.ID) == "" {
+		return nil, nil, mcpctx.NewValidationError("id is required", "id")
+	}
+	listID, err := strconv.ParseInt(input.ID, 10, 64)
+	if err != nil {
+		return nil, nil, mcpctx.NewValidationError("id must be a valid ID", "id")
+	}
+	if err := sameBrand(ctx, toolCtx, access.List, input.ID, "list"); err != nil {
+		return nil, nil, err
+	}
+
+	limit := input.PageSize
+	if limit <= 0 {
+		limit = 1000
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+	var buf bytes.Buffer
+	res, err := listexport.Write(ctx, toolCtx.DB(), &buf, listID, listexport.Options{Status: input.Status, Limit: limit, After: input.Cursor})
+	if errors.Is(err, listexport.ErrBadCursor) {
+		return nil, nil, mcpctx.NewValidationError("cursor must be the next_cursor of a list.export call", "cursor")
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to export list: %w", err)
+	}
+	return nil, ListExportOutput{ListID: input.ID, CSV: buf.String(), Rows: res.Rows, NextCursor: res.Next}, nil
 }
 
 func handleListCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, input EmailInput) (*mcp.CallToolResult, any, error) {
@@ -807,7 +856,7 @@ func handleSequenceCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	slug := generateSlug(input.Name)
 	triggerEvent := input.TriggerEvent
 	if triggerEvent == "" {
-		triggerEvent = "on_subscribe"
+		triggerEvent = email.TriggerSignup
 	}
 	sequenceType := input.SequenceType
 	if sequenceType == "" {
@@ -1476,8 +1525,17 @@ func handleListSubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("list %s not found", input.ID))
 	}
 
-	// Find or create contact
+	// An address at a domain the brand blocked doesn't subscribe, a contact
+	// already stored included
 	brandID := toolCtx.BrandID(ctx)
+	if err := toolCtx.DB().RefuseBlockedDomain(ctx, brandID, input.Email); err != nil {
+		if errors.Is(err, db.ErrBlockedDomain) {
+			return nil, nil, mcpctx.NewValidationError(db.ErrBlockedDomain.Error(), "email")
+		}
+		return nil, nil, fmt.Errorf("failed to check blocked domains: %w", err)
+	}
+
+	// Find or create contact
 	contact, err := toolCtx.DB().GetContactByOrgAndEmail(ctx, db.GetContactByOrgAndEmailParams{
 		OrgID: sql.NullString{String: brandID, Valid: true},
 		Email: input.Email,
@@ -1928,12 +1986,12 @@ func handleEntryRuleCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inp
 		return nil, nil, mcpctx.NewValidationError("sequence_id is required", "sequence_id")
 	}
 
-	if strings.TrimSpace(input.TriggerType) == "" {
-		return nil, nil, mcpctx.NewValidationError("trigger_type is required (list_subscribe, sequence_complete, tag_added)", "trigger_type")
-	}
-
-	if strings.TrimSpace(input.SourceID) == "" {
-		return nil, nil, mcpctx.NewValidationError("source_id is required", "source_id")
+	if err := email.CheckEntryRule(input.TriggerType, input.SourceID); err != nil {
+		field := "trigger_type"
+		if slices.Contains(email.EntryRuleTriggers, input.TriggerType) {
+			field = "source_id"
+		}
+		return nil, nil, mcpctx.NewValidationError(err.Error(), field)
 	}
 
 	// Verify sequence belongs to brand

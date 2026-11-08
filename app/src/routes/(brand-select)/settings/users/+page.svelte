@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { listUsers, createUser, updateUser, deleteUser, type UserInfo } from '$lib/api';
 	import { Button, Card, Input, Select, Badge, Modal, AlertDialog, Alert, LoadingSpinner, SaveButton } from '$lib/components/ui';
 	import { Plus, Users } from '@lucide/svelte';
@@ -13,7 +14,14 @@
 	let newName = $state('');
 	let newEmail = $state('');
 	let newPassword = $state('');
-	let newRole = $state('admin');
+	// Platform roles (internal/access): a super admin runs the platform and
+	// every brand; a user reaches only the brands they belong to, with the
+	// role each brand gives them.
+	const roles = [
+		{ value: 'agent', label: 'User' },
+		{ value: 'super_admin', label: 'Super admin' }
+	];
+	let newRole = $state('agent');
 
 	// Edit user modal
 	let showEditModal = $state(false);
@@ -52,7 +60,7 @@
 		newName = '';
 		newEmail = '';
 		newPassword = '';
-		newRole = 'admin';
+		newRole = 'agent';
 		showAddModal = true;
 	}
 
@@ -145,23 +153,14 @@
 		}
 	}
 
-	function getRoleVariant(role: string): 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info' {
-		switch (role?.toLowerCase()) {
-			case 'super_admin': return 'error';
-			case 'admin': return 'primary';
-			case 'agent': return 'info';
-			default: return 'default';
-		}
+	function getRoleVariant(role: string): 'default' | 'primary' | 'info' {
+		return role === 'super_admin' ? 'primary' : 'info';
 	}
 
-	function formatDate(dateString: string): string {
-		if (!dateString) return 'N/A';
-		return new Date(dateString).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		});
+	function roleLabel(role: string): string {
+		return roles.find((r) => r.value === role)?.label ?? role;
 	}
+
 </script>
 
 <svelte:head>
@@ -213,7 +212,7 @@
 							<div>
 								<div class="flex items-center gap-2">
 									<span class="font-medium text-text">{user.name}</span>
-									<Badge variant={getRoleVariant(user.role)} size="sm">{user.role}</Badge>
+									<Badge variant={getRoleVariant(user.role)} size="sm">{roleLabel(user.role)}</Badge>
 									{#if user.active}
 										<Badge variant="success" size="sm">Active</Badge>
 									{:else}
@@ -225,7 +224,7 @@
 						</div>
 						<div class="flex items-center gap-2">
 							<span class="text-sm text-text-muted mr-4">
-								Added {formatDate(user.created_at)}
+								Added {formatDate(user.created_at) || 'N/A'}
 							</span>
 							<Button type="secondary" size="sm" onclick={() => openEditModal(user)}>
 								Edit
@@ -274,10 +273,11 @@
 		<div>
 			<label for="new-role" class="form-label">Role</label>
 			<Select id="new-role" bind:value={newRole}>
-				<option value="admin">Admin</option>
-				<option value="agent">Agent</option>
-				<option value="viewer">Viewer</option>
+				{#each roles as role}
+					<option value={role.value}>{role.label}</option>
+				{/each}
 			</Select>
+			<p class="mt-1 text-xs text-text-muted">A user reaches the brands they're invited to. A super admin runs every brand and the platform.</p>
 		</div>
 	</div>
 
@@ -316,9 +316,9 @@
 			<div>
 				<label for="edit-role" class="form-label">Role</label>
 				<Select id="edit-role" bind:value={editRole}>
-					<option value="admin">Admin</option>
-					<option value="agent">Agent</option>
-					<option value="viewer">Viewer</option>
+					{#each roles as role}
+						<option value={role.value}>{role.label}</option>
+					{/each}
 				</Select>
 			</div>
 		</div>

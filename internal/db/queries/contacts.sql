@@ -115,42 +115,97 @@ UPDATE contacts
 SET name = sqlc.arg(name), updated_at = datetime('now')
 WHERE id = sqlc.arg(id);
 
+-- Unconfirmed contacts: double opt-in signups who never confirmed. A contact
+-- is one when a subscription of theirs has waited for confirmation longer
+-- than the window and they have no other subscription: someone added by
+-- hand, imported, confirmed or found for outreach is never one. Count and
+-- Delete share the one predicate, so the preview is what the delete removes.
+
 -- name: CountUnconfirmedContactsOlderThan :one
-SELECT COUNT(*) as count FROM contacts
-WHERE org_id = sqlc.arg(org_id)
-AND email_verified = 0
-AND datetime(created_at) < datetime('now', sqlc.arg(days_modifier));
+SELECT COUNT(*) as count FROM contacts c
+WHERE c.org_id = sqlc.arg(org_id)
+AND EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status = 'pending'
+    AND datetime(COALESCE(ls.verification_sent_at, ls.subscribed_at)) < datetime('now', sqlc.arg(days_modifier)))
+AND NOT EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status <> 'pending');
 
 -- name: DeleteUnconfirmedContactsOlderThan :execrows
 DELETE FROM contacts
-WHERE org_id = sqlc.arg(org_id)
-AND email_verified = 0
-AND datetime(created_at) < datetime('now', sqlc.arg(days_modifier));
-
--- name: CountInactiveContacts90Days :one
-SELECT COUNT(*) as count FROM contacts c
-WHERE c.org_id = sqlc.arg(org_id)
-AND c.email_verified = 1
-AND c.unsubscribed_at IS NULL
-AND NOT EXISTS (
-    SELECT 1 FROM email_queue eq
-    WHERE eq.contact_id = c.id
-    AND eq.opened_at > datetime('now', '-90 days')
-);
-
--- name: DeleteInactiveContacts90Days :execrows
-DELETE FROM contacts
-WHERE contacts.org_id = sqlc.arg(org_id)
-AND contacts.id IN (
+WHERE contacts.id IN (
     SELECT c.id FROM contacts c
     WHERE c.org_id = sqlc.arg(org_id)
-    AND c.email_verified = 1
+    AND EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status = 'pending'
+        AND datetime(COALESCE(ls.verification_sent_at, ls.subscribed_at)) < datetime('now', sqlc.arg(days_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status <> 'pending')
+);
+
+-- Inactive contacts: on a list as an active subscriber (added, imported or
+-- confirmed), not unsubscribed, with no open in the opens
+-- window and no click in the clicks window. Count and Delete share the one
+-- predicate, so the preview is what the delete removes.
+
+-- name: CountInactiveContacts :one
+SELECT COUNT(*) as count FROM contacts c
+WHERE c.org_id = sqlc.arg(org_id)
+    AND EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status = 'active')
     AND c.unsubscribed_at IS NULL
-    AND NOT EXISTS (
-        SELECT 1 FROM email_queue eq
-        WHERE eq.contact_id = c.id
-        AND eq.opened_at > datetime('now', '-90 days')
-    )
+    -- A contact must have been here for the whole window to have had the
+    -- chance to open, or to click.
+    AND datetime(c.created_at) < datetime('now', sqlc.arg(opens_modifier))
+    AND datetime(c.created_at) < datetime('now', sqlc.arg(clicks_modifier))
+    -- Opens, on every kind of email the brand sends: campaign sends, the
+    -- email queue (sequence and outreach emails) and transactional sends.
+    AND NOT EXISTS (SELECT 1 FROM campaign_sends cs WHERE cs.contact_id = c.id
+        AND datetime(cs.opened_at) >= datetime('now', sqlc.arg(opens_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM email_queue eq WHERE eq.contact_id = c.id
+        AND datetime(eq.opened_at) >= datetime('now', sqlc.arg(opens_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM transactional_sends ts WHERE ts.org_id = c.org_id
+        AND (ts.contact_id = c.id OR lower(ts.to_email) = lower(c.email))
+        AND datetime(ts.opened_at) >= datetime('now', sqlc.arg(opens_modifier)))
+    -- Clicks, on the same emails, and every click recorded per link.
+    AND NOT EXISTS (SELECT 1 FROM campaign_sends cs WHERE cs.contact_id = c.id
+        AND datetime(cs.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM campaign_clicks cc WHERE cc.contact_id = c.id
+        AND datetime(cc.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM email_queue eq WHERE eq.contact_id = c.id
+        AND datetime(eq.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM email_clicks ec WHERE ec.contact_id = c.id
+        AND datetime(ec.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM transactional_sends ts WHERE ts.org_id = c.org_id
+        AND (ts.contact_id = c.id OR lower(ts.to_email) = lower(c.email))
+        AND datetime(ts.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)));
+
+-- name: DeleteInactiveContacts :execrows
+DELETE FROM contacts
+WHERE contacts.id IN (
+    SELECT c.id FROM contacts c
+    WHERE c.org_id = sqlc.arg(org_id)
+    AND EXISTS (SELECT 1 FROM list_subscribers ls WHERE ls.contact_id = c.id AND ls.status = 'active')
+    AND c.unsubscribed_at IS NULL
+    -- A contact must have been here for the whole window to have had the
+    -- chance to open, or to click.
+    AND datetime(c.created_at) < datetime('now', sqlc.arg(opens_modifier))
+    AND datetime(c.created_at) < datetime('now', sqlc.arg(clicks_modifier))
+    -- Opens, on every kind of email the brand sends: campaign sends, the
+    -- email queue (sequence and outreach emails) and transactional sends.
+    AND NOT EXISTS (SELECT 1 FROM campaign_sends cs WHERE cs.contact_id = c.id
+        AND datetime(cs.opened_at) >= datetime('now', sqlc.arg(opens_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM email_queue eq WHERE eq.contact_id = c.id
+        AND datetime(eq.opened_at) >= datetime('now', sqlc.arg(opens_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM transactional_sends ts WHERE ts.org_id = c.org_id
+        AND (ts.contact_id = c.id OR lower(ts.to_email) = lower(c.email))
+        AND datetime(ts.opened_at) >= datetime('now', sqlc.arg(opens_modifier)))
+    -- Clicks, on the same emails, and every click recorded per link.
+    AND NOT EXISTS (SELECT 1 FROM campaign_sends cs WHERE cs.contact_id = c.id
+        AND datetime(cs.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM campaign_clicks cc WHERE cc.contact_id = c.id
+        AND datetime(cc.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM email_queue eq WHERE eq.contact_id = c.id
+        AND datetime(eq.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM email_clicks ec WHERE ec.contact_id = c.id
+        AND datetime(ec.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)))
+    AND NOT EXISTS (SELECT 1 FROM transactional_sends ts WHERE ts.org_id = c.org_id
+        AND (ts.contact_id = c.id OR lower(ts.to_email) = lower(c.email))
+        AND datetime(ts.clicked_at) >= datetime('now', sqlc.arg(clicks_modifier)))
 );
 
 -- ============================================

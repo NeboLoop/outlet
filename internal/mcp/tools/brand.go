@@ -660,6 +660,11 @@ func handleDomainIdentityCreate(ctx context.Context, toolCtx *mcpctx.ToolContext
 		return nil, nil, err
 	}
 
+	pathway, err := toolCtx.Svc().EmailService.DomainPathway(ctx, toolCtx.BrandID(ctx), "sending", "")
+	if err != nil {
+		return nil, nil, err
+	}
+
 	domainID := uuid.New().String()
 	verificationToken := uuid.New().String()
 
@@ -670,6 +675,7 @@ func handleDomainIdentityCreate(ctx context.Context, toolCtx *mcpctx.ToolContext
 		VerificationStatus: sql.NullString{String: "pending", Valid: true},
 		DkimStatus:         sql.NullString{String: "pending", Valid: true},
 		VerificationToken:  sql.NullString{String: verificationToken, Valid: true},
+		PathwayID:          sql.NullString{String: pathway.ID, Valid: true},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create domain: %w", err)
@@ -736,18 +742,10 @@ func handleDomainIdentityRefresh(ctx context.Context, toolCtx *mcpctx.ToolContex
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("domain %s not found", input.ID))
 	}
 
-	// Get AWS credentials
-	region, accessKey, secretKey, err := getAWSCredentialsForMCP(ctx, toolCtx)
+	// The AWS account of the domain's sending pathway
+	region, accessKey, secretKey, err := email.AWSCredentials(ctx, toolCtx.DB(), toolCtx.Svc().CryptoService, toolCtx.BrandID(ctx), domain.PathwayID.String)
 	if err != nil {
-		return nil, nil, fmt.Errorf("AWS not configured: %w", err)
-	}
-
-	// Check for org-specific AWS credentials
-	emailConfig, err := email.GetOrgEmailConfig(ctx, toolCtx.DB(), toolCtx.BrandID(ctx))
-	if err == nil && emailConfig.HasOwnAWSCredentials() {
-		region = emailConfig.AWSRegion
-		accessKey = emailConfig.AWSAccessKey
-		secretKey = emailConfig.AWSSecretKey
+		return nil, nil, fmt.Errorf("AWS not configured for this domain's sending pathway: %w", err)
 	}
 
 	// Get the current status from AWS SES
@@ -813,53 +811,6 @@ func handleDomainIdentityRefresh(ctx context.Context, toolCtx *mcpctx.ToolContex
 		Refreshed:          true,
 		Message:            message,
 	}, nil
-}
-
-// getAWSCredentialsForMCP retrieves AWS credentials from platform settings for MCP tools
-func getAWSCredentialsForMCP(ctx context.Context, toolCtx *mcpctx.ToolContext) (region, accessKey, secretKey string, err error) {
-	svc := toolCtx.Svc()
-
-	awsSettings, err := toolCtx.DB().GetPlatformSettingsByCategory(ctx, "aws")
-	if err != nil {
-		return "", "", "", err
-	}
-
-	region = "us-east-1" // default
-
-	for _, setting := range awsSettings {
-		switch setting.Key {
-		case "aws_access_key":
-			if setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "" {
-				if svc.CryptoService != nil {
-					decrypted, decErr := svc.CryptoService.DecryptString([]byte(setting.ValueEncrypted.String))
-					if decErr != nil {
-						return "", "", "", decErr
-					}
-					accessKey = decrypted
-				}
-			}
-		case "aws_secret_key":
-			if setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "" {
-				if svc.CryptoService != nil {
-					decrypted, decErr := svc.CryptoService.DecryptString([]byte(setting.ValueEncrypted.String))
-					if decErr != nil {
-						return "", "", "", decErr
-					}
-					secretKey = decrypted
-				}
-			}
-		case "aws_region":
-			if setting.ValueText.Valid && setting.ValueText.String != "" {
-				region = setting.ValueText.String
-			}
-		}
-	}
-
-	if accessKey == "" || secretKey == "" {
-		return "", "", "", fmt.Errorf("AWS credentials not configured")
-	}
-
-	return region, accessKey, secretKey, nil
 }
 
 func handleDomainIdentityDelete(ctx context.Context, toolCtx *mcpctx.ToolContext, input BrandInput) (*mcp.CallToolResult, any, error) {

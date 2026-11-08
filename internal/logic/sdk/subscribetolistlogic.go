@@ -6,12 +6,14 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"html"
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/middleware"
-	"github.com/outlet-sh/outlet/internal/services/email"
+	emailsvc "github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -56,6 +58,15 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
 	if err != nil {
 		l.Errorf("List not found: %s, error: %v", req.Slug, err)
 		return &types.Response{Success: false, Message: "List not found"}, nil
+	}
+
+	// An address at a domain the brand blocked doesn't subscribe
+	if err := l.svcCtx.DB.RefuseBlockedDomain(l.ctx, orgID, req.Email); err != nil {
+		if errors.Is(err, db.ErrBlockedDomain) {
+			return &types.Response{Success: false, Message: "This email address's domain is blocked"}, nil
+		}
+		l.Errorf("Failed to check blocked domains: %v", err)
+		return &types.Response{Success: false, Message: "Failed to subscribe"}, nil
 	}
 
 	// Get or create contact
@@ -180,7 +191,8 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
 			var body string
 			if customBody != "" {
 				// Use custom body with variable substitution
-				body = replaceEmailVariables(customBody, name, firstName, toEmail, listName, confirmUrl)
+				// Subscriber input is escaped: it comes from a public form
+				body = replaceEmailVariables(customBody, html.EscapeString(name), html.EscapeString(firstName), html.EscapeString(toEmail), html.EscapeString(listName), confirmUrl)
 			} else {
 				// Use default email template
 				confirmSection := fmt.Sprintf(`
@@ -212,21 +224,17 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
     </div>
   </div>
 </body>
-</html>`, name, listName, confirmSection, orgName)
+</html>`, html.EscapeString(name), html.EscapeString(listName), confirmSection, html.EscapeString(orgName))
 			}
 
-			// The brand sends only from its own domains.
-			err := email.CheckSender(context.Background(), l.svcCtx.DB, capturedOrgID, fromEmail)
-			if err == nil {
-				err = l.svcCtx.EmailService.SendEmailFrom(
-					context.Background(),
-					fromEmail,
-					fromName,
-					toEmail,
-					subject,
-					body,
-				)
-			}
+			err := l.svcCtx.EmailService.Send(context.Background(), emailsvc.Message{
+				OrgID:     capturedOrgID,
+				FromName:  fromName,
+				FromEmail: fromEmail,
+				To:        toEmail,
+				Subject:   subject,
+				HTML:      body,
+			})
 			if err != nil {
 				logx.Errorf("Failed to send confirmation email to %s: %v", toEmail, err)
 			}

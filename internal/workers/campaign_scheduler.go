@@ -3,7 +3,7 @@ package workers
 import (
 	"context"
 	"database/sql"
-	"strings"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,16 +40,16 @@ type CampaignSchedulerConfig struct {
 	PoolSize int
 }
 
-// DefaultCampaignSchedulerConfig returns sensible defaults 
+// DefaultCampaignSchedulerConfig returns sensible defaults
 func DefaultCampaignSchedulerConfig() CampaignSchedulerConfig {
 	return CampaignSchedulerConfig{
 		ScheduleInterval: 10 * time.Second,
 		SendPollInterval: 2 * time.Second,
-		Workers:          10,             // Increased from 5
-		RateLimit:        14,             // SES sandbox default
-		BatchSize:        1000,           // Increased from 100
-		ErrorThreshold:   100,            // Pause after 100 consecutive errors
-		PoolSize:         20,             // SMTP connection pool size
+		Workers:          10,   // Increased from 5
+		RateLimit:        14,   // SES sandbox default
+		BatchSize:        1000, // Increased from 100
+		ErrorThreshold:   100,  // Pause after 100 consecutive errors
+		PoolSize:         20,   // SMTP connection pool size
 	}
 }
 
@@ -195,10 +195,9 @@ func (s *CampaignScheduler) Start() {
 // Stop gracefully shuts down the scheduler
 func (s *CampaignScheduler) Stop() {
 	logx.Info("Stopping campaign scheduler...")
+	// Cancelling stops every goroutine; the queue stays open because the
+	// batch fetcher may still be sending to it
 	s.cancel()
-
-	// Close message queue to signal workers
-	close(s.msgQueue)
 
 	done := make(chan struct{})
 	go func() {
@@ -255,10 +254,10 @@ func (s *CampaignScheduler) checkScheduledCampaigns() {
 func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	logx.Infof("Processing campaign %s: %s", campaign.ID, campaign.Name)
 
-	// A campaign sends only from one of its brand's domains. One that can't
-	// send is paused (the admin shows it as an error); "failed" is not a
-	// campaign status.
-	if err := email.CheckSender(s.ctx, s.store, campaign.OrgID, campaign.FromEmail.String); err != nil {
+	// A campaign sends only from a domain of its brand's marketing pathway.
+	// One that can't send is paused (the admin shows it as an error);
+	// "failed" is not a campaign status.
+	if err := email.CheckSender(s.ctx, s.store, campaign.OrgID, email.KindMarketing, campaign.FromEmail.String); err != nil {
 		logx.Errorf("Campaign %s can't send: %v", campaign.ID, err)
 		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
 			ID:     campaign.ID,
@@ -269,21 +268,18 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	// Create pipe for this campaign
 	s.getOrCreatePipe(campaign.ID)
 
-	// Update status to sending
-	err := s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
-		ID:     campaign.ID,
-		Status: sql.NullString{String: "sending", Valid: true},
-	})
-	if err != nil {
-		return err
-	}
-
+	// The campaign stays 'scheduled' while its sends are created and only then
+	// becomes 'sending'. Workers claim sends of 'sending' campaigns only, so
+	// none can finish (and mark the campaign sent) while rows are still being
+	// added. If this stops halfway, the next check resumes it; existing sends
+	// are skipped.
 	listIDs := db.DecodeListIDs(campaign.ListIds.String)
 	if len(listIDs) == 0 {
 		logx.Errorf("Campaign %s has no target lists", campaign.ID)
+		// 'failed' is not an allowed campaign status; cancel it instead
 		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
 			ID:     campaign.ID,
-			Status: sql.NullString{String: "paused", Valid: true},
+			Status: sql.NullString{String: "cancelled", Valid: true},
 		})
 	}
 
@@ -337,6 +333,7 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 			continue
 		}
 		if exists > 0 {
+			recipientCount++ // created by an earlier, interrupted run
 			continue
 		}
 
@@ -357,7 +354,7 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	}
 
 	// Update recipient count
-	err = s.store.SetCampaignRecipientsCount(s.ctx, db.SetCampaignRecipientsCountParams{
+	err := s.store.SetCampaignRecipientsCount(s.ctx, db.SetCampaignRecipientsCountParams{
 		ID:              campaign.ID,
 		RecipientsCount: sql.NullInt64{Int64: recipientCount, Valid: true},
 	})
@@ -368,7 +365,15 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 	s.totalScheduled.Add(1)
 	logx.Infof("Campaign %s queued with %d recipients", campaign.ID, recipientCount)
 
-	return nil
+	// Release it to the workers; with nothing to send it is finished at once
+	status := "sending"
+	if recipientCount == 0 {
+		status = "sent"
+	}
+	return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
+		ID:     campaign.ID,
+		Status: sql.NullString{String: status, Valid: true},
+	})
 }
 
 // batchFetcher continuously fetches pending sends and queues them
@@ -389,7 +394,17 @@ func (s *CampaignScheduler) batchFetcher() {
 
 // fetchAndQueueSends fetches pending sends and adds them to the worker queue
 func (s *CampaignScheduler) fetchAndQueueSends() {
-	sends, err := s.store.GetPendingCampaignSends(s.ctx, int64(s.config.BatchSize))
+	// Claim the batch first, so polling again while these wait for the rate
+	// limiter cannot queue them twice
+	claim := sql.NullString{String: uuid.NewString(), Valid: true}
+	if err := s.store.ClaimPendingCampaignSends(s.ctx, db.ClaimPendingCampaignSendsParams{
+		ClaimToken: claim,
+		LimitCount: int64(s.config.BatchSize),
+	}); err != nil {
+		logx.Errorf("Failed to claim pending campaign sends: %v", err)
+		return
+	}
+	sends, err := s.store.GetPendingCampaignSends(s.ctx, claim)
 	if err != nil {
 		logx.Errorf("Failed to get pending campaign sends: %v", err)
 		return
@@ -416,12 +431,13 @@ func (s *CampaignScheduler) sendWorker(id int) {
 	defer s.wg.Done()
 	logx.Infof("Campaign send worker %d started", id)
 
-	for send := range s.msgQueue {
+	for {
+		var send db.GetPendingCampaignSendsRow
 		select {
 		case <-s.ctx.Done():
 			logx.Infof("Campaign send worker %d stopped", id)
 			return
-		default:
+		case send = <-s.msgQueue:
 		}
 
 		// Get or create pipe for this campaign
@@ -440,8 +456,16 @@ func (s *CampaignScheduler) sendWorker(id int) {
 			continue
 		}
 
-		// Send the email
-		if err := s.sendCampaignEmail(send); err != nil {
+		// Send the email. One held back by its pathway's limit waits, still
+		// pending, until the limit lifts; it never fails or pauses the campaign.
+		subject, err := s.sendCampaignEmail(send)
+		if deferCampaignSend(s.ctx, s.store, send.ID, err) {
+			continue
+		} else if errors.Is(err, email.ErrSuppressed) || errors.Is(err, email.ErrInvalidMessage) {
+			// The recipient can never be sent to: record it, and don't count
+			// it toward auto-pausing the campaign
+			s.markSendFailed(send.ID, err.Error())
+		} else if err != nil {
 			s.markSendFailed(send.ID, err.Error())
 			s.totalFailed.Add(1)
 
@@ -453,7 +477,7 @@ func (s *CampaignScheduler) sendWorker(id int) {
 				s.pauseCampaign(send.CampaignID, "Too many consecutive errors")
 			}
 		} else {
-			s.markSendSent(send.ID)
+			s.markSendSent(send.ID, subject)
 			s.totalSent.Add(1)
 			pipe.RecordSent()
 
@@ -466,48 +490,56 @@ func (s *CampaignScheduler) sendWorker(id int) {
 	}
 }
 
-// sendCampaignEmail sends a single campaign email
-func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow) error {
-	// Build email content
-	htmlBody := send.HtmlBody
-
-	// Process template variables (simple replacement for now)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{.Name}}", send.Name)
-	htmlBody = strings.ReplaceAll(htmlBody, "{{.Email}}", send.Email)
-
-	subject := strings.ReplaceAll(send.Subject, "{{.Name}}", send.Name)
-
-	// Add tracking pixel if enabled
-	if send.TrackOpens.Valid && send.TrackOpens.Int64 == 1 && send.TrackingToken.Valid {
-		trackingPixel := `<img src="` + s.emailService.GetTrackingPixelURL(send.TrackingToken.String) + `" width="1" height="1" style="display:none" />`
-		htmlBody = strings.Replace(htmlBody, "</body>", trackingPixel+"</body>", 1)
-	}
-
-	// Rewrite links for click tracking if enabled
-	if send.TrackClicks.Valid && send.TrackClicks.Int64 == 1 && send.TrackingToken.Valid {
-		htmlBody = s.emailService.RewriteLinksForTracking(htmlBody, send.TrackingToken.String)
-	}
-
-	// Build from address (may be sql.NullString)
-	fromName := ""
-	if send.FromName.Valid {
-		fromName = send.FromName.String
-	}
-	fromEmail := ""
-	if send.FromEmail.Valid {
-		fromEmail = send.FromEmail.String
-	}
-	replyTo := ""
-	if send.ReplyTo.Valid {
-		replyTo = send.ReplyTo.String
-	}
-
-	return s.emailService.SendCampaignEmail(send.Email, subject, htmlBody, fromName, fromEmail, replyTo)
+// sendCampaignEmail sends a single campaign email and returns the subject it
+// went with, its merge tags filled
+func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow) (string, error) {
+	msg := s.emailService.CampaignMessage(email.CampaignEmail{
+		OrgID:         send.OrgID,
+		FromName:      send.FromName.String,
+		FromEmail:     send.FromEmail.String,
+		ReplyTo:       send.ReplyTo.String,
+		To:            send.Email,
+		Name:          send.Name,
+		Subject:       send.Subject,
+		HTML:          send.HtmlBody,
+		Text:          send.PlainText.String,
+		DesignHTML:    send.DesignHtml,
+		DesignText:    send.DesignText,
+		TrackingToken: send.TrackingToken.String,
+		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
+		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
+	})
+	return msg.Subject, s.emailService.Send(s.ctx, msg)
 }
 
-// markSendSent marks a campaign send as sent
-func (s *CampaignScheduler) markSendSent(id string) {
-	if err := s.store.MarkCampaignSendSent(s.ctx, id); err != nil {
+// deferCampaignSend leaves a campaign send held back by a temporary failure
+// (its pathway's limit, a 4xx, a dropped connection, SES throttling) pending
+// and unclaimed, to go again at RetryAt, or in 15 minutes. It is the one way
+// a campaign send is tried again; a send that failed for good, or that the
+// mail server kept refusing for GiveUpAfter, is marked failed and never
+// retried. It reports whether it deferred.
+func deferCampaignSend(ctx context.Context, store *db.Store, id string, err error) bool {
+	if err == nil || !email.IsTemporary(err) {
+		return false
+	}
+	now := time.Now()
+	refused := email.RefusedAt(err, now)
+	if refused.Valid {
+		if since, _ := store.CampaignSendRefusedSince(ctx, id); email.GaveUp(since, now) {
+			logx.Infof("Send %s: refused for %s, giving up: %v", id, email.GiveUpAfter, err)
+			return false
+		}
+	}
+	at := email.RetryAt(err, now.Add(15*time.Minute))
+	if derr := store.DeferCampaignSend(ctx, db.DeferCampaignSendParams{SendAfter: sql.NullString{String: at.UTC().Format(time.DateTime), Valid: true}, RefusedAt: refused, ID: id}); derr != nil {
+		logx.Errorf("Failed to defer send %s: %v", id, derr)
+	}
+	return true
+}
+
+// markSendSent marks a campaign send as sent with the subject it went with
+func (s *CampaignScheduler) markSendSent(id, subject string) {
+	if err := s.store.MarkCampaignSendSent(s.ctx, db.MarkCampaignSendSentParams{ID: id, Subject: sql.NullString{String: subject, Valid: true}}); err != nil {
 		logx.Errorf("Failed to mark send %s as sent: %v", id, err)
 	}
 }

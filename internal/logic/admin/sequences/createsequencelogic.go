@@ -48,6 +48,12 @@ func (l *CreateSequenceLogic) CreateSequence(req *types.CreateSequenceRequest) (
 		listIDInt64, _ = strconv.ParseInt(req.ListId, 10, 64)
 	}
 
+	// A new sequence starts active unless the request says otherwise.
+	active := int64(1)
+	if req.IsActive != nil && !*req.IsActive {
+		active = 0
+	}
+
 	sequence, err := l.svcCtx.DB.CreateSequence(l.ctx, db.CreateSequenceParams{
 		ID:           uuid.New().String(),
 		OrgID:        sql.NullString{String: orgID, Valid: true},
@@ -55,7 +61,7 @@ func (l *CreateSequenceLogic) CreateSequence(req *types.CreateSequenceRequest) (
 		Slug:         req.Slug,
 		Name:         req.Name,
 		TriggerEvent: req.TriggerEvent,
-		IsActive:     sql.NullInt64{Int64: 1, Valid: true},
+		IsActive:     sql.NullInt64{Int64: active, Valid: true},
 		SequenceType: sequenceType,
 	})
 	if err != nil {

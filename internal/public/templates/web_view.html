@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/favicon.png">
     <title>{{.Subject}} | {{.OrgName}}</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -60,16 +61,11 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             overflow: hidden;
         }
-        .email-body {
-            padding: 24px;
-        }
-        /* Reset styles for email content */
-        .email-body img {
-            max-width: 100%;
-            height: auto;
-        }
-        .email-body a {
-            color: #0066ff;
+        .email-frame {
+            display: block;
+            width: 100%;
+            height: calc(100vh - 120px);
+            border: 0;
         }
     </style>
 </head>
@@ -87,9 +83,7 @@
     </div>
 
     <div class="email-content">
-        <div class="email-body">
-            {{.HTMLBody}}
-        </div>
+        <iframe class="email-frame" title="{{.Subject}}" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc="{{.EmailDoc}}"></iframe>
     </div>
 </body>
 </html>

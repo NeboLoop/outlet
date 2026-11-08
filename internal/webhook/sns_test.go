@@ -64,7 +64,9 @@ func TestMain(m *testing.M) {
 		}
 		return testCert, nil
 	}
-	snsAccount = func(context.Context, *svc.ServiceContext, string) (string, error) { return testAccount, nil }
+	snsAccounts = func(context.Context, *svc.ServiceContext, string) ([]string, error) {
+		return []string{testAccount}, nil
+	}
 	snsConfirm = func(string) error { return fmt.Errorf("no confirmation expected") }
 	os.Exit(m.Run())
 }

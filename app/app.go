@@ -40,41 +40,6 @@ func SetServerHost(host string, port int, useHTTPS bool) {
 	fmt.Printf("Server Host set to: %s\n", ServerHost)
 }
 
-// NotFoundHandler serves index.html for SPA routing
-func NotFoundHandler(spaFS fs.FS) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// if the route is an /api route, return a 404
-		if strings.HasPrefix(r.URL.Path, "/api") {
-			http.Error(w, "Not Found", http.StatusNotFound)
-			return
-		}
-
-		// If requesting a static asset (has file extension), return 404
-		// This prevents index.html from being served for missing CSS/JS/images
-		path := r.URL.Path
-		if strings.Contains(path, ".") && !strings.HasSuffix(path, "/") {
-			// Has a file extension - this is likely a static asset
-			// If we're here, it means the file doesn't exist
-			http.Error(w, "Not Found", http.StatusNotFound)
-			return
-		}
-
-		// Serve index.html for SPA routing
-		file, err := spaFS.Open("index.html")
-		if err != nil {
-			http.Error(w, "Not Found", http.StatusNotFound)
-			return
-		}
-		defer file.Close()
-
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-
-		// Copy file content to response
-		io.Copy(w, file)
-	})
-}
-
 // SPAHandler returns a handler that serves static files with SPA fallback
 // Uses http.FileServer for regular files and http.ServeContent for index.html
 // to avoid directory redirects while maintaining proper HTTP semantics
@@ -101,6 +66,14 @@ func SPAHandler(spaFS fs.FS) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// An unknown API path is a 404, never the app page: API clients must
+		// not get HTML back.
+		for _, prefix := range []string{"/api/", "/sdk/", "/mcp", "/webhooks/", "/network/"} {
+			if strings.HasPrefix(r.URL.Path, prefix) {
+				http.Error(w, "Not Found", http.StatusNotFound)
+				return
+			}
+		}
 		path := strings.TrimPrefix(r.URL.Path, "/")
 		if path == "" {
 			path = "index.html"

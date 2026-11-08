@@ -4,10 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/middleware"
+	webhooksvc "github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -38,9 +38,12 @@ func (l *UpdateWebhookLogic) UpdateWebhook(req *types.UpdateWebhookRequest) (res
 		return nil, fmt.Errorf("invalid webhook ID")
 	}
 
-	events := req.Events
-	if events == nil {
-		events = []string{}
+	// No events keeps the webhook's current ones
+	events := ""
+	if len(req.Events) > 0 {
+		if events, err = webhooksvc.EncodeEvents(req.Events); err != nil {
+			return nil, err
+		}
 	}
 
 	active := int64(0)
@@ -52,7 +55,7 @@ func (l *UpdateWebhookLogic) UpdateWebhook(req *types.UpdateWebhookRequest) (res
 		ID:     req.Id,
 		OrgID:  orgID,
 		Url:    req.Url,
-		Events: strings.Join(events, ","),
+		Events: events,
 		Active: sql.NullInt64{Int64: active, Valid: true},
 	})
 	if err != nil {
@@ -66,7 +69,7 @@ func (l *UpdateWebhookLogic) UpdateWebhook(req *types.UpdateWebhookRequest) (res
 	info := &types.WebhookInfo{
 		Id:                webhook.ID,
 		Url:               webhook.Url,
-		Events:            strings.Split(webhook.Events, ","),
+		Events:            webhooksvc.DecodeEvents(webhook.Events),
 		Active:            webhook.Active.Valid && webhook.Active.Int64 == 1,
 		CreatedAt:         webhook.CreatedAt.String,
 		DeliveriesTotal:   int(webhook.DeliveriesTotal.Int64),

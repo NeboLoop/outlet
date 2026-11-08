@@ -28,6 +28,8 @@
 	let noClicksDays = $state(180);
 	let inactiveLoading = $state(false);
 	let inactiveResult = $state<HousekeepingResponse | null>(null);
+	// The windows the preview counted: the delete removes exactly those.
+	let previewedWindows = $state<{ no_opens_days: number; no_clicks_days: number } | null>(null);
 
 	// Unconfirmed cleanup state
 	let unconfirmedDays = $state(30);
@@ -41,34 +43,36 @@
 	let showInactiveConfirm = $state(false);
 	let showUnconfirmedConfirm = $state(false);
 
+	// A changed window makes the preview stale: preview again before deleting.
+	function clearInactivePreview() {
+		inactiveResult = null;
+		previewedWindows = null;
+	}
+
 	async function previewInactive() {
 		inactiveLoading = true;
 		error = '';
-		inactiveResult = null;
+		clearInactivePreview();
+		const windows = { no_opens_days: noOpensDays, no_clicks_days: noClicksDays };
 		try {
-			inactiveResult = await housekeepingInactive({
-				no_opens_days: noOpensDays,
-				no_clicks_days: noClicksDays,
-				dry_run: true
-			});
-		} catch (err: any) {
-			error = err.message || 'Failed to preview inactive contacts';
+			inactiveResult = await housekeepingInactive({ ...windows, dry_run: true });
+			previewedWindows = windows;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to preview inactive contacts';
 		} finally {
 			inactiveLoading = false;
 		}
 	}
 
 	async function executeInactive() {
+		if (!previewedWindows) return;
 		inactiveLoading = true;
 		error = '';
 		try {
-			inactiveResult = await housekeepingInactive({
-				no_opens_days: noOpensDays,
-				no_clicks_days: noClicksDays,
-				dry_run: false
-			});
-		} catch (err: any) {
-			error = err.message || 'Failed to delete inactive contacts';
+			inactiveResult = await housekeepingInactive({ ...previewedWindows, dry_run: false });
+			previewedWindows = null;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to delete inactive contacts';
 		} finally {
 			inactiveLoading = false;
 		}
@@ -135,7 +139,7 @@
 				<div class="flex-1">
 					<h2 class="text-lg font-medium text-text">Inactive Contacts</h2>
 					<p class="mt-1 text-sm text-text-muted">
-						Remove contacts who haven't opened or clicked any emails in a long time. This helps improve your deliverability and open rates.
+						Remove subscribers (added, imported or confirmed, and still subscribed) who haven't opened any email in the first window and haven't clicked any in the second: campaigns, sequences, outreach and transactional emails all count. Contacts newer than either window are kept. This helps improve your deliverability and open rates.
 					</p>
 
 					<div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -145,6 +149,7 @@
 								id="no-opens"
 								type="number"
 								bind:value={noOpensDays}
+								oninput={clearInactivePreview}
 								min={30}
 								max={365}
 								class="input input-bordered w-full"
@@ -156,6 +161,7 @@
 								id="no-clicks"
 								type="number"
 								bind:value={noClicksDays}
+								oninput={clearInactivePreview}
 								min={30}
 								max={365}
 								class="input input-bordered w-full"
@@ -225,7 +231,7 @@
 				<div class="flex-1">
 					<h2 class="text-lg font-medium text-text">Unconfirmed Subscriptions</h2>
 					<p class="mt-1 text-sm text-text-muted">
-						Remove pending subscriptions from contacts who never confirmed their email. This cleans up contacts who signed up but didn't complete double opt-in.
+						Remove contacts who signed up on a double opt-in list and never confirmed, waiting longer than the days below. Anyone on a list as a subscriber, or found for outreach, is kept.
 					</p>
 
 					<div class="mt-4 max-w-xs">

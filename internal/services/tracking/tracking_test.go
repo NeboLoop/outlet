@@ -62,14 +62,14 @@ func (m *mockQueries) CancelEmailsForContact(ctx context.Context, contactID sql.
 }
 
 func TestNew(t *testing.T) {
-	svc := New(nil)
+	svc := New(nil, nil)
 	if svc == nil {
 		t.Error("New should return a non-nil service")
 	}
 }
 
 func TestRecordOpen_EmptyToken(t *testing.T) {
-	svc := New(nil)
+	svc := New(nil, nil)
 	err := svc.RecordOpen(context.Background(), "")
 	if err != ErrInvalidToken {
 		t.Errorf("Expected ErrInvalidToken, got %v", err)
@@ -100,15 +100,15 @@ func TestRecordOpen_TokenNotFound(t *testing.T) {
 }
 
 func TestRecordClick_EmptyToken(t *testing.T) {
-	svc := New(nil)
-	err := svc.RecordClick(context.Background(), "")
+	svc := New(nil, nil)
+	err := svc.RecordClick(context.Background(), "", "")
 	if err != ErrInvalidToken {
 		t.Errorf("Expected ErrInvalidToken, got %v", err)
 	}
 }
 
 func TestUnsubscribe_EmptyToken(t *testing.T) {
-	svc := New(nil)
+	svc := New(nil, nil)
 	err := svc.Unsubscribe(context.Background(), "")
 	if err != ErrInvalidToken {
 		t.Errorf("Expected ErrInvalidToken, got %v", err)
@@ -296,7 +296,7 @@ func TestTokenValidation(t *testing.T) {
 		{"special chars", "token-with-dashes_and_underscores", nil},
 	}
 
-	svc := New(nil)
+	svc := New(nil, nil)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// We can only test empty token without a real DB

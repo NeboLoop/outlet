@@ -60,25 +60,28 @@ func (l *CreateDomainIdentityLogic) CreateDomainIdentity(req *types.CreateDomain
 		Domain: domain,
 	})
 	if err == nil && existing.ID != "" {
+		if existing.Purpose == "outreach" {
+			return nil, errorx.NewBadRequestError(domain + " is one of this brand's outreach domains; outreach domains never send through SES.")
+		}
 		return nil, errorx.NewBadRequestError("Domain identity already exists for this domain")
 	}
 	if err := email.ClaimDomain(l.ctx, l.svcCtx.DB, req.OrgId, domain); err != nil {
 		return nil, err
 	}
 
-	// Get AWS credentials from platform settings
-	region, accessKey, secretKey, err := getAWSCredentials(l.ctx, l.svcCtx)
+	// The domain joins one of the brand's sending pathways, and is verified
+	// with that pathway's AWS account: an ses pathway's own, or the
+	// platform's.
+	pathway, err := l.svcCtx.EmailService.DomainPathway(l.ctx, req.OrgId, "sending", req.PathwayId)
 	if err != nil {
 		return nil, err
 	}
-
-	// Get email config for org-specific AWS credentials
-	emailConfig, err := email.GetOrgEmailConfig(l.ctx, l.svcCtx.DB, req.OrgId)
-	if err == nil && emailConfig.HasOwnAWSCredentials() {
-		// Use org's own credentials
-		region = emailConfig.AWSRegion
-		accessKey = emailConfig.AWSAccessKey
-		secretKey = emailConfig.AWSSecretKey
+	region, accessKey, secretKey, awsErr := email.AWSCredentials(l.ctx, l.svcCtx.DB, l.svcCtx.CryptoService, req.OrgId, pathway.ID)
+	if awsErr != nil {
+		// No SES: mail goes through an SMTP server (the platform's or the
+		// pathway's own), which signs it with its own SPF and DKIM. The
+		// domain is recorded so the brand may send from it; SES never sees it.
+		return l.recordSMTPDomain(req.OrgId, pathway.ID, domain)
 	}
 
 	// Determine MAIL FROM subdomain (default to "mail" if not specified)
@@ -122,6 +125,7 @@ func (l *CreateDomainIdentityLogic) CreateDomainIdentity(req *types.CreateDomain
 		DkimTokens:         sql.NullString{String: string(dkimTokensJSON), Valid: true},
 		DnsRecords:         sql.NullString{String: dnsRecordsJSON, Valid: true},
 		MailFromDomain:     sql.NullString{String: mailFromDomain, Valid: true},
+		PathwayID:          sql.NullString{String: pathway.ID, Valid: true},
 	})
 	if err != nil {
 		l.Errorf("Failed to create domain identity record: %v", err)
@@ -153,47 +157,23 @@ func (l *CreateDomainIdentityLogic) CreateDomainIdentity(req *types.CreateDomain
 	}, nil
 }
 
-// getAWSCredentials retrieves AWS credentials from platform settings
-func getAWSCredentials(ctx context.Context, svcCtx *svc.ServiceContext) (region, accessKey, secretKey string, err error) {
-	awsSettings, err := svcCtx.DB.GetPlatformSettingsByCategory(ctx, "aws")
+// recordSMTPDomain adds a sending domain on a server that sends through SMTP
+// rather than SES. There is nothing for SES to verify, so it is ready at once.
+func (l *CreateDomainIdentityLogic) recordSMTPDomain(orgID, pathwayID, domain string) (*types.DomainIdentityInfo, error) {
+	identity, err := l.svcCtx.DB.CreateDomainIdentity(l.ctx, db.CreateDomainIdentityParams{
+		ID: uuid.New().String(), OrgID: orgID, Domain: domain, PathwayID: sql.NullString{String: pathwayID, Valid: true},
+		VerificationStatus: sql.NullString{String: "success", Valid: true},
+		DkimStatus:         sql.NullString{String: "success", Valid: true},
+		DkimTokens:         sql.NullString{String: "[]", Valid: true},
+		DnsRecords:         sql.NullString{String: "[]", Valid: true},
+	})
 	if err != nil {
-		return "", "", "", errorx.NewInternalError("failed to retrieve AWS settings")
+		l.Errorf("Failed to create domain identity record: %v", err)
+		return nil, errorx.NewInternalError("Failed to save domain identity")
 	}
-
-	region = "us-east-1" // default
-
-	for _, setting := range awsSettings {
-		switch setting.Key {
-		case "aws_access_key":
-			if setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "" {
-				if svcCtx.CryptoService != nil {
-					decrypted, decErr := svcCtx.CryptoService.DecryptString([]byte(setting.ValueEncrypted.String))
-					if decErr != nil {
-						return "", "", "", errorx.NewInternalError("failed to decrypt AWS credentials")
-					}
-					accessKey = decrypted
-				}
-			}
-		case "aws_secret_key":
-			if setting.ValueEncrypted.Valid && setting.ValueEncrypted.String != "" {
-				if svcCtx.CryptoService != nil {
-					decrypted, decErr := svcCtx.CryptoService.DecryptString([]byte(setting.ValueEncrypted.String))
-					if decErr != nil {
-						return "", "", "", errorx.NewInternalError("failed to decrypt AWS credentials")
-					}
-					secretKey = decrypted
-				}
-			}
-		case "aws_region":
-			if setting.ValueText.Valid && setting.ValueText.String != "" {
-				region = setting.ValueText.String
-			}
-		}
-	}
-
-	if accessKey == "" || secretKey == "" {
-		return "", "", "", errorx.NewBadRequestError("AWS credentials not configured. Please configure AWS SES in settings.")
-	}
-
-	return region, accessKey, secretKey, nil
+	return &types.DomainIdentityInfo{
+		Id: identity.ID, OrgId: identity.OrgID, Domain: identity.Domain,
+		VerificationStatus: "success", DKIMStatus: "success", MailFromStatus: "not_started",
+		DNSRecords: []types.DNSRecord{}, CreatedAt: identity.CreatedAt.String,
+	}, nil
 }

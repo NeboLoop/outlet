@@ -36,7 +36,7 @@ func NewRegisterLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Register
 // invitedPlatformRole is the platform role (users.role) of a person who joins
 // by invitation. Only super_admin means anything there; what a person may do
 // in a brand is their role in org_users, which the invitation sets.
-const invitedPlatformRole = "agent"
+const invitedPlatformRole = access.PlatformUser
 
 // Register creates an account from an invitation. Outlet is invite-only: the
 // invitation decides the email, the brand and the role, and works once.

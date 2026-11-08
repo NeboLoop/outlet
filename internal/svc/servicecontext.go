@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/outlet-sh/outlet/internal/config"
 	"github.com/outlet-sh/outlet/internal/db"
@@ -14,7 +16,10 @@ import (
 	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/services/crypto"
 	"github.com/outlet-sh/outlet/internal/services/email"
+	"github.com/outlet-sh/outlet/internal/services/outbound"
+	"github.com/outlet-sh/outlet/internal/services/signalnet"
 	"github.com/outlet-sh/outlet/internal/services/tracking"
+	"github.com/outlet-sh/outlet/internal/services/validation"
 	"github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/websocket"
 
@@ -30,11 +35,24 @@ type ServiceContext struct {
 	APIKeyMiddleware  *middleware.APIKeyMiddleware
 	AuthRateLimit     rest.Middleware
 	EmailService      *email.Service
+	Sequences         *email.SequenceService
 	CryptoService     *crypto.Service
 	Tracking          *tracking.Service
 	Events            *events.Subject
 	WebhookDispatcher *webhook.Dispatcher
 	WebSocketHub      *websocket.Hub
+	Outbound          *outbound.Service
+
+	// Signal Network hub (nil unless SignalNet.Hub is true; its routes then 404)
+	NetworkHub  *signalnet.Hub
+	NetworkAuth rest.Middleware
+	// Email validation
+	SignalNet  *signalnet.Client // nil when Signal Network is not configured
+	Validation *validation.Service
+
+	// UploadDir holds uploaded files waiting for a worker (CSV imports), next
+	// to the database
+	UploadDir string
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -66,16 +84,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 
 	log.Printf("SQLite database connected: %s", dbPath)
 
-	// Run database migrations (non-destructive - only applies pending migrations)
-	log.Printf("Running database migrations...")
-	if err := migrations.Run(conn); err != nil {
-		log.Fatalf("Failed to run database migrations: %v", err)
-	}
-	log.Printf("Database migrations completed")
-
-	// Create database store
-	store := db.NewStore(conn)
-
 	// Initialize Crypto service for credential encryption (must be before email service)
 	var cryptoService *crypto.Service
 	if c.Encryption.Key != "" {
@@ -90,14 +98,27 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		log.Printf("Warning: ENCRYPTION_KEY not set - credential storage (Stripe, AI keys) will be disabled")
 	}
 
+	// Run database migrations (non-destructive - only applies pending
+	// migrations). A migration that moves credentials encrypts them.
+	log.Printf("Running database migrations...")
+	var cipher migrations.Cipher
+	if cryptoService != nil {
+		cipher = cryptoService
+	}
+	if err := migrations.Run(conn, cipher); err != nil {
+		log.Fatalf("Failed to run database migrations: %v", err)
+	}
+	log.Printf("Database migrations completed")
+
+	// Create database store
+	store := db.NewStore(conn)
+
 	// Initialize Email service (AWS SES preferred, SMTP fallback - config from platform_settings)
 	emailService := email.NewService(store, cryptoService)
+	emailService.SetLinkSecret(c.Auth.AccessSecret)
 	if c.App.BaseURL != "" {
 		emailService.SetBaseURL(c.App.BaseURL)
 	}
-
-	// Initialize Tracking service
-	trackingService := tracking.New(store.Queries)
 
 	// Initialize rate limit middleware for auth endpoints
 	authRateLimiter := middleware.NewRateLimitMiddleware(middleware.DefaultAuthRateLimitConfig())
@@ -111,9 +132,14 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		events.WithReplay(100),
 	)
 	log.Printf("Event bus initialized")
+	// The store publishes contact and email events from the writes that make them
+	store.SetEvents(eventSubject)
+
+	// Initialize Tracking service (publishes opens and clicks on the event bus)
+	trackingService := tracking.New(store, eventSubject)
 
 	// Initialize and start Webhook Dispatcher for outbound webhook delivery
-	webhookDispatcher := webhook.NewDispatcher(store.Queries, eventSubject)
+	webhookDispatcher := webhook.NewDispatcher(store.Queries, eventSubject, webhook.DefaultRetryConfig())
 	if err := webhookDispatcher.Start(context.Background()); err != nil {
 		log.Printf("Warning: Failed to start webhook dispatcher: %v", err)
 	} else {
@@ -125,18 +151,67 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	go wsHub.Run()
 	log.Printf("WebSocket hub initialized")
 
+	var networkHub *signalnet.Hub
+	if c.SignalNet.Hub {
+		networkHub = signalnet.NewHub(store)
+		log.Printf("Signal Network hub enabled at /network/v1")
+	}
+	// Email validation, with the Signal Network client when a hub is configured
+	var signalNet *signalnet.Client
+	if c.SignalNet.HubURL != "" {
+		signalNet = &signalnet.Client{HubURL: c.SignalNet.HubURL, InstanceKey: c.SignalNet.InstanceKey}
+	}
+	validationService := validation.New(store, c.Validation, signalNet)
+	sequences := email.NewSequenceServiceWithBaseURL(store, emailService, c.App.BaseURL)
+	// A new tag starts the sequences whose entry rules wait on it
+	store.OnTagAdded(sequences.TagAdded)
+	// Every way a subscription becomes active starts the list's sign-up emails
+	store.OnSubscriptionActivated(sequences.SubscriptionActivated)
+
 	return &ServiceContext{
 		Config:            c,
 		DB:                store,
+		UploadDir:         filepath.Join(dbDir, "uploads"),
 		Auth:              middleware.NewAuthMiddleware(c.Auth.AccessSecret, store).Handle,
 		APIKeyAuth:        apiKeyMiddleware.Handle,
 		APIKeyMiddleware:  apiKeyMiddleware,
 		AuthRateLimit:     authRateLimiter.Handle,
 		EmailService:      emailService,
+		Sequences:         sequences,
 		CryptoService:     cryptoService,
 		Tracking:          trackingService,
 		Events:            eventSubject,
 		WebhookDispatcher: webhookDispatcher,
 		WebSocketHub:      wsHub,
+		Outbound: outbound.New(store, cryptoService, outbound.Config{
+			ProtectedDomains: strings.Split(c.Outbound.ProtectedDomains, ","),
+			TrackingTarget:   publicHost(c.App.BaseURL),
+			Mailer:           emailService,
+			Sequences:        sequences,
+			Verify: func(ctx context.Context, orgID, address string) (bool, string) {
+				res, err := validationService.Validate(ctx, orgID, address, "outbound")
+				if err != nil {
+					return false, err.Error()
+				}
+				// Only a confirmed address is sent to; catch-all and unknown are held.
+				if res.Status != "valid" {
+					return false, strings.TrimSpace(res.Status + " " + res.SubStatus)
+				}
+				return true, "valid"
+			},
+		}),
+		NetworkHub:  networkHub,
+		NetworkAuth: middleware.NewNetworkAuthMiddleware(networkHub).Handle,
+		SignalNet:   signalNet,
+		Validation:  validationService,
 	}
+}
+
+// publicHost is the host of the server's public URL.
+func publicHost(baseURL string) string {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }

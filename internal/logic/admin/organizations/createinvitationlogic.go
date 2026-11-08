@@ -14,6 +14,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
+	emailsvc "github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -106,7 +107,7 @@ func (l *CreateInvitationLogic) CreateInvitation(req *types.CreateInvitationRequ
 </html>`, html.EscapeString(brand.Name), role, inviteURL, action)
 
 	emailSent := true
-	if err := l.svcCtx.EmailService.SendEmail(l.ctx, email, subject, body); err != nil {
+	if err := l.svcCtx.EmailService.Send(l.ctx, emailsvc.Message{To: email, Subject: subject, HTML: body}); err != nil {
 		l.Errorf("Invitation email to %s failed: %v", email, err)
 		emailSent = false
 	}

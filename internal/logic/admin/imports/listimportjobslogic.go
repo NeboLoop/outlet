@@ -2,7 +2,6 @@ package imports
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
@@ -54,28 +53,7 @@ func (l *ListImportJobsLogic) ListImportJobs(req *types.ListImportJobsRequest) (
 
 	var jobInfos []types.ImportJobInfo
 	for _, job := range jobs {
-		listID := ""
-		if job.ListID.Valid {
-			listID = strconv.FormatInt(job.ListID.Int64, 10)
-		}
-
-		status := "pending"
-		if job.Status.Valid {
-			status = job.Status.String
-		}
-
-		jobInfos = append(jobInfos, types.ImportJobInfo{
-			Id:            job.ID,
-			OrgId:         job.OrgID,
-			ListId:        listID,
-			Type:          job.Type,
-			Status:        status,
-			Filename:      job.Filename,
-			TotalRows:     int(job.TotalRows.Int64),
-			ProcessedRows: int(job.ProcessedRows.Int64),
-			SuccessCount:  int(job.SuccessCount.Int64),
-			ErrorCount:    int(job.ErrorCount.Int64),
-		})
+		jobInfos = append(jobInfos, jobInfo(job))
 	}
 
 	return &types.ListImportJobsResponse{

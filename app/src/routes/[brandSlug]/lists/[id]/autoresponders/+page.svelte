@@ -95,7 +95,8 @@
 				slug: newSeqSlug,
 				list_id: listId,
 				trigger_event: newSeqTrigger,
-				sequence_type: 'lifecycle'
+				sequence_type: 'lifecycle',
+				is_active: newSeqActive
 			});
 			showCreateSequence = false;
 			await loadSequences();

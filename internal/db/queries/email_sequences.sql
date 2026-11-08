@@ -13,6 +13,13 @@ SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, sen
 FROM email_sequences
 WHERE list_id = sqlc.arg(list_id) AND trigger_event = sqlc.arg(trigger_event) AND is_active = 1;
 
+-- name: ListActiveSequencesByListAndTrigger :many
+-- Every active sequence of a list that this trigger starts, oldest first.
+SELECT id, slug
+FROM email_sequences
+WHERE list_id = sqlc.arg(list_id) AND trigger_event = sqlc.arg(trigger_event) AND is_active = 1
+ORDER BY created_at, id;
+
 -- name: ListSequencesByList :many
 SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, on_completion_sequence_id, created_at
 FROM email_sequences
@@ -41,8 +48,10 @@ LEFT JOIN email_sequences ocs ON ocs.id = es.on_completion_sequence_id
 ORDER BY es.created_at;
 
 -- name: CreateSequence :one
-INSERT INTO email_sequences (id, org_id, list_id, slug, name, trigger_event, is_active, sequence_type, created_at)
-VALUES (sqlc.arg(id), sqlc.arg(org_id), sqlc.arg(list_id), sqlc.arg(slug), sqlc.arg(name), sqlc.arg(trigger_event), sqlc.arg(is_active), COALESCE(sqlc.arg(sequence_type), 'lifecycle'), datetime('now'))
+-- A new sequence sends each email its delay after the contact joins (no
+-- fixed send hour), as the app shows; a send hour is set with UpdateSequence.
+INSERT INTO email_sequences (id, org_id, list_id, slug, name, trigger_event, is_active, sequence_type, send_hour, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(org_id), sqlc.arg(list_id), sqlc.arg(slug), sqlc.arg(name), sqlc.arg(trigger_event), sqlc.arg(is_active), COALESCE(sqlc.arg(sequence_type), 'lifecycle'), NULL, datetime('now'))
 RETURNING *;
 
 -- name: UpdateSequence :exec
@@ -92,20 +101,49 @@ INSERT INTO email_queue (id, contact_id, template_id, scheduled_for, status, tra
 VALUES (sqlc.arg(id), sqlc.arg(contact_id), sqlc.arg(template_id), sqlc.arg(scheduled_for), 'pending', sqlc.arg(tracking_token), datetime('now'))
 RETURNING *;
 
+-- name: ClaimPendingEmails :exec
+-- Claims up to limit_count due sequence emails. Skips unsubscribed or blocked
+-- contacts, paused or stopped sequences, and contacts who left the list.
+UPDATE email_queue
+SET claim_token = sqlc.arg(claim_token), claimed_at = datetime('now')
+WHERE id IN (
+    SELECT eq.id
+    FROM email_queue eq
+    JOIN email_templates et ON et.id = eq.template_id
+    JOIN contacts c ON c.id = eq.contact_id
+    LEFT JOIN email_sequences es ON es.id = et.sequence_id
+    LEFT JOIN contact_sequence_state css ON css.contact_id = eq.contact_id AND css.sequence_id = es.id
+    WHERE eq.status = 'pending' AND eq.kind = 'marketing' AND eq.scheduled_for <= sqlc.arg(scheduled_before)
+      AND (eq.claimed_at IS NULL OR eq.claimed_at < datetime('now', '-15 minutes'))
+      AND c.unsubscribed_at IS NULL AND c.blocked_at IS NULL
+      AND (css.id IS NULL OR css.is_active = 1)
+      AND NOT EXISTS (
+          SELECT 1 FROM list_subscribers ls
+          WHERE ls.list_id = es.list_id AND ls.contact_id = eq.contact_id AND ls.status = 'unsubscribed'
+      )
+    ORDER BY eq.scheduled_for
+    LIMIT sqlc.arg(limit_count)
+);
+
 -- name: GetPendingEmails :many
+-- Returns the sequence emails claimed with claim_token.
 SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.status, eq.tracking_token,
        et.subject, et.html_body, et.template_type, et.is_transactional,
-       c.email, c.name
+       c.email, c.name,
+       CAST(COALESCE(es.org_id, c.org_id, '') AS TEXT) AS org_id,
+       CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
-WHERE eq.status = 'pending' AND eq.scheduled_for <= sqlc.arg(scheduled_before) AND c.unsubscribed_at IS NULL
-ORDER BY eq.scheduled_for
-LIMIT sqlc.arg(limit_count);
+LEFT JOIN email_sequences es ON es.id = et.sequence_id
+LEFT JOIN email_designs d ON d.id = et.design_id AND d.org_id = COALESCE(es.org_id, c.org_id)
+WHERE eq.status = 'pending' AND eq.claim_token = sqlc.arg(claim_token)
+ORDER BY eq.scheduled_for;
 
 -- name: MarkEmailSent :exec
+-- subject is the subject the person got, its merge tags filled.
 UPDATE email_queue
-SET status = 'sent', sent_at = datetime('now')
+SET status = 'sent', sent_at = datetime('now'), subject = sqlc.arg(subject)
 WHERE id = sqlc.arg(id);
 
 -- name: MarkEmailFailed :exec
@@ -217,16 +255,6 @@ SELECT
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 WHERE et.sequence_id = sqlc.arg(sequence_id);
-
--- name: GetEmailStatsInDateRange :one
-SELECT
-    SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) as sent_count,
-    SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened_count,
-    SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked_count,
-    COALESCE(SUM(open_count), 0) as total_opens,
-    COALESCE(SUM(click_count), 0) as total_clicks
-FROM email_queue
-WHERE sent_at >= sqlc.arg(start_date) AND sent_at <= sqlc.arg(end_date);
 
 -- name: GetEmailStatsForTemplate :one
 SELECT

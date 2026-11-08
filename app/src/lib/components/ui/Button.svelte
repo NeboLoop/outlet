@@ -80,7 +80,10 @@
 		{@render children()}
 	</a>
 {:else}
-	<button class={className} type={htmlType} {disabled} {onclick} {title}>
+	<button class={className} type={htmlType} {disabled} {onclick} {title} aria-busy={loading || undefined}>
+		{#if loading}
+			<span class="loading loading-spinner loading-sm" aria-hidden="true"></span>
+		{/if}
 		{@render children()}
 	</button>
 {/if}

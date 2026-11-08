@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	interface Column {
 		key: string;
 		label: string;
@@ -102,7 +103,7 @@
 			case 'number':
 				return new Intl.NumberFormat('en-US').format(value);
 			case 'date':
-				return new Date(value).toLocaleDateString();
+				return formatDate(String(value));
 			default:
 				return String(value);
 		}

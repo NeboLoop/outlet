@@ -6,6 +6,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/logic/admin/designs"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -39,19 +40,34 @@ func (l *UpdateTransactionalEmailLogic) UpdateTransactionalEmail(req *types.Upda
 		isActive = sql.NullInt64{Int64: 0, Valid: true}
 	}
 
+	// Without design_id the template keeps its design; "" removes it.
+	var setDesign int64
+	var designID sql.NullInt64
+	if req.DesignId != nil {
+		design, err := designs.BrandDesign(l.ctx, l.svcCtx.DB, orgID, *req.DesignId)
+		if err != nil {
+			return nil, err
+		}
+		setDesign, designID = 1, designs.DesignColumn(design)
+	}
+
 	email, err := l.svcCtx.DB.UpdateTransactionalEmail(l.ctx, db.UpdateTransactionalEmailParams{
-		ID:          req.Id,
-		OrgID:       orgID,
-		Name:        sql.NullString{String: req.Name, Valid: req.Name != ""},
-		Slug:        sql.NullString{String: req.Slug, Valid: req.Slug != ""},
-		Description: sql.NullString{String: req.Description, Valid: req.Description != ""},
-		Subject:     sql.NullString{String: req.Subject, Valid: req.Subject != ""},
-		HtmlBody:    sql.NullString{String: req.HtmlBody, Valid: req.HtmlBody != ""},
-		PlainText:   sql.NullString{String: req.PlainText, Valid: req.PlainText != ""},
-		FromName:    sql.NullString{String: req.FromName, Valid: req.FromName != ""},
-		FromEmail:   sql.NullString{String: req.FromEmail, Valid: req.FromEmail != ""},
-		ReplyTo:     sql.NullString{String: req.ReplyTo, Valid: req.ReplyTo != ""},
+		ID:       req.Id,
+		OrgID:    orgID,
+		Name:     sql.NullString{String: req.Name, Valid: req.Name != ""},
+		Slug:     sql.NullString{String: req.Slug, Valid: req.Slug != ""},
+		Subject:  sql.NullString{String: req.Subject, Valid: req.Subject != ""},
+		HtmlBody: sql.NullString{String: req.HtmlBody, Valid: req.HtmlBody != ""},
+		// The admin editor always sends the whole template, so an empty
+		// optional field means "clear it"
+		Description: sql.NullString{String: req.Description, Valid: true},
+		PlainText:   sql.NullString{String: req.PlainText, Valid: true},
+		FromName:    sql.NullString{String: req.FromName, Valid: true},
+		FromEmail:   sql.NullString{String: req.FromEmail, Valid: true},
+		ReplyTo:     sql.NullString{String: req.ReplyTo, Valid: true},
 		IsActive:    isActive,
+		SetDesign:   setDesign,
+		DesignID:    designID,
 	})
 	if err != nil {
 		l.Errorf("Failed to update transactional email: %v", err)

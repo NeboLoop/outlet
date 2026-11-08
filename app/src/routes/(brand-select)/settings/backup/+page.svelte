@@ -1,7 +1,7 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import * as api from '$lib/api';
 	import type { BackupInfo, BackupSettingsResponse } from '$lib/api';
-	import { getToken } from '$lib/auth';
 	import { Button, Card, Input, Alert, LoadingSpinner, Badge, SaveButton, Toggle, AlertDialog } from '$lib/components/ui';
 	import { Plus, Download, Trash2, RefreshCw, HardDrive, Cloud, Copy, ExternalLink, CheckCircle, Pencil } from '@lucide/svelte';
 	import { getWebSocketClient } from '$lib/websocket/client';
@@ -185,38 +185,11 @@
 	}
 
 	async function downloadBackup(backup: BackupInfo) {
+		error = '';
 		try {
-			const token = getToken();
-			if (!token) {
-				throw new Error('Not authenticated');
-			}
-
-			// Fetch with auth headers
-			const response = await fetch(`/api/admin/backup/${backup.id}/download`, {
-				method: 'GET',
-				headers: {
-					'Authorization': `Bearer ${token}`
-				}
-			});
-
-			if (!response.ok) {
-				const errData = await response.json().catch(() => null);
-				throw new Error(errData?.error || `Download failed: ${response.status}`);
-			}
-
-			// Create blob and trigger download
-			const blob = await response.blob();
-			const url = window.URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = backup.filename;
-			document.body.appendChild(a);
-			a.click();
-			window.URL.revokeObjectURL(url);
-			document.body.removeChild(a);
-		} catch (err: any) {
-			console.error('Download failed:', err);
-			error = err.message || 'Failed to download backup';
+			await api.downloadBackup(backup.id, backup.filename);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to download backup';
 		}
 	}
 
@@ -228,10 +201,6 @@
 		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 	}
 
-	function formatDate(dateStr: string): string {
-		if (!dateStr) return '-';
-		return new Date(dateStr).toLocaleString();
-	}
 </script>
 
 <svelte:head>
@@ -327,7 +296,7 @@
 											<Badge type="secondary">{backup.status}</Badge>
 										{/if}
 									</td>
-									<td class="py-2 px-3 text-sm text-text-muted">{formatDate(backup.started_at)}</td>
+									<td class="py-2 px-3 text-sm text-text-muted">{formatDate(backup.started_at, 'datetime') || '-'}</td>
 									<td class="py-2 px-3 text-right">
 										<div class="flex items-center justify-end gap-1">
 											{#if backup.status === 'completed'}
@@ -503,7 +472,7 @@
 					</div>
 					{#if settings?.last_backup_at}
 						<p class="text-sm text-text-muted">
-							Last backup: {formatDate(settings.last_backup_at)}
+							Last backup: {formatDate(settings.last_backup_at, 'datetime') || '-'}
 						</p>
 					{/if}
 				{/if}

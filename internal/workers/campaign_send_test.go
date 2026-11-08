@@ -3,14 +3,17 @@ package workers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/db/migrations"
 	"github.com/outlet-sh/outlet/internal/logic/admin/campaigns"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -26,7 +29,7 @@ func TestProcessCampaign_SendsAUICampaignOnceToItsOwnBrand(t *testing.T) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	ctx := context.Background()
 
@@ -113,7 +116,8 @@ func TestProcessCampaign_SendsAUICampaignOnceToItsOwnBrand(t *testing.T) {
 	assert.Equal(t, "paused", spoof.Status.String)
 
 	// The workers pick the queued sends up.
-	pending, err := store.GetPendingCampaignSends(ctx, 100)
+	require.NoError(t, store.ClaimPendingCampaignSends(ctx, db.ClaimPendingCampaignSendsParams{ClaimToken: sql.NullString{String: "t1", Valid: true}, LimitCount: 100}))
+	pending, err := store.GetPendingCampaignSends(ctx, sql.NullString{String: "t1", Valid: true})
 	require.NoError(t, err)
 	assert.Len(t, pending, 2)
 
@@ -128,7 +132,7 @@ func TestCampaignLists_MustBeTheBrandsOwn(t *testing.T) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	ctx := context.Background()
 
@@ -163,4 +167,46 @@ func TestCampaignLists_MustBeTheBrandsOwn(t *testing.T) {
 	require.NoError(t, err)
 	_, err = campaigns.NewUpdateCampaignLogic(asMike, s).UpdateCampaign(&types.UpdateCampaignRequest{Id: made.Id, ListIds: []string{lists["bravo"]}})
 	require.Error(t, err)
+}
+
+// A send held back by a temporary failure waits, pending and unclaimed,
+// until it comes due. A failed send is final: deferring never brings it
+// back. Other errors are not deferred.
+func TestDeferCampaignSend_WaitsForTheLimit(t *testing.T) {
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	require.NoError(t, migrations.Run(conn, nil))
+	store := db.NewStore(conn)
+	ctx := context.Background()
+	for _, q := range []string{
+		`INSERT INTO organizations (id, name, slug, api_key) VALUES ('o', 'O', 'o', 'k')`,
+		`INSERT INTO contacts (id, org_id, name, email) VALUES ('c1', 'o', 'C', 'c1@example.com'), ('c2', 'o', 'C', 'c2@example.com')`,
+		`INSERT INTO email_campaigns (id, org_id, name, subject, html_body, status) VALUES ('camp', 'o', 'n', 's', 'b', 'sending')`,
+		`INSERT INTO campaign_sends (id, campaign_id, contact_id, status) VALUES ('s1', 'camp', 'c1', 'pending'), ('s2', 'camp', 'c2', 'failed')`,
+	} {
+		_, err := conn.Exec(q)
+		require.NoError(t, err)
+	}
+	claim := func(token string) int {
+		require.NoError(t, store.ClaimPendingCampaignSends(ctx, db.ClaimPendingCampaignSendsParams{ClaimToken: sql.NullString{String: token, Valid: true}, LimitCount: 100}))
+		rows, err := store.GetPendingCampaignSends(ctx, sql.NullString{String: token, Valid: true})
+		require.NoError(t, err)
+		return len(rows)
+	}
+	require.Equal(t, 1, claim("t1"))
+
+	assert.False(t, deferCampaignSend(ctx, store, "s1", errors.New("SES said no")), "a plain failure isn't deferred")
+	limit := &email.DeliveryError{Temporary: true, RetryAt: time.Now().Add(time.Hour), Err: email.ErrOverLimit}
+	assert.True(t, deferCampaignSend(ctx, store, "s1", limit))
+	deferCampaignSend(ctx, store, "s2", limit)
+	assert.Equal(t, 0, claim("t2"), "s1 waits for the limit")
+
+	var status string
+	require.NoError(t, conn.QueryRow(`SELECT status FROM campaign_sends WHERE id = 's2'`).Scan(&status))
+	assert.Equal(t, "failed", status, "a failed send stays failed")
+
+	_, err = conn.Exec(`UPDATE campaign_sends SET send_after = datetime('now', '-1 minute')`)
+	require.NoError(t, err)
+	assert.Equal(t, 1, claim("t3"), "once the limit lifts, s1 goes; s2 never does")
 }

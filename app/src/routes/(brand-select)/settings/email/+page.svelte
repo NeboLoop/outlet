@@ -3,7 +3,7 @@
 	import AwsIamPolicy from '$lib/components/admin/AwsIamPolicy.svelte';
 	import { onMount } from 'svelte';
 	import { getPlatformSettingsByCategory, updateEmailSettings } from '$lib/api/generate/outlet';
-	import { Cloud, Server, CheckCircle, AlertCircle, Pencil } from '@lucide/svelte';
+	import { Cloud, Server, CheckCircle, AlertCircle, Pencil, Mail } from '@lucide/svelte';
 
 	let saving = $state(false);
 	let saved = $state(false);
@@ -28,6 +28,13 @@
 	let awsRegion = $state('us-east-1');
 	let hasExistingAwsKey = $state(false);
 	let editingAwsCredentials = $state(false);
+
+	// Default sender for platform mail and brands without their own
+	let fromEmail = $state('');
+	let fromName = $state('');
+	let replyTo = $state('');
+	let savingSender = $state(false);
+	let savedSender = $state(false);
 
 	const regionOptions = [
 		{ value: 'us-east-1', label: 'US East (N. Virginia)' },
@@ -80,6 +87,15 @@
 					case 'aws_region':
 						awsRegion = setting.value || 'us-east-1';
 						break;
+					case 'from_email':
+						fromEmail = setting.value || '';
+						break;
+					case 'from_name':
+						fromName = setting.value || '';
+						break;
+					case 'reply_to':
+						replyTo = setting.value || '';
+						break;
 				}
 			}
 			// Determine active provider based on what's configured
@@ -119,6 +135,32 @@
 			error = err.message || 'Failed to save settings';
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function saveSender() {
+		error = '';
+		if (!fromEmail.trim()) {
+			error = 'Enter a From address';
+			return;
+		}
+		savingSender = true;
+		savedSender = false;
+
+		try {
+			await updateEmailSettings({
+				from_email: fromEmail.trim(),
+				from_name: fromName.trim(),
+				reply_to: replyTo.trim()
+			});
+			savedSender = true;
+			setTimeout(() => {
+				savedSender = false;
+			}, 2000);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to save the sender';
+		} finally {
+			savingSender = false;
 		}
 	}
 
@@ -171,6 +213,37 @@
 				or connect directly to Amazon SES for high-volume sending.
 			</p>
 		</Alert>
+
+		<Card>
+			<div class="flex items-center gap-3 mb-4">
+				<Mail class="h-5 w-5 text-primary" />
+				<div>
+					<h2 class="text-lg font-medium text-text">Default Sender</h2>
+					<p class="text-sm text-text-muted">
+						Password resets and invitations come from this address, and so does mail from any brand without its own From address.
+					</p>
+				</div>
+			</div>
+
+			<div class="grid grid-cols-1 gap-6 sm:grid-cols-6">
+				<div class="sm:col-span-3">
+					<label for="from-email" class="form-label">From Address</label>
+					<Input type="email" id="from-email" bind:value={fromEmail} placeholder="hello@yourdomain.com" />
+				</div>
+				<div class="sm:col-span-3">
+					<label for="from-name" class="form-label">From Name</label>
+					<Input type="text" id="from-name" bind:value={fromName} placeholder="Outlet" />
+				</div>
+				<div class="sm:col-span-3">
+					<label for="reply-to" class="form-label">Reply-To (optional)</label>
+					<Input type="email" id="reply-to" bind:value={replyTo} placeholder="support@yourdomain.com" />
+				</div>
+			</div>
+
+			<div class="flex justify-end mt-6">
+				<SaveButton label="Save Sender" saving={savingSender} saved={savedSender} onclick={saveSender} />
+			</div>
+		</Card>
 
 		<div class="mb-4">
 			<Tabs tabs={providerTabs} bind:activeTab={activeProvider} variant="pills" />
@@ -258,10 +331,6 @@
 							</p>
 						</Alert>
 					</div>
-
-					<p class="text-sm text-text-muted">
-						From Name and From Email are configured per organization.
-					</p>
 
 					<div class="flex justify-end">
 						<SaveButton label="Save SES Settings" {saving} {saved} onclick={saveSesSettings} />
@@ -354,10 +423,6 @@
 							</div>
 						</div>
 					</div>
-
-					<p class="text-sm text-text-muted">
-						From Name and From Email are configured per organization.
-					</p>
 
 					<div class="flex justify-end">
 						<SaveButton label="Save SMTP Settings" {saving} {saved} onclick={saveSmtpSettings} />

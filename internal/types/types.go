@@ -12,6 +12,12 @@ type AddContactTagsRequest struct {
 	Tags []string `json:"tags"`
 }
 
+type AddListSubscriberRequest struct {
+	Id    string `path:"id"` // list ID
+	Email string `json:"email"`
+	Name  string `json:"name,optional"`
+}
+
 type AddSuppressedEmailRequest struct {
 	Email  string `json:"email"`
 	Reason string `json:"reason,optional"`
@@ -59,6 +65,20 @@ type AdminTopReferrer struct {
 type AnalyticsResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,optional"`
+}
+
+type AppendValidationJobEmailsRequest struct {
+	Id     string   `path:"id"`
+	Emails []string `json:"emails"` // max 10000 per call
+}
+
+type ApplyValidationJobRequest struct {
+	Id       string   `path:"id"`
+	Statuses []string `json:"statuses"` // results with these statuses are added to the suppression list
+}
+
+type ApplyValidationJobResponse struct {
+	Suppressed int `json:"suppressed"`
 }
 
 type BackupInfo struct {
@@ -292,6 +312,7 @@ type CreateDomainIdentityRequest struct {
 	OrgId             string `path:"org_id"`
 	Domain            string `json:"domain"`                       // If empty, extracted from org's from_email
 	MailFromSubdomain string `json:"mail_from_subdomain,optional"` // Custom MAIL FROM subdomain (default: "mail")
+	PathwayId         string `json:"pathway_id,optional"`          // The sending pathway it joins; empty: the one carrying transactional mail
 }
 
 type CreateEmailDesignRequest struct {
@@ -306,7 +327,7 @@ type CreateEmailDesignRequest struct {
 
 type CreateEntryRuleRequest struct {
 	SequenceId  string `json:"sequence_id"`
-	TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added, manual
+	TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added
 	SourceId    string `json:"source_id,optional"`
 	Priority    int    `json:"priority,optional,default=0"`
 }
@@ -375,6 +396,7 @@ type CreateSequenceRequest struct {
 	Name         string `json:"name"`
 	TriggerEvent string `json:"trigger_event,optional,default=manual"`
 	SequenceType string `json:"sequence_type,optional,default=lifecycle"` // lifecycle or transactional
+	IsActive     *bool  `json:"is_active,optional"`                       // Omitted starts it active
 }
 
 type CreateTemplateRequest struct {
@@ -412,6 +434,12 @@ type CreateUserRequest struct {
 
 type CreateUserResponse struct {
 	User UserInfo `json:"user"`
+}
+
+type CreateValidationJobRequest struct {
+	Name   string   `json:"name,optional"`
+	ListId string   `json:"list_id,optional"` // validate a list's subscribers; starts immediately
+	Emails []string `json:"emails,optional"`  // upload source; max 10000 per call, append more, then start
 }
 
 type CustomFieldInfo struct {
@@ -512,8 +540,9 @@ type DeleteWebhookRequest struct {
 type DetectSESQuotaRequest struct {
 	OrgId        string `path:"org_id"`
 	AWSRegion    string `json:"aws_region,optional"`
-	AWSAccessKey string `json:"aws_access_key,optional"` // If empty, use org's stored creds
+	AWSAccessKey string `json:"aws_access_key,optional"` // If empty, use the pathway's
 	AWSSecretKey string `json:"aws_secret_key,optional"`
+	PathwayId    string `json:"pathway_id,optional"` // An ses pathway's keys; empty: the platform's
 }
 
 type DomainIdentityInfo struct {
@@ -527,10 +556,6 @@ type DomainIdentityInfo struct {
 	DNSRecords         []DNSRecord `json:"dns_records"`
 	LastCheckedAt      string      `json:"last_checked_at,optional"`
 	CreatedAt          string      `json:"created_at"`
-}
-
-type DownloadBackupRequest struct {
-	Id string `path:"id"`
 }
 
 type EmailAttachment struct {
@@ -663,7 +688,7 @@ type EnrollSequenceResponse struct {
 type EntryRuleInfo struct {
 	Id          string `json:"id"`
 	SequenceId  string `json:"sequence_id"`
-	TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added, manual
+	TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added
 	SourceId    string `json:"source_id,optional"`
 	SourceName  string `json:"source_name,optional"` // list name or sequence name
 	Priority    int    `json:"priority"`
@@ -726,14 +751,15 @@ type GDPRConsentRequest struct {
 type GDPRDeleteRequest struct {
 	ContactId   string `path:"contact_id"`
 	Confirm     bool   `json:"confirm"`               // Must be true to proceed
-	DeleteEmail bool   `json:"delete_email,optional"` // Also delete from email provider logs if possible
+	DeleteEmail bool   `json:"delete_email,optional"` // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
 }
 
 type GDPRDeleteResponse struct {
-	Success       bool   `json:"success"`
-	Message       string `json:"message"`
-	DeletedData   string `json:"deleted_data"` // Summary of what was deleted
-	AuditRecordId string `json:"audit_record_id"`
+	Success         bool                 `json:"success"`
+	Message         string               `json:"message"`
+	DeletedData     string               `json:"deleted_data"`     // Summary of what was deleted
+	AuditRecordId   string               `json:"audit_record_id"`  // The deletion's row in the GDPR audit log
+	ProviderResults []GDPRProviderResult `json:"provider_results"` // Set when delete_email was asked for
 }
 
 type GDPRExportRequest struct {
@@ -741,9 +767,9 @@ type GDPRExportRequest struct {
 }
 
 type GDPRExportResponse struct {
-	DownloadURL string `json:"download_url"`
-	ExpiresAt   string `json:"expires_at"`
-	Format      string `json:"format"` // json, csv
+	Filename string `json:"filename"`
+	Format   string `json:"format"` // json
+	Data     string `json:"data"`   // the contact's data, as JSON
 }
 
 type GDPRLookupRequest struct {
@@ -754,6 +780,13 @@ type GDPRLookupResponse struct {
 	Found     bool   `json:"found"`
 	ContactId string `json:"contact_id,omitempty"`
 	Email     string `json:"email,omitempty"`
+}
+
+type GDPRProviderResult struct {
+	Pathway  string `json:"pathway"`
+	Provider string `json:"provider"` // Amazon SES, SMTP relay, Mailboxes
+	Result   string `json:"result"`
+	Failed   bool   `json:"failed"`
 }
 
 type GetBackupRequest struct {
@@ -931,6 +964,13 @@ type ImportJobInfo struct {
 	CreatedAt     string `json:"created_at"`
 }
 
+type ImportListSubscribersRequest struct {
+	Id          string `path:"id"` // list ID
+	Filename    string `json:"filename"`
+	Csv         string `json:"csv"`
+	StartSignup bool   `json:"start_signup,optional,default=true"` // Start the list's sign-up emails for the people added; off for an old list that shouldn't get them
+}
+
 type ListBackupsRequest struct {
 	Page     int `form:"page,optional,default=1"`
 	PageSize int `form:"page_size,optional,default=20"`
@@ -1059,6 +1099,15 @@ type ListMCPAPIKeysResponse struct {
 	Total int             `json:"total"`
 }
 
+type ListOrgPeopleRequest struct {
+	Id string `path:"id"` // brand ID
+}
+
+type ListOrgPeopleResponse struct {
+	Members     []OrgMember            `json:"members"`
+	Invitations []OrgPendingInvitation `json:"invitations"` // not yet accepted
+}
+
 type ListSequenceEnrollmentsResponse struct {
 	Enrollments []SequenceEnrollmentInfo `json:"enrollments"`
 }
@@ -1072,13 +1121,15 @@ type ListStatsResponse struct {
 }
 
 type ListSubscriberInfo struct {
-	Id             string `json:"id"`
-	ContactId      string `json:"contact_id"`
-	Email          string `json:"email"`
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	SubscribedAt   string `json:"subscribed_at"`
-	UnsubscribedAt string `json:"unsubscribed_at,omitempty"`
+	Id                  string `json:"id"`
+	ContactId           string `json:"contact_id"`
+	Email               string `json:"email"`
+	Name                string `json:"name"`
+	Status              string `json:"status"`
+	SubscribedAt        string `json:"subscribed_at"`
+	UnsubscribedAt      string `json:"unsubscribed_at,omitempty"`
+	ValidationStatus    string `json:"validation_status,optional"`
+	ValidationSubStatus string `json:"validation_sub_status,optional"`
 }
 
 type ListSubscribersRequest struct {
@@ -1113,6 +1164,41 @@ type ListTransactionalEmailsRequest struct {
 type ListTransactionalEmailsResponse struct {
 	Templates []TransactionalEmailInfo `json:"templates"`
 	Total     int                      `json:"total"`
+}
+
+type ListValidationJobsRequest struct {
+	Page  int `form:"page,optional,default=1"`
+	Limit int `form:"limit,optional,default=20"`
+}
+
+type ListValidationJobsResponse struct {
+	Jobs  []ValidationJobInfo `json:"jobs"`
+	Total int                 `json:"total"`
+	Page  int                 `json:"page"`
+	Limit int                 `json:"limit"`
+}
+
+type ListValidationResultsRequest struct {
+	Id     string `path:"id"`
+	Status string `form:"status,optional"`
+	Page   int    `form:"page,optional,default=1"`
+	Limit  int    `form:"limit,optional,default=50"`
+}
+
+type ListValidationResultsResponse struct {
+	Results []ValidationResult `json:"results"`
+	Total   int                `json:"total"`
+	Page    int                `json:"page"`
+	Limit   int                `json:"limit"`
+}
+
+type ListWebhookDeliveriesRequest struct {
+	Id    string `path:"id"`
+	Limit int    `form:"limit,optional"` // default 50, max 200
+}
+
+type ListWebhookDeliveriesResponse struct {
+	Deliveries []WebhookDeliveryInfo `json:"deliveries"`
 }
 
 type ListWebhookLogsRequest struct {
@@ -1150,12 +1236,206 @@ type MCPAPIKeyInfo struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type MailboxConnection struct {
+	Id          string                    `json:"id"`
+	PoolId      string                    `json:"pool_id"`
+	Service     string                    `json:"service"` // manual, maildoso, cheapinboxes, infraforge
+	Name        string                    `json:"name"`
+	KeySet      bool                      `json:"key_set"`
+	DailyLimit  *int64                    `json:"daily_limit,optional"`  // its mailboxes' daily limit unless one has its own; empty: the pool's
+	WarmupStart *int64                    `json:"warmup_start,optional"` // its mailboxes' warm-up, first day's allowance; empty: the pool's
+	WarmupStep  *int64                    `json:"warmup_step,optional"`  // added each day until the daily limit; empty: the pool's
+	Domains     []MailboxConnectionDomain `json:"domains"`
+	Mailboxes   int64                     `json:"mailboxes"`
+	CreatedAt   string                    `json:"created_at"`
+}
+
+type MailboxConnectionDomain struct {
+	Id     string `json:"id"`
+	Domain string `json:"domain"`
+}
+
+type MailboxConnectionIDRequest struct {
+	Id string `path:"id"` // the connection
+}
+
+type MailboxConnectionList struct {
+	Connections []MailboxConnection `json:"connections"`
+}
+
+type MailboxConnectionListRequest struct {
+	PoolId string `form:"pool_id,optional"` // one pool's; empty: every pool's
+}
+
+type MailboxConnectionRequest struct {
+	PoolId      string `json:"pool_id,optional"`     // empty: the pool carrying outreach (made if the brand has none)
+	Service     string `json:"service"`              // manual, maildoso, cheapinboxes, infraforge
+	Name        string `json:"name,optional"`        // empty: the service's name
+	APIKey      string `json:"api_key,optional"`     // required for a service; tried before it is saved
+	DailyLimit  *int64 `json:"daily_limit,optional"` // the three limits all empty: the service's terms (Maildoso 15 a day, warming up from 5 by 1), else the pool's
+	WarmupStart *int64 `json:"warmup_start,optional"`
+	WarmupStep  *int64 `json:"warmup_step,optional"`
+}
+
+type MailboxDailyLimitRequest struct {
+	Id         string `path:"id"`
+	DailyLimit *int64 `json:"daily_limit,optional"` // empty: use the pool's
+}
+
+type MailboxServiceBuyRequest struct {
+	Id      string `path:"id"` // the connection the quote is from
+	QuoteId string `json:"quote_id"`
+	Confirm bool   `json:"confirm"` // must be true: buying spends money
+}
+
+type MailboxServiceBuyResponse struct {
+	Summary      string                   `json:"summary"`
+	ChargedCents *int64                   `json:"charged_cents,optional"`
+	DomainId     string                   `json:"domain_id,optional"`
+	Connection   MailboxServiceConnection `json:"connection"`
+	Check        *OutboundDNSCheck        `json:"check,optional"`
+	Imported     []OutboundMailboxResult  `json:"imported"`
+	Pending      []string                 `json:"pending"` // not finished at the service yet; sync with import later
+}
+
+type MailboxServiceConnectRequest struct {
+	Id     string `path:"id"` // the connection
+	Domain string `json:"domain"`
+}
+
+type MailboxServiceConnection struct {
+	Domain      string   `json:"domain"`
+	Nameservers []string `json:"nameservers,optional"` // set these at the domain's registrar
+	Status      string   `json:"status,optional"`
+	Note        string   `json:"note"`
+}
+
+type MailboxServiceDeleteRequest struct {
+	Id        string `path:"id"` // the connection
+	MailboxId string `path:"mailbox_id"`
+}
+
+type MailboxServiceDomain struct {
+	Id          string   `json:"id"`
+	Name        string   `json:"name"`
+	Status      string   `json:"status"`
+	Nameservers []string `json:"nameservers,optional"`
+}
+
+type MailboxServiceDomainResponse struct {
+	DomainId   string                   `json:"domain_id,optional"`
+	Connection MailboxServiceConnection `json:"connection"`
+	Check      OutboundDNSCheck         `json:"check"`
+}
+
+type MailboxServiceInventory struct {
+	Service   string                  `json:"service"`
+	Domains   []MailboxServiceDomain  `json:"domains"`
+	Mailboxes []MailboxServiceMailbox `json:"mailboxes"`
+}
+
+type MailboxServiceMailbox struct {
+	Id        string `json:"id"`
+	Email     string `json:"email"`
+	FirstName string `json:"first_name,optional"`
+	LastName  string `json:"last_name,optional"`
+	Status    string `json:"status"`
+	Ready     bool   `json:"ready"`
+}
+
+type MailboxServicePerson struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Local     string `json:"local,optional"` // before the @; empty: first.last
+}
+
+type MailboxServicePoolMailbox struct {
+	Id    string `json:"id"`
+	Email string `json:"email"`
+}
+
+type MailboxServiceQuote struct {
+	Id         string `json:"id"`
+	Service    string `json:"service"`
+	Kind       string `json:"kind"`
+	Domain     string `json:"domain"`
+	Mailboxes  int64  `json:"mailboxes"`
+	PriceCents *int64 `json:"price_cents,optional"` // empty: the service's API gives no price
+	PriceKnown bool   `json:"price_known"`
+	Currency   string `json:"currency,optional"`
+	Summary    string `json:"summary"`
+	ExpiresAt  string `json:"expires_at"`
+}
+
+type MailboxServiceQuoteRequest struct {
+	Id     string                 `path:"id"`   // the connection
+	Kind   string                 `json:"kind"` // domain, connect, mailboxes
+	Domain string                 `json:"domain"`
+	People []MailboxServicePerson `json:"people,optional"` // for mailboxes
+}
+
+type MailboxServiceSyncRequest struct {
+	Id     string `path:"id"`              // the connection
+	Import bool   `json:"import,optional"` // import the service's mailboxes the pool lacks
+}
+
+type MailboxServiceSyncResponse struct {
+	OnlyAtService []MailboxServiceMailbox     `json:"only_at_service"`
+	OnlyInPool    []MailboxServicePoolMailbox `json:"only_in_pool"`
+	Imported      []OutboundMailboxResult     `json:"imported"`
+	Pending       []string                    `json:"pending"`
+}
+
 type MarkContactReadRequest struct {
 	ID int64 `path:"id"`
 }
 
 type MarkContactReadResponse struct {
 	Success bool `json:"success"`
+}
+
+type MoveDomainConnectionRequest struct {
+	Id           string `path:"id"`            // the outreach domain
+	ConnectionId string `json:"connection_id"` // another connection of the domain's pool
+}
+
+type MoveDomainRequest struct {
+	Id        string `path:"id"`
+	PathwayId string `json:"pathway_id"` // an outreach domain moves only to a mailbox pool, a sending domain only to platform, ses or smtp
+}
+
+type NetworkEvent struct {
+	Hash string `json:"hash"`
+	Kind string `json:"kind"` // delivered, hard_bounce, complaint, open, click
+	At   string `json:"at"`
+}
+
+type NetworkLookupRequest struct {
+	Hashes []string `json:"hashes"` // max 100
+}
+
+type NetworkLookupResponse struct {
+	Signals []NetworkSignal `json:"signals"` // unknown hashes are omitted
+}
+
+type NetworkReportRequest struct {
+	Events []NetworkEvent `json:"events"` // max 1000
+}
+
+type NetworkReportResponse struct {
+	Accepted int `json:"accepted"`
+}
+
+type NetworkSignal struct {
+	Hash          string  `json:"hash"`
+	Senders       int     `json:"senders"`
+	Delivered     int     `json:"delivered"`
+	HardBounces   int     `json:"hard_bounces"`
+	Complaints    int     `json:"complaints"`
+	Engaged       int     `json:"engaged"`
+	LastEngagedAt string  `json:"last_engaged_at"`
+	TrapScore     float64 `json:"trap_score"`
+	Toxic         bool    `json:"toxic"`
 }
 
 type NewsletterResponse struct {
@@ -1180,8 +1460,6 @@ type OrgEmailConfigInfo struct {
 	SESDailyQuota int64   `json:"ses_daily_quota"` // Daily sending quota
 	WorkerCount   int     `json:"worker_count"`    // Number of email workers
 	BatchSize     int     `json:"batch_size"`      // Emails per batch
-	AWSRegion     string  `json:"aws_region,optional"`
-	HasOwnCreds   bool    `json:"has_own_credentials"` // Has org-specific AWS credentials
 	FromEmail     string  `json:"from_email,optional"`
 	FromName      string  `json:"from_name,optional"`
 	ReplyTo       string  `json:"reply_to,optional"`
@@ -1208,10 +1486,405 @@ type OrgListResponse struct {
 	Total         int       `json:"total"`
 }
 
+type OrgMember struct {
+	UserId   string `json:"user_id"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Role     string `json:"role"` // admin or member
+	JoinedAt string `json:"joined_at"`
+}
+
+type OrgPendingInvitation struct {
+	Email     string `json:"email"`
+	Role      string `json:"role"` // admin or member
+	ExpiresAt string `json:"expires_at"`
+	Expired   bool   `json:"expired"` // the link no longer works; invite again
+	CreatedAt string `json:"created_at"`
+}
+
 type OrgStats struct {
 	TotalContacts int64 `json:"total_contacts"`
 	EmailsSent30d int64 `json:"emails_sent_30d"`
 	ListCount     int64 `json:"list_count"`
+}
+
+type OutboundAddMailboxesRequest struct {
+	Mailboxes []OutboundMailboxInput `json:"mailboxes"`
+}
+
+type OutboundAddMailboxesResponse struct {
+	Mailboxes []OutboundMailboxResult `json:"mailboxes"`
+}
+
+type OutboundAddProspectsRequest struct {
+	List      string                  `json:"list,optional"`
+	Prospects []OutboundProspectInput `json:"prospects"`
+}
+
+type OutboundAddProspectsResponse struct {
+	Prospects []OutboundProspectResult `json:"prospects"`
+}
+
+type OutboundAnswerRequest struct {
+	Id   string `path:"id"`
+	Body string `json:"body"`
+}
+
+type OutboundCampaignRef struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type OutboundCampaignRequest struct {
+	Name            string              `json:"name"`
+	List            string              `json:"list,optional"`
+	Steps           []OutboundStepInput `json:"steps"`
+	ProspectIDs     []string            `json:"prospect_ids"`
+	ApprovalMode    string              `json:"approval_mode,optional"`
+	TrackOpens      bool                `json:"track_opens,optional"`
+	TrackClicks     bool                `json:"track_clicks,optional"`
+	WindowStartHour int                 `json:"window_start_hour,optional"`
+	WindowEndHour   int                 `json:"window_end_hour,optional"`
+	IdempotencyKey  string              `json:"idempotency_key,optional"`
+	DryRun          bool                `json:"dry_run,optional"`
+}
+
+type OutboundCampaignResponse struct {
+	CampaignId string            `json:"campaign_id,optional"`
+	Enrolled   int               `json:"enrolled"`
+	Drafts     []OutboundDraft   `json:"drafts,optional"`   // the saved drafts
+	Previews   []OutboundPreview `json:"previews,optional"` // dry_run: the first emails, not saved
+	Skipped    map[string]string `json:"skipped,optional"`
+	Next       string            `json:"next"`
+}
+
+type OutboundCampaignResults struct {
+	Id          string               `json:"id"`
+	Name        string               `json:"name"`
+	Status      string               `json:"status"`
+	Enrolled    int64                `json:"enrolled"`
+	Reached     int64                `json:"reached"`
+	Replied     int64                `json:"replied"`
+	ReplyRate   float64              `json:"reply_rate"`
+	Opened      int64                `json:"opened"`
+	OpenRate    float64              `json:"open_rate"`
+	Clicked     int64                `json:"clicked"`
+	ClickRate   float64              `json:"click_rate"`
+	Interested  int64                `json:"interested"`
+	Partners    int64                `json:"partners"`
+	Bounced     int64                `json:"bounced"`
+	BounceRate  float64              `json:"bounce_rate"`
+	BounceLimit float64              `json:"bounce_limit"` // percent: the outreach pathway pauses a mailbox above it; 0: never
+	SpamBlocks  int64                `json:"spam_blocks"`
+	OptedOut    int64                `json:"opted_out"`
+	InProgress  int64                `json:"in_progress"`
+	NoReply     int64                `json:"finished_no_reply"`
+	Waiting     int64                `json:"drafts_waiting"`
+	TrackOpens  bool                 `json:"track_opens"`
+	TrackClick  bool                 `json:"track_clicks"`
+	Steps       []OutboundStepResult `json:"steps,optional"`
+	Replies     map[string]int64     `json:"replies_by_kind,optional"`
+}
+
+type OutboundClassifyRequest struct {
+	Id             string `path:"id"`
+	Classification string `json:"classification"`
+}
+
+type OutboundDNSCheck struct {
+	Mx       bool     `json:"mx"`
+	Spf      bool     `json:"spf"`
+	Dkim     bool     `json:"dkim"`
+	Dmarc    bool     `json:"dmarc"`
+	Missing  []string `json:"missing,optional"`
+	Tracking *bool    `json:"tracking,optional"`
+}
+
+type OutboundDNSRecord struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Data     string `json:"data"`
+	Priority int    `json:"priority,optional"`
+}
+
+type OutboundDNSTokenRequest struct {
+	Token string `json:"token"`
+}
+
+type OutboundDomainInfo struct {
+	Id           string                 `json:"id"`
+	Domain       string                 `json:"domain"`
+	Status       string                 `json:"status"`
+	TrackingHost string                 `json:"tracking_host,optional"`
+	Check        OutboundDNSCheck       `json:"check"`
+	CheckedAt    string                 `json:"checked_at,optional"`
+	Records      []OutboundDomainRecord `json:"records"` // the records it needs, and which the last check found
+}
+
+type OutboundDomainRecord struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Data     string `json:"data"`
+	Priority int    `json:"priority,optional"`
+	Present  bool   `json:"present"` // the last check found it in public DNS
+}
+
+type OutboundDomainRequest struct {
+	Domain        string   `json:"domain"`
+	DNSHost       string   `json:"dns_host,optional"`
+	MailProvider  string   `json:"mail_provider,optional"`
+	MXHosts       []string `json:"mx_hosts,optional"`
+	SPFInclude    string   `json:"spf_include,optional"`
+	DKIMSelector  string   `json:"dkim_selector,optional"`
+	DKIMValue     string   `json:"dkim_value,optional"`
+	DMARCReport   string   `json:"dmarc_report,optional"`
+	ClickTracking bool     `json:"click_tracking,optional"`
+	PathwayId     string   `json:"pathway_id,optional"`    // the mailbox pool it joins; empty: the brand's pool
+	ConnectionId  string   `json:"connection_id,optional"` // the pool's manual connection it joins; empty: the pool's first manual one
+}
+
+type OutboundDomainResponse struct {
+	Domain       OutboundDomainInfo  `json:"domain"`
+	RecordsToAdd []OutboundDNSRecord `json:"records_to_add"`     // to add at the DNS host by hand
+	DNSError     string              `json:"dns_error,optional"` // why DigitalOcean didn't take the records; records_to_add holds them
+}
+
+type OutboundDraft struct {
+	MessageId    string `json:"message_id"` // what approve, skip and edit take
+	CampaignId   string `json:"campaign_id"`
+	CampaignName string `json:"campaign_name"`
+	Step         int64  `json:"step"`
+	ProspectId   string `json:"prospect_id"`
+	To           string `json:"to"`
+	From         string `json:"from"`
+	Subject      string `json:"subject"`
+	Body         string `json:"body"`
+	SendsAfter   string `json:"sends_after,optional"`
+}
+
+type OutboundDraftList struct {
+	Drafts []OutboundDraft `json:"drafts"`
+}
+
+type OutboundEditDraftRequest struct {
+	Id      string `path:"id"`
+	Subject string `json:"subject,optional"`
+	Body    string `json:"body,optional"`
+}
+
+type OutboundEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+type OutboundExplainRequest struct {
+	MessageId  string `form:"message_id,optional"`
+	MailboxId  string `form:"mailbox_id,optional"`
+	ProspectId string `form:"prospect_id,optional"`
+}
+
+type OutboundExplainResponse struct {
+	Answer string `json:"answer"`
+}
+
+type OutboundIDRequest struct {
+	Id string `path:"id"`
+}
+
+type OutboundListProspectsRequest struct {
+	ListId     string `form:"list_id,optional"`    // one outreach list; empty: all
+	Status     string `form:"status,optional"`     // their status on it: prospect, held, ...
+	Search     string `form:"search,optional"`     // part of an email or name
+	Enrollable bool   `form:"enrollable,optional"` // only people a campaign can take now
+	Limit      int    `form:"limit,optional,default=50"`
+	Offset     int    `form:"offset,optional"`
+}
+
+type OutboundListRef struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type OutboundListRepliesRequest struct {
+	Handled bool `form:"handled,optional"`
+	Limit   int  `form:"limit,optional,default=25"`
+}
+
+type OutboundListRequest struct {
+	Limit int `form:"limit,optional,default=25"`
+}
+
+type OutboundMailboxHealth struct {
+	Id           string `json:"id"`
+	Email        string `json:"email"`
+	FromName     string `json:"from_name"`
+	Status       string `json:"status"`
+	Reason       string `json:"reason,optional"`
+	SentToday    int64  `json:"sent_today"`
+	AllowToday   int64  `json:"allowed_today"`
+	Sent7d       int64  `json:"sent_7d"`
+	Bounces7d    int64  `json:"bounces_7d"`
+	SpamBlocks7d int64  `json:"spam_blocks_7d"`
+	Complaints7d int64  `json:"complaints_7d"`
+	LastError    string `json:"last_error,optional"`
+	PoolId       string `json:"pool_id,optional"`       // its mailbox pool (sending pathway)
+	ConnectionId string `json:"connection_id,optional"` // the pool's connection its domain belongs to
+	DailyLimit   *int64 `json:"daily_limit,optional"`   // its own daily limit; empty uses its connection's, else the pool's (warm-up: its connection's, else the pool's)
+	Limited      bool   `json:"limited"`                // false: no daily limit applies
+	LimitInUse   int64  `json:"limit_in_use"`           // the daily limit it sends under: its own, else its connection's, else its pool's; 0: none
+	WarmingUp    bool   `json:"warming_up"`             // the warm-up holds it below limit_in_use; allowed_today is today's step
+	Domain       string `json:"domain"`
+}
+
+type OutboundMailboxInput struct {
+	Email        string `json:"email"`
+	FromName     string `json:"from_name"`
+	Signature    string `json:"signature,optional"`
+	Provider     string `json:"provider,optional"`
+	Password     string `json:"password,optional"`
+	SMTPHost     string `json:"smtp_host,optional"`
+	SMTPPort     int    `json:"smtp_port,optional"`
+	SMTPUsername string `json:"smtp_username,optional"`
+	SMTPPassword string `json:"smtp_password,optional"`
+	IMAPHost     string `json:"imap_host,optional"`
+	IMAPPort     int    `json:"imap_port,optional"`
+	IMAPUsername string `json:"imap_username,optional"`
+	IMAPPassword string `json:"imap_password,optional"`
+	DailyLimit   *int64 `json:"daily_limit,optional"` // its own daily limit; empty uses the pool's
+}
+
+type OutboundMailboxResult struct {
+	Email string `json:"email"`
+	Id    string `json:"id,optional"`
+	Error string `json:"error,optional"`
+}
+
+type OutboundOverview struct {
+	Enabled        bool                      `json:"enabled"`
+	Paused         string                    `json:"paused,optional"`
+	MailingAddress string                    `json:"mailing_address"`
+	OptOutLine     string                    `json:"opt_out_line"`
+	Timezone       string                    `json:"timezone"`
+	DNSTokenSet    bool                      `json:"dns_token_set"`
+	Domains        []OutboundDomainInfo      `json:"domains"`
+	Mailboxes      []OutboundMailboxHealth   `json:"mailboxes"`
+	Prospects      map[string]int64          `json:"prospects"`
+	Messages       map[string]int64          `json:"messages"`
+	RepliesWaiting int64                     `json:"replies_waiting"`
+	DraftsWaiting  int64                     `json:"drafts_waiting"`
+	ReplyRate      float64                   `json:"reply_rate"` // replied over reached across every campaign, percent
+	Campaigns      []OutboundCampaignResults `json:"campaigns"`
+	Next           []string                  `json:"next"`
+}
+
+type OutboundPauseRequest struct {
+	Scope  string `json:"scope"`
+	Id     string `json:"id,optional"`
+	Resume bool   `json:"resume,optional"`
+}
+
+type OutboundPreview struct {
+	ProspectId string `json:"prospect_id"`
+	To         string `json:"to"`
+	From       string `json:"from"`
+	Subject    string `json:"subject"`
+	Body       string `json:"body"`
+	SendsAfter string `json:"sends_after,optional"`
+}
+
+type OutboundProspectInfo struct {
+	Id               string                       `json:"id"`
+	Email            string                       `json:"email"`
+	Name             string                       `json:"name"`
+	EmailSource      string                       `json:"email_source"`
+	ValidationStatus string                       `json:"validation_status"`
+	CreatedAt        string                       `json:"created_at"`
+	Lists            []OutboundProspectListStatus `json:"lists"`     // the outreach lists they are on, with their status on each
+	Campaigns        []OutboundCampaignRef        `json:"campaigns"` // the outreach campaigns they are in now
+	Suppressed       bool                         `json:"suppressed"`
+	Enrollable       bool                         `json:"enrollable"` // a campaign can take them now
+}
+
+type OutboundProspectInput struct {
+	Email        string            `json:"email"`
+	FirstName    string            `json:"first_name,optional"`
+	Name         string            `json:"name,optional"`
+	Timezone     string            `json:"timezone,optional"`
+	Platform     string            `json:"platform,optional"`
+	ChannelURL   string            `json:"channel_url,optional"`
+	AudienceSize int64             `json:"audience_size,optional"`
+	Niche        string            `json:"niche,optional"`
+	RecentVideo  string            `json:"recent_video,optional"`
+	PersonalLine string            `json:"personal_line,optional"`
+	EmailSource  string            `json:"email_source"`
+	Fields       map[string]string `json:"fields,optional"`
+}
+
+type OutboundProspectList struct {
+	Prospects []OutboundProspectInfo `json:"prospects"`
+	Total     int64                  `json:"total"` // every person matching, across pages
+	Lists     []OutboundListRef      `json:"lists"` // the brand's outreach lists
+}
+
+type OutboundProspectListStatus struct {
+	Id     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+type OutboundProspectResult struct {
+	Email  string `json:"email"`
+	Id     string `json:"id,optional"`
+	Status string `json:"status"`
+	Reason string `json:"reason,optional"`
+}
+
+type OutboundReplyInfo struct {
+	Id             string `json:"id"`
+	MailboxId      string `json:"mailbox_id"`
+	ContactId      string `json:"contact_id"`
+	SequenceId     string `json:"sequence_id"`
+	CampaignName   string `json:"campaign_name"` // the campaign it answers
+	FromEmail      string `json:"from_email"`
+	Subject        string `json:"subject"`
+	Body           string `json:"body"`
+	Classification string `json:"classification"`
+	Handled        bool   `json:"handled"`
+	ReceivedAt     string `json:"received_at"`
+}
+
+type OutboundReplyList struct {
+	Replies []OutboundReplyInfo `json:"replies"`
+}
+
+type OutboundReviewRequest struct {
+	Action string   `json:"action"`
+	Ids    []string `json:"ids"`
+}
+
+type OutboundReviewResponse struct {
+	Done    int               `json:"done"`
+	Refused map[string]string `json:"refused,optional"`
+}
+
+type OutboundSettingsRequest struct {
+	MailingAddress string `json:"mailing_address,optional"`
+	OptOutLine     string `json:"opt_out_line,optional"`
+	Timezone       string `json:"timezone,optional"`
+}
+
+type OutboundStepInput struct {
+	DelayDays int    `json:"delay_days,optional"`
+	Subject   string `json:"subject,optional"`
+	Body      string `json:"body"`
+}
+
+type OutboundStepResult struct {
+	Step      int64   `json:"step"`
+	Sent      int64   `json:"sent"`
+	Replies   int64   `json:"replies"`
+	ReplyRate float64 `json:"reply_rate"`
+	Opened    int64   `json:"opened,optional"`
+	Clicked   int64   `json:"clicked,optional"`
 }
 
 type PauseSequenceRequest struct {
@@ -1277,6 +1950,17 @@ type RemoveSubscriberRequest struct {
 	SubscriberId string `path:"subscriberId"`
 }
 
+type ResendWebhookDeliveryRequest struct {
+	Id         string `path:"id"`
+	DeliveryId string `path:"delivery_id"`
+}
+
+type ResendWebhookDeliveryResponse struct {
+	Delivery WebhookDeliveryInfo `json:"delivery"`
+	Success  bool                `json:"success"`
+	Error    string              `json:"error,optional"`
+}
+
 type ResetPasswordRequest struct {
 	Token           string `json:"token"`
 	NewPassword     string `json:"new_password"`
@@ -1329,6 +2013,7 @@ type SDKContactInfo struct {
 }
 
 type SESQuotaResponse struct {
+	Configured      bool    `json:"configured"` // false: the platform sends through SMTP, not SES
 	Max24HourSend   float64 `json:"max_24_hour_send"`
 	MaxSendRate     float64 `json:"max_send_rate"`
 	SentLast24Hours float64 `json:"sent_last_24_hours"`
@@ -1346,6 +2031,17 @@ type SendCampaignNowRequest struct {
 	Id string `path:"id"`
 }
 
+type SendCampaignTestRequest struct {
+	To        string `json:"to"`
+	Subject   string `json:"subject"`
+	HtmlBody  string `json:"html_body"`
+	PlainText string `json:"plain_text,optional"`
+	DesignId  string `json:"design_id,optional"`
+	FromName  string `json:"from_name,optional"`
+	FromEmail string `json:"from_email,optional"`
+	ReplyTo   string `json:"reply_to,optional"`
+}
+
 type SendEmailRequest struct {
 	To           string            `json:"to"`                     // Email address
 	TemplateSlug string            `json:"template_slug,optional"` // Use design template
@@ -1355,18 +2051,80 @@ type SendEmailRequest struct {
 	FromName     string            `json:"from_name,optional"`     // Override org default
 	FromEmail    string            `json:"from_email,optional"`    // Override org default
 	ReplyTo      string            `json:"reply_to,optional"`
-	Headers      map[string]string `json:"headers,optional"`     // Threading headers: In-Reply-To, References, Message-ID
-	Variables    map[string]string `json:"variables,optional"`   // Template variables
-	Tags         []string          `json:"tags,optional"`        // For tracking/filtering
-	Meta         map[string]string `json:"meta,optional"`        // Custom metadata
-	Attachments  []EmailAttachment `json:"attachments,optional"` // Optional file attachments
+	Headers      map[string]string `json:"headers,optional"`      // Threading headers: In-Reply-To, References, Message-ID
+	Variables    map[string]string `json:"variables,optional"`    // Template variables
+	Tags         []string          `json:"tags,optional"`         // For tracking/filtering
+	Meta         map[string]string `json:"meta,optional"`         // Custom metadata
+	Attachments  []EmailAttachment `json:"attachments,optional"`  // Optional file attachments
+	Type         string            `json:"type,optional"`         // transactional (default) or marketing
+	ListSlug     string            `json:"list_slug,optional"`    // Marketing only, and required for it: the list the recipient subscribed to. Sent only to an active subscriber, with an unsubscribe link
+	TrackOpens   bool              `json:"track_opens,optional"`  // Add an open pixel
+	TrackClicks  bool              `json:"track_clicks,optional"` // Send links through click tracking
 }
 
 type SendEmailResponse struct {
 	Success   bool   `json:"success"`
 	MessageId string `json:"message_id"` // For tracking
-	Status    string `json:"status"`     // queued, sent, failed
+	Status    string `json:"status"`     // queued, sent, failed, suppressed, limited (over the brand's sending pathway limit; try again later)
 	Message   string `json:"message,optional"`
+}
+
+type SendingLimits struct {
+	DailyLimit      int64   `json:"daily_limit"`     // per sender per day; 0: no limit
+	WarmupStart     int64   `json:"warmup_start"`    // a new sender's first day; 0: no warm-up
+	WarmupStep      int64   `json:"warmup_step"`     // added each day
+	MinGapSeconds   int64   `json:"min_gap_seconds"` // between two sends from one sender
+	MaxGapSeconds   int64   `json:"max_gap_seconds"`
+	PauseBounceRate float64 `json:"pause_bounce_rate"` // a fraction: 0.03 is 3%, over 7 days
+	PauseMinBounces int64   `json:"pause_min_bounces"`
+	PauseSpamBlocks int64   `json:"pause_spam_blocks"`
+	PauseComplaints int64   `json:"pause_complaints"`
+}
+
+type SendingPathway struct {
+	Id              string                 `json:"id"`
+	Name            string                 `json:"name"`
+	Provider        string                 `json:"provider"` // platform, ses, smtp, mailboxes
+	Kinds           []string               `json:"kinds"`    // transactional, marketing, outreach
+	AWSRegion       string                 `json:"aws_region,optional"`
+	AWSKeysSet      bool                   `json:"aws_keys_set"`
+	SMTPHost        string                 `json:"smtp_host,optional"`
+	SMTPPort        int64                  `json:"smtp_port,optional"`
+	SMTPUsername    string                 `json:"smtp_username,optional"`
+	SMTPPasswordSet bool                   `json:"smtp_password_set"`
+	Limits          SendingLimits          `json:"limits"`
+	Domains         []SendingPathwayDomain `json:"domains"`
+	Mailboxes       int64                  `json:"mailboxes"`
+	Warning         string                 `json:"warning,optional"` // set when outreach rides a provider other than mailboxes
+	CreatedAt       string                 `json:"created_at"`
+}
+
+type SendingPathwayDomain struct {
+	Id      string `json:"id"`
+	Domain  string `json:"domain"`
+	Purpose string `json:"purpose"` // sending, or outreach (its mailboxes form the pool)
+}
+
+type SendingPathwayIDRequest struct {
+	Id string `path:"id"`
+}
+
+type SendingPathwayList struct {
+	Pathways []SendingPathway `json:"pathways"`
+}
+
+type SendingPathwayRequest struct {
+	Name         string         `json:"name,optional"`
+	Provider     string         `json:"provider"` // platform, ses, smtp, mailboxes
+	Kinds        []string       `json:"kinds,optional"`
+	AWSRegion    string         `json:"aws_region,optional"`
+	AWSAccessKey string         `json:"aws_access_key,optional"`
+	AWSSecretKey string         `json:"aws_secret_key,optional"`
+	SMTPHost     string         `json:"smtp_host,optional"`
+	SMTPPort     int64          `json:"smtp_port,optional"`
+	SMTPUsername string         `json:"smtp_username,optional"`
+	SMTPPassword string         `json:"smtp_password,optional"`
+	Limits       *SendingLimits `json:"limits,optional"` // empty: the provider's defaults
 }
 
 type SequenceDetailResponse struct {
@@ -1499,16 +2257,18 @@ type SubscriberDetailResponse struct {
 }
 
 type SubscriberInfo struct {
-	Id             string `json:"id"`
-	Name           string `json:"name"`
-	Email          string `json:"email"`
-	Status         string `json:"status"`
-	EmailVerified  bool   `json:"email_verified"`
-	Source         string `json:"source"`
-	CreatedAt      string `json:"created_at"`
-	VerifiedAt     string `json:"verified_at,optional"`
-	UnsubscribedAt string `json:"unsubscribed_at,optional"`
-	BlockedAt      string `json:"blocked_at,optional"`
+	Id                  string `json:"id"`
+	Name                string `json:"name"`
+	Email               string `json:"email"`
+	Status              string `json:"status"`
+	EmailVerified       bool   `json:"email_verified"`
+	Source              string `json:"source"`
+	CreatedAt           string `json:"created_at"`
+	VerifiedAt          string `json:"verified_at,optional"`
+	UnsubscribedAt      string `json:"unsubscribed_at,optional"`
+	BlockedAt           string `json:"blocked_at,optional"`
+	ValidationStatus    string `json:"validation_status,optional"`
+	ValidationSubStatus string `json:"validation_sub_status,optional"`
 }
 
 type SuppressedEmailInfo struct {
@@ -1604,6 +2364,7 @@ type UnenrollSequenceRequest struct {
 
 type UpdateCampaignRequest struct {
 	Id             string   `path:"id"`
+	DesignId       *string  `json:"design_id,optional"` // Omitted keeps the design; "" removes it
 	Name           string   `json:"name,optional"`
 	Subject        string   `json:"subject,optional"`
 	PreviewText    string   `json:"preview_text,optional"`
@@ -1706,6 +2467,15 @@ type UpdateListRequest struct {
 	UnsubscribeScope       *string `json:"unsubscribe_scope,optional"`
 }
 
+type UpdateMailboxConnectionRequest struct {
+	Id          string `path:"id"`
+	Name        string `json:"name,optional"`         // empty keeps it
+	APIKey      string `json:"api_key,optional"`      // empty keeps the stored key
+	DailyLimit  *int64 `json:"daily_limit,optional"`  // set as given; empty: the pool's
+	WarmupStart *int64 `json:"warmup_start,optional"` // set as given; empty: the pool's
+	WarmupStep  *int64 `json:"warmup_step,optional"`  // set as given; empty: the pool's
+}
+
 type UpdateOrgEmailConfigRequest struct {
 	OrgId         string  `path:"org_id"`
 	SESRateLimit  float64 `json:"ses_rate_limit,optional"`
@@ -1713,9 +2483,6 @@ type UpdateOrgEmailConfigRequest struct {
 	SESDailyQuota int64   `json:"ses_daily_quota,optional"`
 	WorkerCount   int     `json:"worker_count,optional"`
 	BatchSize     int     `json:"batch_size,optional"`
-	AWSRegion     string  `json:"aws_region,optional"`
-	AWSAccessKey  string  `json:"aws_access_key,optional"` // Will be encrypted
-	AWSSecretKey  string  `json:"aws_secret_key,optional"` // Will be encrypted
 	FromEmail     string  `json:"from_email,optional"`
 	FromName      string  `json:"from_name,optional"`
 	ReplyTo       string  `json:"reply_to,optional"`
@@ -1734,6 +2501,20 @@ type UpdateOrgRequest struct {
 	Plan        string `json:"plan,optional"`
 	MaxContacts int    `json:"max_contacts,optional"`
 	AppUrl      string `json:"app_url,optional"`
+}
+
+type UpdateSendingPathwayRequest struct {
+	Id           string         `path:"id"`
+	Name         string         `json:"name,optional"`
+	Kinds        []string       `json:"kinds"` // the whole set it carries
+	AWSRegion    string         `json:"aws_region,optional"`
+	AWSAccessKey string         `json:"aws_access_key,optional"` // empty keeps the stored key
+	AWSSecretKey string         `json:"aws_secret_key,optional"`
+	SMTPHost     string         `json:"smtp_host,optional"`
+	SMTPPort     int64          `json:"smtp_port,optional"`
+	SMTPUsername string         `json:"smtp_username,optional"`
+	SMTPPassword string         `json:"smtp_password,optional"` // empty keeps the stored password
+	Limits       *SendingLimits `json:"limits,optional"`        // empty keeps them
 }
 
 type UpdateSequenceRequest struct {
@@ -1766,17 +2547,18 @@ type UpdateTemplateRequest struct {
 }
 
 type UpdateTransactionalEmailRequest struct {
-	Id          string `path:"id"`
-	Name        string `json:"name,optional"`
-	Slug        string `json:"slug,optional"`
-	Description string `json:"description,optional"`
-	Subject     string `json:"subject,optional"`
-	HtmlBody    string `json:"html_body,optional"`
-	PlainText   string `json:"plain_text,optional"`
-	FromName    string `json:"from_name,optional"`
-	FromEmail   string `json:"from_email,optional"`
-	ReplyTo     string `json:"reply_to,optional"`
-	IsActive    bool   `json:"is_active,optional"`
+	Id          string  `path:"id"`
+	DesignId    *string `json:"design_id,optional"` // Omitted keeps the design; "" removes it
+	Name        string  `json:"name,optional"`
+	Slug        string  `json:"slug,optional"`
+	Description string  `json:"description,optional"`
+	Subject     string  `json:"subject,optional"`
+	HtmlBody    string  `json:"html_body,optional"`
+	PlainText   string  `json:"plain_text,optional"`
+	FromName    string  `json:"from_name,optional"`
+	FromEmail   string  `json:"from_email,optional"`
+	ReplyTo     string  `json:"reply_to,optional"`
+	IsActive    bool    `json:"is_active,optional"`
 }
 
 type UpdateUserRequest struct {
@@ -1808,6 +2590,19 @@ type UserListResponse struct {
 	Total int        `json:"total"`
 }
 
+type ValidateBatchRequest struct {
+	Emails []string `json:"emails"` // max 100
+}
+
+type ValidateBatchResponse struct {
+	Job     ValidationJobInfo  `json:"job"`     // status completed when every address is checked
+	Results []ValidationResult `json:"results"` // one per address, in address order; status pending until checked
+}
+
+type ValidateEmailRequest struct {
+	Email string `json:"email"`
+}
+
 type ValidateInvitationRequest struct {
 	Token string `form:"token"`
 }
@@ -1819,6 +2614,58 @@ type ValidateInvitationResponse struct {
 	HasAccount bool   `json:"has_account"` // the invited address already has an account: sign in as it and accept
 	Valid      bool   `json:"valid"`
 	Message    string `json:"message,omitempty"`
+}
+
+type ValidationJobIdRequest struct {
+	Id string `path:"id"`
+}
+
+type ValidationJobInfo struct {
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	ListId      string `json:"list_id,optional"`
+	Source      string `json:"source"` // list, upload
+	Status      string `json:"status"` // pending, processing, completed, failed, cancelled
+	Total       int    `json:"total"`
+	Processed   int    `json:"processed"`
+	Valid       int    `json:"valid"`
+	Invalid     int    `json:"invalid"`
+	CatchAll    int    `json:"catch_all"`
+	Unknown     int    `json:"unknown"`
+	Spamtrap    int    `json:"spamtrap"`
+	Abuse       int    `json:"abuse"`
+	DoNotMail   int    `json:"do_not_mail"`
+	Error       string `json:"error,optional"`
+	StartedAt   string `json:"started_at,optional"`
+	CompletedAt string `json:"completed_at,optional"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type ValidationResult struct {
+	Address       string `json:"address"`
+	Status        string `json:"status"`
+	SubStatus     string `json:"sub_status"`
+	FreeEmail     bool   `json:"free_email"`
+	DidYouMean    string `json:"did_you_mean"`
+	Account       string `json:"account"`
+	Domain        string `json:"domain"`
+	DomainAgeDays int    `json:"domain_age_days,optional"` // 0 = unknown
+	SmtpProvider  string `json:"smtp_provider"`
+	MxFound       bool   `json:"mx_found"`
+	MxRecord      string `json:"mx_record"`
+	ProcessedAt   string `json:"processed_at"`
+}
+
+type ValidationUsageRequest struct {
+	From string `form:"from,optional"` // YYYY-MM-DD, default first of this month
+	To   string `form:"to,optional"`   // YYYY-MM-DD inclusive, default today
+}
+
+type ValidationUsageResponse struct {
+	From     string         `json:"from"`
+	To       string         `json:"to"`
+	Total    int            `json:"total"`
+	BySource map[string]int `json:"by_source"` // api, admin, job, mcp
 }
 
 type VerifyEmailRequest struct {
@@ -1838,6 +2685,19 @@ type VersionInfo struct {
 	Arch      string `json:"arch"`
 }
 
+type WebhookDeliveryInfo struct {
+	Id             string `json:"id"`
+	Event          string `json:"event"`
+	Status         string `json:"status"` // pending (waiting to retry), sending, succeeded, failed
+	Attempts       int    `json:"attempts"`
+	MaxAttempts    int    `json:"max_attempts"`
+	LastStatusCode int    `json:"last_status_code,omitempty"` // HTTP status of the last try
+	LastError      string `json:"last_error,omitempty"`
+	NextRetryAt    string `json:"next_retry_at,omitempty"` // when pending
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
 type WebhookInfo struct {
 	Id                string   `json:"id"`
 	Url               string   `json:"url"`
@@ -1849,6 +2709,8 @@ type WebhookInfo struct {
 	DeliveriesFailed  int      `json:"deliveries_failed"`
 	LastDeliveryAt    string   `json:"last_delivery_at,omitempty"`
 	LastStatus        int      `json:"last_status,omitempty"` // HTTP status code
+	WaitingDeliveries int      `json:"waiting_deliveries,omitempty"`
+	NextRetryAt       string   `json:"next_retry_at,omitempty"`
 }
 
 type WebhookLogInfo struct {

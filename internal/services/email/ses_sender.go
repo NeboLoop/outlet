@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
@@ -21,54 +22,19 @@ type SESConfig struct {
 	ReplyTo     string
 }
 
-// SendEmailViaSES sends an email using the AWS SES API directly
-// This is the preferred method when AWS credentials are configured
-func SendEmailViaSES(ctx context.Context, sesConfig *SESConfig, to, subject, htmlBody string) error {
-	client, err := newSESClient(ctx, sesConfig)
+
+// newSESClient builds an SES client from the config.
+func newSESClient(ctx context.Context, sesConfig *SESConfig) (*ses.Client, error) {
+	cfg, err := awsConfig(ctx, sesConfig)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	// Build the from address (a non-ASCII display name is RFC 2047 encoded)
-	from := formatFrom(sesConfig.FromName, sesConfig.FromAddress)
-
-	// Build reply-to addresses
-	var replyToAddresses []string
-	if sesConfig.ReplyTo != "" {
-		replyToAddresses = []string{sesConfig.ReplyTo}
-	}
-
-	input := &ses.SendEmailInput{
-		Destination: &types.Destination{
-			ToAddresses: []string{to},
-		},
-		Message: &types.Message{
-			Body: &types.Body{
-				Html: &types.Content{
-					Charset: aws.String("UTF-8"),
-					Data:    aws.String(htmlBody),
-				},
-			},
-			Subject: &types.Content{
-				Charset: aws.String("UTF-8"),
-				Data:    aws.String(subject),
-			},
-		},
-		Source:           aws.String(from),
-		ReplyToAddresses: replyToAddresses,
-	}
-
-	_, err = client.SendEmail(ctx, input)
-	if err != nil {
-		return fmt.Errorf("SES SendEmail failed: %w", err)
-	}
-
-	return nil
+	return ses.NewFromConfig(cfg), nil
 }
 
-// newSESClient builds an SES client from the config, using static credentials
-// when provided and otherwise the default AWS credential chain.
-func newSESClient(ctx context.Context, sesConfig *SESConfig) (*ses.Client, error) {
+// awsConfig is the AWS configuration for an SES account, using static
+// credentials when provided and otherwise the default AWS credential chain.
+func awsConfig(ctx context.Context, sesConfig *SESConfig) (aws.Config, error) {
 	if sesConfig.Region == "" {
 		sesConfig.Region = "us-east-1"
 	}
@@ -85,26 +51,35 @@ func newSESClient(ctx context.Context, sesConfig *SESConfig) (*ses.Client, error
 		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(sesConfig.Region))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return aws.Config{}, fmt.Errorf("failed to load AWS config: %w", err)
 	}
-	return ses.NewFromConfig(cfg), nil
+	return cfg, nil
 }
 
-// SendRawEmailViaSES sends a pre-built raw MIME message (used for attachments
-// via multipart/mixed) through SES SendRawEmail.
-func SendRawEmailViaSES(ctx context.Context, sesConfig *SESConfig, raw []byte) error {
+// SendRawEmailViaSES sends a complete RFC 5322 message through SES
+// SendRawEmail. Destinations is set explicitly, so SES delivers to the one
+// intended recipient and never to addresses parsed from the message headers.
+func SendRawEmailViaSES(ctx context.Context, sesConfig *SESConfig, source, to string, raw []byte) error {
 	client, err := newSESClient(ctx, sesConfig)
 	if err != nil {
 		return err
 	}
 	input := &ses.SendRawEmailInput{
-		RawMessage: &types.RawMessage{Data: raw},
-	}
-	if sesConfig.FromAddress != "" {
-		input.Source = aws.String(sesConfig.FromAddress)
+		RawMessage:   &types.RawMessage{Data: raw},
+		Source:       aws.String(source),
+		Destinations: []string{to},
 	}
 	if _, err := client.SendRawEmail(ctx, input); err != nil {
-		return fmt.Errorf("SES SendRawEmail failed: %w", err)
+		return sesFailure(fmt.Errorf("SES SendRawEmail failed: %w", err))
 	}
 	return nil
+}
+
+// sesFailure classifies an SES send's error the way the AWS SDK decides what
+// to retry: throttling (the sending rate or daily quota), a 5xx and a failed
+// connection are temporary; anything else (a rejected message, an unverified
+// sender, bad credentials) is permanent.
+func sesFailure(err error) error {
+	temporary := retry.IsErrorRetryables(retry.DefaultRetryables).IsErrorRetryable(err) == aws.TrueTernary
+	return &DeliveryError{Temporary: temporary, Err: err}
 }

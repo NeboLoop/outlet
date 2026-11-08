@@ -32,7 +32,7 @@ func newRESTFixture(t *testing.T) restFixture {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	s := &svc.ServiceContext{DB: store, EmailService: email.NewService(store, nil)}
 	s.Config.App.BaseURL = "https://outlet.test"
@@ -191,4 +191,10 @@ func pendingToken(t *testing.T, f restFixture, brandID, email string) string {
 	var token string
 	require.NoError(t, f.svc.DB.GetDB().QueryRow(`SELECT token FROM org_invitations WHERE org_id = ? AND email = ? AND accepted_at IS NULL`, brandID, email).Scan(&token))
 	return token
+}
+
+func TestGetOrganizationBySlug_UnknownIsNotFound(t *testing.T) {
+	f := newRESTFixture(t)
+	_, err := NewGetOrganizationBySlugLogic(f.as(t, "mike"), f.svc).GetOrganizationBySlug(&types.GetOrgBySlugRequest{Slug: "terms"})
+	assert.Equal(t, 404, status(err))
 }

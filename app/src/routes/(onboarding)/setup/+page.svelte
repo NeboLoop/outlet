@@ -107,8 +107,8 @@
 
 			if (!status.has_admin) {
 				currentStep = 'admin';
-			} else if (!status.has_aws) {
-				// Admin exists but no AWS credentials - check if logged in
+			} else if (!status.has_aws && !status.has_smtp) {
+				// Admin exists but no email provider - check if logged in
 				// Mark admin step as already completed
 				completedSteps.add('admin');
 				if (authStore.isAuthenticated) {
@@ -238,8 +238,8 @@
 				<!-- Admin Creation Step -->
 				<div>
 					<div class="text-center mb-6">
-						<div class="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-6">
-							<Shield class="w-8 h-8 text-primary" />
+						<div class="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+							<Shield class="w-6 h-6 text-primary" />
 						</div>
 						<h1 class="text-2xl font-bold text-text mb-2">Create Admin Account</h1>
 						<p class="text-text-muted">
@@ -259,6 +259,7 @@
 							<Input
 								id="admin-company"
 								type="text"
+								autocomplete="organization"
 								placeholder="Your company name"
 								bind:value={adminCompany}
 								required
@@ -270,6 +271,7 @@
 							<Input
 								id="admin-name"
 								type="text"
+								autocomplete="name"
 								placeholder="Your name"
 								bind:value={adminName}
 								required
@@ -281,6 +283,7 @@
 							<Input
 								id="admin-email"
 								type="email"
+								autocomplete="email"
 								placeholder="admin@example.com"
 								bind:value={adminEmail}
 								required
@@ -292,6 +295,8 @@
 							<Input
 								id="admin-password"
 								type="password"
+								autocomplete="new-password"
+								reveal
 								placeholder="Minimum 8 characters"
 								bind:value={adminPassword}
 								required
@@ -303,6 +308,8 @@
 							<Input
 								id="admin-confirm-password"
 								type="password"
+								autocomplete="new-password"
+								reveal
 								placeholder="Confirm your password"
 								bind:value={adminConfirmPassword}
 								required
@@ -336,8 +343,8 @@
 				<!-- AWS Credentials Step -->
 				<div>
 					<div class="text-center mb-6">
-						<div class="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-6">
-							<Cloud class="w-8 h-8 text-primary" />
+						<div class="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+							<Cloud class="w-6 h-6 text-primary" />
 						</div>
 						<h1 class="text-2xl font-bold text-text mb-2">Connect Amazon SES</h1>
 						<p class="text-text-muted">

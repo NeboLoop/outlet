@@ -49,6 +49,7 @@ RUN pnpm install --frozen-lockfile
 # Copy frontend source (but exclude node_modules which we just installed)
 COPY app/src ./src
 COPY app/static ./static
+COPY app/scripts ./scripts
 COPY app/svelte.config.js app/vite.config.ts app/tsconfig.json ./
 
 # Generate SvelteKit files and build frontend for production

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"html"
 	"html/template"
 	"log"
 	"net/http"
@@ -141,6 +143,18 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An address at a domain the brand blocked doesn't subscribe
+	if err := h.svcCtx.DB.RefuseBlockedDomain(r.Context(), list.OrgID, emailAddr); err != nil {
+		if errors.Is(err, db.ErrBlockedDomain) {
+			data["Error"] = "This email address can't subscribe to this list."
+		} else {
+			log.Printf("Error checking blocked domains: %v", err)
+			data["Error"] = "Something went wrong. Please try again."
+		}
+		h.renderTemplate(w, "subscribe.html", data)
+		return
+	}
+
 	// Check if contact already exists for this org
 	existingContact, err := h.svcCtx.DB.GetContactByOrgAndEmail(r.Context(), db.GetContactByOrgAndEmailParams{
 		OrgID: sql.NullString{String: list.OrgID, Valid: true},
@@ -214,10 +228,13 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		}
 		subscriberID = subscriber.ID
 
-		// Send confirmation email
+		// Send confirmation email. Without it the subscription can't be
+		// confirmed, so the person is told rather than sent to check their inbox.
 		if err := h.sendConfirmationEmail(r.Context(), list, emailAddr, name, verificationToken); err != nil {
 			log.Printf("Error sending confirmation email: %v", err)
-			// Still show success - the subscription was created
+			data["Error"] = "We couldn't send your confirmation email. Please try again in a few minutes."
+			h.renderTemplate(w, "subscribe.html", data)
+			return
 		}
 	} else {
 		// Direct subscription (no double opt-in)
@@ -281,16 +298,24 @@ func (h *Handler) HandleConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Confirm the subscription
-	confirmedSub, err := h.svcCtx.DB.ConfirmListSubscription(r.Context(), sql.NullString{String: token, Valid: true})
-	if err != nil {
-		log.Printf("Error confirming subscription: %v", err)
-		h.renderError(w, "Error", "Something went wrong. Please try again later.", http.StatusInternalServerError)
+	// Confirm a pending subscription. A link opened again after confirming
+	// shows the same success page; one for an unsubscribed address does not
+	// subscribe it again.
+	switch subscriber.Status.String {
+	case "pending":
+		if _, err := h.svcCtx.DB.ConfirmListSubscription(r.Context(), sql.NullString{String: token, Valid: true}); err != nil {
+			log.Printf("Error confirming subscription: %v", err)
+			h.renderError(w, "Error", "Something went wrong. Please try again later.", http.StatusInternalServerError)
+			return
+		}
+	case "active":
+	default:
+		h.renderError(w, "Invalid Link", "This confirmation link is no longer valid.", http.StatusNotFound)
 		return
 	}
 
 	// Get contact email for display
-	contact, err := h.svcCtx.DB.GetContact(r.Context(), confirmedSub.ContactID)
+	contact, err := h.svcCtx.DB.GetContact(r.Context(), subscriber.ContactID)
 	if err != nil {
 		log.Printf("Error getting contact: %v", err)
 	}
@@ -386,13 +411,21 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RFC 8058 one-click: the mailbox provider POSTs "List-Unsubscribe=One-Click"
+	// from its own unsubscribe button. It must unsubscribe without a confirmation
+	// page and answer with a plain 200, never a redirect.
+	oneClick := r.FormValue("List-Unsubscribe") == "One-Click"
+
 	confirm := r.FormValue("confirm")
-	if confirm != "yes" {
+	if confirm != "yes" && !oneClick {
 		h.renderTemplate(w, "unsubscribe.html", data)
 		return
 	}
 
 	// Perform unsubscribe
+	if campaignSend.CampaignID != "" {
+		defer func() { _ = h.svcCtx.DB.RefreshCampaignEngagement(r.Context(), campaignSend.CampaignID) }()
+	}
 	if contactID != "" {
 		if err := h.svcCtx.DB.UnsubscribeContact(r.Context(), contactID); err != nil {
 			log.Printf("Error unsubscribing contact: %v", err)
@@ -401,6 +434,13 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		if err := h.svcCtx.DB.CancelEmailsForContact(r.Context(), sql.NullString{String: contactID, Valid: true}); err != nil {
 			log.Printf("Error canceling emails for contact: %v", err)
 		}
+	}
+
+	if oneClick {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true}`))
+		return
 	}
 
 	// Redirect to unsubscribe redirect URL if configured
@@ -426,8 +466,26 @@ func (h *Handler) HandleWebView(w http.ResponseWriter, r *http.Request) {
 	// Try campaign sends first
 	campaignSend, err := h.svcCtx.DB.GetCampaignSendByTrackingToken(r.Context(), sql.NullString{String: token, Valid: true})
 	if err == nil {
-		subject = campaignSend.Subject
-		htmlBody = campaignSend.HtmlBody
+		// The campaign as its recipient got it: built by CampaignMessage, the
+		// one way a campaign send is built, design and merge tags included.
+		m := h.emailService.CampaignMessage(email.CampaignEmail{
+			OrgID:         campaignSend.OrgID,
+			FromName:      campaignSend.FromName.String,
+			FromEmail:     campaignSend.FromEmail.String,
+			ReplyTo:       campaignSend.ReplyTo.String,
+			To:            campaignSend.Email,
+			Name:          campaignSend.Name,
+			Subject:       campaignSend.Subject,
+			HTML:          campaignSend.HtmlBody,
+			Text:          campaignSend.PlainText.String,
+			DesignHTML:    campaignSend.DesignHtml,
+			DesignText:    campaignSend.DesignText,
+			TrackingToken: campaignSend.TrackingToken.String,
+			TrackOpens:    campaignSend.TrackOpens.Valid && campaignSend.TrackOpens.Int64 == 1,
+			TrackClicks:   campaignSend.TrackClicks.Valid && campaignSend.TrackClicks.Int64 == 1,
+		})
+		subject = m.Subject
+		htmlBody = m.HTML
 		orgName = campaignSend.OrgName.String
 	} else {
 		// Try email queue (sequences)
@@ -452,7 +510,10 @@ func (h *Handler) HandleWebView(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]interface{}{
 		"Subject":  subject,
-		"HTMLBody": template.HTML(htmlBody), // Safe to render as HTML
+		// The email is a whole document (a design brings its own <head> and
+		// styles), so the page shows it in a sandboxed frame of its own; its
+		// links open in a new tab.
+		"EmailDoc": `<base target="_blank">` + htmlBody,
 		"OrgName":  orgName,
 	}
 
@@ -476,7 +537,7 @@ func (h *Handler) sendConfirmationEmail(ctx context.Context, list db.GetListByPu
 
 	htmlBody := `
 		<p>Hi` + conditionalName(toName) + `,</p>
-		<p>Please confirm your subscription to <strong>` + list.Name + `</strong> by clicking the link below:</p>
+		<p>Please confirm your subscription to <strong>` + html.EscapeString(list.Name) + `</strong> by clicking the link below:</p>
 		<p><a href="` + confirmURL + `">Confirm Subscription</a></p>
 		<p>If you didn't request this, you can safely ignore this email.</p>
 	`
@@ -495,11 +556,14 @@ func (h *Handler) sendConfirmationEmail(ctx context.Context, list db.GetListByPu
 		fromName = list.FromName.String
 	}
 
-	// The brand sends only from its own domains.
-	if err := email.CheckSender(ctx, h.svcCtx.DB, list.OrgID, fromEmail); err != nil {
-		return err
-	}
-	return h.emailService.SendEmailFrom(ctx, fromEmail, fromName, toEmail, subject, htmlBody)
+	return h.emailService.Send(ctx, email.Message{
+		OrgID:     list.OrgID,
+		FromName:  fromName,
+		FromEmail: fromEmail,
+		To:        toEmail,
+		Subject:   subject,
+		HTML:      htmlBody,
+	})
 }
 
 func conditionalName(name string) string {

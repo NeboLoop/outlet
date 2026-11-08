@@ -1,11 +1,17 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import {
 		listListSubscribers,
 		removeListSubscriber,
 		listSequences,
-		enrollInSequence,
+		adminEnrollInSequence,
 		getSubscriberDetail,
+		addListSubscriber,
+		importListSubscribers,
+		getImportJob,
+		exportListSubscribers,
+		type ImportJobInfo,
 		type ListSubscriberInfo,
 		type SequenceInfo,
 		type SubscriberDetailResponse
@@ -19,7 +25,11 @@
 		SearchInput,
 		Select,
 		Modal,
-		AlertDialog
+		AlertDialog,
+		ValidationBadge,
+		Input,
+		ProgressBar,
+		Checkbox
 	} from '$lib/components/ui';
 	import {
 		Users,
@@ -29,6 +39,8 @@
 		MousePointer,
 		Shield,
 		UserPlus,
+		Upload,
+		Download,
 		X
 	} from '@lucide/svelte';
 	import { getListContext } from '../listContext';
@@ -55,9 +67,110 @@
 	let selectedSequenceSlug = $state('');
 	let enrolling = $state(false);
 	let enrollSuccess = $state(false);
+	let enrollError = $state('');
 	let sequences = $state<SequenceInfo[]>([]);
 	let sequencesLoading = $state(false);
 	let sequencesLoaded = $state(false);
+
+	// Add subscriber modal
+	let showAddModal = $state(false);
+	let addEmail = $state('');
+	let addName = $state('');
+	let adding = $state(false);
+	let notice = $state('');
+
+	// CSV export: the server streams every subscriber of the list
+	let exporting = $state(false);
+
+	async function handleExport() {
+		exporting = true;
+		error = '';
+		try {
+			await exportListSubscribers(listId);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to export subscribers';
+		} finally {
+			exporting = false;
+		}
+	}
+
+	// CSV import: the file goes to an import job the server runs
+	let importInput = $state<HTMLInputElement | null>(null);
+	let showImportModal = $state(false);
+	let importStartSignup = $state(true);
+	let importJob = $state<ImportJobInfo | null>(null);
+	let importing = $derived(!!importJob && (importJob.status === 'pending' || importJob.status === 'processing'));
+
+	function openAddModal() {
+		addEmail = '';
+		addName = '';
+		showAddModal = true;
+	}
+
+	async function submitAdd() {
+		if (!addEmail) return;
+		adding = true;
+		error = '';
+		notice = '';
+		try {
+			const res = await addListSubscriber({}, { email: addEmail.trim(), name: addName.trim() }, listId);
+			notice = res.message || 'Subscriber added';
+			showAddModal = false;
+			await Promise.all([loadSubscribers(), ctx.reload()]);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to add subscriber';
+		} finally {
+			adding = false;
+		}
+	}
+
+	async function handleImportFile(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+		error = '';
+		notice = '';
+		try {
+			showImportModal = false;
+			importJob = await importListSubscribers(
+				{},
+				{ filename: file.name, csv: await file.text(), start_signup: importStartSignup },
+				listId
+			);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to import the file';
+		}
+	}
+
+	// Follow the import job until it finishes, then show the result
+	$effect(() => {
+		if (!importing || !importJob) return;
+		const id = importJob.id;
+		const timer = setInterval(async () => {
+			try {
+				importJob = await getImportJob({}, id);
+			} catch (err) {
+				error = err instanceof Error ? err.message : 'Failed to read the import';
+				importJob = null;
+				return;
+			}
+			if (importJob.status === 'completed') {
+				notice =
+					`Imported ${importJob.success_count.toLocaleString()} of ${importJob.processed_rows.toLocaleString()} rows` +
+					(importJob.error_count ? ` (${importJob.error_count.toLocaleString()} refused or invalid)` : '');
+				importJob = null;
+				await Promise.all([loadSubscribers(), ctx.reload()]);
+			} else if (importJob.status === 'failed' || importJob.status === 'cancelled') {
+				error = importJob.status === 'failed' ? 'The import failed.' : 'The import was cancelled.';
+				importJob = null;
+			}
+		}, 2000);
+		return () => clearInterval(timer);
+	});
+
+	// Show the validation column only once any subscriber has been validated
+	let hasValidation = $derived(subscribers.some(s => !!s.validation_status));
 
 	// Filtered subscribers
 	let filteredSubscribers = $derived(
@@ -110,7 +223,7 @@
 		removing = true;
 		try {
 			await removeListSubscriber({}, listId, removeSubscriber.id);
-			await loadSubscribers();
+			await Promise.all([loadSubscribers(), ctx.reload()]);
 		} catch (err: any) {
 			error = err.message || 'Failed to remove subscriber';
 		} finally {
@@ -137,6 +250,7 @@
 		enrollingSubscriber = subscriber;
 		selectedSequenceSlug = '';
 		enrollSuccess = false;
+		enrollError = '';
 		showEnrollModal = true;
 		if (!sequencesLoaded) {
 			loadSequences();
@@ -146,30 +260,74 @@
 	async function handleEnrollInSequence() {
 		if (!enrollingSubscriber || !selectedSequenceSlug) return;
 		enrolling = true;
-		error = '';
+		enrollError = '';
 		try {
-			await enrollInSequence({
+			await adminEnrollInSequence({
 				sequence_slug: selectedSequenceSlug,
 				email: enrollingSubscriber.email
 			});
 			enrollSuccess = true;
+			// The open drawer lists the subscriber's enrollments: show the new one.
+			if (selectedSubscriber?.id === enrollingSubscriber.id) {
+				subscriberDetail = await getSubscriberDetail({}, listId, enrollingSubscriber.id);
+			}
 			setTimeout(() => {
 				showEnrollModal = false;
 				enrollingSubscriber = null;
 				enrollSuccess = false;
 			}, 1500);
-		} catch (err: any) {
-			error = err.message || 'Failed to enroll in sequence';
+		} catch (err) {
+			enrollError = err instanceof Error ? err.message : 'Failed to enroll in sequence';
 		} finally {
 			enrolling = false;
 		}
 	}
 </script>
 
+<div class="flex justify-end gap-2 mb-4">
+	<input bind:this={importInput} type="file" accept=".csv,text/csv" class="hidden" onchange={handleImportFile} />
+	<Button
+		type="secondary"
+		size="sm"
+		onclick={() => {
+			importStartSignup = true;
+			showImportModal = true;
+		}}
+		disabled={importing}
+	>
+		<Upload class="mr-2 h-4 w-4" />
+		Import CSV
+	</Button>
+	<Button type="secondary" size="sm" onclick={handleExport} disabled={exporting}>
+		<Download class="mr-2 h-4 w-4" />
+		{exporting ? 'Exporting...' : 'Export CSV'}
+	</Button>
+	<Button type="primary" size="sm" onclick={openAddModal}>
+		<UserPlus class="mr-2 h-4 w-4" />
+		Add subscriber
+	</Button>
+</div>
+
 {#if error}
 	<Alert type="error" title="Error" class="mb-4">
 		<p>{error}</p>
 	</Alert>
+{/if}
+
+{#if notice}
+	<Alert type="success" class="mb-4">
+		<p>{notice}</p>
+	</Alert>
+{/if}
+
+{#if importJob}
+	<div class="mb-4">
+		<ProgressBar
+			value={importJob.processed_rows}
+			max={importJob.total_rows || 1}
+			label="Importing {importJob.filename}: {importJob.processed_rows.toLocaleString()} / {importJob.total_rows.toLocaleString()}"
+		/>
+	</div>
 {/if}
 
 {#if subscribersLoading}
@@ -180,7 +338,7 @@
 	<EmptyState
 		icon={Users}
 		title="No subscribers yet"
-		description="Subscribers will appear here when they join this list."
+		description="Subscribers appear here when they join this list. Add them by hand or import a CSV with an email column."
 	/>
 {:else}
 	{#if subscribers.length > 5}
@@ -196,6 +354,9 @@
 					<th class="text-left">Email</th>
 					<th class="text-left">Name</th>
 					<th class="text-left">Status</th>
+					{#if hasValidation}
+						<th class="text-left">Validation</th>
+					{/if}
 					<th class="text-left">Subscribed</th>
 				</tr>
 			</thead>
@@ -221,9 +382,18 @@
 								<Badge variant="default" size="sm">{subscriber.status}</Badge>
 							{/if}
 						</td>
+						{#if hasValidation}
+							<td>
+								{#if subscriber.validation_status}
+									<ValidationBadge status={subscriber.validation_status} subStatus={subscriber.validation_sub_status} />
+								{:else}
+									<span class="text-text-muted">-</span>
+								{/if}
+							</td>
+						{/if}
 						<td class="text-text-muted">
 							{#if subscriber.subscribed_at}
-								{new Date(subscriber.subscribed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+								{formatDate(subscriber.subscribed_at)}
 							{:else}
 								-
 							{/if}
@@ -234,6 +404,54 @@
 		</table>
 	</div>
 {/if}
+
+<!-- Add Subscriber Modal -->
+<Modal bind:show={showImportModal} title="Import CSV">
+	<div class="space-y-4">
+		<p class="text-sm text-text-muted">
+			A CSV file with an email column, and optionally a name column. Everyone in it joins the list right away, with no
+			confirmation email. Import only people who asked to hear from you.
+		</p>
+		<Checkbox
+			bind:checked={importStartSignup}
+			label="Start sign-up emails for these subscribers"
+			description="Each person gets this list's sign-up autoresponders from the first email. Turn this off when importing an old list whose people already had them."
+		/>
+	</div>
+
+	{#snippet footer()}
+		<div class="flex justify-end gap-3">
+			<Button type="secondary" onclick={() => (showImportModal = false)}>Cancel</Button>
+			<Button type="primary" onclick={() => importInput?.click()}>
+				<Upload class="mr-2 h-4 w-4" />
+				Choose file
+			</Button>
+		</div>
+	{/snippet}
+</Modal>
+
+<Modal bind:show={showAddModal} title="Add subscriber">
+	<div class="space-y-4">
+		<p class="text-sm text-text-muted">They join the list right away, with no confirmation email, and the list's sign-up emails start for them. Add only people who asked to hear from you.</p>
+		<div>
+			<label for="add-email" class="form-label">Email</label>
+			<Input id="add-email" type="email" bind:value={addEmail} placeholder="name@example.com" />
+		</div>
+		<div>
+			<label for="add-name" class="form-label">Name (optional)</label>
+			<Input id="add-name" type="text" bind:value={addName} />
+		</div>
+	</div>
+
+	{#snippet footer()}
+		<div class="flex justify-end gap-3">
+			<Button type="secondary" onclick={() => (showAddModal = false)} disabled={adding}>Cancel</Button>
+			<Button type="primary" onclick={submitAdd} disabled={!addEmail || adding}>
+				{adding ? 'Adding...' : 'Add subscriber'}
+			</Button>
+		</div>
+	{/snippet}
+</Modal>
 
 <!-- Enroll in Sequence Modal -->
 <Modal
@@ -254,9 +472,9 @@
 				</div>
 			{:else if sequences.length === 0}
 				<Alert type="info" title="No sequences available">
-					<p>You haven't created any sequences yet. Create a sequence first to enroll subscribers.</p>
-					<a href="{basePath}/sequences" class="btn btn-sm btn-primary mt-3">
-						Create Sequence
+					<p>You haven't created any sequences yet. Create an autoresponder first to enroll subscribers.</p>
+					<a href="{basePath}/lists/{listId}/autoresponders" class="btn btn-sm btn-primary mt-3">
+						Create Autoresponder
 					</a>
 				</Alert>
 			{:else}
@@ -267,6 +485,12 @@
 						...sequences.map(s => ({ value: s.slug, label: `${s.name} (${s.trigger_event})` }))
 					]}
 				/>
+			{/if}
+
+			{#if enrollError}
+				<Alert type="error" title="Couldn't enroll">
+					<p>{enrollError}</p>
+				</Alert>
 			{/if}
 
 			{#if enrollSuccess}
@@ -421,7 +645,7 @@
 									<div class="flex justify-between">
 										<dt class="text-base-content/60">Subscribed</dt>
 										<dd class="font-medium">
-											{subscriberDetail.subscribed_at ? new Date(subscriberDetail.subscribed_at).toLocaleDateString() : '-'}
+											{formatDate(subscriberDetail.subscribed_at) || '-'}
 										</dd>
 									</div>
 									<div class="flex justify-between">
@@ -442,9 +666,9 @@
 										<dt class="text-base-content/60">Last Activity</dt>
 										<dd class="font-medium">
 											{subscriberDetail.last_open_at
-												? new Date(subscriberDetail.last_open_at).toLocaleDateString()
+												? formatDate(subscriberDetail.last_open_at)
 												: subscriberDetail.last_email_at
-													? new Date(subscriberDetail.last_email_at).toLocaleDateString()
+													? formatDate(subscriberDetail.last_email_at)
 													: '-'}
 										</dd>
 									</div>
@@ -488,7 +712,7 @@
 													<tr>
 														<td class="font-medium">{activity.campaign_name || activity.campaign_subject || 'Unknown'}</td>
 														<td class="text-center text-base-content/60">
-															{activity.sent_at ? new Date(activity.sent_at).toLocaleDateString() : '-'}
+															{formatDate(activity.sent_at) || '-'}
 														</td>
 														<td class="text-center">
 															{#if activity.opened_at}
@@ -524,7 +748,7 @@
 												<div>
 													<p class="font-medium">{enrollment.sequence_name || 'Unknown Sequence'}</p>
 													<p class="text-xs text-base-content/60">
-														Step {enrollment.current_position} • Started {enrollment.started_at ? new Date(enrollment.started_at).toLocaleDateString() : '-'}
+														Step {enrollment.current_position} • Started {formatDate(enrollment.started_at) || '-'}
 													</p>
 												</div>
 												<div>

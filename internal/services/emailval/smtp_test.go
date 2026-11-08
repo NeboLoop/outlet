@@ -8,69 +8,69 @@ import (
 	"time"
 )
 
-func TestIsGreylistError(t *testing.T) {
+func TestIsGreylisted(t *testing.T) {
 	tests := []struct {
 		name     string
-		err      error
+		text     string
 		expected bool
 	}{
 		{
-			name:     "nil error",
-			err:      nil,
+			name:     "empty",
+			text:     "",
 			expected: false,
 		},
 		{
 			name:     "451 error code",
-			err:      errors.New("451 Try again later"),
+			text:     "451 Try again later",
 			expected: true,
 		},
 		{
 			name:     "greylist in message",
-			err:      errors.New("Greylisted, please retry"),
+			text:     "Greylisted, please retry",
 			expected: true,
 		},
 		{
 			name:     "try again message",
-			err:      errors.New("Please try again in a few minutes"),
+			text:     "Please try again in a few minutes",
 			expected: true,
 		},
 		{
 			name:     "temporarily unavailable",
-			err:      errors.New("Service temporarily unavailable"),
+			text:     "Service temporarily unavailable",
 			expected: true,
 		},
 		{
 			name:     "regular error",
-			err:      errors.New("connection refused"),
+			text:     "connection refused",
 			expected: false,
 		},
 		{
 			name:     "550 user not found",
-			err:      errors.New("550 User not found"),
+			text:     "550 User not found",
 			expected: false,
 		},
 		{
 			name:     "timeout error",
-			err:      errors.New("connection timeout"),
+			text:     "connection timeout",
 			expected: false,
 		},
 		{
 			name:     "mixed case greylist",
-			err:      errors.New("GREYLISTED - retry later"),
+			text:     "GREYLISTED - retry later",
 			expected: true,
 		},
 		{
 			name:     "451 with greylist",
-			err:      errors.New("451 Greylisting in effect"),
+			text:     "451 Greylisting in effect",
 			expected: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isGreylistError(tt.err)
+			result := isGreylisted(tt.text)
 			if result != tt.expected {
-				t.Errorf("isGreylistError(%v) = %v, want %v", tt.err, result, tt.expected)
+				t.Errorf("isGreylisted(%q) = %v, want %v", tt.text, result, tt.expected)
 			}
 		})
 	}
@@ -130,16 +130,14 @@ func TestDefaultSMTPDialer_DefaultTimeout(t *testing.T) {
 }
 
 func TestRateLimiter_Wait(t *testing.T) {
-	rl := &rateLimiter{
-		domains:     make(map[string]time.Time),
-		minInterval: 10 * time.Millisecond,
-	}
+	rl := &rateLimiter{}
+	const interval = 10 * time.Millisecond
 
 	ctx := context.Background()
 
 	// First call should not wait
 	start := time.Now()
-	err := rl.wait(ctx, "test.com")
+	err := rl.wait(ctx, "test.com", interval)
 	if err != nil {
 		t.Fatalf("First wait returned error: %v", err)
 	}
@@ -150,7 +148,7 @@ func TestRateLimiter_Wait(t *testing.T) {
 
 	// Second call to same domain should wait
 	start = time.Now()
-	err = rl.wait(ctx, "test.com")
+	err = rl.wait(ctx, "test.com", interval)
 	if err != nil {
 		t.Fatalf("Second wait returned error: %v", err)
 	}
@@ -161,7 +159,7 @@ func TestRateLimiter_Wait(t *testing.T) {
 
 	// Call to different domain should not wait
 	start = time.Now()
-	err = rl.wait(ctx, "other.com")
+	err = rl.wait(ctx, "other.com", interval)
 	if err != nil {
 		t.Fatalf("Wait for other domain returned error: %v", err)
 	}
@@ -172,14 +170,12 @@ func TestRateLimiter_Wait(t *testing.T) {
 }
 
 func TestRateLimiter_WaitCancelled(t *testing.T) {
-	rl := &rateLimiter{
-		domains:     make(map[string]time.Time),
-		minInterval: 1 * time.Second, // Long interval
-	}
+	rl := &rateLimiter{}
+	const interval = 1 * time.Second // Long interval
 
 	// First call to set the timestamp
 	ctx := context.Background()
-	err := rl.wait(ctx, "test.com")
+	err := rl.wait(ctx, "test.com", interval)
 	if err != nil {
 		t.Fatalf("First wait returned error: %v", err)
 	}
@@ -189,7 +185,7 @@ func TestRateLimiter_WaitCancelled(t *testing.T) {
 	cancel() // Cancel immediately
 
 	start := time.Now()
-	err = rl.wait(ctx, "test.com")
+	err = rl.wait(ctx, "test.com", interval)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -244,46 +240,24 @@ func TestSMTPConfig_Fields(t *testing.T) {
 	}
 }
 
-// Note: Testing checkSMTPMailbox and smtpProbe would require network access
-// or more sophisticated mocking of the textproto.Conn. These are integration
-// tests that should be run in a controlled environment.
-
-func TestExpectCode_EdgeCases(t *testing.T) {
-	// This tests the expectCode function behavior conceptually
-	// Actual testing would require a mock textproto.Conn
-
-	// Document expected behavior:
-	// - expectCode("220") should accept "220 Welcome"
-	// - expectCode("250") should accept "250 OK"
-	// - expectCode("250") should reject "251 Forward"
-}
-
-func TestReadFinalResponse_EdgeCases(t *testing.T) {
-	// This tests the readFinalResponse function behavior conceptually
-	// Actual testing would require a mock textproto.Conn
-
-	// Document expected behavior:
-	// - "250-First line" followed by "250 Last line" should return "250 Last line"
-	// - "250 Single line" should return immediately
-}
+// smtpProbe and probeMailbox are covered end to end against an in-process
+// fake MX server in probe_test.go.
 
 // BenchmarkRateLimiter benchmarks the rate limiter
 func BenchmarkRateLimiter(b *testing.B) {
-	rl := &rateLimiter{
-		domains:     make(map[string]time.Time),
-		minInterval: 1 * time.Nanosecond, // Very short for benchmarking
-	}
+	rl := &rateLimiter{}
+	const interval = 1 * time.Nanosecond // Very short for benchmarking
 	ctx := context.Background()
 
 	b.Run("same_domain", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			rl.wait(ctx, "bench.com")
+			rl.wait(ctx, "bench.com", interval)
 		}
 	})
 
 	b.Run("different_domains", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			rl.wait(ctx, "domain"+string(rune(i%26+65))+".com")
+			rl.wait(ctx, "domain"+string(rune(i%26+65))+".com", interval)
 		}
 	})
 }

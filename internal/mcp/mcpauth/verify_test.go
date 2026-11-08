@@ -19,10 +19,10 @@ import (
 
 func newVerifyFixture(t *testing.T) (*Authenticator, *db.Store) {
 	t.Helper()
-	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db"))
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	_, err = store.CreateUser(context.Background(), db.CreateUserParams{
 		ID: "u1", Email: "u1@example.com", PasswordHash: "x", Name: "U", Role: "agent", Status: "active", EmailVerified: int64(1),

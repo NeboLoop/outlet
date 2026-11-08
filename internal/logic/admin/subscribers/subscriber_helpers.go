@@ -28,15 +28,17 @@ func contactToSubscriberInfo(c db.Contact) *types.SubscriberInfo {
 	}
 
 	return &types.SubscriberInfo{
-		Id:             c.ID,
-		Name:           c.Name,
-		Email:          c.Email,
-		Status:         c.Status.String,
-		EmailVerified:  c.EmailVerified == 1,
-		Source:         c.Source.String,
-		CreatedAt:      createdAt,
-		VerifiedAt:     verifiedAt,
-		UnsubscribedAt: unsubscribedAt,
-		BlockedAt:      blockedAt,
+		Id:                  c.ID,
+		Name:                c.Name,
+		Email:               c.Email,
+		Status:              c.Status.String,
+		EmailVerified:       c.EmailVerified == 1,
+		Source:              c.Source.String,
+		CreatedAt:           createdAt,
+		VerifiedAt:          verifiedAt,
+		UnsubscribedAt:      unsubscribedAt,
+		BlockedAt:           blockedAt,
+		ValidationStatus:    c.ValidationStatus.String,
+		ValidationSubStatus: c.ValidationSubStatus.String,
 	}
 }

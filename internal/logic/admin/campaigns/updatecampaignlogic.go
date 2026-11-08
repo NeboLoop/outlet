@@ -6,6 +6,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/logic/admin/designs"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -33,7 +34,7 @@ func (l *UpdateCampaignLogic) UpdateCampaign(req *types.UpdateCampaignRequest) (
 		return nil, err
 	}
 
-	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, req.FromEmail); err != nil {
+	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, email.KindMarketing, req.FromEmail); err != nil {
 		return nil, err
 	}
 	var listIds, excludeListIds interface{}
@@ -50,6 +51,17 @@ func (l *UpdateCampaignLogic) UpdateCampaign(req *types.UpdateCampaignRequest) (
 			return nil, err
 		}
 		excludeListIds = db.EncodeListIDs(ids)
+	}
+
+	// Without design_id the campaign keeps its design; "" removes it.
+	var setDesign int64
+	var designID sql.NullInt64
+	if req.DesignId != nil {
+		design, err := designs.BrandDesign(l.ctx, l.svcCtx.DB, orgID, *req.DesignId)
+		if err != nil {
+			return nil, err
+		}
+		setDesign, designID = 1, designs.DesignColumn(design)
 	}
 
 	var trackOpens, trackClicks sql.NullInt64
@@ -79,6 +91,8 @@ func (l *UpdateCampaignLogic) UpdateCampaign(req *types.UpdateCampaignRequest) (
 		ExcludeListIds: excludeListIds,
 		TrackOpens:     trackOpens,
 		TrackClicks:    trackClicks,
+		SetDesign:      setDesign,
+		DesignID:       designID,
 	})
 	if err != nil {
 		l.Errorf("Failed to update campaign: %v", err)

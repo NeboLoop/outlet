@@ -11,6 +11,13 @@ export interface AddContactTagsRequest {
 export interface AddContactTagsRequestParams {
 }
 
+export interface AddListSubscriberRequest {
+	email: string
+	name?: string
+}
+export interface AddListSubscriberRequestParams {
+}
+
 export interface AddSuppressedEmailRequest {
 	email: string
 	reason?: string
@@ -58,6 +65,22 @@ export interface AdminTopReferrer {
 export interface AnalyticsResponse {
 	success: boolean
 	message?: string
+}
+
+export interface AppendValidationJobEmailsRequest {
+	emails: Array<string> // max 10000 per call
+}
+export interface AppendValidationJobEmailsRequestParams {
+}
+
+export interface ApplyValidationJobRequest {
+	statuses: Array<string> // results with these statuses are added to the suppression list
+}
+export interface ApplyValidationJobRequestParams {
+}
+
+export interface ApplyValidationJobResponse {
+	suppressed: number
 }
 
 export interface BackupInfo {
@@ -297,6 +320,7 @@ export interface CreateCustomFieldRequestParams {
 export interface CreateDomainIdentityRequest {
 	domain: string // If empty, extracted from org's from_email
 	mail_from_subdomain?: string // Custom MAIL FROM subdomain (default: "mail")
+	pathway_id?: string // The sending pathway it joins; empty: the one carrying transactional mail
 }
 export interface CreateDomainIdentityRequestParams {
 }
@@ -313,7 +337,7 @@ export interface CreateEmailDesignRequest {
 
 export interface CreateEntryRuleRequest {
 	sequence_id: string
-	trigger_type: string // list_join, sequence_complete, tag_added, manual
+	trigger_type: string // list_join, sequence_complete, tag_added
 	source_id?: string
 	priority?: number
 }
@@ -383,6 +407,7 @@ export interface CreateSequenceRequest {
 	name: string
 	trigger_event?: string
 	sequence_type?: string // lifecycle or transactional
+	is_active?: boolean // Omitted starts it active
 }
 
 export interface CreateTemplateRequest {
@@ -420,6 +445,12 @@ export interface CreateUserRequest {
 
 export interface CreateUserResponse {
 	user: UserInfo
+}
+
+export interface CreateValidationJobRequest {
+	name?: string
+	list_id?: string // validate a list's subscribers; starts immediately
+	emails?: Array<string> // upload source; max 10000 per call, append more, then start
 }
 
 export interface CustomFieldInfo {
@@ -534,8 +565,9 @@ export interface DeleteWebhookRequestParams {
 
 export interface DetectSESQuotaRequest {
 	aws_region?: string
-	aws_access_key?: string // If empty, use org's stored creds
+	aws_access_key?: string // If empty, use the pathway's
 	aws_secret_key?: string
+	pathway_id?: string // An ses pathway's keys; empty: the platform's
 }
 export interface DetectSESQuotaRequestParams {
 }
@@ -551,11 +583,6 @@ export interface DomainIdentityInfo {
 	dns_records: Array<DNSRecord>
 	last_checked_at?: string
 	created_at: string
-}
-
-export interface DownloadBackupRequest {
-}
-export interface DownloadBackupRequestParams {
 }
 
 export interface EmailAttachment {
@@ -694,7 +721,7 @@ export interface EnrollSequenceResponse {
 export interface EntryRuleInfo {
 	id: string
 	sequence_id: string
-	trigger_type: string // list_join, sequence_complete, tag_added, manual
+	trigger_type: string // list_join, sequence_complete, tag_added
 	source_id?: string
 	source_name?: string // list name or sequence name
 	priority: number
@@ -758,7 +785,7 @@ export interface GDPRConsentRequestParams {
 
 export interface GDPRDeleteRequest {
 	confirm: boolean // Must be true to proceed
-	delete_email?: boolean // Also delete from email provider logs if possible
+	delete_email?: boolean // Also ask the brand's email providers to delete what they keep about the address, as far as each allows
 }
 export interface GDPRDeleteRequestParams {
 }
@@ -767,7 +794,8 @@ export interface GDPRDeleteResponse {
 	success: boolean
 	message: string
 	deleted_data: string // Summary of what was deleted
-	audit_record_id: string
+	audit_record_id: string // The deletion's row in the GDPR audit log
+	provider_results: Array<GDPRProviderResult> // Set when delete_email was asked for
 }
 
 export interface GDPRExportRequest {
@@ -776,9 +804,9 @@ export interface GDPRExportRequestParams {
 }
 
 export interface GDPRExportResponse {
-	download_url: string
-	expires_at: string
-	format: string // json, csv
+	filename: string
+	format: string // json
+	data: string // the contact's data, as JSON
 }
 
 export interface GDPRLookupRequest {
@@ -791,6 +819,13 @@ export interface GDPRLookupResponse {
 	found: boolean
 	contact_id?: string
 	email?: string
+}
+
+export interface GDPRProviderResult {
+	pathway: string
+	provider: string // Amazon SES, SMTP relay, Mailboxes
+	result: string
+	failed: boolean
 }
 
 export interface GetBackupRequest {
@@ -995,6 +1030,14 @@ export interface ImportJobInfo {
 	created_at: string
 }
 
+export interface ImportListSubscribersRequest {
+	filename: string
+	csv: string
+	start_signup?: boolean // Start the list's sign-up emails for the people added; off for an old list that shouldn't get them
+}
+export interface ImportListSubscribersRequestParams {
+}
+
 export interface ListBackupsRequest {
 }
 export interface ListBackupsRequestParams {
@@ -1141,6 +1184,16 @@ export interface ListMCPAPIKeysResponse {
 	total: number
 }
 
+export interface ListOrgPeopleRequest {
+}
+export interface ListOrgPeopleRequestParams {
+}
+
+export interface ListOrgPeopleResponse {
+	members: Array<OrgMember>
+	invitations: Array<OrgPendingInvitation> // not yet accepted
+}
+
 export interface ListSequenceEnrollmentsResponse {
 	enrollments: Array<SequenceEnrollmentInfo>
 }
@@ -1161,6 +1214,8 @@ export interface ListSubscriberInfo {
 	status: string
 	subscribed_at: string
 	unsubscribed_at?: string
+	validation_status?: string
+	validation_sub_status?: string
 }
 
 export interface ListSubscribersRequest {
@@ -1200,6 +1255,45 @@ export interface ListTransactionalEmailsResponse {
 	total: number
 }
 
+export interface ListValidationJobsRequest {
+}
+export interface ListValidationJobsRequestParams {
+	page?: number
+	limit?: number
+}
+
+export interface ListValidationJobsResponse {
+	jobs: Array<ValidationJobInfo>
+	total: number
+	page: number
+	limit: number
+}
+
+export interface ListValidationResultsRequest {
+}
+export interface ListValidationResultsRequestParams {
+	status?: string
+	page?: number
+	limit?: number
+}
+
+export interface ListValidationResultsResponse {
+	results: Array<ValidationResult>
+	total: number
+	page: number
+	limit: number
+}
+
+export interface ListWebhookDeliveriesRequest {
+}
+export interface ListWebhookDeliveriesRequestParams {
+	limit?: number // default 50, max 200
+}
+
+export interface ListWebhookDeliveriesResponse {
+	deliveries: Array<WebhookDeliveryInfo>
+}
+
 export interface ListWebhookLogsRequest {
 }
 export interface ListWebhookLogsRequestParams {
@@ -1236,6 +1330,164 @@ export interface MCPAPIKeyInfo {
 	created_at: string
 }
 
+export interface MailboxConnection {
+	id: string
+	pool_id: string
+	service: string // manual, maildoso, cheapinboxes, infraforge
+	name: string
+	key_set: boolean
+	daily_limit?: number // its mailboxes' daily limit unless one has its own; empty: the pool's
+	warmup_start?: number // its mailboxes' warm-up, first day's allowance; empty: the pool's
+	warmup_step?: number // added each day until the daily limit; empty: the pool's
+	domains: Array<MailboxConnectionDomain>
+	mailboxes: number
+	created_at: string
+}
+
+export interface MailboxConnectionDomain {
+	id: string
+	domain: string
+}
+
+export interface MailboxConnectionIDRequest {
+}
+export interface MailboxConnectionIDRequestParams {
+}
+
+export interface MailboxConnectionList {
+	connections: Array<MailboxConnection>
+}
+
+export interface MailboxConnectionListRequest {
+}
+export interface MailboxConnectionListRequestParams {
+	pool_id?: string // one pool's; empty: every pool's
+}
+
+export interface MailboxConnectionRequest {
+	pool_id?: string // empty: the pool carrying outreach (made if the brand has none)
+	service: string // manual, maildoso, cheapinboxes, infraforge
+	name?: string // empty: the service's name
+	api_key?: string // required for a service; tried before it is saved
+	daily_limit?: number // the three limits all empty: the service's terms (Maildoso 15 a day, warming up from 5 by 1), else the pool's
+	warmup_start?: number
+	warmup_step?: number
+}
+
+export interface MailboxDailyLimitRequest {
+	daily_limit?: number // empty: use the pool's
+}
+export interface MailboxDailyLimitRequestParams {
+}
+
+export interface MailboxServiceBuyRequest {
+	quote_id: string
+	confirm: boolean // must be true: buying spends money
+}
+export interface MailboxServiceBuyRequestParams {
+}
+
+export interface MailboxServiceBuyResponse {
+	summary: string
+	charged_cents?: number
+	domain_id?: string
+	connection: MailboxServiceConnection
+	check?: OutboundDNSCheck
+	imported: Array<OutboundMailboxResult>
+	pending: Array<string> // not finished at the service yet; sync with import later
+}
+
+export interface MailboxServiceConnectRequest {
+	domain: string
+}
+export interface MailboxServiceConnectRequestParams {
+}
+
+export interface MailboxServiceConnection {
+	domain: string
+	nameservers?: Array<string> // set these at the domain's registrar
+	status?: string
+	note: string
+}
+
+export interface MailboxServiceDeleteRequest {
+}
+export interface MailboxServiceDeleteRequestParams {
+}
+
+export interface MailboxServiceDomain {
+	id: string
+	name: string
+	status: string
+	nameservers?: Array<string>
+}
+
+export interface MailboxServiceDomainResponse {
+	domain_id?: string
+	connection: MailboxServiceConnection
+	check: OutboundDNSCheck
+}
+
+export interface MailboxServiceInventory {
+	service: string
+	domains: Array<MailboxServiceDomain>
+	mailboxes: Array<MailboxServiceMailbox>
+}
+
+export interface MailboxServiceMailbox {
+	id: string
+	email: string
+	first_name?: string
+	last_name?: string
+	status: string
+	ready: boolean
+}
+
+export interface MailboxServicePerson {
+	first_name: string
+	last_name: string
+	local?: string // before the @; empty: first.last
+}
+
+export interface MailboxServicePoolMailbox {
+	id: string
+	email: string
+}
+
+export interface MailboxServiceQuote {
+	id: string
+	service: string
+	kind: string
+	domain: string
+	mailboxes: number
+	price_cents?: number // empty: the service's API gives no price
+	price_known: boolean
+	currency?: string
+	summary: string
+	expires_at: string
+}
+
+export interface MailboxServiceQuoteRequest {
+	kind: string // domain, connect, mailboxes
+	domain: string
+	people?: Array<MailboxServicePerson> // for mailboxes
+}
+export interface MailboxServiceQuoteRequestParams {
+}
+
+export interface MailboxServiceSyncRequest {
+	import?: boolean // import the service's mailboxes the pool lacks
+}
+export interface MailboxServiceSyncRequestParams {
+}
+
+export interface MailboxServiceSyncResponse {
+	only_at_service: Array<MailboxServiceMailbox>
+	only_in_pool: Array<MailboxServicePoolMailbox>
+	imported: Array<OutboundMailboxResult>
+	pending: Array<string>
+}
+
 export interface MarkContactReadRequest {
 }
 export interface MarkContactReadRequestParams {
@@ -1243,6 +1495,52 @@ export interface MarkContactReadRequestParams {
 
 export interface MarkContactReadResponse {
 	success: boolean
+}
+
+export interface MoveDomainConnectionRequest {
+	connection_id: string // another connection of the domain's pool
+}
+export interface MoveDomainConnectionRequestParams {
+}
+
+export interface MoveDomainRequest {
+	pathway_id: string // an outreach domain moves only to a mailbox pool, a sending domain only to platform, ses or smtp
+}
+export interface MoveDomainRequestParams {
+}
+
+export interface NetworkEvent {
+	hash: string
+	kind: string // delivered, hard_bounce, complaint, open, click
+	at: string
+}
+
+export interface NetworkLookupRequest {
+	hashes: Array<string> // max 100
+}
+
+export interface NetworkLookupResponse {
+	signals: Array<NetworkSignal> // unknown hashes are omitted
+}
+
+export interface NetworkReportRequest {
+	events: Array<NetworkEvent> // max 1000
+}
+
+export interface NetworkReportResponse {
+	accepted: number
+}
+
+export interface NetworkSignal {
+	hash: string
+	senders: number
+	delivered: number
+	hard_bounces: number
+	complaints: number
+	engaged: number
+	last_engaged_at: string
+	trap_score: number
+	toxic: boolean
 }
 
 export interface NewsletterResponse {
@@ -1267,8 +1565,6 @@ export interface OrgEmailConfigInfo {
 	ses_daily_quota: number // Daily sending quota
 	worker_count: number // Number of email workers
 	batch_size: number // Emails per batch
-	aws_region?: string
-	has_own_credentials: boolean // Has org-specific AWS credentials
 	from_email?: string
 	from_name?: string
 	reply_to?: string
@@ -1295,10 +1591,417 @@ export interface OrgListResponse {
 	total: number
 }
 
+export interface OrgMember {
+	user_id: string
+	name: string
+	email: string
+	role: string // admin or member
+	joined_at: string
+}
+
+export interface OrgPendingInvitation {
+	email: string
+	role: string // admin or member
+	expires_at: string
+	expired: boolean // the link no longer works; invite again
+	created_at: string
+}
+
 export interface OrgStats {
 	total_contacts: number
 	emails_sent_30d: number
 	list_count: number
+}
+
+export interface OutboundAddMailboxesRequest {
+	mailboxes: Array<OutboundMailboxInput>
+}
+
+export interface OutboundAddMailboxesResponse {
+	mailboxes: Array<OutboundMailboxResult>
+}
+
+export interface OutboundAddProspectsRequest {
+	list?: string
+	prospects: Array<OutboundProspectInput>
+}
+
+export interface OutboundAddProspectsResponse {
+	prospects: Array<OutboundProspectResult>
+}
+
+export interface OutboundAnswerRequest {
+	body: string
+}
+export interface OutboundAnswerRequestParams {
+}
+
+export interface OutboundCampaignRef {
+	id: string
+	name: string
+}
+
+export interface OutboundCampaignRequest {
+	name: string
+	list?: string
+	steps: Array<OutboundStepInput>
+	prospect_ids: Array<string>
+	approval_mode?: string
+	track_opens?: boolean
+	track_clicks?: boolean
+	window_start_hour?: number
+	window_end_hour?: number
+	idempotency_key?: string
+	dry_run?: boolean
+}
+
+export interface OutboundCampaignResponse {
+	campaign_id?: string
+	enrolled: number
+	drafts?: Array<OutboundDraft> // the saved drafts
+	previews?: Array<OutboundPreview> // dry_run: the first emails, not saved
+	skipped?: { [key: string]: string }
+	next: string
+}
+
+export interface OutboundCampaignResults {
+	id: string
+	name: string
+	status: string
+	enrolled: number
+	reached: number
+	replied: number
+	reply_rate: number
+	opened: number
+	open_rate: number
+	clicked: number
+	click_rate: number
+	interested: number
+	partners: number
+	bounced: number
+	bounce_rate: number
+	bounce_limit: number // percent: the outreach pathway pauses a mailbox above it; 0: never
+	spam_blocks: number
+	opted_out: number
+	in_progress: number
+	finished_no_reply: number
+	drafts_waiting: number
+	track_opens: boolean
+	track_clicks: boolean
+	steps?: Array<OutboundStepResult>
+	replies_by_kind?: { [key: string]: number }
+}
+
+export interface OutboundClassifyRequest {
+	classification: string
+}
+export interface OutboundClassifyRequestParams {
+}
+
+export interface OutboundDNSCheck {
+	mx: boolean
+	spf: boolean
+	dkim: boolean
+	dmarc: boolean
+	missing?: Array<string>
+	tracking?: boolean
+}
+
+export interface OutboundDNSRecord {
+	type: string
+	name: string
+	data: string
+	priority?: number
+}
+
+export interface OutboundDNSTokenRequest {
+	token: string
+}
+
+export interface OutboundDomainInfo {
+	id: string
+	domain: string
+	status: string
+	tracking_host?: string
+	check: OutboundDNSCheck
+	checked_at?: string
+	records: Array<OutboundDomainRecord> // the records it needs, and which the last check found
+}
+
+export interface OutboundDomainRecord {
+	type: string
+	name: string
+	data: string
+	priority?: number
+	present: boolean // the last check found it in public DNS
+}
+
+export interface OutboundDomainRequest {
+	domain: string
+	dns_host?: string
+	mail_provider?: string
+	mx_hosts?: Array<string>
+	spf_include?: string
+	dkim_selector?: string
+	dkim_value?: string
+	dmarc_report?: string
+	click_tracking?: boolean
+	pathway_id?: string // the mailbox pool it joins; empty: the brand's pool
+	connection_id?: string // the pool's manual connection it joins; empty: the pool's first manual one
+}
+
+export interface OutboundDomainResponse {
+	domain: OutboundDomainInfo
+	records_to_add: Array<OutboundDNSRecord> // to add at the DNS host by hand
+	dns_error?: string // why DigitalOcean didn't take the records; records_to_add holds them
+}
+
+export interface OutboundDraft {
+	message_id: string // what approve, skip and edit take
+	campaign_id: string
+	campaign_name: string
+	step: number
+	prospect_id: string
+	to: string
+	from: string
+	subject: string
+	body: string
+	sends_after?: string
+}
+
+export interface OutboundDraftList {
+	drafts: Array<OutboundDraft>
+}
+
+export interface OutboundEditDraftRequest {
+	subject?: string
+	body?: string
+}
+export interface OutboundEditDraftRequestParams {
+}
+
+export interface OutboundEnabledRequest {
+	enabled: boolean
+}
+
+export interface OutboundExplainRequest {
+}
+export interface OutboundExplainRequestParams {
+	message_id?: string
+	mailbox_id?: string
+	prospect_id?: string
+}
+
+export interface OutboundExplainResponse {
+	answer: string
+}
+
+export interface OutboundIDRequest {
+}
+export interface OutboundIDRequestParams {
+}
+
+export interface OutboundListProspectsRequest {
+}
+export interface OutboundListProspectsRequestParams {
+	list_id?: string // one outreach list; empty: all
+	status?: string // their status on it: prospect, held, ...
+	search?: string // part of an email or name
+	enrollable?: boolean // only people a campaign can take now
+	limit?: number
+	offset?: number
+}
+
+export interface OutboundListRef {
+	id: string
+	name: string
+}
+
+export interface OutboundListRepliesRequest {
+}
+export interface OutboundListRepliesRequestParams {
+	handled?: boolean
+	limit?: number
+}
+
+export interface OutboundListRequest {
+}
+export interface OutboundListRequestParams {
+	limit?: number
+}
+
+export interface OutboundMailboxHealth {
+	id: string
+	email: string
+	from_name: string
+	status: string
+	reason?: string
+	sent_today: number
+	allowed_today: number
+	sent_7d: number
+	bounces_7d: number
+	spam_blocks_7d: number
+	complaints_7d: number
+	last_error?: string
+	pool_id?: string // its mailbox pool (sending pathway)
+	connection_id?: string // the pool's connection its domain belongs to
+	daily_limit?: number // its own daily limit; empty uses its connection's, else the pool's (warm-up: its connection's, else the pool's)
+	limited: boolean // false: no daily limit applies
+	limit_in_use: number // the daily limit it sends under: its own, else its connection's, else its pool's; 0: none
+	warming_up: boolean // the warm-up holds it below limit_in_use; allowed_today is today's step
+	domain: string
+}
+
+export interface OutboundMailboxInput {
+	email: string
+	from_name: string
+	signature?: string
+	provider?: string
+	password?: string
+	smtp_host?: string
+	smtp_port?: number
+	smtp_username?: string
+	smtp_password?: string
+	imap_host?: string
+	imap_port?: number
+	imap_username?: string
+	imap_password?: string
+	daily_limit?: number // its own daily limit; empty uses the pool's
+}
+
+export interface OutboundMailboxResult {
+	email: string
+	id?: string
+	error?: string
+}
+
+export interface OutboundOverview {
+	enabled: boolean
+	paused?: string
+	mailing_address: string
+	opt_out_line: string
+	timezone: string
+	dns_token_set: boolean
+	domains: Array<OutboundDomainInfo>
+	mailboxes: Array<OutboundMailboxHealth>
+	prospects: { [key: string]: number }
+	messages: { [key: string]: number }
+	replies_waiting: number
+	drafts_waiting: number
+	reply_rate: number // replied over reached across every campaign, percent
+	campaigns: Array<OutboundCampaignResults>
+	next: Array<string>
+}
+
+export interface OutboundPauseRequest {
+	scope: string
+	id?: string
+	resume?: boolean
+}
+
+export interface OutboundPreview {
+	prospect_id: string
+	to: string
+	from: string
+	subject: string
+	body: string
+	sends_after?: string
+}
+
+export interface OutboundProspectInfo {
+	id: string
+	email: string
+	name: string
+	email_source: string
+	validation_status: string
+	created_at: string
+	lists: Array<OutboundProspectListStatus> // the outreach lists they are on, with their status on each
+	campaigns: Array<OutboundCampaignRef> // the outreach campaigns they are in now
+	suppressed: boolean
+	enrollable: boolean // a campaign can take them now
+}
+
+export interface OutboundProspectInput {
+	email: string
+	first_name?: string
+	name?: string
+	timezone?: string
+	platform?: string
+	channel_url?: string
+	audience_size?: number
+	niche?: string
+	recent_video?: string
+	personal_line?: string
+	email_source: string
+	fields?: { [key: string]: string }
+}
+
+export interface OutboundProspectList {
+	prospects: Array<OutboundProspectInfo>
+	total: number // every person matching, across pages
+	lists: Array<OutboundListRef> // the brand's outreach lists
+}
+
+export interface OutboundProspectListStatus {
+	id: string
+	name: string
+	status: string
+}
+
+export interface OutboundProspectResult {
+	email: string
+	id?: string
+	status: string
+	reason?: string
+}
+
+export interface OutboundReplyInfo {
+	id: string
+	mailbox_id: string
+	contact_id: string
+	sequence_id: string
+	campaign_name: string // the campaign it answers
+	from_email: string
+	subject: string
+	body: string
+	classification: string
+	handled: boolean
+	received_at: string
+}
+
+export interface OutboundReplyList {
+	replies: Array<OutboundReplyInfo>
+}
+
+export interface OutboundReviewRequest {
+	action: string
+	ids: Array<string>
+}
+
+export interface OutboundReviewResponse {
+	done: number
+	refused?: { [key: string]: string }
+}
+
+export interface OutboundSettingsRequest {
+	mailing_address?: string
+	opt_out_line?: string
+	timezone?: string
+}
+
+export interface OutboundStepInput {
+	delay_days?: number
+	subject?: string
+	body: string
+}
+
+export interface OutboundStepResult {
+	step: number
+	sent: number
+	replies: number
+	reply_rate: number
+	opened?: number
+	clicked?: number
 }
 
 export interface PauseSequenceRequest {
@@ -1366,6 +2069,17 @@ export interface RemoveSubscriberRequest {
 export interface RemoveSubscriberRequestParams {
 }
 
+export interface ResendWebhookDeliveryRequest {
+}
+export interface ResendWebhookDeliveryRequestParams {
+}
+
+export interface ResendWebhookDeliveryResponse {
+	delivery: WebhookDeliveryInfo
+	success: boolean
+	error?: string
+}
+
 export interface ResetPasswordRequest {
 	token: string
 	new_password: string
@@ -1421,6 +2135,7 @@ export interface SDKContactInfo {
 }
 
 export interface SESQuotaResponse {
+	configured: boolean // false: the platform sends through SMTP, not SES
 	max_24_hour_send: number
 	max_send_rate: number
 	sent_last_24_hours: number
@@ -1440,6 +2155,17 @@ export interface SendCampaignNowRequest {
 export interface SendCampaignNowRequestParams {
 }
 
+export interface SendCampaignTestRequest {
+	to: string
+	subject: string
+	html_body: string
+	plain_text?: string
+	design_id?: string
+	from_name?: string
+	from_email?: string
+	reply_to?: string
+}
+
 export interface SendEmailRequest {
 	to: string // Email address
 	template_slug?: string // Use design template
@@ -1454,13 +2180,76 @@ export interface SendEmailRequest {
 	tags?: Array<string> // For tracking/filtering
 	meta?: { [key: string]: string } // Custom metadata
 	attachments?: Array<EmailAttachment> // Optional file attachments
+	type?: string // transactional (default) or marketing
+	list_slug?: string // Marketing only, and required for it: the list the recipient subscribed to. Sent only to an active subscriber, with an unsubscribe link
+	track_opens?: boolean // Add an open pixel
+	track_clicks?: boolean // Send links through click tracking
 }
 
 export interface SendEmailResponse {
 	success: boolean
 	message_id: string // For tracking
-	status: string // queued, sent, failed
+	status: string // queued, sent, failed, suppressed, limited (over the brand's sending pathway limit; try again later)
 	message?: string
+}
+
+export interface SendingLimits {
+	daily_limit: number // per sender per day; 0: no limit
+	warmup_start: number // a new sender's first day; 0: no warm-up
+	warmup_step: number // added each day
+	min_gap_seconds: number // between two sends from one sender
+	max_gap_seconds: number
+	pause_bounce_rate: number // a fraction: 0.03 is 3%, over 7 days
+	pause_min_bounces: number
+	pause_spam_blocks: number
+	pause_complaints: number
+}
+
+export interface SendingPathway {
+	id: string
+	name: string
+	provider: string // platform, ses, smtp, mailboxes
+	kinds: Array<string> // transactional, marketing, outreach
+	aws_region?: string
+	aws_keys_set: boolean
+	smtp_host?: string
+	smtp_port?: number
+	smtp_username?: string
+	smtp_password_set: boolean
+	limits: SendingLimits
+	domains: Array<SendingPathwayDomain>
+	mailboxes: number
+	warning?: string // set when outreach rides a provider other than mailboxes
+	created_at: string
+}
+
+export interface SendingPathwayDomain {
+	id: string
+	domain: string
+	purpose: string // sending, or outreach (its mailboxes form the pool)
+}
+
+export interface SendingPathwayIDRequest {
+}
+export interface SendingPathwayIDRequestParams {
+}
+
+export interface SendingPathwayList {
+	pathways: Array<SendingPathway>
+}
+
+export interface SendingPathwayRequest {
+	name?: string
+	provider: string // platform, ses, smtp, mailboxes
+	kinds?: Array<string>
+	aws_region?: string
+	aws_access_key?: string
+	aws_secret_key?: string
+	smtp_host?: string
+	smtp_port?: number
+	smtp_username?: string
+	smtp_password?: string
+	limits?: SendingLimits // empty: the provider's defaults
 }
 
 export interface SequenceDetailResponse {
@@ -1609,6 +2398,8 @@ export interface SubscriberInfo {
 	verified_at?: string
 	unsubscribed_at?: string
 	blocked_at?: string
+	validation_status?: string
+	validation_sub_status?: string
 }
 
 export interface SuppressedEmailInfo {
@@ -1704,6 +2495,7 @@ export interface UnenrollSequenceRequest {
 }
 
 export interface UpdateCampaignRequest {
+	design_id?: string // Omitted keeps the design; "" removes it
 	name?: string
 	subject?: string
 	preview_text?: string
@@ -1819,15 +2611,22 @@ export interface UpdateListRequest {
 export interface UpdateListRequestParams {
 }
 
+export interface UpdateMailboxConnectionRequest {
+	name?: string // empty keeps it
+	api_key?: string // empty keeps the stored key
+	daily_limit?: number // set as given; empty: the pool's
+	warmup_start?: number // set as given; empty: the pool's
+	warmup_step?: number // set as given; empty: the pool's
+}
+export interface UpdateMailboxConnectionRequestParams {
+}
+
 export interface UpdateOrgEmailConfigRequest {
 	ses_rate_limit?: number
 	ses_rate_burst?: number
 	ses_daily_quota?: number
 	worker_count?: number
 	batch_size?: number
-	aws_region?: string
-	aws_access_key?: string // Will be encrypted
-	aws_secret_key?: string // Will be encrypted
 	from_email?: string
 	from_name?: string
 	reply_to?: string
@@ -1850,6 +2649,21 @@ export interface UpdateOrgRequest {
 	app_url?: string
 }
 export interface UpdateOrgRequestParams {
+}
+
+export interface UpdateSendingPathwayRequest {
+	name?: string
+	kinds: Array<string> // the whole set it carries
+	aws_region?: string
+	aws_access_key?: string // empty keeps the stored key
+	aws_secret_key?: string
+	smtp_host?: string
+	smtp_port?: number
+	smtp_username?: string
+	smtp_password?: string // empty keeps the stored password
+	limits?: SendingLimits // empty keeps them
+}
+export interface UpdateSendingPathwayRequestParams {
 }
 
 export interface UpdateSequenceRequest {
@@ -1884,6 +2698,7 @@ export interface UpdateTemplateRequestParams {
 }
 
 export interface UpdateTransactionalEmailRequest {
+	design_id?: string // Omitted keeps the design; "" removes it
 	name?: string
 	slug?: string
 	description?: string
@@ -1929,6 +2744,19 @@ export interface UserListResponse {
 	total: number
 }
 
+export interface ValidateBatchRequest {
+	emails: Array<string> // max 100
+}
+
+export interface ValidateBatchResponse {
+	job: ValidationJobInfo // status completed when every address is checked
+	results: Array<ValidationResult> // one per address, in address order; status pending until checked
+}
+
+export interface ValidateEmailRequest {
+	email: string
+}
+
 export interface ValidateInvitationRequest {
 }
 export interface ValidateInvitationRequestParams {
@@ -1942,6 +2770,61 @@ export interface ValidateInvitationResponse {
 	has_account: boolean // the invited address already has an account: sign in as it and accept
 	valid: boolean
 	message?: string
+}
+
+export interface ValidationJobIdRequest {
+}
+export interface ValidationJobIdRequestParams {
+}
+
+export interface ValidationJobInfo {
+	id: string
+	name: string
+	list_id?: string
+	source: string // list, upload
+	status: string // pending, processing, completed, failed, cancelled
+	total: number
+	processed: number
+	valid: number
+	invalid: number
+	catch_all: number
+	unknown: number
+	spamtrap: number
+	abuse: number
+	do_not_mail: number
+	error?: string
+	started_at?: string
+	completed_at?: string
+	created_at: string
+}
+
+export interface ValidationResult {
+	address: string
+	status: string
+	sub_status: string
+	free_email: boolean
+	did_you_mean: string
+	account: string
+	domain: string
+	domain_age_days?: number // 0 = unknown
+	smtp_provider: string
+	mx_found: boolean
+	mx_record: string
+	processed_at: string
+}
+
+export interface ValidationUsageRequest {
+}
+export interface ValidationUsageRequestParams {
+	from?: string // YYYY-MM-DD, default first of this month
+	to?: string // YYYY-MM-DD inclusive, default today
+}
+
+export interface ValidationUsageResponse {
+	from: string
+	to: string
+	total: number
+	by_source: { [key: string]: number } // api, admin, job, mcp
 }
 
 export interface VerifyEmailRequest {
@@ -1963,6 +2846,19 @@ export interface VersionInfo {
 	arch: string
 }
 
+export interface WebhookDeliveryInfo {
+	id: string
+	event: string
+	status: string // pending (waiting to retry), sending, succeeded, failed
+	attempts: number
+	max_attempts: number
+	last_status_code?: number // HTTP status of the last try
+	last_error?: string
+	next_retry_at?: string // when pending
+	created_at: string
+	updated_at: string
+}
+
 export interface WebhookInfo {
 	id: string
 	url: string
@@ -1975,6 +2871,9 @@ export interface WebhookInfo {
 	deliveries_failed: number
 	last_delivery_at?: string
 	last_status?: number // HTTP status code
+	// Retries (admin list): deliveries waiting for another try, and when the next one is
+	waiting_deliveries?: number
+	next_retry_at?: string
 }
 
 export interface WebhookLogInfo {

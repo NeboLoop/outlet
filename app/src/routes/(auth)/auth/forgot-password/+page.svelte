@@ -1,14 +1,25 @@
 <script lang="ts">
+	import { forgotPassword } from '$lib/api';
 	import { Card, Input, Button, Alert } from '$lib/components/ui';
 	import { ArrowLeft, CheckCircle } from '@lucide/svelte';
 
 	let email = $state('');
 	let submitted = $state(false);
+	let loading = $state(false);
+	let error = $state('');
 
-	function handleSubmit(e: Event) {
+	async function handleSubmit(e: Event) {
 		e.preventDefault();
-		console.log('Password reset request for:', email);
-		submitted = true;
+		error = '';
+		loading = true;
+		try {
+			await forgotPassword({ email: email.trim() });
+			submitted = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Could not send the reset link. Please try again.';
+		} finally {
+			loading = false;
+		}
 	}
 </script>
 
@@ -16,66 +27,71 @@
 	<title>Forgot Password - Outlet</title>
 </svelte:head>
 
-<div class="space-y-8">
-	<div>
-		<a href="/auth/login" class="inline-flex items-center text-sm text-text-muted hover:text-text">
-			<ArrowLeft class="w-4 h-4 mr-2" />
-			Back to login
-		</a>
-	</div>
+<header class="auth-header">
+	<h1 class="auth-title">Reset your password</h1>
+	<p class="auth-subtitle">
+		Enter your email address and we'll send you a link to reset your password.
+	</p>
+</header>
 
-	<div class="text-center">
-		<h1 class="text-4xl font-bold text-text">Outlet</h1>
-		<h2 class="mt-6 text-2xl font-semibold text-text">Reset your password</h2>
-		<p class="mt-2 text-sm text-text-muted">
-			Enter your email address and we'll send you a link to reset your password.
-		</p>
-	</div>
+{#if !submitted}
+	<Card class="auth-card">
+		{#if error}
+			<Alert type="error" title="Error" class="mb-5">
+				<p>{error}</p>
+			</Alert>
+		{/if}
 
-	{#if !submitted}
-		<Card>
-			<form class="space-y-5" onsubmit={handleSubmit}>
-				<div>
-					<label for="email" class="form-label">Email address</label>
-					<Input
-						id="email"
-						type="email"
-						placeholder="you@example.com"
-						bind:value={email}
-					/>
-				</div>
-
-				<Button
-					htmlType="submit"
-					type="primary"
-					size="lg"
-					class="w-full justify-center"
-				>
-					Send reset link
-				</Button>
-			</form>
-		</Card>
-	{:else}
-		<Card>
-			<div class="text-center space-y-4">
-				<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-success/10">
-					<CheckCircle class="h-6 w-6 text-success" />
-				</div>
-				<div>
-					<h3 class="text-lg font-medium text-text">Check your email</h3>
-					<p class="mt-2 text-sm text-text-muted">
-						We've sent a password reset link to <span class="font-medium text-text">{email}</span>.
-					</p>
-					<p class="mt-2 text-sm text-text-muted">
-						Please check your inbox and click the link to reset your password.
-					</p>
-				</div>
-				<div class="pt-4">
-					<a href="/auth/login" class="text-sm font-medium text-primary hover:underline">
-						Return to login
-					</a>
-				</div>
+		<form class="auth-form" onsubmit={handleSubmit}>
+			<div>
+				<label for="email" class="form-label">Email address</label>
+				<Input
+					id="email"
+					type="email"
+					autocomplete="email"
+					placeholder="you@example.com"
+					required
+					bind:value={email}
+				/>
 			</div>
-		</Card>
-	{/if}
-</div>
+
+			<Button
+				htmlType="submit"
+				type="primary"
+				size="lg"
+				class="mt-2 w-full justify-center"
+				{loading}
+				disabled={loading}
+			>
+				Send reset link
+			</Button>
+		</form>
+	</Card>
+{:else}
+	<Card class="auth-card">
+		<div class="auth-status">
+			<div class="auth-status-icon bg-success/10">
+				<CheckCircle class="h-6 w-6 text-success" />
+			</div>
+			<div>
+				<h2 class="auth-status-title">Check your email</h2>
+				<p class="auth-status-text">
+					If an account uses <span class="font-medium text-base-content">{email}</span>, we've sent it a password reset link.
+				</p>
+				<p class="auth-status-text">
+					The link works once and expires in 1 hour.
+				</p>
+			</div>
+			<div class="pt-2">
+				<a href="/auth/login" class="auth-link">Return to login</a>
+			</div>
+		</div>
+	</Card>
+{/if}
+
+<p class="auth-footer">
+	<a href="/auth/login" class="auth-back">
+		<ArrowLeft class="h-4 w-4" />
+		Back to login
+	</a>
+</p>

@@ -42,11 +42,18 @@ type rule struct {
 	need  access.Role // role needed; empty means any active, signed-in person
 	write bool        // a change, recorded in the audit log
 	brand brandFrom
-	live  bool // warn first when the brand's API key is in live use
+	live  bool   // warn first when the brand's API key is in live use
+	scope string // a narrower scope that also allows this action (besides mcp:full)
 }
 
 func read(need access.Role) rule  { return rule{need: need} }
 func write(need access.Role) rule { return rule{need: need, write: true} }
+
+// Outbound actions: brand members, with their own scopes.
+func obRead() rule  { return rule{need: access.Member, scope: mcpauth.ScopeOutboundRead} }
+func obWrite() rule { return rule{need: access.Member, write: true, scope: mcpauth.ScopeOutboundWrite} }
+func obSend() rule  { return rule{need: access.Member, write: true, scope: mcpauth.ScopeOutboundSend} }
+func obAdmin() rule { return rule{need: access.Admin, write: true, scope: mcpauth.ScopeOutboundWrite} }
 
 // toolPolicy holds one tool's rules, keyed by action, or by resource.action
 // for tools with resources.
@@ -89,6 +96,7 @@ var policy = map[string]toolPolicy{
 		"list.create": write(member), "list.list": read(member), "list.get": read(member),
 		"list.update": write(member), "list.delete": write(member), "list.stats": read(member),
 		"list.subscribers": read(member), "list.subscribe": write(member), "list.unsubscribe": write(member),
+		"list.export":     read(member),
 		"sequence.create": write(member), "sequence.list": read(member), "sequence.get": read(member),
 		"sequence.update": write(member), "sequence.delete": write(member), "sequence.stats": read(member),
 		"template.create": write(member), "template.list": read(member), "template.get": read(member),
@@ -120,6 +128,27 @@ var policy = map[string]toolPolicy{
 		"domain.list": read(member), "domain.add": write(member), "domain.delete": write(member),
 		"domain.bulk_add": write(member),
 	}},
+	"validation": {resources: true, rules: map[string]rule{
+		"email.validate": read(member), "job.create": write(member), "job.get": read(member),
+	}},
+	"outreach_overview": {rules: map[string]rule{"get": obRead()}},
+	"setup_sending": {rules: map[string]rule{
+		"settings": obWrite(), "dns_token": obAdmin(), "add_domain": obAdmin(), "check_domain": obWrite(),
+		"add_mailboxes": obAdmin(), "list": obRead(), "set_limits": obAdmin(), "mailbox_limit": obAdmin(),
+		"connections": obRead(), "add_connection": obAdmin(), "update_connection": obAdmin(), "remove_connection": obAdmin(),
+		"move_domain": obAdmin(), "service_inventory": obRead(), "connect_domain": obAdmin(), "quote": obWrite(),
+		"buy": obAdmin(), "sync": obAdmin(), "delete_mailbox": obAdmin(),
+	}},
+	"add_prospects":  {rules: map[string]rule{"add": obWrite()}},
+	"draft_outreach": {rules: map[string]rule{"create": obWrite()}},
+	"review_drafts": {rules: map[string]rule{
+		"list": obRead(), "approve": obSend(), "edit": obWrite(), "skip": obWrite(),
+	}},
+	"conversations": {rules: map[string]rule{
+		"list": obRead(), "reply": obSend(), "classify": obWrite(), "mark_partner": obWrite(),
+	}},
+	"pause":   {rules: map[string]rule{"pause": obWrite(), "resume": obSend()}},
+	"explain": {rules: map[string]rule{"get": obRead()}},
 	"gdpr": {rules: map[string]rule{
 		"lookup": read(member), "export": read(member), "get_consent": read(member),
 		"update_consent": write(member), "delete": {need: admin, write: true, live: true},
@@ -214,7 +243,10 @@ func authorize(ctx context.Context, toolCtx *mcpctx.ToolContext, caller Caller, 
 
 	res := gateResult{audit: r.write, caller: caller, tool: tool, action: key, target: args.target()}
 
-	if !slices.Contains(caller.Scopes, mcpauth.ScopeFull) {
+	if !slices.Contains(caller.Scopes, mcpauth.ScopeFull) && (r.scope == "" || !slices.Contains(caller.Scopes, r.scope)) {
+		if r.scope != "" {
+			return res, &mcpctx.ToolError{Code: "forbidden", Message: "This key or token can't call " + tool + "(" + key + "). It needs the " + mcpauth.ScopeFull + " or " + r.scope + " scope."}
+		}
 		return res, errNoScope
 	}
 

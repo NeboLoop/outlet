@@ -24,7 +24,7 @@ func TestSendCampaignNow_QueuesThroughTheScheduler(t *testing.T) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	s := &svc.ServiceContext{DB: store}
 	ctx := context.Background()
@@ -63,8 +63,11 @@ func TestSendCampaignNow_QueuesThroughTheScheduler(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []string{"now", "later"}, ids)
 
-	// Sending twice is refused: it's no longer a draft.
+	// A scheduled campaign can be sent now; one already sending can't.
+	_, err = NewSendCampaignNowLogic(asRoot, s).SendCampaignNow(&types.SendCampaignNowRequest{Id: "later"})
+	require.NoError(t, err)
+	require.NoError(t, store.UpdateCampaignStatusByID(ctx, db.UpdateCampaignStatusByIDParams{ID: "now", Status: sql.NullString{String: "sending", Valid: true}}))
 	_, err = NewSendCampaignNowLogic(asRoot, s).SendCampaignNow(&types.SendCampaignNowRequest{Id: "now"})
 	require.Error(t, err)
-	assert.Equal(t, "Only a draft campaign can be sent.", err.Error())
+	assert.Equal(t, "Only a draft or scheduled campaign can be sent.", err.Error())
 }

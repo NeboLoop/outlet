@@ -24,7 +24,19 @@
         "ses:ListIdentities",
         "ses:DeleteIdentity",
         "ses:SetIdentityFeedbackForwardingEnabled",
-        "ses:SetIdentityNotificationTopic"
+        "ses:SetIdentityNotificationTopic",
+        "ses:GetIdentityNotificationAttributes",
+        "ses:SetIdentityMailFromDomain",
+        "ses:GetIdentityMailFromDomainAttributes"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OutletSNSBounceNotifications",
+      "Effect": "Allow",
+      "Action": [
+        "sns:CreateTopic",
+        "sns:Subscribe"
       ],
       "Resource": "*"
     },
@@ -74,7 +86,7 @@
 			</button>
 		</div>
 		<p class="text-xs text-text-muted">
-			Includes SES email permissions and S3 backup permissions. Replace <code
+			Includes SES sending and domain permissions, SNS for bounce and complaint notifications, and S3 backup permissions. Replace <code
 				class="bg-surface-tertiary px-1 rounded">YOUR-BACKUP-BUCKET</code
 			> with your bucket name, or remove the S3 section if not using cloud backups.
 		</p>

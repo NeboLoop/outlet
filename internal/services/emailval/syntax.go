@@ -38,8 +38,39 @@ func validateSyntax(email string) (local, domain string, err error) {
 	if strings.HasSuffix(local, ".") {
 		return "", "", errors.New("local-part ends with dot")
 	}
+	if len(local) > 64 || len(email) > 254 {
+		return "", "", errors.New("address too long")
+	}
+	if strings.ContainsAny(local, `"(),:;<>[\]`) {
+		return "", "", errors.New("local-part contains characters that require quoting")
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return "", "", errors.New("domain has an invalid label")
+		}
+		if strings.ContainsAny(label, "_!#$%&'*+/=?^`{|}~\"(),:;<>[\\]") {
+			return "", "", errors.New("domain contains invalid characters")
+		}
+	}
 
 	return local, domain, nil
+}
+
+// leadingPeriodDomains drop a leading period from the local part when delivering.
+var leadingPeriodDomains = map[string]bool{"gmail.com": true, "googlemail.com": true}
+
+// stripLeadingPeriod removes leading periods from the local part for Gmail/Googlemail,
+// which ignore them; it reports whether anything was removed.
+func stripLeadingPeriod(email string) (string, bool) {
+	local, domain, ok := strings.Cut(email, "@")
+	if !ok || !leadingPeriodDomains[domain] || !strings.HasPrefix(local, ".") {
+		return email, false
+	}
+	trimmed := strings.TrimLeft(local, ".")
+	if trimmed == "" {
+		return email, false
+	}
+	return trimmed + "@" + domain, true
 }
 
 // splitEmail splits an email into local and domain parts.

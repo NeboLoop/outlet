@@ -81,14 +81,6 @@ export function deleteBackup(params: components.DeleteBackupRequestParams, id: s
 
 /**
  * @description 
- * @param params
- */
-export function downloadBackup(params: components.DownloadBackupRequestParams, id: string) {
-	return webapi.get<null>(`/api/admin/backup/${id}/download`, params)
-}
-
-/**
- * @description 
  */
 export function getBackupSettings() {
 	return webapi.get<components.BackupSettingsResponse>(`/api/admin/backup/settings`)
@@ -237,6 +229,14 @@ export function sendCampaignNow(params: components.SendCampaignNowRequestParams,
  */
 export function getCampaignStats(params: components.GetCampaignRequestParams, id: string) {
 	return webapi.get<components.CampaignStatsResponse>(`/api/admin/campaigns/${id}/stats`, params)
+}
+
+/**
+ * @description "Send a test of a campaign to one address, built as a real send is (design, merge tags, unsubscribe link)"
+ * @param req
+ */
+export function sendCampaignTest(req: components.SendCampaignTestRequest) {
+	return webapi.post<components.Response>(`/api/admin/campaigns/test`, req)
 }
 
 /**
@@ -432,6 +432,15 @@ export function cancelImportJob(params: components.CancelImportJobRequestParams,
 /**
  * @description 
  * @param params
+ * @param req
+ */
+export function importListSubscribers(params: components.ImportListSubscribersRequestParams, req: components.ImportListSubscribersRequest, id: string) {
+	return webapi.post<components.ImportJobInfo>(`/api/admin/lists/${id}/import`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
  */
 export function getEmailDashboardStats(params: components.EmailDashboardStatsRequestParams) {
 	return webapi.get<components.EmailDashboardStatsResponse>(`/api/admin/email-stats`, params)
@@ -499,6 +508,15 @@ export function getListStats(params: components.GetListRequestParams, id: string
  */
 export function listListSubscribers(params: components.ListSubscribersRequestParams, id: string) {
 	return webapi.get<components.ListSubscribersResponse>(`/api/admin/lists/${id}/subscribers`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function addListSubscriber(params: components.AddListSubscriberRequestParams, req: components.AddListSubscriberRequest, id: string) {
+	return webapi.post<components.Response>(`/api/admin/lists/${id}/subscribers`, params, req)
 }
 
 /**
@@ -633,6 +651,14 @@ export function createInvitation(params: components.CreateInvitationRequestParam
 }
 
 /**
+ * @description "A brand's people: its members with their roles, and invitations not yet accepted with when they expire (brand admins)"
+ * @param params
+ */
+export function listOrgPeople(params: components.ListOrgPeopleRequestParams, id: string) {
+	return webapi.get<components.ListOrgPeopleResponse>(`/api/admin/organizations/${id}/people`, params)
+}
+
+/**
  * @description 
  * @param params
  */
@@ -646,6 +672,312 @@ export function regenerateOrgApiKey(params: components.RegenerateApiKeyRequestPa
  */
 export function getOrganizationBySlug(params: components.GetOrgBySlugRequestParams, slug: string) {
 	return webapi.get<components.OrgInfo>(`/api/admin/organizations/slug/${slug}`, params)
+}
+
+/**
+ * @description 
+ */
+export function getOutboundOverview() {
+	return webapi.get<components.OutboundOverview>(`/api/admin/outbound`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function createOutboundCampaign(req: components.OutboundCampaignRequest) {
+	return webapi.post<components.OutboundCampaignResponse>(`/api/admin/outbound/campaigns`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getOutboundCampaign(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.get<components.OutboundCampaignResults>(`/api/admin/outbound/campaigns/${id}`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function setOutboundDNSToken(req: components.OutboundDNSTokenRequest) {
+	return webapi.put<components.Response>(`/api/admin/outbound/dns-token`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function addOutboundDomain(req: components.OutboundDomainRequest) {
+	return webapi.post<components.OutboundDomainResponse>(`/api/admin/outbound/domains`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function checkOutboundDomain(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.post<components.OutboundDomainInfo>(`/api/admin/outbound/domains/${id}/check`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listOutboundDrafts(params: components.OutboundListRequestParams) {
+	return webapi.get<components.OutboundDraftList>(`/api/admin/outbound/drafts`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function editOutboundDraft(params: components.OutboundEditDraftRequestParams, req: components.OutboundEditDraftRequest, id: string) {
+	return webapi.put<components.Response>(`/api/admin/outbound/drafts/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function reviewOutboundDrafts(req: components.OutboundReviewRequest) {
+	return webapi.post<components.OutboundReviewResponse>(`/api/admin/outbound/drafts/review`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function setOutboundEnabled(req: components.OutboundEnabledRequest) {
+	return webapi.put<components.Response>(`/api/admin/outbound/enabled`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function explainOutbound(params: components.OutboundExplainRequestParams) {
+	return webapi.get<components.OutboundExplainResponse>(`/api/admin/outbound/explain`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function addOutboundMailboxes(req: components.OutboundAddMailboxesRequest) {
+	return webapi.post<components.OutboundAddMailboxesResponse>(`/api/admin/outbound/mailboxes`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function pauseOutbound(req: components.OutboundPauseRequest) {
+	return webapi.post<components.Response>(`/api/admin/outbound/pause`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listOutboundProspects(params: components.OutboundListProspectsRequestParams) {
+	return webapi.get<components.OutboundProspectList>(`/api/admin/outbound/prospects`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function addOutboundProspects(req: components.OutboundAddProspectsRequest) {
+	return webapi.post<components.OutboundAddProspectsResponse>(`/api/admin/outbound/prospects`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function markOutboundPartner(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.post<components.Response>(`/api/admin/outbound/prospects/${id}/partner`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listOutboundReplies(params: components.OutboundListRepliesRequestParams) {
+	return webapi.get<components.OutboundReplyList>(`/api/admin/outbound/replies`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function answerOutboundReply(params: components.OutboundAnswerRequestParams, req: components.OutboundAnswerRequest, id: string) {
+	return webapi.post<components.Response>(`/api/admin/outbound/replies/${id}/answer`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function classifyOutboundReply(params: components.OutboundClassifyRequestParams, req: components.OutboundClassifyRequest, id: string) {
+	return webapi.post<components.Response>(`/api/admin/outbound/replies/${id}/classify`, params, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function updateOutboundSettings(req: components.OutboundSettingsRequest) {
+	return webapi.put<components.Response>(`/api/admin/outbound/settings`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listMailboxConnections(params: components.MailboxConnectionListRequestParams) {
+	return webapi.get<components.MailboxConnectionList>(`/api/admin/outbound/connections`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function addMailboxConnection(req: components.MailboxConnectionRequest) {
+	return webapi.post<components.MailboxConnection>(`/api/admin/outbound/connections`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function updateMailboxConnection(params: components.UpdateMailboxConnectionRequestParams, req: components.UpdateMailboxConnectionRequest, id: string) {
+	return webapi.put<components.MailboxConnection>(`/api/admin/outbound/connections/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function removeMailboxConnection(params: components.MailboxConnectionIDRequestParams, id: string) {
+	return webapi.delete<components.Response>(`/api/admin/outbound/connections/${id}`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function buyMailboxService(params: components.MailboxServiceBuyRequestParams, req: components.MailboxServiceBuyRequest, id: string) {
+	return webapi.post<components.MailboxServiceBuyResponse>(`/api/admin/outbound/connections/${id}/buy`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function connectMailboxServiceDomain(params: components.MailboxServiceConnectRequestParams, req: components.MailboxServiceConnectRequest, id: string) {
+	return webapi.post<components.MailboxServiceDomainResponse>(`/api/admin/outbound/connections/${id}/domains`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getMailboxServiceInventory(params: components.MailboxConnectionIDRequestParams, id: string) {
+	return webapi.get<components.MailboxServiceInventory>(`/api/admin/outbound/connections/${id}/inventory`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function deleteMailboxServiceMailbox(params: components.MailboxServiceDeleteRequestParams, id: string, mailbox_id: string) {
+	return webapi.delete<components.Response>(`/api/admin/outbound/connections/${id}/mailboxes/${mailbox_id}`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function quoteMailboxService(params: components.MailboxServiceQuoteRequestParams, req: components.MailboxServiceQuoteRequest, id: string) {
+	return webapi.post<components.MailboxServiceQuote>(`/api/admin/outbound/connections/${id}/quotes`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function syncMailboxService(params: components.MailboxServiceSyncRequestParams, req: components.MailboxServiceSyncRequest, id: string) {
+	return webapi.post<components.MailboxServiceSyncResponse>(`/api/admin/outbound/connections/${id}/sync`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function moveOutboundDomainConnection(params: components.MoveDomainConnectionRequestParams, req: components.MoveDomainConnectionRequest, id: string) {
+	return webapi.put<components.MailboxConnection>(`/api/admin/outbound/domains/${id}/connection`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function moveSendingDomain(params: components.MoveDomainRequestParams, req: components.MoveDomainRequest, id: string) {
+	return webapi.put<components.Response>(`/api/admin/sending/domains/${id}/pathway`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function setMailboxDailyLimit(params: components.MailboxDailyLimitRequestParams, req: components.MailboxDailyLimitRequest, id: string) {
+	return webapi.put<components.Response>(`/api/admin/sending/mailboxes/${id}/daily-limit`, params, req)
+}
+
+/**
+ * @description 
+ */
+export function listSendingPathways() {
+	return webapi.get<components.SendingPathwayList>(`/api/admin/sending/pathways`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function createSendingPathway(req: components.SendingPathwayRequest) {
+	return webapi.post<components.SendingPathway>(`/api/admin/sending/pathways`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function updateSendingPathway(params: components.UpdateSendingPathwayRequestParams, req: components.UpdateSendingPathwayRequest, id: string) {
+	return webapi.put<components.SendingPathway>(`/api/admin/sending/pathways/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function deleteSendingPathway(params: components.SendingPathwayIDRequestParams, id: string) {
+	return webapi.delete<components.Response>(`/api/admin/sending/pathways/${id}`, params)
 }
 
 /**
@@ -735,6 +1067,14 @@ export function deleteSequence(params: components.GetSequenceRequestParams, id: 
  */
 export function getSequenceStats(params: components.SequenceStatsRequestParams, id: string) {
 	return webapi.get<components.SequenceStatsResponse>(`/api/admin/sequences/${id}/stats`, params)
+}
+
+/**
+ * @description "Enroll a contact of the brand in one of its sequences, as the signed-in member (the same enrollment as the SDK route)"
+ * @param req
+ */
+export function adminEnrollInSequence(req: components.EnrollSequenceRequest) {
+	return webapi.post<components.EnrollSequenceResponse>(`/api/admin/sequences/enroll`, req)
 }
 
 /**
@@ -902,6 +1242,14 @@ export function getTransactionalEmailStats(params: components.GetTransactionalEm
 }
 
 /**
+ * @description "Send a test transactional email as the signed-in member, through the same send as the SDK route"
+ * @param req
+ */
+export function sendTransactionalTest(req: components.SendEmailRequest) {
+	return webapi.post<components.SendEmailResponse>(`/api/admin/transactional-emails/test`, req)
+}
+
+/**
  * @description 
  */
 export function listUsers() {
@@ -943,6 +1291,88 @@ export function deleteUser(params: components.DeleteUserRequestParams, id: strin
 
 /**
  * @description 
+ * @param req
+ */
+export function adminValidateEmail(req: components.ValidateEmailRequest) {
+	return webapi.post<components.ValidationResult>(`/api/admin/validation/check`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function createValidationJob(req: components.CreateValidationJobRequest) {
+	return webapi.post<components.ValidationJobInfo>(`/api/admin/validation/jobs`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listValidationJobs(params: components.ListValidationJobsRequestParams) {
+	return webapi.get<components.ListValidationJobsResponse>(`/api/admin/validation/jobs`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getValidationJob(params: components.ValidationJobIdRequestParams, id: string) {
+	return webapi.get<components.ValidationJobInfo>(`/api/admin/validation/jobs/${id}`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function applyValidationJob(params: components.ApplyValidationJobRequestParams, req: components.ApplyValidationJobRequest, id: string) {
+	return webapi.post<components.ApplyValidationJobResponse>(`/api/admin/validation/jobs/${id}/apply`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function cancelValidationJob(params: components.ValidationJobIdRequestParams, id: string) {
+	return webapi.post<components.ValidationJobInfo>(`/api/admin/validation/jobs/${id}/cancel`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function appendValidationJobEmails(params: components.AppendValidationJobEmailsRequestParams, req: components.AppendValidationJobEmailsRequest, id: string) {
+	return webapi.post<components.ValidationJobInfo>(`/api/admin/validation/jobs/${id}/emails`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function listValidationResults(params: components.ListValidationResultsRequestParams, id: string) {
+	return webapi.get<components.ListValidationResultsResponse>(`/api/admin/validation/jobs/${id}/results`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function startValidationJob(params: components.ValidationJobIdRequestParams, id: string) {
+	return webapi.post<components.ValidationJobInfo>(`/api/admin/validation/jobs/${id}/start`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getValidationUsage(params: components.ValidationUsageRequestParams) {
+	return webapi.get<components.ValidationUsageResponse>(`/api/admin/validation/usage`, params)
+}
+
+/**
+ * @description 
  */
 export function adminListWebhooks() {
 	return webapi.get<components.ListWebhooksResponse>(`/api/admin/webhooks`)
@@ -979,6 +1409,22 @@ export function adminUpdateWebhook(params: components.UpdateWebhookRequestParams
  */
 export function adminDeleteWebhook(params: components.DeleteWebhookRequestParams, id: string) {
 	return webapi.delete<components.Response>(`/api/admin/webhooks/${id}`, params)
+}
+
+/**
+ * @description "A webhook's deliveries, newest first: status, tries and next retry"
+ * @param params
+ */
+export function adminListWebhookDeliveries(params: components.ListWebhookDeliveriesRequestParams, id: string) {
+	return webapi.get<components.ListWebhookDeliveriesResponse>(`/api/admin/webhooks/${id}/deliveries`, params)
+}
+
+/**
+ * @description "Send a delivery again now, signed the same way"
+ * @param params
+ */
+export function adminResendWebhookDelivery(params: components.ResendWebhookDeliveryRequestParams, id: string, delivery_id: string) {
+	return webapi.post<components.ResendWebhookDeliveryResponse>(`/api/admin/webhooks/${id}/deliveries/${delivery_id}/resend`, params)
 }
 
 /**
@@ -1051,6 +1497,22 @@ export function validateInvitation(params: components.ValidateInvitationRequestP
  */
 export function verifyEmail(params: components.VerifyEmailRequestParams) {
 	return webapi.get<components.VerifyEmailResponse>(`/api/v1/auth/verify-email`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function networkLookup(req: components.NetworkLookupRequest) {
+	return webapi.post<components.NetworkLookupResponse>(`/network/v1/lookup`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function networkReport(req: components.NetworkReportRequest) {
+	return webapi.post<components.NetworkReportResponse>(`/network/v1/report`, req)
 }
 
 /**
@@ -1178,6 +1640,254 @@ export function listEmailEvents(params: components.ListEmailEventsRequestParams,
 
 /**
  * @description 
+ */
+export function sdkOutboundOverview() {
+	return webapi.get<components.OutboundOverview>(`/sdk/v1/outbound`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function sdkCreateOutboundCampaign(req: components.OutboundCampaignRequest) {
+	return webapi.post<components.OutboundCampaignResponse>(`/sdk/v1/outbound/campaigns`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkGetOutboundCampaign(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.get<components.OutboundCampaignResults>(`/sdk/v1/outbound/campaigns/${id}`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function sdkSetOutboundDNSToken(req: components.OutboundDNSTokenRequest) {
+	return webapi.put<components.Response>(`/sdk/v1/outbound/dns-token`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function sdkAddOutboundDomain(req: components.OutboundDomainRequest) {
+	return webapi.post<components.OutboundDomainResponse>(`/sdk/v1/outbound/domains`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkCheckOutboundDomain(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.post<components.OutboundDomainInfo>(`/sdk/v1/outbound/domains/${id}/check`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkListOutboundDrafts(params: components.OutboundListRequestParams) {
+	return webapi.get<components.OutboundDraftList>(`/sdk/v1/outbound/drafts`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkEditOutboundDraft(params: components.OutboundEditDraftRequestParams, req: components.OutboundEditDraftRequest, id: string) {
+	return webapi.put<components.Response>(`/sdk/v1/outbound/drafts/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function sdkReviewOutboundDrafts(req: components.OutboundReviewRequest) {
+	return webapi.post<components.OutboundReviewResponse>(`/sdk/v1/outbound/drafts/review`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkExplainOutbound(params: components.OutboundExplainRequestParams) {
+	return webapi.get<components.OutboundExplainResponse>(`/sdk/v1/outbound/explain`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function sdkAddOutboundMailboxes(req: components.OutboundAddMailboxesRequest) {
+	return webapi.post<components.OutboundAddMailboxesResponse>(`/sdk/v1/outbound/mailboxes`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function sdkPauseOutbound(req: components.OutboundPauseRequest) {
+	return webapi.post<components.Response>(`/sdk/v1/outbound/pause`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkListOutboundProspects(params: components.OutboundListProspectsRequestParams) {
+	return webapi.get<components.OutboundProspectList>(`/sdk/v1/outbound/prospects`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function sdkAddOutboundProspects(req: components.OutboundAddProspectsRequest) {
+	return webapi.post<components.OutboundAddProspectsResponse>(`/sdk/v1/outbound/prospects`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkMarkOutboundPartner(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.post<components.Response>(`/sdk/v1/outbound/prospects/${id}/partner`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkListOutboundReplies(params: components.OutboundListRepliesRequestParams) {
+	return webapi.get<components.OutboundReplyList>(`/sdk/v1/outbound/replies`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkAnswerOutboundReply(params: components.OutboundAnswerRequestParams, req: components.OutboundAnswerRequest, id: string) {
+	return webapi.post<components.Response>(`/sdk/v1/outbound/replies/${id}/answer`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkClassifyOutboundReply(params: components.OutboundClassifyRequestParams, req: components.OutboundClassifyRequest, id: string) {
+	return webapi.post<components.Response>(`/sdk/v1/outbound/replies/${id}/classify`, params, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function sdkUpdateOutboundSettings(req: components.OutboundSettingsRequest) {
+	return webapi.put<components.Response>(`/sdk/v1/outbound/settings`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkListMailboxConnections(params: components.MailboxConnectionListRequestParams) {
+	return webapi.get<components.MailboxConnectionList>(`/sdk/v1/outbound/connections`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function sdkAddMailboxConnection(req: components.MailboxConnectionRequest) {
+	return webapi.post<components.MailboxConnection>(`/sdk/v1/outbound/connections`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkUpdateMailboxConnection(params: components.UpdateMailboxConnectionRequestParams, req: components.UpdateMailboxConnectionRequest, id: string) {
+	return webapi.put<components.MailboxConnection>(`/sdk/v1/outbound/connections/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkRemoveMailboxConnection(params: components.MailboxConnectionIDRequestParams, id: string) {
+	return webapi.delete<components.Response>(`/sdk/v1/outbound/connections/${id}`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkBuyMailboxService(params: components.MailboxServiceBuyRequestParams, req: components.MailboxServiceBuyRequest, id: string) {
+	return webapi.post<components.MailboxServiceBuyResponse>(`/sdk/v1/outbound/connections/${id}/buy`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkConnectMailboxServiceDomain(params: components.MailboxServiceConnectRequestParams, req: components.MailboxServiceConnectRequest, id: string) {
+	return webapi.post<components.MailboxServiceDomainResponse>(`/sdk/v1/outbound/connections/${id}/domains`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkGetMailboxServiceInventory(params: components.MailboxConnectionIDRequestParams, id: string) {
+	return webapi.get<components.MailboxServiceInventory>(`/sdk/v1/outbound/connections/${id}/inventory`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function sdkDeleteMailboxServiceMailbox(params: components.MailboxServiceDeleteRequestParams, id: string, mailbox_id: string) {
+	return webapi.delete<components.Response>(`/sdk/v1/outbound/connections/${id}/mailboxes/${mailbox_id}`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkQuoteMailboxService(params: components.MailboxServiceQuoteRequestParams, req: components.MailboxServiceQuoteRequest, id: string) {
+	return webapi.post<components.MailboxServiceQuote>(`/sdk/v1/outbound/connections/${id}/quotes`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkSyncMailboxService(params: components.MailboxServiceSyncRequestParams, req: components.MailboxServiceSyncRequest, id: string) {
+	return webapi.post<components.MailboxServiceSyncResponse>(`/sdk/v1/outbound/connections/${id}/sync`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function sdkMoveOutboundDomainConnection(params: components.MoveDomainConnectionRequestParams, req: components.MoveDomainConnectionRequest, id: string) {
+	return webapi.put<components.MailboxConnection>(`/sdk/v1/outbound/domains/${id}/connection`, params, req)
+}
+
+/**
+ * @description 
  * @param req
  */
 export function enrollInSequence(req: components.EnrollSequenceRequest) {
@@ -1270,6 +1980,30 @@ export function trackOpen(req: components.TrackOpenRequest) {
  */
 export function trackUnsubscribe(req: components.TrackUnsubscribeRequest) {
 	return webapi.post<components.Response>(`/sdk/v1/tracking/unsubscribe`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function validateEmail(req: components.ValidateEmailRequest) {
+	return webapi.post<components.ValidationResult>(`/sdk/v1/validate`, req)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function validateBatch(req: components.ValidateBatchRequest) {
+	return webapi.post<components.ValidationJobInfo>(`/sdk/v1/validate/batch`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function getValidateBatch(params: components.ValidationJobIdRequestParams, id: string) {
+	return webapi.get<components.ValidateBatchResponse>(`/sdk/v1/validate/batch/${id}`, params)
 }
 
 /**

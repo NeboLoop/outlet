@@ -1,30 +1,49 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { resetPassword } from '$lib/api';
 	import { Card, Input, Button, Alert } from '$lib/components/ui';
 	import { ArrowLeft, CheckCircle } from '@lucide/svelte';
 
 	let password = $state('');
 	let confirmPassword = $state('');
 	let submitted = $state(false);
+	let loading = $state(false);
 	let error = $state('');
 
-	function handleSubmit(e: Event) {
+	// Read in the browser: the page is prerendered, so the URL has no query
+	// string when it is built.
+	let token = $state('');
+	onMount(() => {
+		token = $page.url.searchParams.get('token') ?? '';
+	});
+
+	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		error = '';
 
+		if (!token) {
+			error = 'This reset link is incomplete. Request a new one.';
+			return;
+		}
 		if (password !== confirmPassword) {
 			error = 'Passwords do not match';
 			return;
 		}
-
 		if (password.length < 8) {
 			error = 'Password must be at least 8 characters';
 			return;
 		}
 
-		console.log('Password reset with token:', $page.url.searchParams.get('token'));
-		console.log('New password:', password);
-		submitted = true;
+		loading = true;
+		try {
+			await resetPassword({ token, new_password: password, confirm_password: confirmPassword });
+			submitted = true;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Could not reset your password. Please try again.';
+		} finally {
+			loading = false;
+		}
 	}
 </script>
 
@@ -32,84 +51,89 @@
 	<title>Reset Password - Outlet</title>
 </svelte:head>
 
-<div class="space-y-8">
-	<div>
-		<a href="/auth/login" class="inline-flex items-center text-sm text-text-muted hover:text-text">
-			<ArrowLeft class="w-4 h-4 mr-2" />
-			Back to login
-		</a>
-	</div>
+<header class="auth-header">
+	<h1 class="auth-title">Create new password</h1>
+	<p class="auth-subtitle">
+		Enter your new password below.
+	</p>
+</header>
 
-	<div class="text-center">
-		<h1 class="text-4xl font-bold text-text">Outlet</h1>
-		<h2 class="mt-6 text-2xl font-semibold text-text">Create new password</h2>
-		<p class="mt-2 text-sm text-text-muted">
-			Enter your new password below.
-		</p>
-	</div>
+{#if !submitted}
+	<Card class="auth-card">
+		{#if error}
+			<Alert type="error" title="Error" class="mb-5">
+				<p>{error}</p>
+				{#if !token || error.includes('expired')}
+					<p class="mt-2"><a href="/auth/forgot-password" class="auth-link">Request a new link</a></p>
+				{/if}
+			</Alert>
+		{/if}
 
-	{#if !submitted}
-		<Card>
-			{#if error}
-				<Alert type="error" title="Error">
-					<p>{error}</p>
-				</Alert>
-				<div class="mt-6"></div>
-			{/if}
+		<form class="auth-form" onsubmit={handleSubmit}>
+			<div>
+				<label for="password" class="form-label">New password</label>
+				<Input
+					id="password"
+					type="password"
+					autocomplete="new-password"
+					reveal
+					bind:value={password}
+				/>
+				<p class="auth-hint">Must be at least 8 characters</p>
+			</div>
 
-			<form class="space-y-5" onsubmit={handleSubmit}>
-				<div>
-					<label for="password" class="form-label">New password</label>
-					<Input
-						id="password"
-						type="password"
-						bind:value={password}
-					/>
-					<p class="mt-1 text-xs text-text-muted">Must be at least 8 characters</p>
-				</div>
+			<div>
+				<label for="confirm-password" class="form-label">Confirm new password</label>
+				<Input
+					id="confirm-password"
+					type="password"
+					autocomplete="new-password"
+					reveal
+					bind:value={confirmPassword}
+				/>
+			</div>
 
-				<div>
-					<label for="confirm-password" class="form-label">Confirm new password</label>
-					<Input
-						id="confirm-password"
-						type="password"
-						bind:value={confirmPassword}
-					/>
-				</div>
-
+			<Button
+				htmlType="submit"
+				type="primary"
+				size="lg"
+				class="mt-2 w-full justify-center"
+				{loading}
+				disabled={loading}
+			>
+				Reset password
+			</Button>
+		</form>
+	</Card>
+{:else}
+	<Card class="auth-card">
+		<div class="auth-status">
+			<div class="auth-status-icon bg-success/10">
+				<CheckCircle class="h-6 w-6 text-success" />
+			</div>
+			<div>
+				<h2 class="auth-status-title">Password reset successful</h2>
+				<p class="auth-status-text">
+					Your password has been successfully reset. You can now sign in with your new password.
+				</p>
+			</div>
+			<div class="pt-2">
 				<Button
-					htmlType="submit"
+					href="/auth/login"
 					type="primary"
 					size="lg"
 					class="w-full justify-center"
 				>
-					Reset password
+					Continue to login
 				</Button>
-			</form>
-		</Card>
-	{:else}
-		<Card>
-			<div class="text-center space-y-4">
-				<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-success/10">
-					<CheckCircle class="h-6 w-6 text-success" />
-				</div>
-				<div>
-					<h3 class="text-lg font-medium text-text">Password reset successful</h3>
-					<p class="mt-2 text-sm text-text-muted">
-						Your password has been successfully reset. You can now sign in with your new password.
-					</p>
-				</div>
-				<div class="pt-4">
-					<Button
-						href="/auth/login"
-						type="primary"
-						size="lg"
-						class="justify-center"
-					>
-						Continue to login
-					</Button>
-				</div>
 			</div>
-		</Card>
-	{/if}
-</div>
+		</div>
+	</Card>
+{/if}
+
+<p class="auth-footer">
+	<a href="/auth/login" class="auth-back">
+		<ArrowLeft class="h-4 w-4" />
+		Back to login
+	</a>
+</p>

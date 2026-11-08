@@ -979,6 +979,7 @@ type EmailEvent struct {
 	OrgID      string    `json:"org_id"`
 	EmailID    string    `json:"email_id"`
 	ContactID  string    `json:"contact_id"`
+	Email      string    `json:"email,omitempty"` // recipient address
 	ListID     string    `json:"list_id,omitempty"`
 	SequenceID string    `json:"sequence_id,omitempty"`
 	CampaignID string    `json:"campaign_id,omitempty"`

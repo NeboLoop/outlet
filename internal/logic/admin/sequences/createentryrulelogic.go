@@ -7,6 +7,8 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -32,6 +34,9 @@ func NewCreateEntryRuleLogic(ctx context.Context, svcCtx *svc.ServiceContext) *C
 func (l *CreateEntryRuleLogic) CreateEntryRule(req *types.CreateEntryRuleRequest) (resp *types.EntryRuleResponse, err error) {
 	if _, err := access.RequireOwner(l.ctx, l.svcCtx.DB, access.Sequence, req.SequenceId, access.Member); err != nil {
 		return nil, err
+	}
+	if err := email.CheckEntryRule(req.TriggerType, req.SourceId); err != nil {
+		return nil, errorx.NewBadRequestError(err.Error())
 	}
 
 	rule, err := l.svcCtx.DB.CreateEntryRule(l.ctx, db.CreateEntryRuleParams{

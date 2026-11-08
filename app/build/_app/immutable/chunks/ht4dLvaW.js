@@ -1,0 +1,1 @@
+import{Qn as e,Zn as t}from"./CgJezRIb.js";function n(n,r={}){return t(e(`/api/admin/lists/${n}/export`,r),`list-${n}-subscribers.csv`)}function r(e,n){return t(`/api/admin/backup/${encodeURIComponent(e)}/download`,n)}export{n,r as t};

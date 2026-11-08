@@ -43,6 +43,10 @@ func TestPolicyCoversEveryToolAction(t *testing.T) {
 		"stats":         byResource(statsActions),
 		"blocklist":     byResource(blocklistActions),
 		"gdpr":          flat(gdprActions),
+		"validation":    byResource(validationActions),
+	}
+	for tool, actions := range outboundActions {
+		tools[tool] = flat(actions)
 	}
 	require.Len(t, policy, len(tools))
 	for tool, actions := range tools {
@@ -61,7 +65,7 @@ func TestRegistryCallsPassTheGate(t *testing.T) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	ctx := context.Background()
 	_, err = store.CreateUser(ctx, db.CreateUserParams{ID: "mike", Email: "mike@example.com", PasswordHash: "x", Name: "M", Role: "agent", Status: "active", EmailVerified: int64(1)})
@@ -93,7 +97,7 @@ func TestGateHandsItsBrandToTheHandler(t *testing.T) {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	ctx := context.Background()
 	_, err = store.CreateUser(ctx, db.CreateUserParams{ID: "anne", Email: "anne@example.com", PasswordHash: "x", Name: "A", Role: "agent", Status: "active", EmailVerified: int64(1)})
@@ -133,4 +137,51 @@ func TestGateHandsItsBrandToTheHandler(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "This needs the brand's admin role.")
+}
+
+// An outbound-scoped key reaches only the outreach tools, and only the
+// actions its scope allows: read can look, write can draft, only send can
+// approve. Setting up domains and mailboxes needs the brand's admin.
+func TestOutboundScopes(t *testing.T) {
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	require.NoError(t, migrations.Run(conn, nil))
+	store := db.NewStore(conn)
+	ctx := context.Background()
+	_, err = store.CreateUser(ctx, db.CreateUserParams{ID: "nebo", Email: "nebo@example.com", PasswordHash: "x", Name: "N", Role: "agent", Status: "active", EmailVerified: int64(1)})
+	require.NoError(t, err)
+	org, err := store.CreateOrganization(ctx, db.CreateOrganizationParams{ID: "o-id", Name: "o", Slug: "o", ApiKey: "key-o"})
+	require.NoError(t, err)
+	require.NoError(t, store.AddUserToOrganization(ctx, db.AddUserToOrganizationParams{OrgID: org.ID, UserID: "nebo", Role: sql.NullString{String: "member", Valid: true}}))
+	user, err := access.Active(ctx, store, "nebo")
+	require.NoError(t, err)
+	toolCtx := mcpctx.NewUserToolContext(&svc.ServiceContext{DB: store}, user, "req", "test", "session")
+	toolCtx.SelectBrand(org)
+
+	check := func(scopes []string, tool, args string) error {
+		_, err := authorize(ctx, toolCtx, Caller{UserID: "nebo", Scopes: scopes}, tool, []byte(args))
+		return err
+	}
+	read := []string{"outbound:read"}
+	write := []string{"outbound:read", "outbound:write"}
+	send := []string{"outbound:read", "outbound:send"}
+
+	assert.NoError(t, check(read, "outreach_overview", `{"action":"get"}`))
+	assert.ErrorContains(t, check(read, "draft_outreach", `{"action":"create"}`), "outbound:write")
+	assert.NoError(t, check(write, "draft_outreach", `{"action":"create"}`))
+	assert.ErrorContains(t, check(write, "review_drafts", `{"action":"approve"}`), "outbound:send")
+	assert.NoError(t, check(send, "review_drafts", `{"action":"approve"}`))
+	assert.ErrorContains(t, check(send, "contact", `{"action":"list"}`), "mcp:full")
+	assert.ErrorContains(t, check(write, "setup_sending", `{"action":"add_mailboxes"}`), "admin")
+	// A member may list connections and price an order at one; adding,
+	// changing (its key) or removing a connection, moving a domain, buying,
+	// syncing and deleting need the brand's admin.
+	assert.NoError(t, check(write, "setup_sending", `{"action":"quote"}`))
+	assert.NoError(t, check(read, "setup_sending", `{"action":"service_inventory"}`))
+	assert.NoError(t, check(read, "setup_sending", `{"action":"connections"}`))
+	for _, action := range []string{"add_connection", "update_connection", "remove_connection", "move_domain", "connect_domain", "buy", "sync", "delete_mailbox"} {
+		assert.ErrorContains(t, check(write, "setup_sending", `{"action":"`+action+`","confirm":true}`), "admin", action)
+	}
+	assert.NoError(t, check([]string{"mcp:full"}, "conversations", `{"action":"list"}`))
 }

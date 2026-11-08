@@ -3,10 +3,10 @@ package campaigns
 import (
 	"context"
 	"database/sql"
-	"strconv"
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/logic/admin/designs"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
@@ -35,7 +35,7 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 		return nil, err
 	}
 
-	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, req.FromEmail); err != nil {
+	if err := email.CheckSender(l.ctx, l.svcCtx.DB, orgID, email.KindMarketing, req.FromEmail); err != nil {
 		return nil, err
 	}
 	listIDs, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ListIds)
@@ -49,9 +49,11 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 
 	var designID sql.NullInt64
 	if req.DesignId != nil {
-		if parsed, err := strconv.ParseInt(*req.DesignId, 10, 64); err == nil {
-			designID = sql.NullInt64{Int64: parsed, Valid: true}
+		design, err := designs.BrandDesign(l.ctx, l.svcCtx.DB, orgID, *req.DesignId)
+		if err != nil {
+			return nil, err
 		}
+		designID = designs.DesignColumn(design)
 	}
 
 	var trackOpens, trackClicks sql.NullInt64

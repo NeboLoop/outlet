@@ -3,9 +3,9 @@ package webhooks
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/outlet-sh/outlet/internal/middleware"
+	webhooksvc "github.com/outlet-sh/outlet/internal/services/webhook"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -43,7 +43,7 @@ func (l *ListWebhooksLogic) ListWebhooks() (resp *types.ListWebhooksResponse, er
 		info := types.WebhookInfo{
 			Id:                w.ID,
 			Url:               w.Url,
-			Events:            strings.Split(w.Events, ","),
+			Events:            webhooksvc.DecodeEvents(w.Events),
 			Active:            w.Active.Valid && w.Active.Int64 == 1,
 			CreatedAt:         w.CreatedAt.String,
 			DeliveriesTotal:   int(w.DeliveriesTotal.Int64),

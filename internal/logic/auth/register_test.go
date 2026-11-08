@@ -25,7 +25,7 @@ func newAuthSvc(t *testing.T) *svc.ServiceContext {
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	require.NoError(t, migrations.Run(conn))
+	require.NoError(t, migrations.Run(conn, nil))
 	store := db.NewStore(conn)
 	var c config.Config
 	c.Auth.AccessSecret = "access-secret"

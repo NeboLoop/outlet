@@ -78,7 +78,7 @@ SELECT * FROM list_subscribers
 WHERE list_id = sqlc.arg(list_id) AND contact_id = sqlc.arg(contact_id);
 
 -- name: ListListSubscribers :many
-SELECT ls.*, c.email, c.name
+SELECT ls.*, c.email, c.name, c.validation_status, c.validation_sub_status
 FROM list_subscribers ls
 JOIN contacts c ON c.id = ls.contact_id
 WHERE ls.list_id = sqlc.arg(list_id)
@@ -116,7 +116,9 @@ RETURNING *;
 
 -- name: ConfirmListSubscription :one
 UPDATE list_subscribers
-SET status = 'active', verified_at = datetime('now'), verification_token = NULL
+-- The token is kept so opening the link again (a link scanner often opens
+-- it first) shows "confirmed" instead of "invalid link"
+SET status = 'active', verified_at = datetime('now')
 WHERE verification_token = sqlc.arg(token) AND status = 'pending'
 RETURNING *;
 
@@ -145,8 +147,8 @@ SELECT COUNT(*) as count FROM list_subscribers
 WHERE list_id = sqlc.arg(list_id) AND contact_id = sqlc.arg(contact_id);
 
 -- name: CreateListSubscriber :one
-INSERT INTO list_subscribers (list_id, contact_id, status, subscribed_at)
-VALUES (sqlc.arg(list_id), sqlc.arg(contact_id), sqlc.arg(status), datetime('now'))
+INSERT INTO list_subscribers (id, list_id, contact_id, status, subscribed_at)
+VALUES (sqlc.arg(id), sqlc.arg(list_id), sqlc.arg(contact_id), sqlc.arg(status), datetime('now'))
 ON CONFLICT (list_id, contact_id) DO NOTHING
 RETURNING *;
 
@@ -212,3 +214,21 @@ FROM contact_sequence_state css
 LEFT JOIN email_sequences es ON es.id = css.sequence_id
 WHERE css.contact_id = sqlc.arg(contact_id)
 ORDER BY css.started_at DESC;
+
+-- name: ListListSubscribersForExport :many
+-- One page of a list's export, in the order subscribers joined the list,
+-- after the subscriber that ended the page before (empty keys to start).
+SELECT ls.id, ls.status, ls.subscribed_at, ls.verified_at, ls.unsubscribed_at,
+       c.email, c.name, c.created_at AS contact_created_at
+FROM list_subscribers ls
+JOIN contacts c ON c.id = ls.contact_id
+WHERE ls.list_id = sqlc.arg(list_id)
+  AND COALESCE(ls.subscribed_at, '') >= CAST(sqlc.arg(after_subscribed_at) AS TEXT) -- lets the index seek
+  AND (COALESCE(ls.subscribed_at, ''), ls.id) > (CAST(sqlc.arg(after_subscribed_at) AS TEXT), CAST(sqlc.arg(after_id) AS TEXT))
+  AND (sqlc.arg(filter_status) = '' OR ls.status = sqlc.arg(filter_status))
+ORDER BY COALESCE(ls.subscribed_at, ''), ls.id
+LIMIT sqlc.arg(limit_count);
+
+-- name: ListCustomFieldValuesForSubscribers :many
+SELECT subscriber_id, field_id, value FROM custom_field_values
+WHERE subscriber_id IN (sqlc.slice(subscriber_ids));

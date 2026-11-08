@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"strconv"
 	"net/smtp"
 	"sync"
 	"time"
@@ -152,7 +153,7 @@ func (p *SMTPPool) Close() {
 
 // createConnection creates a new SMTP connection
 func (p *SMTPPool) createConnection() (*smtp.Client, error) {
-	addr := fmt.Sprintf("%s:%d", p.host, p.port)
+	addr := net.JoinHostPort(p.host, strconv.Itoa(p.port))
 
 	var client *smtp.Client
 	var err error

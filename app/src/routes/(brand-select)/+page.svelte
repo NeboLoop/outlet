@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { formatDate } from '$lib/dates';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import * as api from '$lib/api';
+	import { getCurrentUser } from '$lib/auth';
 	import type { OrgInfo, SESQuotaResponse, OrgStats } from '$lib/api';
 	import { Button, Card, Input, Badge, Modal, Alert, LoadingSpinner, Drawer } from '$lib/components/ui';
 	import { Plus, Building2, ChevronRight, Cloud, Cpu, Copy, Check, Info, ArrowUpAZ, CalendarDays, Users, Mail, List } from '@lucide/svelte';
@@ -21,10 +23,12 @@
 	);
 	let error = $state('');
 
-	// SES quota state
+	// SES quota state: shown to a super admin when SES is set up
+	const isSuperAdmin = getCurrentUser()?.role === 'super_admin';
 	let sesQuota = $state<SESQuotaResponse | null>(null);
-	let sesLoading = $state(true);
+	let sesLoading = $state(false);
 	let sesError = $state('');
+	let showSES = $derived(sesLoading || !!sesError || !!sesQuota?.configured);
 
 	// MCP state
 	let mcpEndpoint = $state('');
@@ -33,22 +37,10 @@
 	// Mobile drawer state
 	let showInfoDrawer = $state(false);
 
-	// Check if platform is set up on mount
-	onMount(async () => {
-		try {
-			const status = await api.getPublicSetupStatus();
-			// Only require admin account - AWS/email can be configured later
-			if (!status.has_admin) {
-				goto('/setup');
-				return;
-			}
-		} catch (err) {
-			// If we can't check status, continue - the API might require auth
-			console.error('Failed to check setup status:', err);
-		}
-
-		// Load SES quota and set MCP endpoint
-		loadSESQuota();
+	// The root layout has already sent a fresh install to /setup
+	onMount(() => {
+		// SES sending quota is a platform matter: only a super admin sees it
+		if (isSuperAdmin) loadSESQuota();
 		mcpEndpoint = `${window.location.origin}/mcp`;
 	});
 
@@ -65,7 +57,7 @@
 			sesQuota = await api.getPlatformSESQuota();
 		} catch (err: any) {
 			console.error('Failed to load SES quota:', err);
-			sesError = err.message || 'AWS not configured';
+			sesError = err.message || 'Failed to load the SES quota';
 		} finally {
 			sesLoading = false;
 		}
@@ -77,10 +69,6 @@
 		return Math.round(num).toString();
 	}
 
-	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr);
-		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-	}
 
 	async function selectOrg(org: OrgInfo) {
 		localStorage.setItem('currentOrgId', org.id);
@@ -310,6 +298,7 @@
 					</div>
 
 					<!-- SES Quota -->
+					{#if showSES}
 					<div>
 						<div class="flex items-center gap-2 mb-3">
 							<Cloud class="h-4 w-4 text-text-muted" />
@@ -350,6 +339,7 @@
 							</div>
 						{/if}
 					</div>
+					{/if}
 
 					<!-- MCP Connection -->
 					<div>
@@ -463,6 +453,7 @@
 		</div>
 
 		<!-- SES Quota -->
+		{#if showSES}
 		<div>
 			<div class="flex items-center gap-2 mb-3">
 				<Cloud class="h-4 w-4 text-text-muted" />
@@ -503,6 +494,7 @@
 				</div>
 			{/if}
 		</div>
+		{/if}
 
 		<!-- MCP Connection -->
 		<div>

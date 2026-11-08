@@ -41,7 +41,7 @@ func (l *SendCampaignNowLogic) SendCampaignNow(req *types.SendCampaignNowRequest
 		OrgID: orgID,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errorx.NewBadRequestError("Only a draft campaign can be sent.")
+		return nil, errorx.NewBadRequestError("Only a draft or scheduled campaign can be sent.")
 	}
 	if err != nil {
 		l.Errorf("Failed to queue campaign: %v", err)
