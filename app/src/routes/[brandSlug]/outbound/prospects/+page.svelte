@@ -1,19 +1,56 @@
 <script lang="ts">
 	import { formatDate } from '$lib/dates';
+	import { page } from '$app/stores';
 	import {
 		listOutboundProspects,
 		addOutboundProspects,
+		type OutboundListRef,
 		type OutboundProspectInfo,
 		type OutboundProspectInput,
 		type OutboundProspectResult
 	} from '$lib/api';
-	import { Button, Alert, LoadingSpinner, EmptyState, Badge, Input, Textarea, SlideForm } from '$lib/components/ui';
+	import {
+		Button,
+		Alert,
+		LoadingSpinner,
+		EmptyState,
+		Badge,
+		Input,
+		Textarea,
+		SlideForm,
+		Select,
+		SearchInput,
+		Checkbox
+	} from '$lib/components/ui';
 	import { Plus, Users } from '@lucide/svelte';
-	import { errorMessage } from '../shared';
+	import { errorMessage, pageRange } from '../shared';
+
+	const PAGE_SIZE = 50;
+	const STATUSES = [
+		{ value: '', label: 'Any status' },
+		{ value: 'prospect', label: 'Prospect' },
+		{ value: 'held', label: 'Held' }
+	];
+
+	let base = $derived(`/${$page.params.brandSlug}/outbound`);
 
 	let loading = $state(true);
 	let error = $state('');
 	let prospects = $state<OutboundProspectInfo[]>([]);
+	let total = $state(0);
+	let lists = $state<OutboundListRef[]>([]);
+
+	let listId = $state('');
+	let status = $state('');
+	let search = $state('');
+	// The search as applied, a moment after typing stops.
+	let applied = $state('');
+	let enrollable = $state(false);
+	let offset = $state(0);
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+	let listOptions = $derived([{ value: '', label: 'All lists' }, ...lists.map((l) => ({ value: l.id, label: l.name }))]);
+	let filtered = $derived(listId !== '' || status !== '' || applied !== '' || enrollable);
 
 	let showAdd = $state(false);
 	let adding = $state(false);
@@ -30,21 +67,45 @@
 		refused: 'error'
 	};
 
+	// A new filter starts again from the first page.
+	let lastFilter = '';
 	$effect(() => {
-		load();
+		const filter = `${listId}|${status}|${applied}|${enrollable}`;
+		if (filter !== lastFilter) {
+			lastFilter = filter;
+			if (offset !== 0) {
+				offset = 0;
+				return;
+			}
+		}
+		load(listId, status, applied, enrollable, offset);
 	});
 
-	async function load() {
+	async function load(list: string, withStatus: string, query: string, onlyFree: boolean, from: number) {
 		loading = true;
 		error = '';
 		try {
-			const res = await listOutboundProspects({ limit: 500 });
+			const res = await listOutboundProspects({
+				list_id: list || undefined,
+				status: withStatus || undefined,
+				search: query || undefined,
+				enrollable: onlyFree || undefined,
+				limit: PAGE_SIZE,
+				offset: from
+			});
 			prospects = res.prospects || [];
+			total = res.total;
+			lists = res.lists || [];
 		} catch (err) {
 			error = errorMessage(err, 'Could not load prospects');
 		} finally {
 			loading = false;
 		}
+	}
+
+	function searchSoon() {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => (applied = search.trim()), 300);
 	}
 
 	function parse(): { inputs: OutboundProspectInput[]; problems: string[] } {
@@ -80,7 +141,7 @@
 			const res = await addOutboundProspects({ list: listName.trim() || undefined, prospects: inputs });
 			results = res.prospects || [];
 			if (results.every((r) => r.status !== 'refused')) lines = '';
-			await load();
+			await load(listId, status, applied, enrollable, offset);
 		} catch (err) {
 			error = errorMessage(err, 'Could not add prospects');
 		} finally {
@@ -160,12 +221,25 @@
 	{/snippet}
 </SlideForm>
 
+<div class="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+	<SearchInput bind:value={search} placeholder="Search email or name" size="sm" class="lg:w-72" onsearch={searchSoon} onclear={searchSoon} />
+	<div class="flex flex-wrap items-center gap-3">
+		<Select size="sm" bind:value={listId} options={listOptions} class="w-44" />
+		<Select size="sm" bind:value={status} options={STATUSES} class="w-36" />
+		<Checkbox bind:checked={enrollable} label="Free to enroll" size="sm" />
+	</div>
+</div>
+
 {#if loading}
 	<div class="flex justify-center py-12">
 		<LoadingSpinner size="large" />
 	</div>
 {:else if prospects.length === 0}
-	<EmptyState icon={Users} title="No prospects yet" description="Add them here, or let the AI find and add them over MCP." />
+	{#if filtered}
+		<p class="text-sm text-text-muted py-6">No prospects match.</p>
+	{:else}
+		<EmptyState icon={Users} title="No prospects yet" description="Add them here, or let the AI find and add them over MCP." />
+	{/if}
 {:else}
 	<div class="data-table overflow-x-auto">
 		<table class="w-full text-sm">
@@ -173,21 +247,36 @@
 				<tr>
 					<th class="text-left">Email</th>
 					<th class="text-left">Name</th>
-					<th class="text-left hidden sm:table-cell">List</th>
-					<th class="text-left">Status</th>
+					<th class="text-left">Lists</th>
+					<th class="text-left">Campaign</th>
 					<th class="text-left hidden sm:table-cell">Checked</th>
 					<th class="text-left hidden md:table-cell">Source</th>
 					<th class="text-left hidden md:table-cell">Added</th>
 				</tr>
 			</thead>
 			<tbody>
-				{#each prospects as p (`${p.id}:${p.list_id}`)}
+				{#each prospects as p (p.id)}
 					<tr>
-						<td>{p.email}</td>
-						<td>{p.name}</td>
-						<td class="hidden sm:table-cell text-text-muted">{p.list_name}</td>
 						<td>
-							<Badge variant={p.status === 'held' ? 'warning' : 'default'} size="sm">{p.status}</Badge>
+							{p.email}
+							{#if p.suppressed}
+								<Badge variant="error" size="sm">Suppressed</Badge>
+							{/if}
+						</td>
+						<td>{p.name}</td>
+						<td>
+							<div class="flex flex-wrap gap-1">
+								{#each p.lists as l (l.id)}
+									<Badge variant={l.status === 'held' ? 'warning' : 'default'} size="sm">{l.name}: {l.status}</Badge>
+								{/each}
+							</div>
+						</td>
+						<td>
+							{#each p.campaigns as c (c.id)}
+								<a href="{base}/campaigns/{c.id}" class="link link-primary block">{c.name}</a>
+							{:else}
+								<span class="text-text-muted">{p.enrollable ? 'Free to enroll' : 'None'}</span>
+							{/each}
 						</td>
 						<td class="hidden sm:table-cell text-text-muted">{p.validation_status || 'Not yet'}</td>
 						<td class="hidden md:table-cell text-text-muted">{p.email_source}</td>
@@ -196,5 +285,16 @@
 				{/each}
 			</tbody>
 		</table>
+	</div>
+	<div class="flex items-center justify-between gap-3 mt-3 text-sm text-text-muted">
+		<span>{pageRange(offset, prospects.length, total)}</span>
+		<div class="flex gap-2">
+			<Button type="secondary" size="sm" onclick={() => (offset = Math.max(0, offset - PAGE_SIZE))} disabled={offset === 0}>
+				Previous
+			</Button>
+			<Button type="secondary" size="sm" onclick={() => (offset += PAGE_SIZE)} disabled={offset + prospects.length >= total}>
+				Next
+			</Button>
+		</div>
 	</div>
 {/if}

@@ -1431,6 +1431,11 @@ export interface OutboundAnswerRequest {
 export interface OutboundAnswerRequestParams {
 }
 
+export interface OutboundCampaignRef {
+	id: string
+	name: string
+}
+
 export interface OutboundCampaignRequest {
 	name: string
 	list?: string
@@ -1588,8 +1593,17 @@ export interface OutboundIDRequestParams {
 export interface OutboundListProspectsRequest {
 }
 export interface OutboundListProspectsRequestParams {
-	list_id?: number
+	list_id?: string // one outreach list; empty: all
+	status?: string // their status on it: prospect, held, ...
+	search?: string // part of an email or name
+	enrollable?: boolean // only people a campaign can take now
 	limit?: number
+	offset?: number
+}
+
+export interface OutboundListRef {
+	id: string
+	name: string
 }
 
 export interface OutboundListRepliesRequest {
@@ -1674,10 +1688,11 @@ export interface OutboundProspectInfo {
 	name: string
 	email_source: string
 	validation_status: string
-	list_id: number
-	list_name: string
-	status: string
 	created_at: string
+	lists: Array<OutboundProspectListStatus> // the outreach lists they are on, with their status on each
+	campaigns: Array<OutboundCampaignRef> // the outreach campaigns they are in now
+	suppressed: boolean
+	enrollable: boolean // a campaign can take them now
 }
 
 export interface OutboundProspectInput {
@@ -1697,6 +1712,14 @@ export interface OutboundProspectInput {
 
 export interface OutboundProspectList {
 	prospects: Array<OutboundProspectInfo>
+	total: number // every person matching, across pages
+	lists: Array<OutboundListRef> // the brand's outreach lists
+}
+
+export interface OutboundProspectListStatus {
+	id: string
+	name: string
+	status: string
 }
 
 export interface OutboundProspectResult {

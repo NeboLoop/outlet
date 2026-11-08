@@ -1335,6 +1335,11 @@ type OutboundAnswerRequest struct {
 	Body string `json:"body"`
 }
 
+type OutboundCampaignRef struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type OutboundCampaignRequest struct {
 	Name            string              `json:"name"`
 	List            string              `json:"list,optional"`
@@ -1485,8 +1490,17 @@ type OutboundIDRequest struct {
 }
 
 type OutboundListProspectsRequest struct {
-	ListId int64 `form:"list_id,optional"`
-	Limit  int   `form:"limit,optional,default=100"`
+	ListId     string `form:"list_id,optional"`    // one outreach list; empty: all
+	Status     string `form:"status,optional"`     // their status on it: prospect, held, ...
+	Search     string `form:"search,optional"`     // part of an email or name
+	Enrollable bool   `form:"enrollable,optional"` // only people a campaign can take now
+	Limit      int    `form:"limit,optional,default=50"`
+	Offset     int    `form:"offset,optional"`
+}
+
+type OutboundListRef struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type OutboundListRepliesRequest struct {
@@ -1562,15 +1576,16 @@ type OutboundPauseRequest struct {
 }
 
 type OutboundProspectInfo struct {
-	Id               string `json:"id"`
-	Email            string `json:"email"`
-	Name             string `json:"name"`
-	EmailSource      string `json:"email_source"`
-	ValidationStatus string `json:"validation_status"`
-	ListId           int64  `json:"list_id"`
-	ListName         string `json:"list_name"`
-	Status           string `json:"status"`
-	CreatedAt        string `json:"created_at"`
+	Id               string                       `json:"id"`
+	Email            string                       `json:"email"`
+	Name             string                       `json:"name"`
+	EmailSource      string                       `json:"email_source"`
+	ValidationStatus string                       `json:"validation_status"`
+	CreatedAt        string                       `json:"created_at"`
+	Lists            []OutboundProspectListStatus `json:"lists"`     // the outreach lists they are on, with their status on each
+	Campaigns        []OutboundCampaignRef        `json:"campaigns"` // the outreach campaigns they are in now
+	Suppressed       bool                         `json:"suppressed"`
+	Enrollable       bool                         `json:"enrollable"` // a campaign can take them now
 }
 
 type OutboundProspectInput struct {
@@ -1590,6 +1605,14 @@ type OutboundProspectInput struct {
 
 type OutboundProspectList struct {
 	Prospects []OutboundProspectInfo `json:"prospects"`
+	Total     int64                  `json:"total"` // every person matching, across pages
+	Lists     []OutboundListRef      `json:"lists"` // the brand's outreach lists
+}
+
+type OutboundProspectListStatus struct {
+	Id     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 type OutboundProspectResult struct {

@@ -9,6 +9,11 @@ export function percent(rate: number): string {
 	return `${(rate || 0).toFixed(1)}%`;
 }
 
+// Which rows of a list a page shows: "1 to 50 of 120".
+export function pageRange(offset: number, shown: number, total: number): string {
+	if (shown === 0) return `0 of ${total}`;
+	return `${offset + 1} to ${offset + shown} of ${total}`;
+}
 
 export const BOUNCE_LIMIT = 3;
 

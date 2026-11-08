@@ -482,6 +482,8 @@ type Querier interface {
 	ListActiveListSubscriberEmails(ctx context.Context, listID int64) ([]string, error)
 	// Every mailbox the sender works, across brands.
 	ListActiveMailboxes(ctx context.Context) ([]Mailbox, error)
+	// The outreach campaigns some people are in now.
+	ListActiveOutreachCampaignsFor(ctx context.Context, arg ListActiveOutreachCampaignsForParams) ([]ListActiveOutreachCampaignsForRow, error)
 	ListActiveOutreachStatesForContact(ctx context.Context, contactID sql.NullString) ([]ContactSequenceState, error)
 	ListAllContactTags(ctx context.Context) ([]ListAllContactTagsRow, error)
 	ListAllMailboxes(ctx context.Context) ([]Mailbox, error)
@@ -529,7 +531,12 @@ type Querier interface {
 	ListPlatformSettings(ctx context.Context) ([]PlatformSetting, error)
 	ListPoolMailboxes(ctx context.Context, pathwayID sql.NullString) ([]Mailbox, error)
 	ListProcessingValidationJobs(ctx context.Context) ([]ValidationJob, error)
-	// Prospects on a brand's outreach lists, newest first.
+	// The outreach lists of some people, with their status on each.
+	ListProspectSubscriptions(ctx context.Context, arg ListProspectSubscriptionsParams) ([]ListProspectSubscriptionsRow, error)
+	// One row per person on a brand's outreach lists, newest first, with what
+	// decides whether they can be enrolled: a 'prospect' status (on the list
+	// filtered by, else on any), an active outreach campaign, and suppression
+	// (the check IsSendBlocked makes). total counts every matching person.
 	ListProspects(ctx context.Context, arg ListProspectsParams) ([]ListProspectsRow, error)
 	ListRecentBounces(ctx context.Context, arg ListRecentBouncesParams) ([]EmailBounce, error)
 	ListRecentComplaints(ctx context.Context, arg ListRecentComplaintsParams) ([]EmailComplaint, error)

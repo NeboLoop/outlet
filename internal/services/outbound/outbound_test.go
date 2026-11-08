@@ -779,6 +779,88 @@ func TestDigitalOceanRecords(t *testing.T) {
 	assert.ElementsMatch(t, []string{"MX @", "TXT _dmarc", "TXT google._domainkey"}, kinds, "SPF already existed and is not doubled")
 }
 
+// The prospect list is one row per person, with their lists and the
+// campaigns they are in, and can show only those a campaign can take.
+func TestListProspects(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	h.setup()
+	got := h.prospects(creator("ivy@example.org", "Ivy", "a"), creator("kai@example.org", "Kai", "b"),
+		creator("risky@example.org", "Risky", "c"), creator("ola@example.org", "Ola", "d"))
+	_, err := h.svc.AddProspects(ctx, h.org, "Second", []ProspectInput{creator("ivy@example.org", "Ivy", "a")})
+	require.NoError(t, err)
+	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "Spring", Steps: threeSteps, ProspectIDs: []string{got["kai@example.org"].ID}})
+	require.NoError(t, err)
+	h.svc.suppress(ctx, h.org.ID, "ola@example.org", "opted out elsewhere")
+
+	all, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{})
+	require.NoError(t, err)
+	assert.EqualValues(t, 4, all.Total, "one row per person")
+	require.Len(t, all.Prospects, 4)
+	require.Len(t, all.Lists, 2)
+	byEmail := map[string]ProspectInfo{}
+	for _, p := range all.Prospects {
+		byEmail[p.Email] = p
+	}
+	ivy, kai := byEmail["ivy@example.org"], byEmail["kai@example.org"]
+	assert.Len(t, ivy.Lists, 2)
+	assert.True(t, ivy.Enrollable)
+	assert.Equal(t, []CampaignRef{{ID: camp.CampaignID, Name: "Spring"}}, kai.Campaigns)
+	assert.False(t, kai.Enrollable, "already in a campaign")
+	assert.False(t, byEmail["risky@example.org"].Enrollable, "held")
+	assert.True(t, byEmail["ola@example.org"].Suppressed)
+	assert.False(t, byEmail["ola@example.org"].Enrollable)
+
+	// The list agrees with what enrolling accepts.
+	list, err := h.svc.outreachList(ctx, h.org, "")
+	require.NoError(t, err)
+	for _, p := range all.Prospects {
+		_, reason := h.svc.enrollable(ctx, h.org, list, p.ID)
+		inCampaign := len(p.Campaigns) > 0
+		assert.Equal(t, reason == "" && !inCampaign, p.Enrollable, p.Email)
+	}
+
+	free, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Enrollable: true})
+	require.NoError(t, err)
+	require.Len(t, free.Prospects, 1)
+	assert.Equal(t, "ivy@example.org", free.Prospects[0].Email)
+
+	held, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Status: "held"})
+	require.NoError(t, err)
+	require.Len(t, held.Prospects, 1)
+	assert.Equal(t, "risky@example.org", held.Prospects[0].Email)
+
+	found, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Search: "kai"})
+	require.NoError(t, err)
+	require.Len(t, found.Prospects, 1)
+
+	var second string
+	for _, l := range all.Lists {
+		if l.Name == "Second" {
+			second = l.ID
+		}
+	}
+	onSecond, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{ListID: second})
+	require.NoError(t, err)
+	require.Len(t, onSecond.Prospects, 1)
+	assert.Equal(t, "ivy@example.org", onSecond.Prospects[0].Email)
+	assert.Len(t, onSecond.Prospects[0].Lists, 2, "still shows every list the person is on")
+
+	p1, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Limit: 3})
+	require.NoError(t, err)
+	p2, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{Limit: 3, Offset: 3})
+	require.NoError(t, err)
+	assert.Len(t, p1.Prospects, 3)
+	require.Len(t, p2.Prospects, 1)
+	assert.EqualValues(t, 4, p2.Total)
+	for _, p := range p1.Prospects {
+		assert.NotEqual(t, p.ID, p2.Prospects[0].ID)
+	}
+
+	_, err = h.svc.ListProspects(ctx, h.org, ProspectQuery{ListID: "nope"})
+	assert.ErrorContains(t, err, "No such outreach list")
+}
+
 // A domain keeps the records it needs; each later read says which the last
 // check found. When DigitalOcean fails, the domain is added all the same and
 // the answer carries the records to add by hand.
