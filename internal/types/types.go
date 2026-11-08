@@ -327,7 +327,7 @@ type CreateEmailDesignRequest struct {
 
 type CreateEntryRuleRequest struct {
 	SequenceId  string `json:"sequence_id"`
-	TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added, manual
+	TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added
 	SourceId    string `json:"source_id,optional"`
 	Priority    int    `json:"priority,optional,default=0"`
 }
@@ -691,7 +691,7 @@ type EnrollSequenceResponse struct {
 type EntryRuleInfo struct {
 	Id          string `json:"id"`
 	SequenceId  string `json:"sequence_id"`
-	TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added, manual
+	TriggerType string `json:"trigger_type"` // list_join, sequence_complete, tag_added
 	SourceId    string `json:"source_id,optional"`
 	SourceName  string `json:"source_name,optional"` // list name or sequence name
 	Priority    int    `json:"priority"`

@@ -5,7 +5,11 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
@@ -171,12 +175,66 @@ func (s *SequenceService) SendConfirmationEmail(ctx context.Context, contactID s
 // TriggerSignup is the trigger of a list's "On signup" autoresponder.
 const TriggerSignup = "signup"
 
+// The moments a sequence entry rule (sequence_entry_rules.trigger_type) starts
+// its sequence for a contact. source_id names what the moment is about.
+const (
+	TriggerListJoin         = "list_join"         // a subscription to list source_id became active
+	TriggerSequenceComplete = "sequence_complete" // the contact finished sequence source_id
+	TriggerTagAdded         = "tag_added"         // the contact was given tag source_id
+)
+
+// EntryRuleTriggers are the trigger types an entry rule can have.
+var EntryRuleTriggers = []string{TriggerListJoin, TriggerSequenceComplete, TriggerTagAdded}
+
+// CheckEntryRule says why an entry rule with this trigger and source could
+// never start its sequence, or nil when it can. Every path that saves a rule
+// checks it here.
+func CheckEntryRule(trigger, sourceID string) error {
+	if !slices.Contains(EntryRuleTriggers, trigger) {
+		return fmt.Errorf("trigger_type must be one of: %s", strings.Join(EntryRuleTriggers, ", "))
+	}
+	if strings.TrimSpace(sourceID) == "" {
+		return errors.New("source_id is required: the list ID, sequence ID or tag the rule waits on")
+	}
+	return nil
+}
+
 // SubscriptionActivated is called whenever a contact's subscription to a list
 // becomes active: a double opt-in confirmed, or a single opt-in subscribe. It
-// starts the list's signup sequence. A contact already in that sequence stays
-// where they are, so calling it again for the same subscription is safe.
+// starts the list's signup sequence and every sequence whose entry rule waits
+// on this list. A contact already in a sequence stays where they are, so
+// calling it again for the same subscription is safe.
 func (s *SequenceService) SubscriptionActivated(ctx context.Context, contactID string, listID int64) error {
-	return s.StartSequence(ctx, contactID, listID, TriggerSignup)
+	return errors.Join(
+		s.StartSequence(ctx, contactID, listID, TriggerSignup),
+		s.runEntryRules(ctx, TriggerListJoin, strconv.FormatInt(listID, 10), contactID),
+	)
+}
+
+// TagAdded starts every sequence whose entry rule waits on this tag. The store
+// calls it whenever a contact is given a tag it didn't have.
+func (s *SequenceService) TagAdded(ctx context.Context, contactID, tag string) {
+	if err := s.runEntryRules(ctx, TriggerTagAdded, tag, contactID); err != nil {
+		logx.Errorf("Entry rules for tag %q on contact %s: %v", tag, contactID, err)
+	}
+}
+
+// runEntryRules starts, through StartSequenceByID, the sequence of each active
+// entry rule of the contact's brand waiting on this trigger and source.
+func (s *SequenceService) runEntryRules(ctx context.Context, trigger, sourceID, contactID string) error {
+	rules, err := s.db.GetActiveEntryRuleForTrigger(ctx, db.GetActiveEntryRuleForTriggerParams{
+		ContactID: contactID, TriggerType: trigger, SourceID: sourceID,
+	})
+	if err != nil {
+		return fmt.Errorf("entry rules for %s %s: %w", trigger, sourceID, err)
+	}
+	var errs []error
+	for _, rule := range rules {
+		if err := s.StartSequenceByID(ctx, contactID, rule.SequenceID); err != nil {
+			errs = append(errs, fmt.Errorf("entry rule %s: %w", rule.ID, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // StartSequence initiates an email sequence for a contact
@@ -472,7 +530,8 @@ func claimDueEmails(ctx context.Context, store *db.Store, limit int64) ([]db.Get
 
 // advanceSequence runs after a sequence email is sent: it records the
 // position, queues the next step, and when the sequence is finished marks it
-// complete and starts the chained sequence, if one is configured.
+// complete and starts the sequences waiting on its completion: those of its
+// entry rules, and the chained sequence, if one is configured.
 func (s *SequenceService) advanceSequence(ctx context.Context, email db.GetPendingEmailsRow) {
 	if !email.ContactID.Valid || !email.TemplateID.Valid {
 		return
@@ -505,6 +564,10 @@ func (s *SequenceService) advanceSequence(ctx context.Context, email db.GetPendi
 		SequenceID: template.SequenceID,
 	})
 	logx.Infof("Completed sequence for contact %s", email.ContactID.String)
+
+	if err := s.runEntryRules(ctx, TriggerSequenceComplete, template.SequenceID.String, email.ContactID.String); err != nil {
+		logx.Errorf("Entry rules after sequence %s for contact %s: %v", template.SequenceID.String, email.ContactID.String, err)
+	}
 
 	seq, err := s.db.GetSequenceByID(ctx, template.SequenceID.String)
 	if err != nil || !seq.OnCompletionSequenceID.Valid || seq.OnCompletionSequenceID.String == "" {

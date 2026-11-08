@@ -337,7 +337,7 @@ export interface CreateEmailDesignRequest {
 
 export interface CreateEntryRuleRequest {
 	sequence_id: string
-	trigger_type: string // list_join, sequence_complete, tag_added, manual
+	trigger_type: string // list_join, sequence_complete, tag_added
 	source_id?: string
 	priority?: number
 }
@@ -725,7 +725,7 @@ export interface EnrollSequenceResponse {
 export interface EntryRuleInfo {
 	id: string
 	sequence_id: string
-	trigger_type: string // list_join, sequence_complete, tag_added, manual
+	trigger_type: string // list_join, sequence_complete, tag_added
 	source_id?: string
 	source_name?: string // list name or sequence name
 	priority: number

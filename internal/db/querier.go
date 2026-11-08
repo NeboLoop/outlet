@@ -236,6 +236,8 @@ type Querier interface {
 	DeleteWebhook(ctx context.Context, arg DeleteWebhookParams) error
 	EditOutreachEmail(ctx context.Context, arg EditOutreachEmailParams) (int64, error)
 	EnsureSendCount(ctx context.Context, arg EnsureSendCountParams) error
+	// The active rules waiting on this trigger and source, for sequences of the
+	// contact's own brand only, highest priority first.
 	GetActiveEntryRuleForTrigger(ctx context.Context, arg GetActiveEntryRuleForTriggerParams) ([]GetActiveEntryRuleForTriggerRow, error)
 	GetActiveSequenceForContact(ctx context.Context, contactID sql.NullString) (GetActiveSequenceForContactRow, error)
 	// Only a list of the campaign's own brand gives recipients.
