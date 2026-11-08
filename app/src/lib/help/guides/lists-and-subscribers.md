@@ -15,7 +15,7 @@ A list is a group of people who asked to hear from you, such as "Newsletter" or 
 1. Open the list, then the **Subscribers** tab.
 2. Press **Add subscriber**, type the **Email** and **Name (optional)**, and add them.
 
-They join right away, without a confirmation email. Add only people who asked to hear from you.
+They join right away, without a confirmation email, and the list's **On signup** autoresponders start for them. Add only people who asked to hear from you.
 
 ## Import a CSV file
 
@@ -31,7 +31,7 @@ A CSV file is a spreadsheet saved as plain text. Any spreadsheet app can save on
 - Imported people join as confirmed straight away, without a confirmation email. Import only people who agreed to hear from you.
 - Someone already on the list, including someone who unsubscribed, is left as they are. Unsubscribed people are never re-added.
 - Addresses at blocked domains are refused.
-- Imports don't start the list's **On signup** autoresponder. See [Sequences and autoresponders](/help/sequences-and-autoresponders).
+- Before you pick the file, **Import CSV** asks about **Start sign-up emails for these subscribers**. It is on by default: everyone imported gets the list's **On signup** autoresponders from the first email. Turn it off when importing an old list whose people already had them. See [Sequences and autoresponders](/help/sequences-and-autoresponders).
 
 Thinking of importing an old or bought list? Check it with **Validation** first. Bad addresses bounce, and bounces hurt your sending reputation. See [Clean lists, validation and the blocklist](/help/clean-lists).
 
@@ -78,4 +78,4 @@ The list's **Settings** tab holds:
 - **"The file isn't a CSV with a header row."**: save the spreadsheet as CSV, with column names in the first row.
 - **"This address's domain is on the brand's blocklist."**: see **Blocklist**.
 - **Subscribers stay Pending**: they haven't confirmed. Check the confirmation email arrives (try it yourself), and that **Marketing** is carried by a pathway in **Settings**, **Sending**.
-- **Exporting a list**: there is no export button on lists yet. A **Validation** job of the list has **Export CSV**.
+- **Exporting a list**: on the list's **Subscribers** tab, press **Export CSV**. Your browser downloads every subscriber of the list as a CSV file.

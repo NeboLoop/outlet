@@ -20,9 +20,12 @@ Under **Export Personal Data**, press **Export Data**. Outlet gathers their prof
 ## Delete someone's data
 
 1. Under **Delete All Data**, press **Delete Data**.
-2. Confirm. This can't be undone.
+2. To also ask your email providers to delete what they keep about the address, tick **Also ask the brand's email providers to delete what they keep about this address**.
+3. Confirm. This can't be undone.
 
-Only the brand's admin can delete.
+Only the brand's admin can delete. Each deletion is recorded in the GDPR audit log, without the address itself, and the message after it names its audit record.
+
+**What the providers box does**: Amazon SES takes the address off the SES account's suppression list, the only record about one person SES lets Outlet delete; SES keeps no sending log that can be deleted. SMTP relays and mailboxes have no way to be asked, so nothing is sent to them. After deleting, Outlet lists what each provider did ("What each email provider did"), so you can ask a relay's operator yourself. Outlet keeps its own bounce and suppression records for the address either way, so it isn't mailed again.
 
 **What is deleted**: the person, their list memberships, tags, custom field values, sequence progress, waiting emails, clicks and campaign records.
 

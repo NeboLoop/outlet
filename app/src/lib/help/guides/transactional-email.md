@@ -66,7 +66,16 @@ Then, in your app's email settings:
 | Username | the brand's slug, such as `acme` |
 | Password | the brand's API key |
 
-The brand's **Settings**, **SMTP** tab shows these for your brand. Messages can be up to 25 MB with up to 100 recipients. The brand's From address is used, whatever From your app sets. Mail sent over SMTP is treated as transactional.
+The brand's **Settings**, **SMTP** tab shows these for your brand. Messages can be up to 25 MB with up to 100 recipients. The brand's From address is used, whatever From your app sets.
+
+**Headers your app can set.** Outlet reads these `X-Outlet-` headers from each message, and the brand's **Settings**, **SMTP** tab lists them with examples:
+
+- `X-Outlet-Type`: `transactional` (the default) or `marketing`. Marketing mail goes through the brand's marketing pathway, needs `X-Outlet-List`, and gets an unsubscribe link and one-click unsubscribe headers.
+- `X-Outlet-List`: for marketing mail, the slug of the list the person subscribed to. Someone who isn't an active subscriber of it isn't sent to.
+- `X-Outlet-Template`: send one of your transactional templates by slug. Its subject and body replace the message's.
+- `X-Outlet-Track`: `opens,clicks` (the default), or `none`.
+- `X-Outlet-Tags`: comma-separated tags recorded with the send.
+- `X-Outlet-Meta-` followed by a name, such as `X-Outlet-Meta-Order-ID`: your own data, recorded with the send.
 
 ## Common problems
 

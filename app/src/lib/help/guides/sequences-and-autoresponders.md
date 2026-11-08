@@ -12,10 +12,10 @@ Autoresponders are **marketing** mail and go out through the pathway that carrie
 
 **Triggers**
 
-- **On signup**: starts when someone joins the list through your subscribe form or your app's API. With double opt-in, it starts when they confirm.
+- **On signup**: starts when someone becomes an active subscriber of the list: through your subscribe form or your app's API, with **Add subscriber**, or by **Import CSV** with **Start sign-up emails for these subscribers** on. With double opt-in, it starts when they confirm.
 - **Manual enrollment**: starts only when you enroll someone yourself, or your app does.
 
-Each list runs one **On signup** autoresponder. Put the whole welcome series in one, not several.
+A list can have several **On signup** autoresponders, and each new subscriber gets every active one, side by side. Putting a welcome series in one autoresponder keeps its emails in order.
 
 ## Add the emails
 
@@ -45,10 +45,10 @@ Someone already in a sequence is never enrolled in it twice.
 
 ## Who gets an On signup autoresponder
 
-- **Yes**: people who join through the hosted subscribe form, the embedded form, or your app's subscribe API, once they're active (after confirming, with double opt-in).
-- **No**: people you add with **Add subscriber** or **Import CSV**. Enroll them by hand if they should get it.
+- **Yes**: people who join through the hosted subscribe form, the embedded form, or your app's subscribe API, once they're active (after confirming, with double opt-in), and people you add with **Add subscriber**.
+- **Import CSV**: yes when **Start sign-up emails for these subscribers** is on (the default), no when you turn it off. Enroll people by hand later if they should get it after all.
 
 ## Common problems
 
-- **Nobody gets the welcome email**: check the trigger is **On signup**, the autoresponder is **Active**, and **Marketing** is carried by a pathway in **Settings**, **Sending**. Check the person joined through a form or the API, not an import.
+- **Nobody gets the welcome email**: check the trigger is **On signup**, the autoresponder is **Active**, and **Marketing** is carried by a pathway in **Settings**, **Sending**. For an import, check **Start sign-up emails for these subscribers** was on.
 - **People wait for confirmation**: with double opt-in on, the autoresponder starts only once they click the confirmation link.

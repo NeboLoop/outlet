@@ -25,21 +25,22 @@ Each event is one `POST` to your address with a JSON body holding `event`, `time
 
 The event names are `contact.created`, `contact.unsubscribed`, `email.sent`, `email.delivered`, `email.bounced`, `email.complained` (Marked as Spam), `email.opened` and `email.clicked`.
 
-Any answer in the 200s counts as delivered. Outlet waits up to 30 seconds and sends each event once; it doesn't retry. If your system was down, the event is missed, so have it catch up from the API when it comes back.
+Any answer in the 200s counts as delivered. Outlet waits up to 30 seconds for it. When your system fails or doesn't answer, Outlet tries the event again, waiting longer each time: after 5 minutes, 1 hour, 6 hours and 18 hours, 5 tries over about a day. Every try carries the same body, signature and `X-Webhook-Delivery` ID, so your system can tell a repeat from a new event.
 
 ## Test and watch
 
 Each webhook's row has:
 
 - **Test Webhook**: sends a test event now and shows whether it worked.
-- **View Logs**: every delivery with its **Event**, **Status**, **Duration** and **Time**.
+- **Deliveries**: each event with its **Status** ("Delivered", "Retrying", "Sending" or "Failed"), **Tries** (such as "2 of 5"), **Last Response**, **Next Retry** and **Created**. **Send again** sends that event once more now, for example after you fixed your system and an event ran out of tries.
+- **View Logs**: every try with its **Event**, **Status**, **Duration** and **Time**.
 - **Disable** and **Enable**: pause it without deleting it.
 - **Delete**: remove it.
 
-The **Deliveries** column counts successes and failures.
+The **Deliveries** column counts successes and failures, and how many events are waiting for another try. The **Retries** column shows them too.
 
 ## Common problems
 
-- **Every delivery fails**: open **View Logs**. Check the address is public (not `localhost`), uses `https`, and answers within 30 seconds.
+- **Every delivery fails**: open **Deliveries** or **View Logs**. Check the address is public (not `localhost`), uses `https`, and answers within 30 seconds.
 - **The signature doesn't match**: sign the raw body exactly as received, before your system parses it, with the secret from when you created the webhook.
 - **Lost the secret**: delete the webhook and create it again to get a new one.
