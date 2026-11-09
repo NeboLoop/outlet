@@ -223,29 +223,41 @@ func TestMCP_ScopesAreEnforced(t *testing.T) {
 	assert.Contains(t, text, "mcp:full")
 }
 
-func TestMCP_NewSessionChoosesItsOwnBrand(t *testing.T) {
+// Clients that open a new session per call (Claude does) keep the brand the
+// person chose: a new session starts on that person's most recent choice,
+// in memory and after a restart. Never on another person's.
+func TestMCP_NewSessionKeepsThePersonsBrand(t *testing.T) {
 	f := newMCPFixture(t)
 	f.initialize("anne", "s1")
 	_, isErr := f.call("anne", "s1", "brand", map[string]any{"resource": "brand", "action": "select", "slug": "alpha"})
 	require.False(t, isErr)
-	_, isErr = f.call("anne", "s1", "campaign", map[string]any{"action": "list"})
-	require.False(t, isErr)
 
-	// Wait for the session choice to reach the database, then start a new session.
+	// The very next call, in a new session, at once.
+	f.initialize("anne", "s2")
+	_, isErr = f.call("anne", "s2", "campaign", map[string]any{"action": "list"})
+	assert.False(t, isErr, "the new session keeps anne's brand")
+
+	// After a restart (nothing in memory), from the database.
 	require.Eventually(t, func() bool {
 		s, err := f.store.GetMCPSession(context.Background(), "s1")
 		return err == nil && s.OrgID.Valid
 	}, 2*time.Second, 10*time.Millisecond)
-	f.initialize("anne", "s2")
-	text, isErr := f.call("anne", "s2", "campaign", map[string]any{"action": "list"})
-	assert.True(t, isErr)
-	assert.Contains(t, text, "No brand selected")
+	f.handler.sessionCache.Range(func(k, _ any) bool { f.handler.sessionCache.Delete(k); return true })
+	f.handler.brandSelectionCache.Range(func(k, _ any) bool { f.handler.brandSelectionCache.Delete(k); return true })
+	f.handler.userBrandCache.Range(func(k, _ any) bool { f.handler.userBrandCache.Delete(k); return true })
+	f.initialize("anne", "s3")
+	_, isErr = f.call("anne", "s3", "campaign", map[string]any{"action": "list"})
+	assert.False(t, isErr, "after a restart too")
 
-	// Another person can't pick up a session's brand by reusing its ID.
+	// Another person gets neither anne's session nor her choice.
 	f.handler.sessionCache.Delete("s1")
 	f.handler.brandSelectionCache.Delete("s1")
 	f.initialize("mike", "s1")
-	text, isErr = f.call("mike", "s1", "campaign", map[string]any{"action": "list"})
+	text, isErr := f.call("mike", "s1", "campaign", map[string]any{"action": "list"})
+	assert.True(t, isErr)
+	assert.Contains(t, text, "No brand selected")
+	f.initialize("mike", "s4")
+	text, isErr = f.call("mike", "s4", "campaign", map[string]any{"action": "list"})
 	assert.True(t, isErr)
 	assert.Contains(t, text, "No brand selected")
 }
