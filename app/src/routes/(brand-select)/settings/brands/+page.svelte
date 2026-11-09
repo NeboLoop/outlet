@@ -146,24 +146,24 @@
 					<button
 						type="button"
 						onclick={() => openEditModal(org)}
-						class="w-full flex items-center justify-between py-4 first:pt-0 last:pb-0 hover:bg-surface-secondary transition-colors cursor-pointer text-left -mx-4 px-4 first:-mt-4 first:pt-4 last:-mb-4 last:pb-4 rounded-lg"
+						class="w-full flex items-center justify-between gap-3 py-4 first:pt-0 last:pb-0 hover:bg-surface-secondary transition-colors cursor-pointer text-left -mx-4 px-4 first:-mt-4 first:pt-4 last:-mb-4 last:pb-4 rounded-lg"
 					>
-						<div class="flex items-center gap-3">
-							<div class="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
+						<div class="flex items-center gap-3 min-w-0">
+							<div class="h-10 w-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
 								<span class="text-sm font-medium text-white">
 									{org.name[0].toUpperCase()}
 								</span>
 							</div>
-							<div>
-								<div class="flex items-center gap-2">
+							<div class="min-w-0">
+								<div class="flex flex-wrap items-center gap-2">
 									<span class="font-medium text-text">{org.name}</span>
 									<Badge variant="default" size="sm">{org.slug}</Badge>
 								</div>
 								<p class="text-sm text-text-muted">Created {formatDate(org.created_at) || 'N/A'}</p>
 							</div>
 						</div>
-						<div class="text-right">
-							<div class="flex items-center gap-2">
+						<div class="text-right flex-shrink-0">
+							<div class="flex items-center justify-end gap-2">
 								{#if org.loading_stats}
 									<span class="text-sm text-text-muted">Loading...</span>
 								{:else}

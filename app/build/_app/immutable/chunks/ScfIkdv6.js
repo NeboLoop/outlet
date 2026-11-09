@@ -1,0 +1,1 @@
+function e(e,t){function n(){let t=e.querySelector(`[aria-current="page"]`);if(!t||e.scrollWidth<=e.clientWidth)return;let n=t.offsetLeft-e.offsetLeft;(n<e.scrollLeft||n+t.offsetWidth>e.scrollLeft+e.clientWidth)&&(e.scrollLeft=n-(e.clientWidth-t.offsetWidth)/2)}return n(),{update:n}}export{e as t};

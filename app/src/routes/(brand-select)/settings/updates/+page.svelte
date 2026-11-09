@@ -87,7 +87,7 @@
 		</Card>
 
 		<Card>
-			<div class="flex items-center justify-between mb-4">
+			<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
 				<h2 class="text-lg font-medium text-text">Update Status</h2>
 				<Button
 					type="secondary"

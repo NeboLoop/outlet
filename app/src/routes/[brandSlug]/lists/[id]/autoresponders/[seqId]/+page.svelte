@@ -297,17 +297,17 @@
 		</Alert>
 	{:else}
 		<!-- Header -->
-		<div class="flex items-center gap-4 mb-6">
+		<div class="flex flex-wrap items-center gap-4 mb-6">
 			<a href="{basePath}/lists/{listId}/autoresponders" class="p-2 rounded-lg hover:bg-bg-secondary transition-colors text-text-muted hover:text-text">
 				<ArrowLeft class="h-5 w-5" />
 			</a>
-			<div class="flex-1">
-				<div class="flex items-center gap-2 text-sm text-text-muted mb-1">
+			<div class="flex-1 min-w-0">
+				<div class="flex flex-wrap items-center gap-2 text-sm text-text-muted mb-1">
 					<span>{list?.name}</span>
 					<span>/</span>
 					<span>Autoresponder</span>
 				</div>
-				<div class="flex items-center gap-3">
+				<div class="flex flex-wrap items-center gap-3">
 					<h1 class="text-2xl font-semibold text-text">{sequence.name}</h1>
 					{#if sequence.is_active}
 						<Badge variant="success" size="sm">Active</Badge>
@@ -469,11 +469,11 @@
 	<div class="fixed inset-0 z-50 bg-base-200">
 		<div class="h-full flex flex-col">
 			<!-- Header -->
-			<div class="bg-base-100 border-b border-base-300 px-6 py-4 flex items-center justify-between flex-shrink-0">
+			<div class="editor-header">
 				<h3 class="text-lg font-semibold text-base-content">
 					{editingEmail ? 'Edit Sequence Email' : 'Add Sequence Email'}
 				</h3>
-				<div class="flex items-center gap-3">
+				<div class="flex flex-wrap items-center gap-3">
 					<Button type="secondary" onclick={() => showEmailEditor = false}>
 						<X class="mr-2 h-4 w-4" />
 						Cancel
@@ -490,9 +490,9 @@
 			</div>
 
 			<!-- Content -->
-			<div class="flex-1 overflow-hidden flex">
+			<div class="editor-body">
 				<!-- Left Sidebar - Settings -->
-				<div class="w-80 bg-base-100 border-r border-base-300 p-6 overflow-y-auto flex-shrink-0">
+				<div class="editor-side">
 					<div class="space-y-6">
 						<div>
 							<label for="email-subject" class="form-label">Subject Line</label>
@@ -536,7 +536,7 @@
 				</div>
 
 				<!-- Main Editor Area -->
-				<div class="flex-1 flex flex-col overflow-hidden p-6 gap-4">
+				<div class="editor-main">
 					<div class="flex-1 min-h-0">
 						<EmailEditor
 							bind:value={editorHtmlBody}

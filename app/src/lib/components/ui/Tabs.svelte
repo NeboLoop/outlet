@@ -41,7 +41,7 @@
 	};
 </script>
 
-<div role="tablist" class="tabs {variantClasses[variant]}">
+<div role="tablist" class="tabs tab-scroll {variantClasses[variant]}">
 	{#each tabs as tab}
 		<button
 			type="button"

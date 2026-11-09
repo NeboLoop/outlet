@@ -194,7 +194,7 @@
 		</div>
 
 		<!-- Campaigns Table -->
-		<div class="data-table">
+		<div class="data-table data-table-stack">
 			<table class="w-full">
 				<thead>
 					<tr>
@@ -237,10 +237,10 @@
 									{/if}
 								</div>
 							</td>
-							<td class="text-right">
+							<td class="text-right" data-label="Recipients">
 								<span class="font-medium text-text">{formatNumber(campaign.recipients_count)}</span>
 							</td>
-							<td class="text-right">
+							<td class="text-right" data-label="Opened">
 								{#if campaign.sent_count > 0}
 									<div class="flex flex-col items-end">
 										<span class="font-medium text-text">{formatNumber(campaign.opened_count)}</span>
@@ -252,7 +252,7 @@
 									<span class="text-text-muted">-</span>
 								{/if}
 							</td>
-							<td class="text-right">
+							<td class="text-right" data-label="Clicked">
 								{#if campaign.sent_count > 0}
 									<div class="flex flex-col items-end">
 										<span class="font-medium text-text">{formatNumber(campaign.clicked_count)}</span>
@@ -264,7 +264,7 @@
 									<span class="text-text-muted">-</span>
 								{/if}
 							</td>
-							<td class="text-right">
+							<td class="text-right data-table-actions">
 								<DropdownMenu
 									trigger={{
 										icon: MoreVertical,

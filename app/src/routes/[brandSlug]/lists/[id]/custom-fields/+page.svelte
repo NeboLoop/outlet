@@ -159,7 +159,7 @@
 {/if}
 
 <div class="space-y-4">
-	<div class="flex justify-between items-center">
+	<div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
 		<div>
 			<h3 class="font-medium text-text">Custom Fields</h3>
 			<p class="text-sm text-text-muted">Add custom fields to collect additional information from subscribers</p>

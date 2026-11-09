@@ -186,6 +186,23 @@
 		margin-top: 0.125rem;
 	}
 
+	/* DaisyUI labels don't wrap; long hint text under a checkbox or field
+	   wraps instead of running off the screen */
+	.label .label-text,
+	.label .label-text-alt {
+		white-space: normal;
+	}
+
+	/* A badge is one line: in a tight row it keeps its words together */
+	.badge {
+		white-space: nowrap;
+	}
+
+	/* Dialog buttons wrap onto a second line on a narrow screen */
+	.modal-action {
+		@apply flex-wrap;
+	}
+
 	/* ===== Admin Layout ===== */
 	.admin-layout {
 		@apply flex min-h-screen bg-base-50;
@@ -195,8 +212,10 @@
 		@apply flex-shrink-0 fixed inset-y-0 left-0 z-30;
 	}
 
+	/* min-w-0 keeps wide content (tables, code) inside the screen instead of
+	   stretching the whole page sideways */
 	.admin-main {
-		@apply flex-1 flex flex-col min-h-screen;
+		@apply flex-1 flex flex-col min-h-screen min-w-0;
 		margin-left: 220px;
 		transition: margin-left 0.2s ease;
 	}
@@ -226,6 +245,45 @@
 		.admin-main {
 			margin-left: 0;
 			padding-top: 56px;
+		}
+	}
+
+	/* ===== Full-screen editors (designs, autoresponder emails) =====
+	   Desktop: settings column on the left, editor on the right.
+	   Phone: settings on top, the editor under it, one scrolling column. */
+	.editor-header {
+		@apply bg-base-100 border-b border-base-300 px-4 py-3 flex flex-wrap items-center justify-between gap-3 flex-shrink-0;
+	}
+
+	.editor-body {
+		@apply flex-1 flex flex-col overflow-y-auto;
+	}
+
+	.editor-side {
+		@apply bg-base-100 border-b border-base-300 p-4 flex-shrink-0;
+	}
+
+	.editor-main {
+		@apply flex flex-col p-4 gap-4 flex-shrink-0;
+		min-height: 80vh;
+	}
+
+	@media (min-width: 768px) {
+		.editor-header {
+			@apply px-6 py-4 flex-nowrap;
+		}
+
+		.editor-body {
+			@apply flex-row overflow-hidden;
+		}
+
+		.editor-side {
+			@apply w-80 border-b-0 border-r p-6 overflow-y-auto;
+		}
+
+		.editor-main {
+			@apply flex-1 flex-shrink overflow-hidden p-6;
+			min-height: 0;
 		}
 	}
 
@@ -265,14 +323,87 @@
 		color: var(--color-success);
 	}
 
+	/* Lists of things (lists, campaigns, designs, subscribers...) turn into
+	   stacked cards on a phone: one card per row, the first cell as the title,
+	   the other cells under it with their column name from data-label, and the
+	   row's actions cell (.data-table-actions) in the top-right corner. */
+	@media (max-width: 639px) {
+		.data-table-stack table,
+		.data-table-stack tbody {
+			@apply block w-full;
+		}
+
+		.data-table-stack thead {
+			@apply hidden;
+		}
+
+		.data-table-stack tr {
+			@apply relative flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 border-t;
+			border-color: var(--color-border);
+		}
+
+		.data-table-stack tbody tr:first-child {
+			@apply border-t-0;
+		}
+
+		.data-table-stack td {
+			@apply block p-0 border-0 text-left min-w-0;
+		}
+
+		.data-table-stack td:first-child {
+			@apply basis-full;
+			overflow-wrap: anywhere;
+		}
+
+		.data-table-stack td[data-label]::before {
+			@apply block text-xs font-medium uppercase tracking-wide;
+			content: attr(data-label);
+			color: var(--color-text-muted);
+		}
+
+		.data-table-stack tr:has(.data-table-actions) td:first-child {
+			@apply pr-10;
+		}
+
+		.data-table-stack td.data-table-actions {
+			@apply absolute top-2 right-2;
+		}
+	}
+
 	/* ===== Tab Navigation ===== */
+	/* Every tab bar scrolls sideways inside its own row when it is wider than
+	   the screen, with no scrollbar showing; the page itself never scrolls. */
+	.tab-nav,
+	.tab-scroll,
+	.tabs.tab-scroll {
+		flex-wrap: nowrap;
+		max-width: 100%;
+		overflow-x: auto;
+		overflow-y: hidden;
+		overscroll-behavior-x: contain;
+		scrollbar-width: none;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.tab-nav::-webkit-scrollbar,
+	.tab-scroll::-webkit-scrollbar {
+		display: none;
+	}
+
+	.tab-nav > *,
+	.tab-scroll > * {
+		flex-shrink: 0;
+	}
+
+	/* The bottom rule is an inset shadow so the active underline can sit on it
+	   inside a scrolling row */
 	.tab-nav {
-		@apply flex gap-1 border-b;
-		border-color: var(--color-border);
+		@apply flex gap-1;
+		box-shadow: inset 0 -1px 0 var(--color-border);
 	}
 
 	.tab-nav-item {
-		@apply flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors;
+		@apply flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap;
 		border-color: transparent;
 		color: var(--color-text-muted);
 	}

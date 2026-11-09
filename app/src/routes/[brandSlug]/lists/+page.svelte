@@ -238,7 +238,7 @@
 		{/if}
 
 		<!-- Lists Table -->
-		<div class="data-table">
+		<div class="data-table data-table-stack">
 			<table class="w-full">
 				<thead>
 					<tr>
@@ -272,10 +272,10 @@
 									</div>
 								</a>
 							</td>
-							<td class="text-right">
+							<td class="text-right" data-label="Subscribers">
 								<span class="text-lg font-semibold text-text">{list.subscriber_count || 0}</span>
 							</td>
-							<td class="text-right">
+							<td class="text-right data-table-actions">
 								<DropdownMenu
 									trigger={{
 										icon: MoreVertical,

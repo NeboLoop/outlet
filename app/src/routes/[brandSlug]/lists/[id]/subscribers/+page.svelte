@@ -284,7 +284,7 @@
 	}
 </script>
 
-<div class="flex justify-end gap-2 mb-4">
+<div class="flex flex-wrap justify-end gap-2 mb-4">
 	<input bind:this={importInput} type="file" accept=".csv,text/csv" class="hidden" onchange={handleImportFile} />
 	<Button
 		type="secondary"
@@ -347,7 +347,7 @@
 		</div>
 	{/if}
 
-	<div class="data-table">
+	<div class="data-table data-table-stack">
 		<table class="w-full text-sm">
 			<thead>
 				<tr>
@@ -369,7 +369,7 @@
 						role="button"
 						tabindex="0"
 					>
-						<td class="font-medium text-text">{subscriber.email}</td>
+						<td class="font-medium text-text break-all">{subscriber.email}</td>
 						<td class="text-text-muted">{subscriber.name || '-'}</td>
 						<td>
 							{#if subscriber.status === 'confirmed' || subscriber.status === 'active'}
@@ -391,7 +391,7 @@
 								{/if}
 							</td>
 						{/if}
-						<td class="text-text-muted">
+						<td class="text-text-muted" data-label="Subscribed">
 							{#if subscriber.subscribed_at}
 								{formatDate(subscriber.subscribed_at)}
 							{:else}

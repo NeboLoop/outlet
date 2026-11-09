@@ -168,7 +168,7 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<div class="flex justify-between items-center">
+	<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 		<p class="text-sm text-text-secondary">Manage admin users who can access Outlet</p>
 		<Button type="primary" onclick={openAddModal}>
 			<Plus class="mr-2 h-4 w-4" />
@@ -202,15 +202,15 @@
 		<Card>
 			<div class="divide-y divide-border">
 				{#each users as user}
-					<div class="flex items-center justify-between py-4 first:pt-0 last:pb-0">
-						<div class="flex items-center gap-3">
-							<div class="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
+					<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between py-4 first:pt-0 last:pb-0">
+						<div class="flex items-center gap-3 min-w-0">
+							<div class="h-10 w-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
 								<span class="text-sm font-medium text-white">
 									{(user.name || user.email)[0].toUpperCase()}
 								</span>
 							</div>
-							<div>
-								<div class="flex items-center gap-2">
+							<div class="min-w-0">
+								<div class="flex flex-wrap items-center gap-2">
 									<span class="font-medium text-text">{user.name}</span>
 									<Badge variant={getRoleVariant(user.role)} size="sm">{roleLabel(user.role)}</Badge>
 									{#if user.active}
@@ -219,10 +219,10 @@
 										<Badge variant="error" size="sm">Inactive</Badge>
 									{/if}
 								</div>
-								<p class="text-sm text-text-muted">{user.email}</p>
+								<p class="text-sm text-text-muted break-all">{user.email}</p>
 							</div>
 						</div>
-						<div class="flex items-center gap-2">
+						<div class="flex flex-wrap items-center gap-2">
 							<span class="text-sm text-text-muted mr-4">
 								Added {formatDate(user.created_at) || 'N/A'}
 							</span>

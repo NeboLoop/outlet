@@ -155,7 +155,7 @@
 	</Alert>
 {/if}
 
-<div class="flex justify-between items-center mb-4">
+<div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-4">
 	<p class="text-sm text-text-muted">
 		Automated email sequences triggered when subscribers join this list.
 	</p>
@@ -181,7 +181,7 @@
 		</Button>
 	</EmptyState>
 {:else}
-	<div class="data-table">
+	<div class="data-table data-table-stack">
 		<table class="w-full">
 			<thead>
 				<tr>
@@ -220,7 +220,7 @@
 								<Badge variant="default" size="sm">Paused</Badge>
 							{/if}
 						</td>
-						<td class="text-right">
+						<td class="text-right data-table-actions">
 							<DropdownMenu
 								trigger={{
 									icon: MoreVertical,
