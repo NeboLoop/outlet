@@ -141,6 +141,7 @@ Available Events ("*" for all):
 - contact.created, contact.unsubscribed
 - email.sent, email.delivered, email.bounced, email.complained
 - email.opened, email.clicked
+- email.replied (a person answered outreach; bounces are email.bounced)
 
 Examples:
   webhook(action: create, url: "https://example.com/webhook", events: "contact.created,email.sent")
