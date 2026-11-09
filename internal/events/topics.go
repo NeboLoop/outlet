@@ -146,6 +146,7 @@ const (
 	TopicEmailComplained = "email.complained" // Email marked as spam
 	TopicEmailOpened     = "email.opened"     // Email opened (tracking pixel)
 	TopicEmailClicked    = "email.clicked"    // Link in email clicked
+	TopicEmailReplied    = "email.replied"    // A person replied to outreach
 
 	// Customer events
 	TopicCustomerCreated = "customer.created" // New customer created
@@ -976,18 +977,25 @@ type SubscriptionEvent struct {
 
 // EmailEvent is emitted for email delivery events
 type EmailEvent struct {
-	OrgID      string    `json:"org_id"`
-	EmailID    string    `json:"email_id"`
-	ContactID  string    `json:"contact_id"`
-	Email      string    `json:"email,omitempty"` // recipient address
-	ListID     string    `json:"list_id,omitempty"`
-	SequenceID string    `json:"sequence_id,omitempty"`
-	CampaignID string    `json:"campaign_id,omitempty"`
-	Subject    string    `json:"subject,omitempty"`
-	Status     string    `json:"status"`                // sent, bounced, complained, opened, clicked
-	BounceType string    `json:"bounce_type,omitempty"` // hard, soft
-	ClickedURL string    `json:"clicked_url,omitempty"`
-	Timestamp  time.Time `json:"timestamp"`
+	OrgID      string `json:"org_id"`
+	EmailID    string `json:"email_id"`
+	ContactID  string `json:"contact_id"`
+	Email      string `json:"email,omitempty"` // recipient address
+	ListID     string `json:"list_id,omitempty"`
+	SequenceID string `json:"sequence_id,omitempty"`
+	CampaignID string `json:"campaign_id,omitempty"`
+	Subject    string `json:"subject,omitempty"`
+	Status     string `json:"status"`                // sent, bounced, complained, opened, clicked, replied
+	BounceType string `json:"bounce_type,omitempty"` // hard, soft
+	ClickedURL string `json:"clicked_url,omitempty"`
+	// email.replied only: the reply, the mailbox it reached, and what it
+	// was read as (interested, out_of_office, unsubscribe, needs_review...).
+	ReplyID        string    `json:"reply_id,omitempty"`
+	MessageID      string    `json:"message_id,omitempty"`
+	Mailbox        string    `json:"mailbox,omitempty"`
+	Classification string    `json:"classification,omitempty"`
+	ReceivedAt     string    `json:"received_at,omitempty"`
+	Timestamp      time.Time `json:"timestamp"`
 }
 
 // CustomerEvent is emitted for customer lifecycle events

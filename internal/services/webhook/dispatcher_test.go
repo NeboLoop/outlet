@@ -155,11 +155,38 @@ func TestEveryEventReachesAWebhook(t *testing.T) {
 	require.NoError(t, tr.RecordClick(ctx, "tok-queue", "https://example.com/b"))
 	rcv.wait(t, events.TopicEmailClicked)
 
+	// email.replied for a reply to outreach, once; a bounce is not a reply
+	for _, q := range []string{
+		`INSERT INTO domain_identities (id, org_id, domain) VALUES ('d1', 'org1', 'example.org')`,
+		`INSERT INTO mailboxes (id, org_id, domain_id, email, from_name, smtp_host, smtp_port, smtp_username, smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc)
+			VALUES ('mb1', 'org1', 'd1', 'sam@example.org', 'Sam', 'h', 587, 'u', x'00', 'h', 993, 'u', x'00')`,
+	} {
+		_, err := conn.Exec(q)
+		require.NoError(t, err)
+	}
+	reply := db.CreateEmailReplyParams{ID: "r1", OrgID: "org1", MailboxID: "mb1", ContactID: sql.NullString{String: "c1", Valid: true},
+		QueueID: sql.NullString{String: "eq1", Valid: true}, FromEmail: "ann@example.com", Subject: "Re: Welcome Ann",
+		MessageID: "m1@example.com", Classification: "interested", Handled: 1, ReceivedAt: "2026-11-08 12:00:00"}
+	_, err = store.CreateEmailReply(ctx, reply)
+	require.NoError(t, err)
+	p = rcv.wait(t, events.TopicEmailReplied)
+	assert.Equal(t, "ann@example.com", p.Data["email"])
+	assert.Equal(t, "sam@example.org", p.Data["mailbox"])
+	assert.Equal(t, "eq1", p.Data["email_id"])
+	assert.Equal(t, "m1@example.com", p.Data["message_id"])
+	assert.Equal(t, "interested", p.Data["classification"])
+	assert.Equal(t, "2026-11-08 12:00:00", p.Data["received_at"])
+	reply.ID = "r1-again"
+	_, _ = store.CreateEmailReply(ctx, reply) // the same message again: nothing new
+	_, err = store.CreateEmailReply(ctx, db.CreateEmailReplyParams{ID: "r2", OrgID: "org1", MailboxID: "mb1", FromEmail: "mailer-daemon@x",
+		MessageID: "m2@x", Classification: "bounce", Handled: 1, ReceivedAt: "2026-11-08 12:01:00"})
+	require.NoError(t, err)
+
 	// Every delivery was for org1: nothing of org2 arrived. Each one is logged.
 	time.Sleep(50 * time.Millisecond)
 	logs, err := store.ListWebhookLogs(ctx, db.ListWebhookLogsParams{WebhookID: "wh1", LimitCount: 100})
 	require.NoError(t, err)
-	assert.Len(t, logs, 10)
+	assert.Len(t, logs, 11)
 	rcv.mu.Lock()
 	defer rcv.mu.Unlock()
 	for _, p := range rcv.got {

@@ -193,3 +193,24 @@ func (s *Store) UpdateTransactionalSendStatus(ctx context.Context, arg UpdateTra
 	}
 	return nil
 }
+
+// CreateEmailReply records a reply to outreach and publishes email.replied the
+// first time it is recorded. Bounces and spam blocks are recorded too, but are
+// not replies: a reply already recorded (ON CONFLICT) publishes nothing.
+func (s *Store) CreateEmailReply(ctx context.Context, arg CreateEmailReplyParams) (EmailReply, error) {
+	r, err := s.Queries.CreateEmailReply(ctx, arg)
+	if err != nil || s.events == nil || r.Classification == "bounce" || r.Classification == "spam_block" {
+		return r, err
+	}
+	evt := events.EmailEvent{
+		OrgID: r.OrgID, EmailID: r.QueueID.String, ContactID: r.ContactID.String, Email: r.FromEmail,
+		SequenceID: r.SequenceID.String, Subject: r.Subject, Status: "replied",
+		ReplyID: r.ID, MessageID: r.MessageID, Classification: r.Classification, ReceivedAt: r.ReceivedAt,
+		Timestamp: time.Now().UTC(),
+	}
+	if mb, err := s.Queries.GetMailbox(ctx, GetMailboxParams{ID: r.MailboxID, OrgID: r.OrgID}); err == nil {
+		evt.Mailbox = mb.Email
+	}
+	publish(s.events, events.TopicEmailReplied, evt)
+	return r, nil
+}

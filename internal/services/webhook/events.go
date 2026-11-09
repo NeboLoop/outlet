@@ -18,6 +18,7 @@ var Events = []string{
 	events.TopicEmailComplained,
 	events.TopicEmailOpened,
 	events.TopicEmailClicked,
+	events.TopicEmailReplied,
 }
 
 // EncodeEvents checks that every event exists and returns them as stored on
