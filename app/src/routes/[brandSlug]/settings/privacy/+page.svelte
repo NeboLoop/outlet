@@ -192,7 +192,7 @@
 			Manage contact consent preferences, export personal data, or delete contact information to comply with GDPR and privacy regulations.
 		</p>
 
-		<div class="flex gap-3">
+		<div class="flex flex-col sm:flex-row gap-3">
 			<div class="flex-1">
 				<Input
 					type="email"

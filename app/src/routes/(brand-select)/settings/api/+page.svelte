@@ -241,7 +241,7 @@ Optional headers:
 
 	<!-- API Keys -->
 	<Card>
-		<div class="flex items-center justify-between">
+		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 			<div>
 				<h2 class="text-lg font-medium text-text mb-1">MCP keys</h2>
 				<p class="text-sm text-text-muted">For AI assistants such as Claude that manage Outlet through MCP. They don't work for sending email: apps use their brand's API key, below.</p>

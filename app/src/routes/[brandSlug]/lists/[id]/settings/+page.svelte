@@ -615,9 +615,9 @@
 	<div class="fixed inset-0 z-50 bg-base-200">
 		<div class="h-full flex flex-col">
 			<!-- Header -->
-			<div class="bg-base-100 border-b border-base-300 px-6 py-4 flex items-center justify-between flex-shrink-0">
+			<div class="editor-header">
 				<h3 class="text-lg font-semibold text-base-content">Edit Confirmation Email</h3>
-				<div class="flex items-center gap-3">
+				<div class="flex flex-wrap items-center gap-3">
 					<Button type="secondary" onclick={() => showConfirmationEditor = false}>
 						<X class="mr-2 h-4 w-4" />
 						Cancel
@@ -634,9 +634,9 @@
 			</div>
 
 			<!-- Content -->
-			<div class="flex-1 overflow-hidden flex">
+			<div class="editor-body">
 				<!-- Left Sidebar - Settings -->
-				<div class="w-80 bg-base-100 border-r border-base-300 p-6 overflow-y-auto flex-shrink-0">
+				<div class="editor-side">
 					<div class="space-y-6">
 						<div>
 							<label for="conf-subject" class="form-label">Subject Line</label>
@@ -670,7 +670,7 @@
 				</div>
 
 				<!-- Main Editor Area -->
-				<div class="flex-1 flex flex-col overflow-hidden p-6 gap-4">
+				<div class="editor-main">
 					<div class="flex-1 min-h-0">
 						<EmailEditor
 							bind:value={editConfirmationBody}
@@ -712,9 +712,9 @@
 	<div class="fixed inset-0 z-50 bg-base-200">
 		<div class="h-full flex flex-col">
 			<!-- Header -->
-			<div class="bg-base-100 border-b border-base-300 px-6 py-4 flex items-center justify-between flex-shrink-0">
+			<div class="editor-header">
 				<h3 class="text-lg font-semibold text-base-content">Edit Thank You Email</h3>
-				<div class="flex items-center gap-3">
+				<div class="flex flex-wrap items-center gap-3">
 					<Button type="secondary" onclick={() => showThankYouEditor = false}>
 						<X class="mr-2 h-4 w-4" />
 						Cancel
@@ -731,9 +731,9 @@
 			</div>
 
 			<!-- Content -->
-			<div class="flex-1 overflow-hidden flex">
+			<div class="editor-body">
 				<!-- Left Sidebar - Settings -->
-				<div class="w-80 bg-base-100 border-r border-base-300 p-6 overflow-y-auto flex-shrink-0">
+				<div class="editor-side">
 					<div class="space-y-6">
 						<div>
 							<label for="ty-subject" class="form-label">Subject Line</label>
@@ -767,7 +767,7 @@
 				</div>
 
 				<!-- Main Editor Area -->
-				<div class="flex-1 flex flex-col overflow-hidden p-6 gap-4">
+				<div class="editor-main">
 					<div class="flex-1 min-h-0">
 						<EmailEditor
 							bind:value={editThankYouEmailBody}
@@ -809,9 +809,9 @@
 	<div class="fixed inset-0 z-50 bg-base-200">
 		<div class="h-full flex flex-col">
 			<!-- Header -->
-			<div class="bg-base-100 border-b border-base-300 px-6 py-4 flex items-center justify-between flex-shrink-0">
+			<div class="editor-header">
 				<h3 class="text-lg font-semibold text-base-content">Edit Goodbye Email</h3>
-				<div class="flex items-center gap-3">
+				<div class="flex flex-wrap items-center gap-3">
 					<Button type="secondary" onclick={() => showGoodbyeEditor = false}>
 						<X class="mr-2 h-4 w-4" />
 						Cancel
@@ -828,9 +828,9 @@
 			</div>
 
 			<!-- Content -->
-			<div class="flex-1 overflow-hidden flex">
+			<div class="editor-body">
 				<!-- Left Sidebar - Settings -->
-				<div class="w-80 bg-base-100 border-r border-base-300 p-6 overflow-y-auto flex-shrink-0">
+				<div class="editor-side">
 					<div class="space-y-6">
 						<div>
 							<label for="bye-subject" class="form-label">Subject Line</label>
@@ -864,7 +864,7 @@
 				</div>
 
 				<!-- Main Editor Area -->
-				<div class="flex-1 flex flex-col overflow-hidden p-6 gap-4">
+				<div class="editor-main">
 					<div class="flex-1 min-h-0">
 						<EmailEditor
 							bind:value={editGoodbyeEmailBody}

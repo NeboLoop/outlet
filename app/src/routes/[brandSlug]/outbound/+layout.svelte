@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { scrollActiveTab } from '$lib/actions/scrollActiveTab';
 
 	const { children } = $props();
 
@@ -32,9 +33,14 @@
 		</p>
 	</div>
 
-	<nav class="tab-nav mb-6 overflow-x-auto">
+	<nav class="tab-nav mb-6" use:scrollActiveTab={$page.url.pathname}>
 		{#each tabs as tab}
-			<a href={tab.href} class="tab-nav-item whitespace-nowrap" class:active={isActive(tab.href, tab.exact)}>
+			<a
+				href={tab.href}
+				class="tab-nav-item whitespace-nowrap"
+				class:active={isActive(tab.href, tab.exact)}
+				aria-current={isActive(tab.href, tab.exact) ? 'page' : undefined}
+			>
 				{tab.name}
 			</a>
 		{/each}

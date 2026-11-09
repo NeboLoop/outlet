@@ -204,7 +204,7 @@
 
 	<!-- Tabs -->
 	<div class="border-b border-border mb-6">
-		<nav class="-mb-px flex space-x-8">
+		<nav class="tab-scroll -mb-px flex space-x-8">
 			{#each tabs as tab}
 				<button
 					onclick={() => activeTab = tab.id}
@@ -224,7 +224,7 @@
 		<!-- Suppressed Emails Tab -->
 		<Card class="mb-6">
 			<h2 class="text-lg font-medium text-text mb-4">Add Email to Suppression List</h2>
-			<div class="flex gap-3">
+			<div class="flex flex-col sm:flex-row gap-3">
 				<Input
 					type="email"
 					bind:value={newEmail}
@@ -265,7 +265,7 @@
 				</div>
 			{/if}
 
-			<div class="data-table">
+			<div class="data-table data-table-stack">
 				<table class="w-full">
 					<thead>
 						<tr>
@@ -280,14 +280,14 @@
 						{#each filteredEmails as email}
 							<tr>
 								<td class="font-medium text-text">{email.email}</td>
-								<td class="text-text-muted">{email.reason || '-'}</td>
+								<td class="text-text-muted" data-label="Reason">{email.reason || '-'}</td>
 								<td>
 									<Badge variant="default" size="sm">{email.source}</Badge>
 								</td>
-								<td class="text-text-muted text-sm">
+								<td class="text-text-muted text-sm" data-label="Added">
 									{formatDate(email.created_at)}
 								</td>
-								<td class="text-right">
+								<td class="text-right data-table-actions">
 									<Button
 										type="ghost"
 										size="sm"
@@ -311,7 +311,7 @@
 			<p class="text-sm text-text-muted mb-4">
 				All emails from blocked domains will be rejected. Use this to block spam or competitor domains.
 			</p>
-			<div class="flex gap-3">
+			<div class="flex flex-col sm:flex-row gap-3">
 				<Input
 					type="text"
 					bind:value={newDomain}
@@ -352,7 +352,7 @@
 				</div>
 			{/if}
 
-			<div class="data-table">
+			<div class="data-table data-table-stack">
 				<table class="w-full">
 					<thead>
 						<tr>
@@ -367,18 +367,18 @@
 						{#each filteredDomains as domain}
 							<tr>
 								<td class="font-medium text-text">{domain.domain}</td>
-								<td class="text-text-muted">{domain.reason || '-'}</td>
-								<td>
+								<td class="text-text-muted" data-label="Reason">{domain.reason || '-'}</td>
+								<td data-label="Block Attempts">
 									{#if domain.block_attempts > 0}
 										<Badge variant="warning" size="sm">{domain.block_attempts}</Badge>
 									{:else}
 										<span class="text-text-muted">0</span>
 									{/if}
 								</td>
-								<td class="text-text-muted text-sm">
+								<td class="text-text-muted text-sm" data-label="Added">
 									{formatDate(domain.created_at)}
 								</td>
-								<td class="text-right">
+								<td class="text-right data-table-actions">
 									<Button
 										type="ghost"
 										size="sm"

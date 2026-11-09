@@ -68,7 +68,7 @@
 				Use this URL to link to a ready-to-use subscription page for this list.
 			</p>
 			<div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-				<div class="flex-1 min-w-0 bg-bg-secondary px-3 py-2 rounded-md overflow-hidden">
+				<div class="grow basis-full sm:basis-0 min-w-0 bg-bg-secondary px-3 py-2 rounded-md overflow-hidden">
 					<code class="text-sm font-mono text-text truncate block">
 						{embedCode.base_url}/s/{embedCode.public_id}
 					</code>

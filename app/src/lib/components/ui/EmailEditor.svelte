@@ -230,8 +230,8 @@
 
 <div class="email-editor flex flex-col h-full {extraClass}">
 	<!-- Editor Mode Tabs & Variables -->
-	<div class="flex items-center justify-between gap-4 mb-4 flex-shrink-0">
-		<div class="flex items-center gap-4">
+	<div class="flex flex-wrap items-center justify-between gap-4 mb-4 flex-shrink-0">
+		<div class="flex flex-wrap items-center gap-4">
 			<div class="flex rounded-lg border border-border overflow-hidden">
 				<button
 					type="button"

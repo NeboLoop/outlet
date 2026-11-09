@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { scrollActiveTab } from '$lib/actions/scrollActiveTab';
 
 	const { children } = $props();
 
@@ -26,10 +27,11 @@
 		</div>
 
 		<div class="border-b border-border">
-			<nav class="-mb-px flex space-x-8">
+			<nav class="tab-scroll -mb-px flex space-x-8" use:scrollActiveTab={$page.url.pathname}>
 				{#each tabs as tab}
 					<a
 						href={tab.href}
+						aria-current={isActive(tab.href) ? 'page' : undefined}
 						class="whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium {isActive(tab.href)
 							? 'border-primary text-primary'
 							: 'border-transparent text-text-muted hover:border-border hover:text-text'}"

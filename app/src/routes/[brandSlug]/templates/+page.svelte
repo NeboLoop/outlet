@@ -282,7 +282,7 @@
 		{/if}
 
 		<!-- Templates Table -->
-		<div class="data-table">
+		<div class="data-table data-table-stack">
 			<table class="w-full">
 				<thead>
 					<tr>
@@ -326,7 +326,7 @@
 									<Badge variant="default" size="sm">Inactive</Badge>
 								{/if}
 							</td>
-							<td class="text-right">
+							<td class="text-right data-table-actions">
 								<DropdownMenu
 									trigger={{
 										icon: MoreVertical,
