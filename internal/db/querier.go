@@ -382,6 +382,8 @@ type Querier interface {
 	GetGDPRDeletion(ctx context.Context, arg GetGDPRDeletionParams) (GdprDeletion, error)
 	GetImportJob(ctx context.Context, arg GetImportJobParams) (ImportJob, error)
 	GetLatestBackup(ctx context.Context) (BackupHistory, error)
+	// The brand this person chose most recently, in any session.
+	GetLatestMCPSessionBrandByUser(ctx context.Context, userID string) (sql.NullString, error)
 	GetListByIDForPublicPage(ctx context.Context, id int64) (GetListByIDForPublicPageRow, error)
 	GetListByPublicIDForPublicPage(ctx context.Context, publicID string) (GetListByPublicIDForPublicPageRow, error)
 	// Public Pages Queries

@@ -33,6 +33,11 @@ type Handler struct {
 	// brandSelectionCache is an in-memory cache of brand selections.
 	// Backed by mcp_sessions DB table for persistence across restarts.
 	brandSelectionCache sync.Map // map[sessionID]brandSelection
+
+	// userBrandCache is each person's most recent brand choice, in any
+	// session: clients that open a new session per call (Claude does) keep
+	// the brand they chose. Backed by mcp_sessions.
+	userBrandCache sync.Map // map[userID]brandID
 }
 
 // brandSelection is the brand a session's owner chose.
@@ -178,9 +183,11 @@ func (h *Handler) getServerForRequest(r *http.Request) *mcp.Server {
 	}
 	server, toolCtx := NewServerWithContext(h.svc, r, onBrandSelect)
 
-	// Restore this session's own brand choice (from memory, or from the DB
-	// after a restart). A new session never inherits a brand from another
-	// session: the caller chooses one with brand.select.
+	// Restore the brand: this session's own choice, or else the same
+	// person's most recent choice in any session (from memory, or from the
+	// DB after a restart). Clients that open a new session per call keep the
+	// brand they chose. Never another person's choice, and the gate still
+	// checks the person's access to it on every call.
 	var brandIDToRestore string
 	var found bool
 
@@ -197,6 +204,16 @@ func (h *Handler) getServerForRequest(r *http.Request) *mcp.Server {
 			// Cache it for next time
 			h.brandSelectionCache.Store(sessionID, brandSelection{userID: requestingUserID, brandID: brandIDToRestore})
 			fmt.Printf("[MCP] Found brand in DB for session %s\n", sessionID)
+		} else if requestingUserID != "" {
+			if b, ok := h.userBrandCache.Load(requestingUserID); ok {
+				brandIDToRestore, found = b.(string), true
+			} else if orgID, err := h.svc.DB.GetLatestMCPSessionBrandByUser(r.Context(), requestingUserID); err == nil && orgID.Valid {
+				brandIDToRestore, found = orgID.String, true
+				h.userBrandCache.Store(requestingUserID, brandIDToRestore)
+			}
+			if found {
+				fmt.Printf("[MCP] Using the person's most recent brand for session %s\n", sessionID)
+			}
 		}
 	}
 
@@ -224,6 +241,7 @@ func (h *Handler) getServerForRequest(r *http.Request) *mcp.Server {
 func (h *Handler) StoreBrandSelection(sessionID string, userID, brandID string) {
 	// Store in memory cache
 	h.brandSelectionCache.Store(sessionID, brandSelection{userID: userID, brandID: brandID})
+	h.userBrandCache.Store(userID, brandID)
 
 	// Persist to DB (async to not block tool execution)
 	go func() {

@@ -291,6 +291,21 @@ func (q *Queries) DeleteMCPSession(ctx context.Context, sessionID string) error 
 	return err
 }
 
+const getLatestMCPSessionBrandByUser = `-- name: GetLatestMCPSessionBrandByUser :one
+SELECT org_id FROM mcp_sessions
+WHERE user_id = ?1 AND org_id IS NOT NULL
+ORDER BY updated_at DESC
+LIMIT 1
+`
+
+// The brand this person chose most recently, in any session.
+func (q *Queries) GetLatestMCPSessionBrandByUser(ctx context.Context, userID string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getLatestMCPSessionBrandByUser, userID)
+	var org_id sql.NullString
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
 const getMCPAPIKeyByHash = `-- name: GetMCPAPIKeyByHash :one
 SELECT k.id, k.user_id, k.name, k.key_hash, k.key_prefix, k.scopes, k.last_used_at, k.expires_at, k.revoked_at, k.created_at, k.updated_at, u.email as user_email, u.name as user_name, u.role as user_role, u.status as user_status
 FROM mcp_api_keys k

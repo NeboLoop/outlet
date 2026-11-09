@@ -148,6 +148,13 @@ ON CONFLICT (session_id) DO UPDATE SET
 SELECT * FROM mcp_sessions
 WHERE session_id = sqlc.arg(session_id);
 
+-- name: GetLatestMCPSessionBrandByUser :one
+-- The brand this person chose most recently, in any session.
+SELECT org_id FROM mcp_sessions
+WHERE user_id = sqlc.arg(user_id) AND org_id IS NOT NULL
+ORDER BY updated_at DESC
+LIMIT 1;
+
 -- name: DeleteMCPSession :exec
 DELETE FROM mcp_sessions WHERE session_id = sqlc.arg(session_id);
 
