@@ -76,6 +76,13 @@ export const MATERIAL_KINDS: { value: string; label: string }[] = [
 	{ value: 'asset', label: 'Asset' }
 ];
 
+// How a campaign's emails are approved before they go.
+export const APPROVAL_MODES: { value: string; label: string }[] = [
+	{ value: 'every', label: 'Approve every email' },
+	{ value: 'first', label: 'Approve the first email only' },
+	{ value: 'automatic', label: 'Send without approval' }
+];
+
 export function materialKindLabel(kind: string): string {
 	return MATERIAL_KINDS.find((k) => k.value === kind)?.label || kind;
 }
@@ -91,3 +98,4 @@ export function splitList(value: string): string[] {
 export function joinList(values?: string[]): string {
 	return (values || []).join(', ');
 }
+
