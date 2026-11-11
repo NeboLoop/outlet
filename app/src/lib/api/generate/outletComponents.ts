@@ -1997,6 +1997,7 @@ export interface OutboundOverview {
 	pace: number // new prospects a day (the pace dial); 0: no limit
 	pace_reached: boolean // today's are reached: first emails wait for tomorrow
 	next: Array<string>
+	setup: Array<OutboundSetupStep> // the five steps of setting outbound up, each done or not from the brand's data
 }
 
 export interface OutboundPace {
@@ -2175,6 +2176,12 @@ export interface OutboundSettingsRequest {
 	mailing_address?: string
 	opt_out_line?: string
 	timezone?: string
+}
+
+export interface OutboundSetupStep {
+	step: string // business, targeting, sending, do_not_contact, campaign
+	done: boolean
+	needs?: string // what a step not done still needs
 }
 
 export interface OutboundStepInput {

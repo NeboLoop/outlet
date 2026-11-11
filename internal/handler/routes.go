@@ -764,6 +764,11 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: adminoutbound.UpdateOutboundSegmentHandler(serverCtx),
 				},
 				{
+					Method:  http.MethodDelete,
+					Path:    "/outbound/segments/:id",
+					Handler: adminoutbound.DeleteOutboundSegmentHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodPost,
 					Path:    "/outbound/segments/:id/prospects",
 					Handler: adminoutbound.AddOutboundSegmentProspectsHandler(serverCtx),

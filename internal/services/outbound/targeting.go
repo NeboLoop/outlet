@@ -36,6 +36,10 @@ type Profile struct {
 // Empty says nothing is known about the business yet.
 func (p Profile) Empty() bool { return p.Website == "" && p.Sells == "" && p.Audience == "" }
 
+// Described says the profile says what the business sells and who buys it:
+// enough to propose segments and write outreach from.
+func (p Profile) Described() bool { return p.Sells != "" && p.Audience != "" }
+
 // Profile reads the brand's profile; empty when none was saved.
 func (s *Service) Profile(ctx context.Context, org db.Organization) (Profile, error) {
 	p, err := s.db.GetBrandProfile(ctx, org.ID)
@@ -286,6 +290,44 @@ func (s *Service) segmentsOf(ctx context.Context, org db.Organization, camps []C
 		out = append(out, sg)
 	}
 	return out, nil
+}
+
+// DeleteSegment removes a segment nothing depends on yet: no one in it, no
+// campaign on it and no material of its own. A segment in use is refused,
+// so removing one never takes people, results or materials with it.
+func (s *Service) DeleteSegment(ctx context.Context, org db.Organization, ref string) error {
+	list, err := s.segment(ctx, org, ref)
+	if err != nil {
+		return err
+	}
+	counts, err := s.db.CountSegmentProspects(ctx, org.ID)
+	if err != nil {
+		return err
+	}
+	for _, c := range counts {
+		if c.ListID == list.ID && c.N > 0 {
+			return refuse("%q has people in it: it can't be removed. Leave it unused instead.", list.Name)
+		}
+	}
+	seqs, err := s.db.ListOutreachSequences(ctx, sql.NullString{String: org.ID, Valid: true})
+	if err != nil {
+		return err
+	}
+	for _, c := range seqs {
+		if c.ListID.Valid && c.ListID.Int64 == list.ID {
+			return refuse("%q has a campaign on it: it can't be removed.", list.Name)
+		}
+	}
+	mats, err := s.db.ListBrandMaterials(ctx, db.ListBrandMaterialsParams{OrgID: org.ID, ListID: list.ID})
+	if err != nil {
+		return err
+	}
+	for _, m := range mats {
+		if m.ListID.Valid && m.ListID.Int64 == list.ID {
+			return refuse("%q has materials of its own: delete them or make them brand-wide on Materials first.", list.Name)
+		}
+	}
+	return s.db.DeleteEmailList(ctx, list.ID)
 }
 
 // AddToSegment puts prospects already on another outreach list into a

@@ -87,6 +87,9 @@ type Overview struct {
 	Pace        int64 `json:"pace"`
 	PaceReached bool  `json:"pace_reached"`
 	Next           []string          `json:"next"`
+	// Setup is the five steps of setting outbound up, each done or not
+	// from the data the brand has.
+	Setup []SetupStep `json:"setup"`
 }
 
 func (s *Service) mailboxHealth(ctx context.Context, mb db.Mailbox, org db.Organization) MailboxHealth {
@@ -161,6 +164,11 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 		o.Segments = segs
 	}
 	o.Pace, o.PaceReached = s.pacedToday(ctx, org)
+	setup, err := s.Setup(ctx, org)
+	if err != nil {
+		return o, err
+	}
+	o.Setup = setup
 
 	switch {
 	case !o.Enabled:

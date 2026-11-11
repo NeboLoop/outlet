@@ -35,7 +35,7 @@ var outboundActions = map[string][]string{
 	"conversations":     {"list", "reply", "classify", "mark_partner", "export"},
 	"targeting": {
 		"profile.get", "profile.update",
-		"segment.list", "segment.get", "segment.create", "segment.update", "segment.add",
+		"segment.list", "segment.get", "segment.create", "segment.update", "segment.add", "segment.delete",
 		"material.list", "material.create", "material.update", "material.delete",
 		"do_not_contact.list", "do_not_contact.add", "do_not_contact.delete", "do_not_contact.check", "do_not_contact.settings",
 	},

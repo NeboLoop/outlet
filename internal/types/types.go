@@ -1873,6 +1873,7 @@ type OutboundOverview struct {
 	Pace           int64                     `json:"pace"`         // new prospects a day (the pace dial); 0: no limit
 	PaceReached    bool                      `json:"pace_reached"` // today's are reached: first emails wait for tomorrow
 	Next           []string                  `json:"next"`
+	Setup          []OutboundSetupStep       `json:"setup"` // the five steps of setting outbound up, each done or not from the brand's data
 }
 
 type OutboundPace struct {
@@ -2050,6 +2051,12 @@ type OutboundSettingsRequest struct {
 	MailingAddress string `json:"mailing_address,optional"`
 	OptOutLine     string `json:"opt_out_line,optional"`
 	Timezone       string `json:"timezone,optional"`
+}
+
+type OutboundSetupStep struct {
+	Step  string `json:"step"` // business, targeting, sending, do_not_contact, campaign
+	Done  bool   `json:"done"`
+	Needs string `json:"needs,optional"` // what a step not done still needs
 }
 
 type OutboundStepInput struct {
