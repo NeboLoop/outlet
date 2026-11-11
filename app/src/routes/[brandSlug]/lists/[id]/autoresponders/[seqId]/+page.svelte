@@ -102,7 +102,7 @@
 				getSequence({}, seqId),
 				getList({}, listId),
 				listSequences(),
-				listLists()
+				listLists({})
 			]);
 			sequence = seqResponse.sequence;
 			templates = (seqResponse.templates || []).sort((a, b) => a.position - b.position);

@@ -6,6 +6,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -27,13 +28,18 @@ func NewListListsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *ListLis
 	}
 }
 
-func (l *ListListsLogic) ListLists() (resp *types.ListListsResponse, err error) {
+// ListLists returns the brand's lists of one kind: subscribers (its
+// newsletter lists) or outreach (empty: every list).
+func (l *ListListsLogic) ListLists(req *types.ListListsRequest) (resp *types.ListListsResponse, err error) {
 	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
 	if err != nil {
 		return nil, err
 	}
+	if req.Kind != "" && req.Kind != "subscribers" && req.Kind != "outreach" {
+		return nil, errorx.NewBadRequestError("kind is subscribers or outreach")
+	}
 
-	rows, err := l.svcCtx.DB.ListEmailLists(l.ctx, orgID)
+	rows, err := l.svcCtx.DB.ListEmailLists(l.ctx, db.ListEmailListsParams{OrgID: orgID, Kind: req.Kind})
 	if err != nil {
 		l.Errorf("Failed to list lists: %v", err)
 		return nil, err

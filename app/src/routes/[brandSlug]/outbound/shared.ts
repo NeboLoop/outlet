@@ -176,11 +176,6 @@ export function dashboardOutbound(o: OutboundOverview | null): 'off' | 'setup' |
 	return nextSetupStep(o.setup || []) ? 'setup' : 'running';
 }
 
-// Hot leads are people who replied interested, across every campaign.
-export function hotLeads(campaigns: OutboundCampaignResults[]): number {
-	return campaigns.reduce((n, c) => n + c.interested, 0);
-}
-
 // What waits on the person, each with the tab it is done on. A count of
 // zero is left out.
 export function waitingOnYou(o: OutboundOverview, base: string): { label: string; href: string }[] {

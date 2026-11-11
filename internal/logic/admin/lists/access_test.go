@@ -62,7 +62,7 @@ func TestListHandlers_CheckTheListsBrand(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "alpha", got.Name)
 
-	listed, err := NewListListsLogic(asMike, s).ListLists()
+	listed, err := NewListListsLogic(asMike, s).ListLists(&types.ListListsRequest{})
 	require.NoError(t, err)
 	require.Len(t, listed.Lists, 1)
 	assert.Equal(t, "alpha", listed.Lists[0].Name)

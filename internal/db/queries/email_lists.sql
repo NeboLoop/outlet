@@ -12,8 +12,11 @@ INSERT INTO email_lists (
 ) RETURNING *;
 
 -- name: ListEmailLists :many
+-- A brand's lists of one kind: subscribers (newsletter lists) or outreach
+-- (empty: every list).
 SELECT * FROM email_lists
 WHERE org_id = sqlc.arg(org_id)
+  AND (CAST(sqlc.arg(kind) AS TEXT) = '' OR kind = sqlc.arg(kind))
 ORDER BY created_at DESC;
 
 -- name: GetAllOrgsListCounts :many

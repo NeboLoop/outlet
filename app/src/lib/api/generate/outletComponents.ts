@@ -1175,6 +1175,12 @@ export interface ListInfo {
 	unsubscribe_scope?: string
 }
 
+export interface ListListsRequest {
+}
+export interface ListListsRequestParams {
+	kind?: string // subscribers (newsletter lists) or outreach; empty: every list
+}
+
 export interface ListListsResponse {
 	lists: Array<ListInfo>
 }
@@ -1991,6 +1997,7 @@ export interface OutboundOverview {
 	prospects_total: number // every person on the brand's outreach lists, once each (the Prospects tab's total)
 	messages: { [key: string]: number }
 	replies_waiting: number
+	hot_leads_waiting: number // interested replies not yet handled: the Replies tab's Needs attention with Hot leads only
 	drafts_waiting: number
 	reply_rate: number // replied over reached across every campaign, percent
 	campaigns: Array<OutboundCampaignResults>

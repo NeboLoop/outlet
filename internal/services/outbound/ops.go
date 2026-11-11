@@ -80,6 +80,9 @@ type Overview struct {
 	ProspectsTotal int64             `json:"prospects_total"`
 	Messages       map[string]int64  `json:"messages"`
 	RepliesWaiting int64             `json:"replies_waiting"`
+	// HotLeadsWaiting is the hot leads still waiting on the person: the
+	// replies the Replies tab shows on Needs attention with Hot leads only.
+	HotLeadsWaiting int64            `json:"hot_leads_waiting"`
 	DraftsWaiting  int64             `json:"drafts_waiting"`
 	// ReplyRate is people who replied over people reached, across every
 	// campaign, in percent.
@@ -154,7 +157,8 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 			o.Messages[r.Status.String] = r.N
 		}
 	}
-	o.RepliesWaiting, _ = s.db.CountUnhandledEmailReplies(ctx, org.ID)
+	o.RepliesWaiting, _ = s.countReplies(ctx, org, false, "")
+	o.HotLeadsWaiting, _ = s.countReplies(ctx, org, false, HotLead)
 	o.DraftsWaiting = o.Messages["draft"]
 	seqs, _ := s.db.ListOutreachSequences(ctx, sql.NullString{String: org.ID, Valid: true})
 	var reached, replied int64
@@ -320,6 +324,19 @@ func (s *Service) EditDraft(ctx context.Context, org db.Organization, id, subjec
 	return err
 }
 
+// HotLead is the classification of a hot lead: a reply sorted interested.
+const HotLead = "interested"
+
+// replyClassification checks the classification a list or count of
+// replies is narrowed to (empty: any).
+func replyClassification(classification string) (string, error) {
+	classification = strings.TrimSpace(classification)
+	if classification != "" && !classes[classification] && classification != "needs_review" {
+		return "", refuse("classification is interested (a hot lead), not_interested, question, out_of_office, wrong_person, unsubscribe, complaint or needs_review.")
+	}
+	return classification, nil
+}
+
 // ListReplies returns replies, unhandled ones by default, of one
 // classification (empty: any; interested is a hot lead), each with the
 // campaign it answers and that campaign's segment.
@@ -327,11 +344,21 @@ func (s *Service) ListReplies(ctx context.Context, org db.Organization, handled 
 	if limit <= 0 || limit > maxBatch {
 		limit = 25
 	}
-	classification = strings.TrimSpace(classification)
-	if classification != "" && !classes[classification] && classification != "needs_review" {
-		return nil, refuse("classification is interested (a hot lead), not_interested, question, out_of_office, wrong_person, unsubscribe, complaint or needs_review.")
+	classification, err := replyClassification(classification)
+	if err != nil {
+		return nil, err
 	}
 	return s.db.ListEmailReplies(ctx, db.ListEmailRepliesParams{OrgID: org.ID, Handled: boolInt(handled), Classification: classification, LimitCount: int64(limit)})
+}
+
+// countReplies counts the replies ListReplies returns for the same filter,
+// all of them, not one page.
+func (s *Service) countReplies(ctx context.Context, org db.Organization, handled bool, classification string) (int64, error) {
+	classification, err := replyClassification(classification)
+	if err != nil {
+		return 0, err
+	}
+	return s.db.CountEmailReplies(ctx, db.CountEmailRepliesParams{OrgID: org.ID, Handled: boolInt(handled), Classification: classification})
 }
 
 var classes = map[string]bool{

@@ -3,7 +3,6 @@ import type { OutboundCampaignResults, OutboundMailboxHealth, OutboundOverview, 
 import {
 	askAIPrompt,
 	dashboardOutbound,
-	hotLeads,
 	waitingOnYou,
 	nextSetupStep,
 	openingStep,
@@ -177,11 +176,6 @@ describe('the dashboard outbound row', () => {
 		oneLeft[4].done = false;
 		expect(dashboardOutbound(overview({ setup: oneLeft }))).toBe('setup');
 		expect(dashboardOutbound(overview({}))).toBe('running');
-	});
-
-	it('adds hot leads across campaigns', () => {
-		expect(hotLeads([])).toBe(0);
-		expect(hotLeads([{ interested: 2 }, { interested: 3 }] as OutboundCampaignResults[])).toBe(5);
 	});
 
 	it('leaves out a waiting count of zero', () => {

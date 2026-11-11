@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/outlet-sh/outlet/internal/access"
+	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -68,7 +69,7 @@ func (l *GetDashboardStatsLogic) GetDashboardStats(req *types.GetDashboardStatsR
 	}
 
 	// Check lists
-	lists, err := l.svcCtx.DB.ListEmailLists(l.ctx, orgID)
+	lists, err := l.svcCtx.DB.ListEmailLists(l.ctx, db.ListEmailListsParams{OrgID: orgID})
 	resp.HasLists = err == nil && len(lists) > 0
 
 	// Check if org has email configured (from_email set)

@@ -425,7 +425,7 @@ func handleListList(ctx context.Context, toolCtx *mcpctx.ToolContext, input Emai
 		return nil, nil, err
 	}
 
-	lists, err := toolCtx.DB().ListEmailLists(ctx, toolCtx.BrandID(ctx))
+	lists, err := toolCtx.DB().ListEmailLists(ctx, db.ListEmailListsParams{OrgID: toolCtx.BrandID(ctx)})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list lists: %w", err)
 	}

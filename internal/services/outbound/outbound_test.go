@@ -1126,6 +1126,36 @@ func TestOverviewOfANewBrand(t *testing.T) {
 	}
 }
 
+// Hot leads waiting are the interested replies not yet handled: exactly the
+// replies the Replies tab lists on Needs attention with Hot leads only, so
+// the dashboard's number and the page always match.
+func TestHotLeadsWaitingMatchTheRepliesTab(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+	sam, _ := h.setup()
+	reply := func(id, class string, handled int64) {
+		_, err := h.store.CreateEmailReply(ctx, db.CreateEmailReplyParams{ID: id, OrgID: h.org.ID, MailboxID: sam.ID, FromEmail: id + "@example.org",
+			MessageID: "<" + id + "@example.org>", Classification: class, Handled: handled, ReceivedAt: h.clock.Format(time.DateTime)})
+		require.NoError(t, err)
+	}
+	reply("ann", HotLead, 0)
+	reply("ben", HotLead, 0)
+	reply("cal", HotLead, 1) // answered: handled
+	reply("dee", "question", 0)
+	reply("eve", "not_interested", 1)
+
+	o, err := h.svc.Overview(ctx, h.org)
+	require.NoError(t, err)
+	hot, err := h.svc.ListReplies(ctx, h.org, false, HotLead, maxBatch)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, o.HotLeadsWaiting, "a handled interested reply is not waiting")
+	assert.EqualValues(t, len(hot), o.HotLeadsWaiting, "the Replies tab's Hot leads on Needs attention")
+	waiting, err := h.svc.ListReplies(ctx, h.org, false, "", maxBatch)
+	require.NoError(t, err)
+	assert.EqualValues(t, len(waiting), o.RepliesWaiting, "the Replies tab's Needs attention")
+	assert.EqualValues(t, 3, o.RepliesWaiting)
+}
+
 // Adding prospects never waits on verification: each address waits as
 // verifying, can't be enrolled, and the verification pass makes it a
 // prospect or holds it.

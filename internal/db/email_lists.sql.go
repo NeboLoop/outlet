@@ -717,11 +717,19 @@ func (q *Queries) ListCustomFieldValuesForSubscribers(ctx context.Context, subsc
 const listEmailLists = `-- name: ListEmailLists :many
 SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind, segment_description, segment_filters FROM email_lists
 WHERE org_id = ?1
+  AND (CAST(?2 AS TEXT) = '' OR kind = ?2)
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListEmailLists(ctx context.Context, orgID string) ([]EmailList, error) {
-	rows, err := q.db.QueryContext(ctx, listEmailLists, orgID)
+type ListEmailListsParams struct {
+	OrgID string `json:"org_id"`
+	Kind  string `json:"kind"`
+}
+
+// A brand's lists of one kind: subscribers (newsletter lists) or outreach
+// (empty: every list).
+func (q *Queries) ListEmailLists(ctx context.Context, arg ListEmailListsParams) ([]EmailList, error) {
+	rows, err := q.db.QueryContext(ctx, listEmailLists, arg.OrgID, arg.Kind)
 	if err != nil {
 		return nil, err
 	}
