@@ -2,18 +2,22 @@
 	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import {
+		exportOutboundLeads,
 		listOutboundReplies,
 		answerOutboundReply,
 		classifyOutboundReply,
 		markOutboundPartner,
 		type OutboundReplyInfo
 	} from '$lib/api';
-	import { Button, Alert, LoadingSpinner, EmptyState, Badge, DropdownMenu, Textarea } from '$lib/components/ui';
-	import { MessageSquare, ChevronDown } from '@lucide/svelte';
+	import { Button, Alert, LoadingSpinner, EmptyState, Badge, DropdownMenu, Textarea, Toggle } from '$lib/components/ui';
+	import { MessageSquare, ChevronDown, Download } from '@lucide/svelte';
 	import { CLASSIFICATIONS, classificationLabel, errorMessage } from '../shared';
 
 	let base = $derived(`/${$page.params.brandSlug}/outbound`);
 	let handled = $state(false);
+	// Hot leads are the replies sorted as interested.
+	let hotOnly = $state(false);
+	let exporting = $state(false);
 	let loading = $state(true);
 	let error = $state('');
 	let notice = $state('');
@@ -34,14 +38,14 @@
 	};
 
 	$effect(() => {
-		load(handled);
+		load(handled, hotOnly);
 	});
 
-	async function load(showHandled: boolean) {
+	async function load(showHandled: boolean, hot: boolean) {
 		loading = true;
 		error = '';
 		try {
-			const res = await listOutboundReplies({ handled: showHandled, limit: 100 });
+			const res = await listOutboundReplies({ handled: showHandled, classification: hot ? 'interested' : undefined, limit: 100 });
 			replies = res.replies || [];
 		} catch (err) {
 			error = errorMessage(err, 'Could not load replies');
@@ -57,7 +61,7 @@
 		try {
 			await call();
 			notice = done;
-			await load(handled);
+			await load(handled, hotOnly);
 		} catch (err) {
 			error = errorMessage(err, fallback);
 		} finally {
@@ -82,6 +86,18 @@
 		});
 	}
 
+	async function exportLeads() {
+		exporting = true;
+		error = '';
+		try {
+			await exportOutboundLeads({ classification: hotOnly ? 'interested' : undefined });
+		} catch (err) {
+			error = errorMessage(err, 'Could not export the leads');
+		} finally {
+			exporting = false;
+		}
+	}
+
 	function markPartner(r: OutboundReplyInfo) {
 		act(`partner:${r.id}`, `${r.from_email} is now a partner`, 'Could not mark as partner', () =>
 			markOutboundPartner({}, r.contact_id)
@@ -89,9 +105,16 @@
 	}
 </script>
 
-<div class="flex gap-2 mb-4">
-	<Button type={handled ? 'ghost' : 'primary'} size="sm" onclick={() => (handled = false)}>Needs attention</Button>
-	<Button type={handled ? 'primary' : 'ghost'} size="sm" onclick={() => (handled = true)}>Handled</Button>
+<div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+	<div class="flex flex-wrap gap-2">
+		<Button type={handled ? 'ghost' : 'primary'} size="sm" onclick={() => (handled = false)}>Needs attention</Button>
+		<Button type={handled ? 'primary' : 'ghost'} size="sm" onclick={() => (handled = true)}>Handled</Button>
+		<Toggle bind:checked={hotOnly} label="Hot leads only" />
+	</div>
+	<Button type="secondary" size="sm" onclick={exportLeads} disabled={exporting}>
+		<Download class="mr-2 h-4 w-4" />
+		{exporting ? 'Exporting...' : hotOnly ? 'Export hot leads' : 'Export leads'}
+	</Button>
 </div>
 
 {#if error}
@@ -112,7 +135,7 @@
 {:else if replies.length === 0}
 	<EmptyState
 		icon={MessageSquare}
-		title={handled ? 'No handled replies' : 'Nothing needs attention'}
+		title={hotOnly ? 'No hot leads here' : handled ? 'No handled replies' : 'Nothing needs attention'}
 		description={handled ? 'Replies you or the AI have dealt with show up here.' : 'New replies to your outreach show up here.'}
 	/>
 {:else}
@@ -125,7 +148,8 @@
 						<p class="text-sm text-text">{r.subject}</p>
 						<p class="text-xs text-text-muted">
 							{formatDate(r.received_at, 'datetime')}{#if r.campaign_name}, to
-								<a href="{base}/campaigns/{r.sequence_id}" class="link link-primary">{r.campaign_name}</a>{/if}
+								<a href="{base}/campaigns/{r.sequence_id}" class="link link-primary">{r.campaign_name}</a>{/if}{#if r.segment_name}
+								in {r.segment_name}{/if}
 						</p>
 					</div>
 					<Badge variant={badgeVariant[r.classification] || 'default'} size="sm">

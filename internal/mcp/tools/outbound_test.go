@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The eight outreach tools register, list over MCP with their input schemas,
+// The nine outreach tools register, list over MCP with their input schemas,
 // and carry the read-only and destructive hints clients use to ask first.
 func TestOutboundToolsList(t *testing.T) {
 	ctx := context.Background()

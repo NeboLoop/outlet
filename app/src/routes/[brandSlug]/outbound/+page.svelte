@@ -216,6 +216,38 @@
 		</div>
 	{/if}
 
+	{#if overview.segments.some((s) => s.results.campaigns > 0)}
+		<h2 class="text-lg font-semibold text-text mb-3">By segment</h2>
+		<div class="data-table overflow-x-auto mb-8">
+			<table class="w-full text-sm">
+				<thead>
+					<tr>
+						<th class="text-left">Segment</th>
+						<th class="text-right">Prospects</th>
+						<th class="text-right">Campaigns</th>
+						<th class="text-right">Reached</th>
+						<th class="text-right">Replied</th>
+						<th class="text-right">Reply rate</th>
+						<th class="text-right">Interested</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each overview.segments as sg (sg.id)}
+						<tr>
+							<td><a href="{base}/targeting" class="link link-primary">{sg.name}</a></td>
+							<td class="text-right">{sg.prospects.prospect || 0}</td>
+							<td class="text-right">{sg.results.campaigns}</td>
+							<td class="text-right">{sg.results.reached}</td>
+							<td class="text-right">{sg.results.replied}</td>
+							<td class="text-right">{percent(sg.results.reply_rate)}</td>
+							<td class="text-right">{sg.results.interested}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
+
 	<h2 class="text-lg font-semibold text-text mb-3">Campaigns</h2>
 	{#if overview.campaigns.length === 0}
 		<EmptyState icon={Send} title="No campaigns yet" description="Start one on the Campaigns tab, or let the AI start one over MCP." />

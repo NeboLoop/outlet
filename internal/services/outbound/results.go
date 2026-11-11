@@ -3,6 +3,7 @@ package outbound
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/services/email"
@@ -25,6 +26,9 @@ type CampaignResults struct {
 	ID         string           `json:"id"`
 	Name       string           `json:"name"`
 	Status     string           `json:"status"`
+	SegmentID  string           `json:"segment_id"` // the outreach list it runs on
+	Segment    string           `json:"segment"`
+	AuthoredBy string           `json:"authored_by"` // who wrote its steps: ai or person
 	Enrolled   int64            `json:"enrolled"`
 	Reached    int64            `json:"reached"`
 	Replied    int64            `json:"replied"`
@@ -49,6 +53,10 @@ type CampaignResults struct {
 	TrackClick bool             `json:"track_clicks"`
 	Steps      []StepResult     `json:"steps,omitempty"`
 	Replies    map[string]int64 `json:"replies_by_kind,omitempty"`
+	// StoppedByReason counts people whose sequence stopped before its end,
+	// by why: replied, bounced, do not contact: customer, ...
+	StoppedByReason map[string]int64 `json:"stopped_by_reason,omitempty"`
+	Materials       []Material       `json:"materials,omitempty"` // pinned: what it was written from
 }
 
 func pct(n, d int64) float64 {
@@ -60,7 +68,14 @@ func pct(n, d int64) float64 {
 
 // CampaignResults measures one outreach sequence; steps adds the per-step view.
 func (s *Service) CampaignResults(ctx context.Context, c db.EmailSequence, steps bool) (CampaignResults, error) {
-	r := CampaignResults{ID: c.ID, Name: c.Name, Status: "active", Replies: map[string]int64{}, TrackOpens: c.TrackOpens == 1, TrackClick: c.TrackClicks == 1}
+	r := CampaignResults{ID: c.ID, Name: c.Name, Status: "active", Replies: map[string]int64{}, TrackOpens: c.TrackOpens == 1, TrackClick: c.TrackClicks == 1,
+		AuthoredBy: c.AuthoredBy, StoppedByReason: map[string]int64{}}
+	if c.ListID.Valid {
+		r.SegmentID = fmt.Sprint(c.ListID.Int64)
+		if l, err := s.db.GetEmailList(ctx, c.ListID.Int64); err == nil {
+			r.Segment = l.Name
+		}
+	}
 	if c.IsActive.Int64 != 1 {
 		r.Status = "paused"
 	}
@@ -76,6 +91,8 @@ func (s *Service) CampaignResults(ctx context.Context, c db.EmailSequence, steps
 			r.InProgress += st.N
 		case "done":
 			r.NoReply += st.N
+		default:
+			r.StoppedByReason[st.State] += st.N
 		}
 	}
 	sent, err := s.db.OutreachSentByStep(ctx, seqID)
@@ -123,10 +140,14 @@ func (s *Service) CampaignResults(ctx context.Context, c db.EmailSequence, steps
 	if p, err := s.db.GetPathwayForKind(ctx, db.GetPathwayForKindParams{OrgID: c.OrgID.String, Kind: email.KindOutreach.Name()}); err == nil {
 		r.BounceLimit = float64(int64(1000*p.PauseBounceRate+0.5)) / 10
 	}
+	if len(r.StoppedByReason) == 0 {
+		r.StoppedByReason = nil
+	}
 	if !steps {
 		r.Replies = nil
 		return r, nil
 	}
+	r.Materials = s.campaignMaterials(ctx, c.ID)
 	replies, err := s.db.OutreachRepliesByStep(ctx, seqID)
 	if err != nil {
 		return r, err

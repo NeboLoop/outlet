@@ -61,6 +61,29 @@ type BlockedDomain struct {
 	UpdatedAt     sql.NullString `json:"updated_at"`
 }
 
+type BrandMaterial struct {
+	ID        string        `json:"id"`
+	OrgID     string        `json:"org_id"`
+	Kind      string        `json:"kind"`
+	Title     string        `json:"title"`
+	Summary   string        `json:"summary"`
+	Details   string        `json:"details"`
+	Url       string        `json:"url"`
+	ListID    sql.NullInt64 `json:"list_id"`
+	CreatedAt string        `json:"created_at"`
+	UpdatedAt string        `json:"updated_at"`
+}
+
+type BrandProfile struct {
+	OrgID     string `json:"org_id"`
+	Website   string `json:"website"`
+	Sells     string `json:"sells"`
+	Audience  string `json:"audience"`
+	Proof     string `json:"proof"`
+	Voice     string `json:"voice"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 type CampaignClick struct {
 	ID             string         `json:"id"`
 	CampaignSendID string         `json:"campaign_send_id"`
@@ -69,6 +92,11 @@ type CampaignClick struct {
 	LinkUrl        string         `json:"link_url"`
 	LinkName       sql.NullString `json:"link_name"`
 	ClickedAt      sql.NullString `json:"clicked_at"`
+}
+
+type CampaignMaterial struct {
+	SequenceID string `json:"sequence_id"`
+	MaterialID string `json:"material_id"`
 }
 
 type CampaignSend struct {
@@ -161,6 +189,15 @@ type CustomFieldValue struct {
 	Value        sql.NullString `json:"value"`
 	CreatedAt    sql.NullString `json:"created_at"`
 	UpdatedAt    sql.NullString `json:"updated_at"`
+}
+
+type DoNotContact struct {
+	ID        int64  `json:"id"`
+	OrgID     string `json:"org_id"`
+	ListName  string `json:"list_name"`
+	Kind      string `json:"kind"`
+	Value     string `json:"value"`
+	CreatedAt string `json:"created_at"`
 }
 
 type DomainIdentity struct {
@@ -296,6 +333,8 @@ type EmailList struct {
 	UnsubscribeBehavior      sql.NullString `json:"unsubscribe_behavior"`
 	UnsubscribeScope         sql.NullString `json:"unsubscribe_scope"`
 	Kind                     string         `json:"kind"`
+	SegmentDescription       string         `json:"segment_description"`
+	SegmentFilters           string         `json:"segment_filters"`
 }
 
 type EmailQueue struct {
@@ -322,6 +361,7 @@ type EmailQueue struct {
 	ClaimToken     sql.NullString `json:"claim_token"`
 	ClaimedAt      sql.NullString `json:"claimed_at"`
 	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	AuthoredBy     string         `json:"authored_by"`
 }
 
 type EmailReply struct {
@@ -360,6 +400,7 @@ type EmailSequence struct {
 	WindowEndHour          int64          `json:"window_end_hour"`
 	TrackOpens             int64          `json:"track_opens"`
 	TrackClicks            int64          `json:"track_clicks"`
+	AuthoredBy             string         `json:"authored_by"`
 }
 
 type EmailTemplate struct {
@@ -670,6 +711,9 @@ type Organization struct {
 	OutboundOptOutLine   string         `json:"outbound_opt_out_line"`
 	OutboundTimezone     string         `json:"outbound_timezone"`
 	DnsTokenEnc          []byte         `json:"dns_token_enc"`
+	DncCustomerDomains   int64          `json:"dnc_customer_domains"`
+	DncCheckUrl          string         `json:"dnc_check_url"`
+	DncCheckSecretEnc    []byte         `json:"dnc_check_secret_enc"`
 }
 
 type PlatformSetting struct {
@@ -728,6 +772,7 @@ type SendingPathway struct {
 	PauseComplaints      int64          `json:"pause_complaints"`
 	NextSendAt           sql.NullString `json:"next_send_at"`
 	CreatedAt            string         `json:"created_at"`
+	DailyNewProspects    int64          `json:"daily_new_prospects"`
 }
 
 type SequenceEntryRule struct {

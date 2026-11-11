@@ -91,7 +91,7 @@ func TestExportWritesSubscribersWithCustomFieldsSafely(t *testing.T) {
 func TestSafeRowPrefixesFormulaCells(t *testing.T) {
 	assert.Equal(t,
 		[]string{"'=1+1", "'+1", "'-1", "'@x", "'\tx", "'\rx", "a=b", "", "plain"},
-		safeRow([]string{"=1+1", "+1", "-1", "@x", "\tx", "\rx", "a=b", "", "plain"}))
+		SafeRow([]string{"=1+1", "+1", "-1", "@x", "\tx", "\rx", "a=b", "", "plain"}))
 }
 
 // flushCounter is a ResponseWriter that counts flushes.

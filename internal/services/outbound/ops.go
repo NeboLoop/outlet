@@ -81,6 +81,11 @@ type Overview struct {
 	// campaign, in percent.
 	ReplyRate float64           `json:"reply_rate"`
 	Campaigns []CampaignResults `json:"campaigns"`
+	Segments  []Segment         `json:"segments"` // each segment's people and its campaigns' results
+	// Pace is the pool's daily new prospects (0: no limit) and whether
+	// today's are reached.
+	Pace        int64 `json:"pace"`
+	PaceReached bool  `json:"pace_reached"`
 	Next           []string          `json:"next"`
 }
 
@@ -121,7 +126,7 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 		OptOutLine: org.OutboundOptOutLine, Timezone: org.OutboundTimezone, DNSTokenSet: len(org.DnsTokenEnc) > 0,
 		Prospects: map[string]int64{}, Messages: map[string]int64{},
 		// Empty lists are [] in JSON, never null: the app reads their length.
-		Domains: []DomainInfo{}, Mailboxes: []MailboxHealth{}, Campaigns: []CampaignResults{}, Next: []string{},
+		Domains: []DomainInfo{}, Mailboxes: []MailboxHealth{}, Campaigns: []CampaignResults{}, Segments: []Segment{}, Next: []string{},
 	}
 	domains, _ := s.db.ListOutreachDomains(ctx, org.ID)
 	for _, d := range domains {
@@ -152,6 +157,10 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 		}
 	}
 	o.ReplyRate = pct(replied, reached)
+	if segs, err := s.segmentsOf(ctx, org, o.Campaigns); err == nil {
+		o.Segments = segs
+	}
+	o.Pace, o.PaceReached = s.pacedToday(ctx, org)
 
 	switch {
 	case !o.Enabled:
@@ -170,6 +179,9 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 		if mb.Status == "paused" {
 			o.Next = append(o.Next, fmt.Sprintf("%s is paused (%s). Explaining the mailbox says how to fix it.", mb.Email, mb.Reason))
 		}
+	}
+	if o.PaceReached {
+		o.Next = append(o.Next, fmt.Sprintf("Today's %d new prospects are reached (the pace dial): first emails wait for tomorrow's window, follow-ups go on.", o.Pace))
 	}
 	if o.DraftsWaiting > 0 {
 		o.Next = append(o.Next, fmt.Sprintf("%d drafts wait for approval.", o.DraftsWaiting))
@@ -224,7 +236,7 @@ func (s *Service) ListDrafts(ctx context.Context, org db.Organization, limit int
 	}
 	out := make([]Draft, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, Draft{MessageID: r.ID, CampaignID: r.CampaignID, CampaignName: r.CampaignName, Step: r.Position,
+		out = append(out, Draft{MessageID: r.ID, CampaignID: r.CampaignID, CampaignName: r.CampaignName, Step: r.Position, AuthoredBy: r.AuthoredBy,
 			Preview: Preview{ProspectID: r.ContactID.String, To: r.ToEmail, From: r.FromEmail, Subject: r.Subject.String, Body: r.Body.String, SendsAfter: r.ScheduledFor}})
 	}
 	return out, nil
@@ -271,8 +283,9 @@ func (s *Service) Review(ctx context.Context, org db.Organization, action string
 	return res, nil
 }
 
-// EditDraft rewrites one waiting email.
-func (s *Service) EditDraft(ctx context.Context, org db.Organization, id, subject, body string) error {
+// EditDraft rewrites one waiting email. editor is who edits it (ai or
+// person): it decides who the email reads as written by.
+func (s *Service) EditDraft(ctx context.Context, org db.Organization, id, subject, body, editor string) error {
 	m, err := s.db.GetOutreachEmail(ctx, db.GetOutreachEmailParams{ID: id, OrgID: sql.NullString{String: org.ID, Valid: true}})
 	if err != nil {
 		return refuse("no such email")
@@ -283,20 +296,29 @@ func (s *Service) EditDraft(ctx context.Context, org db.Organization, id, subjec
 	if body == "" {
 		body = m.Body.String
 	}
-	n, err := s.db.EditOutreachEmail(ctx, db.EditOutreachEmailParams{Subject: sql.NullString{String: subject, Valid: true}, Body: sql.NullString{String: body, Valid: true}, ID: id, OrgID: sql.NullString{String: org.ID, Valid: true}})
+	author := m.AuthoredBy
+	if subject != m.Subject.String || body != m.Body.String {
+		author = edited(m.AuthoredBy, editor)
+	}
+	n, err := s.db.EditOutreachEmail(ctx, db.EditOutreachEmailParams{Subject: sql.NullString{String: subject, Valid: true}, Body: sql.NullString{String: body, Valid: true}, AuthoredBy: author, ID: id, OrgID: sql.NullString{String: org.ID, Valid: true}})
 	if err == nil && n == 0 {
 		return refuse("that email was already sent or skipped")
 	}
 	return err
 }
 
-// ListReplies returns replies, unhandled ones by default, each with the name
-// of the campaign it answers.
-func (s *Service) ListReplies(ctx context.Context, org db.Organization, handled bool, limit int) ([]db.ListEmailRepliesRow, error) {
+// ListReplies returns replies, unhandled ones by default, of one
+// classification (empty: any; interested is a hot lead), each with the
+// campaign it answers and that campaign's segment.
+func (s *Service) ListReplies(ctx context.Context, org db.Organization, handled bool, classification string, limit int) ([]db.ListEmailRepliesRow, error) {
 	if limit <= 0 || limit > maxBatch {
 		limit = 25
 	}
-	return s.db.ListEmailReplies(ctx, db.ListEmailRepliesParams{OrgID: org.ID, Handled: boolInt(handled), Limit: int64(limit)})
+	classification = strings.TrimSpace(classification)
+	if classification != "" && !classes[classification] && classification != "needs_review" {
+		return nil, refuse("classification is interested (a hot lead), not_interested, question, out_of_office, wrong_person, unsubscribe, complaint or needs_review.")
+	}
+	return s.db.ListEmailReplies(ctx, db.ListEmailRepliesParams{OrgID: org.ID, Handled: boolInt(handled), Classification: classification, LimitCount: int64(limit)})
 }
 
 var classes = map[string]bool{
@@ -329,8 +351,9 @@ func (s *Service) Classify(ctx context.Context, org db.Organization, replyID, cl
 }
 
 // Answer replies to a reply: same mailbox, same thread. It goes out on the
-// next pass, inside the mailbox's daily cap and gap.
-func (s *Service) Answer(ctx context.Context, org db.Organization, replyID, body string) (string, error) {
+// next pass, inside the mailbox's daily cap and gap. author is who wrote
+// the answer: ai or person.
+func (s *Service) Answer(ctx context.Context, org db.Organization, replyID, body, author string) (string, error) {
 	if err := s.requireEnabled(org); err != nil {
 		return "", err
 	}
@@ -362,6 +385,7 @@ func (s *Service) Answer(ctx context.Context, org db.Organization, replyID, body
 		MailboxID: sql.NullString{String: mb.ID, Valid: true}, Subject: sql.NullString{String: subject, Valid: true}, Body: sql.NullString{String: body, Valid: true},
 		MessageID: sql.NullString{String: uuid.NewString() + "@" + domainOf(mb.Email), Valid: true},
 		InReplyTo: sql.NullString{String: r.MessageID, Valid: true}, Refs: sql.NullString{String: strings.Join(refs, " "), Valid: true},
+		AuthoredBy: edited("", author),
 	})
 	if err != nil {
 		return "", err
@@ -431,11 +455,24 @@ func (s *Service) Pause(ctx context.Context, org db.Organization, scope, id stri
 	return refuse("Pause all outreach, one mailbox or one campaign.")
 }
 
-// Explain answers "why didn't this send?" and "why is this mailbox paused?"
-// in plain words.
-func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, mailboxID, prospectID string) (string, error) {
+// ExplainQuery names what to explain: an email, a mailbox, a prospect, or
+// a topic (start_from_website).
+type ExplainQuery struct {
+	MessageID  string `json:"message_id,omitempty"`
+	MailboxID  string `json:"mailbox_id,omitempty"`
+	ProspectID string `json:"prospect_id,omitempty"`
+	Topic      string `json:"topic,omitempty"`
+}
+
+// Explain answers "why didn't this send?", "why is this mailbox paused?",
+// "why can't this prospect be enrolled?" and "how do I start from a
+// website?" in plain words.
+func (s *Service) Explain(ctx context.Context, org db.Organization, q ExplainQuery) (string, error) {
 	now := s.now()
+	messageID, mailboxID, prospectID := q.MessageID, q.MailboxID, q.ProspectID
 	switch {
+	case q.Topic != "":
+		return s.explainTopic(ctx, org, q.Topic)
 	case messageID != "":
 		m, err := s.db.GetOutreachEmail(ctx, db.GetOutreachEmailParams{ID: messageID, OrgID: sql.NullString{String: org.ID, Valid: true}})
 		if err != nil {
@@ -447,7 +484,7 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 		case "sent":
 			return "It was sent at " + m.SentAt.String + " UTC.", nil
 		case "cancelled":
-			return "It was skipped: by a person, or because the prospect replied, opted out or bounced first.", nil
+			return "It was skipped: by a person, or because the prospect replied, opted out, bounced or turned out to be someone not to contact (explain the prospect to see why) first.", nil
 		case "failed":
 			return "Sending failed: " + m.ErrorMessage.String + ". It is not retried.", nil
 		case "sending":
@@ -515,7 +552,10 @@ func (s *Service) Explain(ctx context.Context, org db.Organization, messageID, m
 		if s.suppressed(ctx, org.ID, c.Email) {
 			return c.Email + " is on the suppression list, or bounced or complained; nothing is ever sent to it.", nil
 		}
+		if ex, skip := s.DoNotContact(ctx, org, c.Email); skip {
+			return c.Email + " gets no outreach: " + ex.Text() + ".", nil
+		}
 		return c.Email + " can be enrolled in an outreach campaign if it's on an outreach list with status prospect.", nil
 	}
-	return "", refuse("Name an email, a mailbox or a prospect to explain.")
+	return "", refuse("Name an email, a mailbox or a prospect to explain, or a topic (start_from_website).")
 }

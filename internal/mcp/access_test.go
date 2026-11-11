@@ -396,14 +396,20 @@ func TestMCP_WritesAreAudited(t *testing.T) {
 		return len(rows) == 2
 	}, 2*time.Second, 10*time.Millisecond, "reads are not audited; the two writes are")
 
+	// Audit rows are written off the request path, so two writes can land in
+	// either order: each is found by its action.
+	byAction := map[string]map[string]string{}
+	for _, r := range rows {
+		byAction[r["action"]] = r
+	}
 	assert.Equal(t, map[string]string{
 		"user": "mike", "email": "mike@example.com", "tool": "contact", "action": "create",
 		"brand": "alpha-id", "target": "new@example.com", "result": "ok",
-	}, rows[0])
-	assert.Equal(t, "brand", rows[1]["tool"])
-	assert.Equal(t, "brand.update", rows[1]["action"])
-	assert.Equal(t, "alpha-id", rows[1]["brand"])
-	assert.Contains(t, rows[1]["result"], "refused: ")
+	}, byAction["create"])
+	require.Contains(t, byAction, "brand.update")
+	assert.Equal(t, "brand", byAction["brand.update"]["tool"])
+	assert.Equal(t, "alpha-id", byAction["brand.update"]["brand"])
+	assert.Contains(t, byAction["brand.update"]["result"], "refused: ")
 }
 
 // Every record ID a call hands a tool must belong to the call's brand: a

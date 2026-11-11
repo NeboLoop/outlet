@@ -609,6 +609,31 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: adminoutbound.SetOutboundDNSTokenHandler(serverCtx),
 				},
 				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/do-not-contact",
+					Handler: adminoutbound.GetOutboundDoNotContactHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/do-not-contact",
+					Handler: adminoutbound.AddOutboundDoNotContactHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/outbound/do-not-contact",
+					Handler: adminoutbound.DeleteOutboundDoNotContactListHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/do-not-contact/check",
+					Handler: adminoutbound.CheckOutboundDoNotContactHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/do-not-contact/settings",
+					Handler: adminoutbound.UpdateOutboundDoNotContactSettingsHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodPost,
 					Path:    "/outbound/domains",
 					Handler: adminoutbound.AddOutboundDomainHandler(serverCtx),
@@ -649,9 +674,49 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: adminoutbound.AddOutboundMailboxesHandler(serverCtx),
 				},
 				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/materials",
+					Handler: adminoutbound.ListOutboundMaterialsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/materials",
+					Handler: adminoutbound.CreateOutboundMaterialHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/materials/:id",
+					Handler: adminoutbound.UpdateOutboundMaterialHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodDelete,
+					Path:    "/outbound/materials/:id",
+					Handler: adminoutbound.DeleteOutboundMaterialHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/pace",
+					Handler: adminoutbound.GetOutboundPaceHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/pace",
+					Handler: adminoutbound.SetOutboundPaceHandler(serverCtx),
+				},
+				{
 					Method:  http.MethodPost,
 					Path:    "/outbound/pause",
 					Handler: adminoutbound.PauseOutboundHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/profile",
+					Handler: adminoutbound.GetOutboundProfileHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/profile",
+					Handler: adminoutbound.UpdateOutboundProfileHandler(serverCtx),
 				},
 				{
 					Method:  http.MethodGet,
@@ -682,6 +747,26 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Method:  http.MethodPost,
 					Path:    "/outbound/replies/:id/classify",
 					Handler: adminoutbound.ClassifyOutboundReplyHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/outbound/segments",
+					Handler: adminoutbound.ListOutboundSegmentsHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/segments",
+					Handler: adminoutbound.CreateOutboundSegmentHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPut,
+					Path:    "/outbound/segments/:id",
+					Handler: adminoutbound.UpdateOutboundSegmentHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/outbound/segments/:id/prospects",
+					Handler: adminoutbound.AddOutboundSegmentProspectsHandler(serverCtx),
 				},
 				{
 					Method:  http.MethodPut,

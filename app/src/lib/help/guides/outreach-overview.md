@@ -27,7 +27,8 @@ These are checked by the software. You can't turn them off, because breaking the
 5. **Replies stop the sequence.** Any human reply stops that person's follow-ups at once. Only "Out of office" replies let the sequence carry on.
 6. **Opt-outs are permanent.** "Unsubscribe", "remove me", "no thanks" and similar replies put the address on your suppression list. Outlet never writes to it again, and also won't let you answer it.
 7. **The first email may have at most one link.** Cold email with several links lands in spam.
-8. **Nothing sends without approval at first.** A new campaign asks you to approve every email. "Send without approval" is allowed only when every mailbox is at least 30 days old.
+8. **Nobody you already know gets outreach.** Customers, your own domains and anyone on a do-not-contact list are skipped, with the reason. See [Targeting, materials and who is never contacted](/help/outreach-targeting).
+9. **Nothing sends without approval at first.** A new campaign asks you to approve every email. "Send without approval" is allowed only when every mailbox is at least 30 days old.
 
 ## Deliverability basics
 
@@ -47,7 +48,10 @@ Deliverability means your email reaches the inbox rather than spam. Four habits 
 | **Drafts** | Emails waiting for your approval |
 | **Replies** | Replies that need you, sorted by kind |
 | **Prospects** | The people you plan to reach |
-| **Setup** | On and off, mailing address, outreach domains, mailboxes |
+| **Targeting** | Your brand profile, and the segments campaigns run on |
+| **Materials** | Case studies, proof points and offers outreach can point to |
+| **Do not contact** | Who outreach never writes to, and why |
+| **Setup** | On and off, mailing address, the daily pace, outreach domains, mailboxes |
 
 The limits for your mailboxes live in **Settings**, **Sending**, on the mailbox pool (the pathway that carries outreach). See [How sending works](/help/how-sending-works).
 

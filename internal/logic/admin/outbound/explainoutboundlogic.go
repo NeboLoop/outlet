@@ -5,6 +5,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/outbound"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -36,7 +37,7 @@ func (l *ExplainOutboundLogic) ExplainOutbound(req *types.OutboundExplainRequest
 // ExplainOutbound runs for a brand already resolved: the admin route's signed-in
 // person, or the API key of /sdk/v1/outbound.
 func ExplainOutbound(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundExplainRequest) (*types.OutboundExplainResponse, error) {
-	a, err := svcCtx.Outbound.Explain(ctx, org, req.MessageId, req.MailboxId, req.ProspectId)
+	a, err := svcCtx.Outbound.Explain(ctx, org, outbound.ExplainQuery{MessageID: req.MessageId, MailboxID: req.MailboxId, ProspectID: req.ProspectId, Topic: req.Topic})
 	if err != nil {
 		return nil, apiErr(err)
 	}

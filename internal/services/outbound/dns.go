@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/events"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/services/outbound/providers"
 
@@ -112,10 +113,23 @@ func (s *Service) CheckDomain(ctx context.Context, d db.DomainIdentity) (DNSChec
 	if c.OK() {
 		return c, s.db.ResumeMailboxesPausedForDNS(ctx, d.ID)
 	}
-	return c, s.db.PauseMailboxesOnDomain(ctx, db.PauseMailboxesOnDomainParams{
-		PausedReason: "DNS: " + d.Domain + " is missing " + strings.Join(c.Missing, ", "),
-		DomainID:     d.ID,
-	})
+	reason := d.Domain + " is missing " + strings.Join(c.Missing, ", ")
+	var pausing []db.Mailbox
+	if mbs, err := s.db.ListMailboxes(ctx, d.OrgID); err == nil {
+		for _, mb := range mbs {
+			if mb.DomainID == d.ID && mb.Status == "active" {
+				pausing = append(pausing, mb)
+			}
+		}
+	}
+	if err := s.db.PauseMailboxesOnDomain(ctx, db.PauseMailboxesOnDomainParams{PausedReason: "DNS: " + reason, DomainID: d.ID}); err != nil {
+		return c, err
+	}
+	for _, mb := range pausing {
+		s.db.PublishOutreachPaused(events.OutreachPausedEvent{OrgID: mb.OrgID, Scope: "mailbox", MailboxID: mb.ID, Mailbox: mb.Email,
+			Reason: "paused because " + reason, Timestamp: s.now().UTC()})
+	}
+	return c, nil
 }
 
 // CheckAllDomains is the daily recheck.

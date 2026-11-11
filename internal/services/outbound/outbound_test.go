@@ -461,7 +461,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 	h.mail.deliver(t, benBox, "From: Mail Delivery Subsystem <mailer-daemon@googlemail.com>\nTo: "+benBox+"\nSubject: Delivery Status Notification (Failure)\nMessage-ID: <dsn-1@google.com>\nMIME-Version: 1.0\nContent-Type: multipart/report; report-type=delivery-status; boundary=\"b1\"\n\n--b1\nContent-Type: text/plain\n\nAddress not found.\n--b1\nContent-Type: message/delivery-status\n\nReporting-MTA: dns; googlemail.com\n\nFinal-Recipient: rfc822; ben@example.org\nAction: failed\nStatus: 5.1.1\n--b1--\n")
 	h.svc.PollReplies(ctx)
 
-	replies, err := h.svc.ListReplies(ctx, h.org, false, 10)
+	replies, err := h.svc.ListReplies(ctx, h.org, false, "", 10)
 	require.NoError(t, err)
 	require.Len(t, replies, 1)
 	assert.Equal(t, "needs_review", replies[0].Classification)
@@ -473,7 +473,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 
 	// Reading again changes nothing.
 	h.svc.PollReplies(ctx)
-	replies, _ = h.svc.ListReplies(ctx, h.org, false, 10)
+	replies, _ = h.svc.ListReplies(ctx, h.org, false, "", 10)
 	assert.Len(t, replies, 1)
 
 	// Two business days later neither gets a follow-up: one replied, one bounced.
@@ -482,7 +482,7 @@ func TestOutreachEndToEnd(t *testing.T) {
 	assert.Equal(t, 2, h.mail.count())
 
 	// Answering Ava goes from the same mailbox, in the thread.
-	_, err = h.svc.Answer(ctx, h.org, replies[0].ID, "Here's a link to try it.")
+	_, err = h.svc.Answer(ctx, h.org, replies[0].ID, "Here's a link to try it.", AuthorPerson)
 	require.NoError(t, err)
 	h.advance(10 * time.Minute)
 	h.svc.Tick(ctx)
@@ -565,7 +565,7 @@ func TestSafetyLimits(t *testing.T) {
 	assert.True(t, mh.WarmingUp)
 	assert.Less(t, mh.AllowToday, mh.LimitInUse, "the ramp holds it below the limit")
 	assert.Equal(t, "getexample.com", mh.Domain)
-	why, err := h.svc.Explain(ctx, h.org, "", mh.ID, "")
+	why, err := h.svc.Explain(ctx, h.org, ExplainQuery{MailboxID: mh.ID})
 	require.NoError(t, err)
 	assert.Contains(t, why, "warming up")
 	assert.Contains(t, why, "30 a day")
@@ -608,7 +608,7 @@ func TestSafetyLimits(t *testing.T) {
 	assert.Contains(t, sam.PausedReason, "bounce rate")
 	err = h.svc.Pause(ctx, h.org, "mailbox", sam.ID, true)
 	assert.ErrorContains(t, err, "still over a health limit")
-	why, err = h.svc.Explain(ctx, h.org, "", sam.ID, "")
+	why, err = h.svc.Explain(ctx, h.org, ExplainQuery{MailboxID: sam.ID})
 	require.NoError(t, err)
 	assert.Contains(t, why, "reputation")
 
@@ -744,8 +744,8 @@ func TestOperations(t *testing.T) {
 	waiting, err := h.svc.ListDrafts(ctx, h.org, 10)
 	require.NoError(t, err)
 	require.Len(t, waiting, 1)
-	assert.Equal(t, Draft{MessageID: draft, CampaignID: camp.CampaignID, CampaignName: "C", Step: 1, Preview: camp.Drafts[0].Preview}, waiting[0],
-		"a waiting draft says its campaign and step")
+	assert.Equal(t, Draft{MessageID: draft, CampaignID: camp.CampaignID, CampaignName: "C", Step: 1, AuthoredBy: AuthorPerson, Preview: camp.Drafts[0].Preview}, waiting[0],
+		"a waiting draft says its campaign, its step and who wrote it")
 
 	o, err := h.svc.Overview(ctx, h.org)
 	require.NoError(t, err)
@@ -757,11 +757,11 @@ func TestOperations(t *testing.T) {
 	assert.Len(t, o.Mailboxes, 2)
 	assert.Contains(t, strings.Join(o.Next, " "), "drafts wait")
 
-	why, err := h.svc.Explain(ctx, h.org, draft, "", "")
+	why, err := h.svc.Explain(ctx, h.org, ExplainQuery{MessageID: draft})
 	require.NoError(t, err)
 	assert.Contains(t, why, "waiting for approval")
 
-	require.NoError(t, h.svc.EditDraft(ctx, h.org, draft, "New subject", ""))
+	require.NoError(t, h.svc.EditDraft(ctx, h.org, draft, "New subject", "", AuthorPerson))
 	m, _ := h.store.GetOutreachEmail(ctx, db.GetOutreachEmailParams{ID: draft, OrgID: sql.NullString{String: h.org.ID, Valid: true}})
 	assert.Equal(t, "New subject", m.Subject.String)
 
@@ -788,7 +788,7 @@ func TestOperations(t *testing.T) {
 	// A reply the rules can't settle is classified by the caller.
 	h.mail.deliver(t, "sam@getexample.com", "From: ivy@example.org\nTo: sam@getexample.com\nSubject: Re: New subject\nMessage-ID: <r-ivy@example.org>\nIn-Reply-To: "+sent[0].Header.Get("Message-Id")+"\n\nWhat does it pay?\n")
 	h.svc.PollReplies(ctx)
-	replies, _ := h.svc.ListReplies(ctx, h.org, false, 10)
+	replies, _ := h.svc.ListReplies(ctx, h.org, false, "", 10)
 	require.Len(t, replies, 1)
 	require.NoError(t, h.svc.Classify(ctx, h.org, replies[0].ID, "interested"))
 	ivy := got["ivy@example.org"].ID
@@ -910,7 +910,7 @@ func TestListProspects(t *testing.T) {
 	list, err := h.svc.outreachList(ctx, h.org, "")
 	require.NoError(t, err)
 	for _, p := range all.Prospects {
-		_, reason := h.svc.enrollable(ctx, h.org, list, p.ID)
+		_, reason := h.svc.enrollable(ctx, h.org, list, p.ID, h.svc.newDNC(ctx, h.org, true))
 		inCampaign := len(p.Campaigns) > 0
 		assert.Equal(t, reason == "" && !inCampaign, p.Enrollable, p.Email)
 	}
@@ -1088,7 +1088,7 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 	assert.EqualValues(t, 1, r.Clicked, "the scanner-speed click isn't counted; the later one is, once per person")
 	assert.EqualValues(t, 50, r.ClickRate)
 
-	replies, _ := h.svc.ListReplies(ctx, h.org, false, 10)
+	replies, _ := h.svc.ListReplies(ctx, h.org, false, "", 10)
 	require.NoError(t, h.svc.Classify(ctx, h.org, replies[0].ID, "interested"))
 	full, err := h.svc.CampaignResults(ctx, mustCampaign(t, h, camp.CampaignID), true)
 	require.NoError(t, err)
@@ -1140,7 +1140,7 @@ func TestProspectsVerifyAfterAdding(t *testing.T) {
 	require.NoError(t, err)
 	for _, r := range res {
 		assert.Equal(t, "verifying", r.Status)
-		_, why := h.svc.enrollable(ctx, h.org, list, r.ID)
+		_, why := h.svc.enrollable(ctx, h.org, list, r.ID, h.svc.newDNC(ctx, h.org, true))
 		assert.Contains(t, why, "verifying", "not enrolled before it is verified")
 	}
 	h.svc.VerifyProspects(ctx)

@@ -148,6 +148,9 @@ const (
 	TopicEmailClicked    = "email.clicked"    // Link in email clicked
 	TopicEmailReplied    = "email.replied"    // A person replied to outreach
 
+	// Outreach events
+	TopicOutreachPaused = "outreach.paused" // Outreach stopped on its own: the day's pace was reached, or a mailbox paused
+
 	// Customer events
 	TopicCustomerCreated = "customer.created" // New customer created
 	TopicCustomerUpdated = "customer.updated" // Customer profile updated
@@ -996,6 +999,20 @@ type EmailEvent struct {
 	Classification string    `json:"classification,omitempty"`
 	ReceivedAt     string    `json:"received_at,omitempty"`
 	Timestamp      time.Time `json:"timestamp"`
+}
+
+// OutreachPausedEvent tells the brand's owner that outreach stopped on its
+// own, and why: scope pace (the day's new prospects were reached; first
+// emails wait for the next day, follow-ups go on) or mailbox (a mailbox
+// paused for its health or its DNS). Nothing waiting is lost.
+type OutreachPausedEvent struct {
+	OrgID     string    `json:"org_id"`
+	Scope     string    `json:"scope"` // pace, mailbox
+	MailboxID string    `json:"mailbox_id,omitempty"`
+	Mailbox   string    `json:"mailbox,omitempty"`
+	Reason    string    `json:"reason"`
+	ResumesAt string    `json:"resumes_at,omitempty"` // pace: when first emails go again (UTC)
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // CustomerEvent is emitted for customer lifecycle events

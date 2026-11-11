@@ -63,7 +63,8 @@
 		{ value: 'email.complained', label: 'Marked as Spam', category: 'Email' },
 		{ value: 'email.opened', label: 'Email Opened', category: 'Email' },
 		{ value: 'email.replied', label: 'Email Replied', category: 'Email' },
-		{ value: 'email.clicked', label: 'Email Clicked', category: 'Email' }
+		{ value: 'email.clicked', label: 'Email Clicked', category: 'Email' },
+		{ value: 'outreach.paused', label: 'Outreach Paused', category: 'Outbound' }
 	];
 
 	// Group events by category

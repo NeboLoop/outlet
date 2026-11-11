@@ -2,9 +2,9 @@
 	import { formatDate } from '$lib/dates';
 	import { page } from '$app/stores';
 	import { listOutboundDrafts, reviewOutboundDrafts, editOutboundDraft, type OutboundDraft } from '$lib/api';
-	import { Button, Alert, LoadingSpinner, EmptyState, Input, Textarea, Checkbox } from '$lib/components/ui';
+	import { Button, Alert, LoadingSpinner, EmptyState, Input, Textarea, Checkbox, Badge } from '$lib/components/ui';
 	import { FileText } from '@lucide/svelte';
-	import { errorMessage } from '../shared';
+	import { authorLabel, authorVariant, errorMessage } from '../shared';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -139,9 +139,14 @@
 				<div class="flex items-start gap-3">
 					<Checkbox checked={selected.includes(id)} onchange={(on) => toggle(id, on)} size="sm" />
 					<div class="flex-1 min-w-0">
-						<p class="text-xs text-text-muted">
-							<a href="{base}/campaigns/{d.campaign_id}" class="link link-primary">{d.campaign_name}</a>, step {d.step}
-						</p>
+						<div class="flex flex-wrap items-center gap-2">
+							<p class="text-xs text-text-muted">
+								<a href="{base}/campaigns/{d.campaign_id}" class="link link-primary">{d.campaign_name}</a>, step {d.step}
+							</p>
+							{#if d.authored_by}
+								<Badge variant={authorVariant(d.authored_by)} size="sm">{authorLabel(d.authored_by)}</Badge>
+							{/if}
+						</div>
 						<p class="text-xs text-text-muted">
 							To {d.to} from {d.from}{#if d.sends_after}, sends after {formatDate(d.sends_after, 'datetime')}{/if}
 						</p>

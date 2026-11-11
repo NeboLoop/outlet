@@ -90,7 +90,7 @@ INSERT INTO email_lists (
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5,
     ?6, datetime('now'), datetime('now')
-) RETURNING id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind
+) RETURNING id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind, segment_description, segment_filters
 `
 
 type CreateEmailListParams struct {
@@ -138,6 +138,8 @@ func (q *Queries) CreateEmailList(ctx context.Context, arg CreateEmailListParams
 		&i.UnsubscribeBehavior,
 		&i.UnsubscribeScope,
 		&i.Kind,
+		&i.SegmentDescription,
+		&i.SegmentFilters,
 	)
 	return i, err
 }
@@ -225,7 +227,7 @@ func (q *Queries) GetAllOrgsListCounts(ctx context.Context) ([]GetAllOrgsListCou
 }
 
 const getEmailList = `-- name: GetEmailList :one
-SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind FROM email_lists
+SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind, segment_description, segment_filters FROM email_lists
 WHERE id = ?1
 `
 
@@ -258,12 +260,14 @@ func (q *Queries) GetEmailList(ctx context.Context, id int64) (EmailList, error)
 		&i.UnsubscribeBehavior,
 		&i.UnsubscribeScope,
 		&i.Kind,
+		&i.SegmentDescription,
+		&i.SegmentFilters,
 	)
 	return i, err
 }
 
 const getEmailListByOrgAndSlug = `-- name: GetEmailListByOrgAndSlug :one
-SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind FROM email_lists
+SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind, segment_description, segment_filters FROM email_lists
 WHERE org_id = ?1 AND slug = ?2
 LIMIT 1
 `
@@ -302,12 +306,14 @@ func (q *Queries) GetEmailListByOrgAndSlug(ctx context.Context, arg GetEmailList
 		&i.UnsubscribeBehavior,
 		&i.UnsubscribeScope,
 		&i.Kind,
+		&i.SegmentDescription,
+		&i.SegmentFilters,
 	)
 	return i, err
 }
 
 const getEmailListByPublicID = `-- name: GetEmailListByPublicID :one
-SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind FROM email_lists
+SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind, segment_description, segment_filters FROM email_lists
 WHERE public_id = ?1
 `
 
@@ -340,6 +346,8 @@ func (q *Queries) GetEmailListByPublicID(ctx context.Context, publicID string) (
 		&i.UnsubscribeBehavior,
 		&i.UnsubscribeScope,
 		&i.Kind,
+		&i.SegmentDescription,
+		&i.SegmentFilters,
 	)
 	return i, err
 }
@@ -707,7 +715,7 @@ func (q *Queries) ListCustomFieldValuesForSubscribers(ctx context.Context, subsc
 }
 
 const listEmailLists = `-- name: ListEmailLists :many
-SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind FROM email_lists
+SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind, segment_description, segment_filters FROM email_lists
 WHERE org_id = ?1
 ORDER BY created_at DESC
 `
@@ -747,6 +755,8 @@ func (q *Queries) ListEmailLists(ctx context.Context, orgID string) ([]EmailList
 			&i.UnsubscribeBehavior,
 			&i.UnsubscribeScope,
 			&i.Kind,
+			&i.SegmentDescription,
+			&i.SegmentFilters,
 		); err != nil {
 			return nil, err
 		}
@@ -1047,7 +1057,7 @@ SET name = COALESCE(?1, name),
     unsubscribe_scope = COALESCE(NULLIF(?17, ''), unsubscribe_scope),
     updated_at = datetime('now')
 WHERE id = ?18
-RETURNING id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind
+RETURNING id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind, segment_description, segment_filters
 `
 
 type UpdateEmailListParams struct {
@@ -1119,6 +1129,8 @@ func (q *Queries) UpdateEmailList(ctx context.Context, arg UpdateEmailListParams
 		&i.UnsubscribeBehavior,
 		&i.UnsubscribeScope,
 		&i.Kind,
+		&i.SegmentDescription,
+		&i.SegmentFilters,
 	)
 	return i, err
 }

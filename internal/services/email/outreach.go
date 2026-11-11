@@ -226,6 +226,15 @@ func (s *SequenceService) queueOutreach(ctx context.Context, seq db.EmailSequenc
 	if err != nil {
 		return err
 	}
+	if s.gate != nil {
+		org, err := s.db.GetOrganizationByID(ctx, seq.OrgID.String)
+		if err != nil {
+			return err
+		}
+		if stop := s.gate(ctx, org, contact); stop != "" {
+			return s.db.StopSequenceState(ctx, db.StopSequenceStateParams{StoppedReason: stop, ID: state.ID})
+		}
+	}
 	mb, err := s.PickMailbox(ctx, seq, state)
 	if err != nil {
 		return err
@@ -246,9 +255,10 @@ func (s *SequenceService) queueOutreach(ctx context.Context, seq db.EmailSequenc
 		Status: sql.NullString{String: w.Status, Valid: true}, TrackingToken: sql.NullString{String: generateTrackingToken(), Valid: true},
 		MailboxID: sql.NullString{String: mb.ID, Valid: true},
 		Subject:   sql.NullString{String: w.Subject, Valid: true}, Body: sql.NullString{String: w.Body, Valid: true},
-		MessageID: sql.NullString{String: uuid.NewString() + "@" + domain, Valid: true},
-		InReplyTo: sql.NullString{String: w.InReplyTo, Valid: w.InReplyTo != ""},
-		Refs:      sql.NullString{String: strings.Join(w.References, " "), Valid: len(w.References) > 0},
+		MessageID:  sql.NullString{String: uuid.NewString() + "@" + domain, Valid: true},
+		InReplyTo:  sql.NullString{String: w.InReplyTo, Valid: w.InReplyTo != ""},
+		Refs:       sql.NullString{String: strings.Join(w.References, " "), Valid: len(w.References) > 0},
+		AuthoredBy: seq.AuthoredBy,
 	})
 	return err
 }

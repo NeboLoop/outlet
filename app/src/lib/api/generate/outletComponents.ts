@@ -1632,6 +1632,7 @@ export interface OutboundAddProspectsResponse {
 
 export interface OutboundAnswerRequest {
 	body: string
+	authored_by?: string // SDK: ai or person (default person); the app is always person
 }
 export interface OutboundAnswerRequestParams {
 }
@@ -1643,9 +1644,11 @@ export interface OutboundCampaignRef {
 
 export interface OutboundCampaignRequest {
 	name: string
-	list?: string
+	list?: string // the segment (outreach list); with no prospect_ids, its enrollable prospects are enrolled
 	steps: Array<OutboundStepInput>
-	prospect_ids: Array<string>
+	prospect_ids?: Array<string>
+	material_ids?: Array<string> // the materials it was written from, pinned to it
+	authored_by?: string // SDK: ai or person (default person); the app is always person
 	approval_mode?: string
 	track_opens?: boolean
 	track_clicks?: boolean
@@ -1661,6 +1664,7 @@ export interface OutboundCampaignResponse {
 	drafts?: Array<OutboundDraft> // the saved drafts
 	previews?: Array<OutboundPreview> // dry_run: the first emails, not saved
 	skipped?: { [key: string]: string }
+	materials?: Array<OutboundMaterial> // pinned to the campaign
 	next: string
 }
 
@@ -1690,12 +1694,70 @@ export interface OutboundCampaignResults {
 	track_clicks: boolean
 	steps?: Array<OutboundStepResult>
 	replies_by_kind?: { [key: string]: number }
+	segment_id: string // the segment (outreach list) it runs on
+	segment: string
+	authored_by: string // who wrote its steps: ai or person
+	stopped_by_reason?: { [key: string]: number } // people stopped before the end, by why (replied, do not contact: customer, ...)
+	materials?: Array<OutboundMaterial> // pinned: what it was written from
 }
 
 export interface OutboundClassifyRequest {
 	classification: string
 }
 export interface OutboundClassifyRequestParams {
+}
+
+export interface OutboundDNC {
+	settings: OutboundDNCSettings
+	lists: Array<OutboundDNCList>
+}
+
+export interface OutboundDNCAddRequest {
+	list: string
+	entries: Array<string> // email addresses or domains
+}
+
+export interface OutboundDNCAddResponse {
+	added: number
+	duplicates: number
+	refused?: { [key: string]: string }
+}
+
+export interface OutboundDNCCheck {
+	excluded: boolean
+	source?: string // suppressed, own_domain, customer, customer_domain, do_not_contact_list, outside_check
+	reason?: string
+}
+
+export interface OutboundDNCCheckRequest {
+}
+export interface OutboundDNCCheckRequestParams {
+	email: string
+}
+
+export interface OutboundDNCDeleteRequest {
+}
+export interface OutboundDNCDeleteRequestParams {
+	list: string
+}
+
+export interface OutboundDNCList {
+	name: string
+	emails: number
+	domains: number
+	updated_at: string
+}
+
+export interface OutboundDNCSettings {
+	customer_domains: boolean // also skip everyone at a customer's company domain
+	check_url: string // the outside check; empty: none
+	check_secret_set: boolean
+}
+
+export interface OutboundDNCSettingsRequest {
+	customer_domains?: boolean
+	check_url?: string // empty turns the outside check off
+	check_secret?: string // write-only; needed with a new check_url
 }
 
 export interface OutboundDNSCheck {
@@ -1761,6 +1823,7 @@ export interface OutboundDraft {
 	campaign_id: string
 	campaign_name: string
 	step: number
+	authored_by: string // ai, ai_edited (a person edited what an AI wrote) or person
 	prospect_id: string
 	to: string
 	from: string
@@ -1776,6 +1839,7 @@ export interface OutboundDraftList {
 export interface OutboundEditDraftRequest {
 	subject?: string
 	body?: string
+	authored_by?: string // SDK: who edits, ai or person (default person); the app is always person
 }
 export interface OutboundEditDraftRequestParams {
 }
@@ -1790,6 +1854,7 @@ export interface OutboundExplainRequestParams {
 	message_id?: string
 	mailbox_id?: string
 	prospect_id?: string
+	topic?: string // start_from_website
 }
 
 export interface OutboundExplainResponse {
@@ -1821,6 +1886,7 @@ export interface OutboundListRepliesRequest {
 }
 export interface OutboundListRepliesRequestParams {
 	handled?: boolean
+	classification?: string // interested is a hot lead; empty: any
 	limit?: number
 }
 
@@ -1875,6 +1941,43 @@ export interface OutboundMailboxResult {
 	error?: string
 }
 
+export interface OutboundMaterial {
+	id: string
+	kind: string // case_study, proof_point, offer, link, asset
+	title: string
+	summary: string
+	details?: string
+	url?: string
+	segment_id?: string // empty: any segment
+	segment?: string
+	updated_at: string
+}
+
+export interface OutboundMaterialIDRequest {
+}
+export interface OutboundMaterialIDRequestParams {
+}
+
+export interface OutboundMaterialList {
+	materials: Array<OutboundMaterial>
+}
+
+export interface OutboundMaterialListRequest {
+}
+export interface OutboundMaterialListRequestParams {
+	kind?: string
+	segment?: string // a segment's own and the brand-wide ones
+}
+
+export interface OutboundMaterialRequest {
+	kind: string
+	title: string
+	summary: string
+	details?: string
+	url?: string
+	segment?: string // id or name; empty: brand-wide
+}
+
 export interface OutboundOverview {
 	enabled: boolean
 	paused?: string
@@ -1890,7 +1993,34 @@ export interface OutboundOverview {
 	drafts_waiting: number
 	reply_rate: number // replied over reached across every campaign, percent
 	campaigns: Array<OutboundCampaignResults>
+	segments: Array<OutboundSegment> // each segment's people and its campaigns' results
+	pace: number // new prospects a day (the pace dial); 0: no limit
+	pace_reached: boolean // today's are reached: first emails wait for tomorrow
 	next: Array<string>
+}
+
+export interface OutboundPace {
+	pool_id: string
+	current: OutboundPaceEstimate
+	new_today: number
+	steps_per_campaign: number
+	mailbox_daily_limit: number
+	mailboxes_active: number
+	capacity: number // emails a day the active mailboxes may send now; 0: no limit
+	presets: Array<OutboundPaceEstimate>
+	cost: string
+}
+
+export interface OutboundPaceEstimate {
+	pace: string // light, typical, growth, unlimited or custom
+	daily_new_prospects: number
+	sends_per_day: number // the most a day once follow-ups catch up
+	mailboxes_needed: number // at the pool's daily limit per mailbox; 0: either has none
+}
+
+export interface OutboundPaceRequest {
+	pace?: string // light, typical, growth or unlimited
+	daily_new_prospects?: number // instead of a preset; 0: no limit
 }
 
 export interface OutboundPauseRequest {
@@ -1906,6 +2036,15 @@ export interface OutboundPreview {
 	subject: string
 	body: string
 	sends_after?: string
+}
+
+export interface OutboundProfile {
+	website?: string
+	sells?: string // what the business sells
+	audience?: string // who buys it
+	proof?: string // customers, results, numbers
+	voice?: string // how its emails sound
+	updated_at?: string
 }
 
 export interface OutboundProspectInfo {
@@ -1932,6 +2071,12 @@ export interface OutboundProspectInput {
 	niche?: string
 	recent_video?: string
 	personal_line?: string
+	company?: string
+	title?: string
+	country?: string
+	region?: string
+	industry?: string
+	company_size?: string // a head count or a range: 11-50
 	email_source: string
 	fields?: { [key: string]: string }
 }
@@ -1961,6 +2106,7 @@ export interface OutboundReplyInfo {
 	contact_id: string
 	sequence_id: string
 	campaign_name: string // the campaign it answers
+	segment_name: string // that campaign's segment
 	from_email: string
 	subject: string
 	body: string
@@ -1981,6 +2127,48 @@ export interface OutboundReviewRequest {
 export interface OutboundReviewResponse {
 	done: number
 	refused?: { [key: string]: string }
+}
+
+export interface OutboundSegment {
+	id: string
+	name: string
+	description: string
+	filters: OutboundSegmentFilters
+	prospects: { [key: string]: number } // by status
+	results: OutboundSegmentResults
+}
+
+export interface OutboundSegmentAddRequest {
+	prospect_ids: Array<string>
+}
+export interface OutboundSegmentAddRequestParams {
+}
+
+export interface OutboundSegmentFilters {
+	countries?: Array<string>
+	regions?: Array<string>
+	industries?: Array<string>
+	company_sizes?: Array<string> // 1-10, 11-50, 51-200, 201-1000, 1000+
+	title_keywords?: Array<string>
+	fields?: { [key: string]: string } // custom field values
+}
+
+export interface OutboundSegmentList {
+	segments: Array<OutboundSegment>
+}
+
+export interface OutboundSegmentRequest {
+	name: string
+	description?: string
+	filters?: OutboundSegmentFilters
+}
+
+export interface OutboundSegmentResults {
+	campaigns: number
+	reached: number
+	replied: number
+	reply_rate: number
+	interested: number
 }
 
 export interface OutboundSettingsRequest {
@@ -2663,6 +2851,25 @@ export interface UpdateOrgRequest {
 	app_url?: string
 }
 export interface UpdateOrgRequestParams {
+}
+
+export interface UpdateOutboundMaterialRequest {
+	kind?: string // each field left empty is kept
+	title?: string
+	summary?: string
+	details?: string
+	url?: string
+	segment?: string // id or name; any: brand-wide
+}
+export interface UpdateOutboundMaterialRequestParams {
+}
+
+export interface UpdateOutboundSegmentRequest {
+	name?: string // empty: kept
+	description?: string // empty: kept
+	filters?: OutboundSegmentFilters // left out: kept
+}
+export interface UpdateOutboundSegmentRequestParams {
 }
 
 export interface UpdateSendingPathwayRequest {

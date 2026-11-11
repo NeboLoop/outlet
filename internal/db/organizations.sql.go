@@ -85,7 +85,7 @@ INSERT INTO organizations (
     ?5, ?6, ?7,
     datetime('now'), datetime('now')
 )
-RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc
+RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc
 `
 
 type CreateOrganizationParams struct {
@@ -129,6 +129,9 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 		&i.OutboundOptOutLine,
 		&i.OutboundTimezone,
 		&i.DnsTokenEnc,
+		&i.DncCustomerDomains,
+		&i.DncCheckUrl,
+		&i.DncCheckSecretEnc,
 	)
 	return i, err
 }
@@ -231,7 +234,7 @@ func (q *Queries) GetOrgUserRole(ctx context.Context, arg GetOrgUserRoleParams) 
 }
 
 const getOrganizationByAPIKey = `-- name: GetOrganizationByAPIKey :one
-SELECT id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc FROM organizations
+SELECT id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc FROM organizations
 WHERE api_key = ?1
 LIMIT 1
 `
@@ -259,12 +262,15 @@ func (q *Queries) GetOrganizationByAPIKey(ctx context.Context, apiKey string) (O
 		&i.OutboundOptOutLine,
 		&i.OutboundTimezone,
 		&i.DnsTokenEnc,
+		&i.DncCustomerDomains,
+		&i.DncCheckUrl,
+		&i.DncCheckSecretEnc,
 	)
 	return i, err
 }
 
 const getOrganizationByID = `-- name: GetOrganizationByID :one
-SELECT id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc FROM organizations
+SELECT id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc FROM organizations
 WHERE id = ?1
 LIMIT 1
 `
@@ -292,12 +298,15 @@ func (q *Queries) GetOrganizationByID(ctx context.Context, id string) (Organizat
 		&i.OutboundOptOutLine,
 		&i.OutboundTimezone,
 		&i.DnsTokenEnc,
+		&i.DncCustomerDomains,
+		&i.DncCheckUrl,
+		&i.DncCheckSecretEnc,
 	)
 	return i, err
 }
 
 const getOrganizationBySlug = `-- name: GetOrganizationBySlug :one
-SELECT id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc FROM organizations
+SELECT id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc FROM organizations
 WHERE slug = ?1
 LIMIT 1
 `
@@ -325,6 +334,9 @@ func (q *Queries) GetOrganizationBySlug(ctx context.Context, slug string) (Organ
 		&i.OutboundOptOutLine,
 		&i.OutboundTimezone,
 		&i.DnsTokenEnc,
+		&i.DncCustomerDomains,
+		&i.DncCheckUrl,
+		&i.DncCheckSecretEnc,
 	)
 	return i, err
 }
@@ -399,7 +411,7 @@ func (q *Queries) GetOrganizationUsers(ctx context.Context, orgID string) ([]Get
 }
 
 const getUserOrganizations = `-- name: GetUserOrganizations :many
-SELECT o.id, o.name, o.slug, o.api_key, o.api_key_created_at, o.from_name, o.from_email, o.reply_to, o.max_contacts, o.settings, o.app_url, o.created_at, o.updated_at, o.outbound_enabled, o.outbound_paused_reason, o.mailing_address, o.outbound_opt_out_line, o.outbound_timezone, o.dns_token_enc, ou.role as user_role
+SELECT o.id, o.name, o.slug, o.api_key, o.api_key_created_at, o.from_name, o.from_email, o.reply_to, o.max_contacts, o.settings, o.app_url, o.created_at, o.updated_at, o.outbound_enabled, o.outbound_paused_reason, o.mailing_address, o.outbound_opt_out_line, o.outbound_timezone, o.dns_token_enc, o.dnc_customer_domains, o.dnc_check_url, o.dnc_check_secret_enc, ou.role as user_role
 FROM organizations o
 JOIN org_users ou ON o.id = ou.org_id
 WHERE ou.user_id = ?1
@@ -426,6 +438,9 @@ type GetUserOrganizationsRow struct {
 	OutboundOptOutLine   string         `json:"outbound_opt_out_line"`
 	OutboundTimezone     string         `json:"outbound_timezone"`
 	DnsTokenEnc          []byte         `json:"dns_token_enc"`
+	DncCustomerDomains   int64          `json:"dnc_customer_domains"`
+	DncCheckUrl          string         `json:"dnc_check_url"`
+	DncCheckSecretEnc    []byte         `json:"dnc_check_secret_enc"`
 	UserRole             sql.NullString `json:"user_role"`
 }
 
@@ -458,6 +473,9 @@ func (q *Queries) GetUserOrganizations(ctx context.Context, userID string) ([]Ge
 			&i.OutboundOptOutLine,
 			&i.OutboundTimezone,
 			&i.DnsTokenEnc,
+			&i.DncCustomerDomains,
+			&i.DncCheckUrl,
+			&i.DncCheckSecretEnc,
 			&i.UserRole,
 		); err != nil {
 			return nil, err
@@ -474,7 +492,7 @@ func (q *Queries) GetUserOrganizations(ctx context.Context, userID string) ([]Ge
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc FROM organizations
+SELECT id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc FROM organizations
 ORDER BY created_at DESC
 `
 
@@ -507,6 +525,9 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 			&i.OutboundOptOutLine,
 			&i.OutboundTimezone,
 			&i.DnsTokenEnc,
+			&i.DncCustomerDomains,
+			&i.DncCheckUrl,
+			&i.DncCheckSecretEnc,
 		); err != nil {
 			return nil, err
 		}
@@ -575,7 +596,7 @@ SET
     api_key_created_at = datetime('now'),
     updated_at = datetime('now')
 WHERE id = ?2
-RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc
+RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc
 `
 
 type RegenerateAPIKeyParams struct {
@@ -606,6 +627,9 @@ func (q *Queries) RegenerateAPIKey(ctx context.Context, arg RegenerateAPIKeyPara
 		&i.OutboundOptOutLine,
 		&i.OutboundTimezone,
 		&i.DnsTokenEnc,
+		&i.DncCustomerDomains,
+		&i.DncCheckUrl,
+		&i.DncCheckSecretEnc,
 	)
 	return i, err
 }
@@ -629,7 +653,7 @@ const updateOrgAppUrl = `-- name: UpdateOrgAppUrl :one
 UPDATE organizations
 SET app_url = ?1, updated_at = datetime('now')
 WHERE id = ?2
-RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc
+RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc
 `
 
 type UpdateOrgAppUrlParams struct {
@@ -660,6 +684,9 @@ func (q *Queries) UpdateOrgAppUrl(ctx context.Context, arg UpdateOrgAppUrlParams
 		&i.OutboundOptOutLine,
 		&i.OutboundTimezone,
 		&i.DnsTokenEnc,
+		&i.DncCustomerDomains,
+		&i.DncCheckUrl,
+		&i.DncCheckSecretEnc,
 	)
 	return i, err
 }
@@ -672,7 +699,7 @@ SET
     reply_to = COALESCE(NULLIF(?3, ''), reply_to),
     updated_at = datetime('now')
 WHERE id = ?4
-RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc
+RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc
 `
 
 type UpdateOrgEmailSettingsParams struct {
@@ -710,6 +737,9 @@ func (q *Queries) UpdateOrgEmailSettings(ctx context.Context, arg UpdateOrgEmail
 		&i.OutboundOptOutLine,
 		&i.OutboundTimezone,
 		&i.DnsTokenEnc,
+		&i.DncCustomerDomains,
+		&i.DncCheckUrl,
+		&i.DncCheckSecretEnc,
 	)
 	return i, err
 }
@@ -720,7 +750,7 @@ SET
     max_contacts = ?1,
     updated_at = datetime('now')
 WHERE id = ?2
-RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc
+RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc
 `
 
 type UpdateOrgMaxContactsParams struct {
@@ -751,6 +781,9 @@ func (q *Queries) UpdateOrgMaxContacts(ctx context.Context, arg UpdateOrgMaxCont
 		&i.OutboundOptOutLine,
 		&i.OutboundTimezone,
 		&i.DnsTokenEnc,
+		&i.DncCustomerDomains,
+		&i.DncCheckUrl,
+		&i.DncCheckSecretEnc,
 	)
 	return i, err
 }
@@ -764,7 +797,7 @@ SET
     app_url = COALESCE(NULLIF(?4, ''), app_url),
     updated_at = datetime('now')
 WHERE id = ?5
-RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc
+RETURNING id, name, slug, api_key, api_key_created_at, from_name, from_email, reply_to, max_contacts, settings, app_url, created_at, updated_at, outbound_enabled, outbound_paused_reason, mailing_address, outbound_opt_out_line, outbound_timezone, dns_token_enc, dnc_customer_domains, dnc_check_url, dnc_check_secret_enc
 `
 
 type UpdateOrganizationParams struct {
@@ -804,6 +837,9 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 		&i.OutboundOptOutLine,
 		&i.OutboundTimezone,
 		&i.DnsTokenEnc,
+		&i.DncCustomerDomains,
+		&i.DncCheckUrl,
+		&i.DncCheckSecretEnc,
 	)
 	return i, err
 }

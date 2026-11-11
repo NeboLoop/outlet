@@ -5,6 +5,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/outbound"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -30,13 +31,14 @@ func (l *AnswerOutboundReplyLogic) AnswerOutboundReply(req *types.OutboundAnswer
 	if err != nil {
 		return nil, err
 	}
+	req.AuthoredBy = outbound.AuthorPerson // the app is a person
 	return AnswerOutboundReply(l.ctx, l.svcCtx, org, req)
 }
 
 // AnswerOutboundReply runs for a brand already resolved: the admin route's signed-in
-// person, or the API key of /sdk/v1/outbound.
+// person, or the API key of /sdk/v1/outbound, which says who wrote the answer.
 func AnswerOutboundReply(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundAnswerRequest) (*types.Response, error) {
-	if _, err := svcCtx.Outbound.Answer(ctx, org, req.Id, req.Body); err != nil {
+	if _, err := svcCtx.Outbound.Answer(ctx, org, req.Id, req.Body, req.AuthoredBy); err != nil {
 		return nil, apiErr(err)
 	}
 	return ok("Queued. It goes from the same mailbox, in the same thread, within its daily limit."), nil

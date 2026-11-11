@@ -24,7 +24,17 @@ type SequenceService struct {
 	sender  *Service
 	baseURL string
 	clock   func() time.Time // time.Now; outreach tests move it
+	gate    OutreachGate     // checked before each outreach step is queued
 }
+
+// OutreachGate says why a person must not get outreach now ("" when they
+// may): the do-not-contact check outbound runs. stop is what the person's
+// sequence records as its stopped reason.
+type OutreachGate func(ctx context.Context, org db.Organization, contact db.Contact) (stop string)
+
+// SetOutreachGate sets the check every outreach step passes before it is
+// queued, first emails and follow-ups alike.
+func (s *SequenceService) SetOutreachGate(gate OutreachGate) { s.gate = gate }
 
 func (s *SequenceService) now() time.Time {
 	if s.clock != nil {

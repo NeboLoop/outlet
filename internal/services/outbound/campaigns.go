@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,12 +27,16 @@ type StepInput struct {
 	Body      string `json:"body"`
 }
 
-// CampaignInput creates a campaign and enrolls its prospects in one go.
+// CampaignInput creates a campaign and enrolls its prospects in one go:
+// the prospects named, or with none named, the segment's (List) enrollable
+// prospects, up to 100.
 type CampaignInput struct {
 	Name            string      `json:"name"`
-	List            string      `json:"list,omitempty"` // the outreach list (default Outreach)
+	List            string      `json:"list,omitempty"` // the segment (an outreach list; default Outreach)
 	Steps           []StepInput `json:"steps"`
-	ProspectIDs     []string    `json:"prospect_ids"`
+	ProspectIDs     []string    `json:"prospect_ids,omitempty"`
+	MaterialIDs     []string    `json:"material_ids,omitempty"`  // the materials it was written from, pinned to it
+	AuthoredBy      string      `json:"authored_by,omitempty"`   // ai or person (default person); MCP calls are ai
 	ApprovalMode    string      `json:"approval_mode,omitempty"` // every (default), first, automatic
 	TrackOpens      bool        `json:"track_opens,omitempty"`
 	TrackClicks     bool        `json:"track_clicks,omitempty"`
@@ -52,13 +57,36 @@ type Preview struct {
 }
 
 // Draft is a saved outreach email waiting for approval: its id (which
-// approve, skip and edit take), and the campaign and step it belongs to.
+// approve, skip and edit take), the campaign and step it belongs to, and who
+// wrote it (ai, ai_edited or person), so the reviewer knows what to check.
 type Draft struct {
 	MessageID    string `json:"message_id"`
 	CampaignID   string `json:"campaign_id"`
 	CampaignName string `json:"campaign_name"`
 	Step         int64  `json:"step"`
+	AuthoredBy   string `json:"authored_by"`
 	Preview
+}
+
+// Who wrote an outreach email.
+const (
+	AuthorAI     = "ai"        // an AI wrote it
+	AuthorEdited = "ai_edited" // an AI wrote it and a person edited it
+	AuthorPerson = "person"    // a person wrote it
+)
+
+// edited is who wrote an email after an edit by editor: a person's edit of
+// an AI's email makes it ai_edited; an AI's edit makes it the AI's.
+func edited(was, editor string) string {
+	switch {
+	case editor == AuthorAI:
+		return AuthorAI
+	case was == AuthorAI:
+		return AuthorEdited
+	case was == "":
+		return AuthorPerson
+	}
+	return was
 }
 
 // CampaignResult reports what draft_outreach did: the saved drafts, or with
@@ -68,7 +96,8 @@ type CampaignResult struct {
 	Enrolled   int               `json:"enrolled"`
 	Drafts     []Draft           `json:"drafts,omitempty"`
 	Previews   []Preview         `json:"previews,omitempty"`
-	Skipped    map[string]string `json:"skipped,omitempty"` // prospect id → why
+	Skipped    map[string]string `json:"skipped,omitempty"`   // prospect id → why
+	Materials  []Material        `json:"materials,omitempty"` // pinned to the campaign
 	Next       string            `json:"next"`
 }
 
@@ -95,8 +124,18 @@ func (in *CampaignInput) check() error {
 			return refuse("The first email may have at most one link; cold email with several links lands in spam.")
 		}
 	}
-	if len(in.ProspectIDs) == 0 || len(in.ProspectIDs) > maxBatch {
-		return refuse("Pick 1 to %d prospects. Add prospects first if there are none.", maxBatch)
+	if len(in.ProspectIDs) > maxBatch {
+		return refuse("Pick 1 to %d prospects.", maxBatch)
+	}
+	if len(in.ProspectIDs) == 0 && strings.TrimSpace(in.List) == "" {
+		return refuse("Pick prospect_ids, or name a segment (list) to enroll its prospects. Add prospects first if there are none.")
+	}
+	switch in.AuthoredBy {
+	case "":
+		in.AuthoredBy = AuthorPerson
+	case AuthorAI, AuthorPerson:
+	default:
+		return refuse("authored_by is ai or person.")
 	}
 	switch in.ApprovalMode {
 	case "":
@@ -148,15 +187,38 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 			}
 		}
 	}
-	list, err := s.outreachList(ctx, org, in.List)
+	var list db.EmailList
+	remaining := int64(0)
+	if len(in.ProspectIDs) == 0 {
+		// The segment's prospects: it must exist, and the first 100 free to
+		// enroll are taken.
+		if list, err = s.segment(ctx, org, in.List); err != nil {
+			return CampaignResult{}, err
+		}
+		page, err := s.ListProspects(ctx, org, ProspectQuery{ListID: strconv.FormatInt(list.ID, 10), Enrollable: true, Limit: maxBatch})
+		if err != nil {
+			return CampaignResult{}, err
+		}
+		for _, p := range page.Prospects {
+			in.ProspectIDs = append(in.ProspectIDs, p.ID)
+		}
+		remaining = page.Total - int64(len(page.Prospects))
+		if len(in.ProspectIDs) == 0 {
+			return CampaignResult{}, refuse("Segment %q has no prospect free to enroll: add prospects to it, or wait for their addresses to verify.", list.Name)
+		}
+	} else if list, err = s.outreachList(ctx, org, in.List); err != nil {
+		return CampaignResult{}, err
+	}
+	materials, err := s.pinnable(ctx, org, in.MaterialIDs)
 	if err != nil {
 		return CampaignResult{}, err
 	}
 
-	res := CampaignResult{Skipped: map[string]string{}}
+	res := CampaignResult{Skipped: map[string]string{}, Materials: materials}
 	var ready []db.Contact
+	dnc := s.newDNC(ctx, org, true)
 	for _, id := range in.ProspectIDs {
-		c, reason := s.enrollable(ctx, org, list, id)
+		c, reason := s.enrollable(ctx, org, list, id, dnc)
 		if reason != "" {
 			res.Skipped[id] = reason
 			continue
@@ -184,6 +246,9 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 		}
 		res.Enrolled = len(res.Previews)
 		res.Next = "Preview only: nothing is saved. Create the campaign (without dry_run) to save it and draft its emails."
+		if len(res.Skipped) == 0 {
+			res.Skipped = nil
+		}
 		return res, nil
 	}
 	if len(ready) == 0 {
@@ -204,9 +269,15 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 	if err := s.db.SetOutreachSequenceOptions(ctx, db.SetOutreachSequenceOptionsParams{
 		ApprovalMode: in.ApprovalMode, WindowStartHour: int64(in.WindowStartHour), WindowEndHour: int64(in.WindowEndHour),
 		TrackOpens: boolInt(in.TrackOpens), TrackClicks: boolInt(in.TrackClicks),
-		SendTimezone: sql.NullString{String: org.OutboundTimezone, Valid: true}, ID: created.ID, OrgID: sql.NullString{String: org.ID, Valid: true},
+		SendTimezone: sql.NullString{String: org.OutboundTimezone, Valid: true}, AuthoredBy: in.AuthoredBy,
+		ID: created.ID, OrgID: sql.NullString{String: org.ID, Valid: true},
 	}); err != nil {
 		return res, err
+	}
+	for _, m := range materials {
+		if err := s.db.PinCampaignMaterial(ctx, db.PinCampaignMaterialParams{SequenceID: created.ID, MaterialID: m.ID}); err != nil {
+			return res, err
+		}
 	}
 	for i, st := range in.Steps {
 		if _, err := s.db.CreateTemplate(ctx, db.CreateTemplateParams{
@@ -231,7 +302,7 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 	}
 	if rows, err := s.db.ListOutreachEmailsForSequence(ctx, sql.NullString{String: created.ID, Valid: true}); err == nil {
 		for _, r := range rows {
-			res.Drafts = append(res.Drafts, Draft{MessageID: r.ID, CampaignID: created.ID, CampaignName: created.Name, Step: r.Position,
+			res.Drafts = append(res.Drafts, Draft{MessageID: r.ID, CampaignID: created.ID, CampaignName: created.Name, Step: r.Position, AuthoredBy: r.AuthoredBy,
 				Preview: Preview{ProspectID: r.ContactID.String, To: r.ToEmail, From: r.FromEmail, Subject: r.Subject.String, Body: r.Body.String, SendsAfter: r.ScheduledFor}})
 		}
 	}
@@ -240,14 +311,31 @@ func (s *Service) DraftOutreach(ctx context.Context, org db.Organization, in Cam
 	} else {
 		res.Next = fmt.Sprintf("%d first emails wait for approval with the drafts.", res.Enrolled)
 	}
+	if remaining > 0 {
+		res.Next += fmt.Sprintf(" %d more prospects in %s are free to enroll: create another campaign for them.", remaining, list.Name)
+	}
 	if len(res.Skipped) == 0 {
 		res.Skipped = nil
 	}
 	return res, nil
 }
 
-// enrollable says why a contact can't be enrolled from a list, or "".
-func (s *Service) enrollable(ctx context.Context, org db.Organization, list db.EmailList, contactID string) (db.Contact, string) {
+// pinnable reads the materials a campaign pins: each must be the brand's.
+func (s *Service) pinnable(ctx context.Context, org db.Organization, ids []string) ([]Material, error) {
+	var out []Material
+	for _, id := range ids {
+		m, err := s.db.GetBrandMaterial(ctx, db.GetBrandMaterialParams{ID: id, OrgID: org.ID})
+		if err != nil {
+			return nil, refuse("No material %q in this brand. targeting(resource: material, action: list) shows them.", id)
+		}
+		out = append(out, s.materialOf(ctx, m))
+	}
+	return out, nil
+}
+
+// enrollable says why a contact can't be enrolled from a list, or "": the
+// list status, suppression, then the do-not-contact check.
+func (s *Service) enrollable(ctx context.Context, org db.Organization, list db.EmailList, contactID string, dnc *dncCheck) (db.Contact, string) {
 	c, err := s.db.GetContactByID(ctx, contactID)
 	if err != nil || c.OrgID.String != org.ID {
 		return c, "no such prospect in this brand"
@@ -263,6 +351,9 @@ func (s *Service) enrollable(ctx context.Context, org db.Organization, list db.E
 	}
 	if s.suppressed(ctx, org.ID, c.Email) {
 		return c, "suppressed"
+	}
+	if ex, skip := dnc.check(ctx, c.Email); skip {
+		return c, ex.Text()
 	}
 	return c, ""
 }

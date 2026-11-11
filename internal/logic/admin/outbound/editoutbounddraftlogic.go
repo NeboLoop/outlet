@@ -5,6 +5,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/outbound"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -30,13 +31,14 @@ func (l *EditOutboundDraftLogic) EditOutboundDraft(req *types.OutboundEditDraftR
 	if err != nil {
 		return nil, err
 	}
+	req.AuthoredBy = outbound.AuthorPerson // the app is a person
 	return EditOutboundDraft(l.ctx, l.svcCtx, org, req)
 }
 
 // EditOutboundDraft runs for a brand already resolved: the admin route's signed-in
 // person, or the API key of /sdk/v1/outbound.
 func EditOutboundDraft(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundEditDraftRequest) (*types.Response, error) {
-	if err := svcCtx.Outbound.EditDraft(ctx, org, req.Id, req.Subject, req.Body); err != nil {
+	if err := svcCtx.Outbound.EditDraft(ctx, org, req.Id, req.Subject, req.Body, req.AuthoredBy); err != nil {
 		return nil, apiErr(err)
 	}
 	return ok("Saved."), nil

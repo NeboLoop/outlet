@@ -57,6 +57,12 @@ func isFreeEmail(domain string) bool {
 	return freeEmailDomains[domain]
 }
 
+// IsPersonalMailbox reports whether domain gives mailboxes to the public (a
+// free provider or an ISP), so it names no one company.
+func IsPersonalMailbox(domain string) bool {
+	return freeEmailDomains[domain] || ispDomains[domain]
+}
+
 func toSet(items ...string) map[string]bool {
 	m := make(map[string]bool, len(items))
 	for _, s := range items {

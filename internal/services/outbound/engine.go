@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/events"
 	"github.com/outlet-sh/outlet/internal/services/email"
 )
 
@@ -72,8 +73,37 @@ func (s *Service) sendOne(ctx context.Context, mb db.Mailbox) error {
 			return s.db.SetOutreachSchedule(ctx, db.SetOutreachScheduleParams{ScheduledFor: ts(next), ID: m.ID})
 		}
 	}
+	// A campaign email is checked against do-not-contact once more as it
+	// goes: a follow-up is queued when the step before it sends, days before
+	// it is due, and the person may have become a customer since.
+	// An outside check that doesn't answer holds the email, never stops it.
+	if m.TemplateID.Valid {
+		if c, err := s.db.GetContactByID(ctx, m.ContactID.String); err == nil {
+			if ex, skip := s.DoNotContact(ctx, org, c.Email); skip && ex.Retry {
+				return s.db.SetOutreachSchedule(ctx, db.SetOutreachScheduleParams{ScheduledFor: ts(now.Add(15 * time.Minute)), ID: m.ID})
+			} else if skip {
+				s.stopForGate(ctx, c.ID, m.ID, org.ID, ex.stop())
+				return nil
+			}
+		}
+	}
 	if n, err := s.db.ClaimOutreachEmail(ctx, db.ClaimOutreachEmailParams{ClaimedAt: sql.NullString{String: ts(now), Valid: true}, ID: m.ID}); err != nil || n == 0 {
 		return err
+	}
+	// A first email counts against the pace dial; at the day's limit it
+	// waits for the next day's window.
+	release := func() {}
+	if m.TemplateID.Valid && m.Position == 1 {
+		p, err := s.pool(ctx, mb)
+		if err != nil {
+			return s.db.ReleaseOutreachEmail(ctx, db.ReleaseOutreachEmailParams{ErrorMessage: sql.NullString{String: err.Error(), Valid: true}, ScheduledFor: ts(now.Add(15 * time.Minute)), ID: m.ID})
+		}
+		var ok bool
+		if release, ok, err = s.reserveNewProspect(ctx, org, p); err != nil {
+			return s.db.ReleaseOutreachEmail(ctx, db.ReleaseOutreachEmailParams{ErrorMessage: sql.NullString{String: err.Error(), Valid: true}, ScheduledFor: ts(now.Add(15 * time.Minute)), ID: m.ID})
+		} else if !ok {
+			return s.paced(ctx, org, p, seq, m)
+		}
 	}
 
 	text, html := m.Body.String, ""
@@ -91,6 +121,9 @@ func (s *Service) sendOne(ctx context.Context, mb db.Mailbox) error {
 		MessageID: m.MessageID.String, InReplyTo: m.InReplyTo.String, References: m.Refs.String,
 		ListUnsubscribe: "mailto:" + mb.Email + "?subject=unsubscribe",
 	})
+	if sendErr != nil {
+		release() // the first email didn't go: its place under the pace dial is free again
+	}
 	switch {
 	case errors.Is(sendErr, email.ErrOverLimit):
 		// Not the mailbox's fault: the email waits until the limit lifts.
@@ -117,6 +150,18 @@ func (s *Service) sendOne(ctx context.Context, mb db.Mailbox) error {
 		s.seq.AdvanceAfterSend(ctx, m.ContactID.String, m.TemplateID.String)
 	}
 	return nil
+}
+
+// stopForGate ends a person's campaigns for a do-not-contact reason and
+// skips the email that was about to go. Answers to their replies stay.
+func (s *Service) stopForGate(ctx context.Context, contactID, messageID, orgID, reason string) {
+	states, err := s.db.ListActiveOutreachStatesForContact(ctx, sql.NullString{String: contactID, Valid: true})
+	if err == nil {
+		for _, st := range states {
+			_ = s.db.StopSequenceState(ctx, db.StopSequenceStateParams{StoppedReason: reason, ID: st.ID})
+		}
+	}
+	_, _ = s.db.SkipOutreachEmail(ctx, db.SkipOutreachEmailParams{ID: messageID, OrgID: sql.NullString{String: orgID, Valid: true}})
 }
 
 // contactTimezone is the person's time zone field on the sequence's list.
@@ -146,7 +191,10 @@ func (s *Service) checkHealth(ctx context.Context, mb db.Mailbox) {
 		return
 	}
 	if reason := email.HealthPause(p, h); reason != "" {
-		_ = s.db.SetMailboxStatus(ctx, db.SetMailboxStatusParams{Status: "paused", PausedReason: "Health: " + reason, ID: mb.ID})
+		if err := s.db.SetMailboxStatus(ctx, db.SetMailboxStatusParams{Status: "paused", PausedReason: "Health: " + reason, ID: mb.ID}); err == nil && mb.Status == "active" {
+			s.db.PublishOutreachPaused(events.OutreachPausedEvent{OrgID: mb.OrgID, Scope: "mailbox", MailboxID: mb.ID, Mailbox: mb.Email,
+				Reason: "paused to protect its reputation: " + reason, Timestamp: s.now().UTC()})
+		}
 	}
 }
 

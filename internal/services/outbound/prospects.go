@@ -26,25 +26,32 @@ import (
 // was published for business; it is required, because outreach only writes
 // to addresses people put out to be contacted.
 type ProspectInput struct {
-	Email        string            `json:"email"`
-	FirstName    string            `json:"first_name,omitempty"`
-	Name         string            `json:"name,omitempty"`
-	Timezone     string            `json:"timezone,omitempty"`
-	Platform     string            `json:"platform,omitempty"` // youtube, instagram, tiktok, ...
-	ChannelURL   string            `json:"channel_url,omitempty"`
-	AudienceSize int64             `json:"audience_size,omitempty"`
-	Niche        string            `json:"niche,omitempty"`
-	RecentVideo  string            `json:"recent_video,omitempty"`
-	PersonalLine string            `json:"personal_line,omitempty"`
-	EmailSource  string            `json:"email_source"`
-	Fields       map[string]string `json:"fields,omitempty"`
+	Email        string `json:"email"`
+	FirstName    string `json:"first_name,omitempty"`
+	Name         string `json:"name,omitempty"`
+	Timezone     string `json:"timezone,omitempty"`
+	Platform     string `json:"platform,omitempty"` // youtube, instagram, tiktok, ...
+	ChannelURL   string `json:"channel_url,omitempty"`
+	AudienceSize int64  `json:"audience_size,omitempty"`
+	Niche        string `json:"niche,omitempty"`
+	RecentVideo  string `json:"recent_video,omitempty"`
+	PersonalLine string `json:"personal_line,omitempty"`
+	// Company fields, for business outreach; segments filter on them.
+	Company     string            `json:"company,omitempty"`
+	Title       string            `json:"title,omitempty"`
+	Country     string            `json:"country,omitempty"`
+	Region      string            `json:"region,omitempty"`
+	Industry    string            `json:"industry,omitempty"`
+	CompanySize string            `json:"company_size,omitempty"` // a head count or a range: 11-50
+	EmailSource string            `json:"email_source"`
+	Fields      map[string]string `json:"fields,omitempty"`
 }
 
 // ProspectResult is the outcome for one person.
 type ProspectResult struct {
 	Email  string `json:"email"`
 	ID     string `json:"id,omitempty"` // the contact
-	Status string `json:"status"`       // added, held, duplicate, suppressed, refused
+	Status string `json:"status"`       // verifying, prospect, held, duplicate, suppressed, excluded (do not contact), refused
 	Reason string `json:"reason,omitempty"`
 }
 
@@ -54,7 +61,9 @@ const DefaultOutreachList = "Outreach"
 var fieldKeyRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
 
 // AddProspects imports a batch into an outreach list (made if missing):
-// it removes duplicates and checks suppression. Each address added waits as
+// it removes duplicates, checks suppression and the brand's do-not-contact
+// sources (all but the outside check, which runs before each email is
+// queued), and notes anyone outside the segment's filters. Each address added waits as
 // 'verifying' until VerifyProspects checks it (a check can take seconds, too
 // long to hold the request): it then becomes a prospect, or held if it
 // fails, and a held address is never sent to.
@@ -68,14 +77,15 @@ func (s *Service) AddProspects(ctx context.Context, org db.Organization, listNam
 	}
 	out := make([]ProspectResult, 0, len(inputs))
 	seen := map[string]bool{}
+	dnc := s.newDNC(ctx, org, false)
 	for _, in := range inputs {
-		res := s.addProspect(ctx, org, list, in, seen)
+		res := s.addProspect(ctx, org, list, in, seen, dnc)
 		out = append(out, res)
 	}
 	return out, nil
 }
 
-func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.EmailList, in ProspectInput, seen map[string]bool) ProspectResult {
+func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.EmailList, in ProspectInput, seen map[string]bool, dnc *dncCheck) ProspectResult {
 	address := normEmail(in.Email)
 	res := ProspectResult{Email: address}
 	switch {
@@ -92,6 +102,10 @@ func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.
 	seen[address] = true
 	if blocked, err := s.db.IsSendBlocked(ctx, db.IsSendBlockedParams{Email: address, OrgID: org.ID, Domain: domainOf(address)}); err != nil || blocked == 1 {
 		res.Status, res.Reason = "suppressed", "on the brand's suppression list, or bounced or complained before"
+		return res
+	}
+	if ex, skip := dnc.check(ctx, address); skip {
+		res.Status, res.Reason = "excluded", ex.Text()
 		return res
 	}
 	name := strings.TrimSpace(in.Name)
@@ -123,6 +137,8 @@ func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.
 	fields := map[string]string{
 		"platform": strings.ToLower(in.Platform), "channel_url": in.ChannelURL, "niche": in.Niche,
 		"recent_video": in.RecentVideo, "personal_line": in.PersonalLine, "timezone": in.Timezone,
+		"company": in.Company, "title": in.Title, "country": in.Country, "region": in.Region,
+		"industry": in.Industry, "company_size": in.CompanySize,
 	}
 	if in.AudienceSize > 0 {
 		fields["audience_size"] = fmt.Sprint(in.AudienceSize)
@@ -142,6 +158,9 @@ func (s *Service) addProspect(ctx context.Context, org db.Organization, list db.
 		}
 	}
 	res.Status, res.Reason = "verifying", "added; the address is being verified, and becomes a prospect when it passes"
+	if miss := filtersOf(list).mismatch(fields); miss != "" {
+		res.Reason += "; " + miss
+	}
 	return res
 }
 

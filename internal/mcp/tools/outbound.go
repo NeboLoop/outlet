@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -16,7 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// The outbound tools are shaped around the outreach job: eight tools, each a
+// The outbound tools are shaped around the outreach job: nine tools, each a
 // whole step in one call. Read, write and send are separate (scopes
 // outbound:read, outbound:write and outbound:send), so a client can look
 // freely and ask a person before anything goes out. The limits live in the
@@ -27,13 +28,19 @@ const outboundPrereq = "PREREQUISITE: select the brand first with brand(resource
 // outboundActions lists each outreach tool's actions; the gate has a rule for each.
 var outboundActions = map[string][]string{
 	"outreach_overview": {"get"},
-	"setup_sending":     {"settings", "dns_token", "add_domain", "check_domain", "add_mailboxes", "list", "set_limits", "mailbox_limit", "connections", "add_connection", "update_connection", "remove_connection", "move_domain", "service_inventory", "connect_domain", "quote", "buy", "sync", "delete_mailbox"},
+	"setup_sending":     {"settings", "dns_token", "add_domain", "check_domain", "add_mailboxes", "list", "set_limits", "mailbox_limit", "pace", "set_pace", "connections", "add_connection", "update_connection", "remove_connection", "move_domain", "service_inventory", "connect_domain", "quote", "buy", "sync", "delete_mailbox"},
 	"add_prospects":     {"add"},
-	"draft_outreach":    {"create"},
+	"draft_outreach":    {"brief", "create"},
 	"review_drafts":     {"list", "approve", "edit", "skip"},
-	"conversations":     {"list", "reply", "classify", "mark_partner"},
-	"pause":             {"pause", "resume"},
-	"explain":           {"get"},
+	"conversations":     {"list", "reply", "classify", "mark_partner", "export"},
+	"targeting": {
+		"profile.get", "profile.update",
+		"segment.list", "segment.get", "segment.create", "segment.update", "segment.add",
+		"material.list", "material.create", "material.update", "material.delete",
+		"do_not_contact.list", "do_not_contact.add", "do_not_contact.delete", "do_not_contact.check", "do_not_contact.settings",
+	},
+	"pause":   {"pause", "resume"},
+	"explain": {"get"},
 }
 
 // outboundErr turns the service's refusals into tool errors the caller can act on.
@@ -86,7 +93,7 @@ func overviewRun(ctx context.Context, t *mcpctx.ToolContext, in OverviewInput) (
 // ---- setup_sending ----------------------------------------------------------
 
 type SetupSendingInput struct {
-	Action         string                  `json:"action" jsonschema:"required,One of: settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync, delete_mailbox"`
+	Action         string                  `json:"action" jsonschema:"required,One of: settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, pace, set_pace, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync, delete_mailbox"`
 	MailingAddress string                  `json:"mailing_address,omitempty" jsonschema:"settings: the postal address every first email carries"`
 	OptOutLine     string                  `json:"opt_out_line,omitempty" jsonschema:"settings: the line that tells people how to stop the emails"`
 	Timezone       string                  `json:"timezone,omitempty" jsonschema:"settings: IANA time zone used when a prospect has none"`
@@ -105,6 +112,8 @@ type SetupSendingInput struct {
 	PoolID         string                  `json:"pool_id,omitempty" jsonschema:"set_limits: the mailbox pool to change; connections and add_connection: the pool (default: the pool carrying outreach)"`
 	Limits         *email.Limits           `json:"limits,omitempty" jsonschema:"set_limits: the pool's limits, all of them: daily_limit (per mailbox per day), warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate (0.03 is 3%), pause_min_bounces, pause_spam_blocks, pause_complaints. 0 turns one off"`
 	MailboxID      string                  `json:"mailbox_id,omitempty" jsonschema:"mailbox_limit: which mailbox"`
+	Pace           string                  `json:"pace,omitempty" jsonschema:"set_pace: light (25 new prospects a day), typical (50), growth (100) or unlimited"`
+	NewPerDay      *int64                  `json:"daily_new_prospects,omitempty" jsonschema:"set_pace: new prospects a day instead of a preset (0: no limit)"`
 	DailyLimit     *int64                  `json:"daily_limit,omitempty" jsonschema:"mailbox_limit: the mailbox's own daily limit, leave it out to use its connection's or pool's; add_connection and update_connection: the daily limit of the connection's mailboxes unless one has its own (leave it out for the pool's)"`
 	WarmupStart    *int64                  `json:"warmup_start,omitempty" jsonschema:"add_connection and update_connection: the warm-up's first-day allowance for the connection's mailboxes (leave it out for the pool's)"`
 	WarmupStep     *int64                  `json:"warmup_step,omitempty" jsonschema:"add_connection and update_connection: added to the allowance each day until the daily limit (leave it out for the pool's)"`
@@ -189,6 +198,14 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 			return nil, err
 		}
 		return listPools(ctx, t)
+	case "pace":
+		return o.Pace(ctx, brand)
+	case "set_pace":
+		p, err := o.SetPace(ctx, brand, in.Pace, in.NewPerDay)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"pace": p, "next": "First emails beyond the day's number wait for the next day's window; follow-ups go on. When the day's number is reached, webhooks get outreach.paused once."}, nil
 	case "mailbox_limit":
 		if in.MailboxID == "" {
 			return nil, mcpctx.NewValidationError("mailbox_id is required", "mailbox_id")
@@ -201,7 +218,7 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 	if out, handled, err := mailboxServiceRun(ctx, t, in); handled {
 		return out, err
 	}
-	return nil, mcpctx.NewValidationError("action must be settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync or delete_mailbox", "action")
+	return nil, mcpctx.NewValidationError("action must be settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, pace, set_pace, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync or delete_mailbox", "action")
 }
 
 // connectionLimits are a connection's limits from the input.
@@ -357,7 +374,7 @@ func listPools(ctx context.Context, t *mcpctx.ToolContext) (any, error) {
 
 type AddProspectsInput struct {
 	Action    string                   `json:"action" jsonschema:"required,add"`
-	List      string                   `json:"list,omitempty" jsonschema:"The outreach list to add them to (made if missing; default Outreach)"`
+	List      string                   `json:"list,omitempty" jsonschema:"The segment (an outreach list) to add them to, by name (made if missing; default Outreach)"`
 	Prospects []outbound.ProspectInput `json:"prospects" jsonschema:"required,Up to 100 people. email_source (where the address was published for business) is required for each"`
 }
 
@@ -376,12 +393,21 @@ func addProspectsRun(ctx context.Context, t *mcpctx.ToolContext, in AddProspects
 // ---- draft_outreach ---------------------------------------------------------
 
 type DraftOutreachInput struct {
-	Action   string                 `json:"action" jsonschema:"required,create"`
-	Campaign outbound.CampaignInput `json:"campaign" jsonschema:"required,name, steps (subject and body with {{first_name}}-style tags and {a|b} variants), prospect_ids, optional mailbox_ids, approval_mode, window hours, idempotency_key, dry_run"`
+	Action      string                 `json:"action" jsonschema:"required,brief or create"`
+	List        string                 `json:"list,omitempty" jsonschema:"brief: the segment to write for, by name or id (default Outreach)"`
+	MaterialIDs []string               `json:"material_ids,omitempty" jsonschema:"brief: only these materials (default: the segment's and the brand-wide ones)"`
+	Campaign    outbound.CampaignInput `json:"campaign,omitempty" jsonschema:"create: name, list (the segment), steps [{subject, body, delay_days}] with {{first_name}}-style tags and {a|b} variants, prospect_ids (leave out to enroll the segment's prospects, up to 100), material_ids (the materials it was written from), approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks, idempotency_key, dry_run"`
 }
 
 func draftOutreachRun(ctx context.Context, t *mcpctx.ToolContext, in DraftOutreachInput) (any, error) {
-	return t.Svc().Outbound.DraftOutreach(ctx, t.Brand(ctx), in.Campaign)
+	switch in.Action {
+	case "brief":
+		return t.Svc().Outbound.Brief(ctx, t.Brand(ctx), in.List, in.MaterialIDs)
+	case "create":
+		in.Campaign.AuthoredBy = outbound.AuthorAI // whatever calls MCP is an AI
+		return t.Svc().Outbound.DraftOutreach(ctx, t.Brand(ctx), in.Campaign)
+	}
+	return nil, mcpctx.NewValidationError("action must be brief or create", "action")
 }
 
 // ---- review_drafts ----------------------------------------------------------
@@ -404,7 +430,7 @@ func reviewDraftsRun(ctx context.Context, t *mcpctx.ToolContext, in ReviewDrafts
 	case "approve", "skip":
 		return o.Review(ctx, brand, in.Action, in.IDs)
 	case "edit":
-		if err := o.EditDraft(ctx, brand, in.ID, in.Subject, in.Body); err != nil {
+		if err := o.EditDraft(ctx, brand, in.ID, in.Subject, in.Body, outbound.AuthorAI); err != nil {
 			return nil, err
 		}
 		return map[string]string{"result": "edited"}, nil
@@ -415,12 +441,14 @@ func reviewDraftsRun(ctx context.Context, t *mcpctx.ToolContext, in ReviewDrafts
 // ---- conversations ----------------------------------------------------------
 
 type ConversationsInput struct {
-	Action         string `json:"action" jsonschema:"required,One of: list, reply, classify, mark_partner"`
+	Action         string `json:"action" jsonschema:"required,One of: list, reply, classify, mark_partner, export"`
 	Handled        bool   `json:"handled,omitempty" jsonschema:"list: true lists replies already dealt with"`
-	Limit          int    `json:"limit,omitempty" jsonschema:"list: how many (default 25)"`
+	Limit          int    `json:"limit,omitempty" jsonschema:"list: how many (default 25); export: rows (default 500, max 5000)"`
+	CampaignID     string `json:"campaign_id,omitempty" jsonschema:"export: one campaign's leads (default: every campaign)"`
+	Cursor         string `json:"cursor,omitempty" jsonschema:"export: the next_cursor of the last export, to continue it"`
 	ReplyID        string `json:"reply_id,omitempty" jsonschema:"reply or classify: which reply"`
 	Body           string `json:"body,omitempty" jsonschema:"reply: what to write back (same mailbox, same thread)"`
-	Classification string `json:"classification,omitempty" jsonschema:"classify: interested, not_interested, question, out_of_office, wrong_person, unsubscribe or complaint"`
+	Classification string `json:"classification,omitempty" jsonschema:"classify: interested, not_interested, question, out_of_office, wrong_person, unsubscribe or complaint; list and export: only replies of this kind (interested is a hot lead)"`
 	ProspectID     string `json:"prospect_id,omitempty" jsonschema:"mark_partner: the creator who said yes"`
 }
 
@@ -428,10 +456,26 @@ func conversationsRun(ctx context.Context, t *mcpctx.ToolContext, in Conversatio
 	o, brand := t.Svc().Outbound, t.Brand(ctx)
 	switch in.Action {
 	case "list":
-		r, err := o.ListReplies(ctx, brand, in.Handled, in.Limit)
+		r, err := o.ListReplies(ctx, brand, in.Handled, in.Classification, in.Limit)
 		return map[string]any{"replies": r}, err
+	case "export":
+		limit := in.Limit
+		if limit <= 0 {
+			limit = 500
+		}
+		limit = min(limit, 5000)
+		var buf bytes.Buffer
+		rows, next, err := o.WriteLeads(ctx, brand, &buf, outbound.LeadQuery{CampaignID: in.CampaignID, Classification: in.Classification, Limit: limit, After: in.Cursor})
+		if err != nil {
+			return nil, err
+		}
+		out := map[string]any{"rows": rows, "csv": buf.String()}
+		if next != "" {
+			out["next_cursor"] = next
+		}
+		return out, nil
 	case "reply":
-		id, err := o.Answer(ctx, brand, in.ReplyID, in.Body)
+		id, err := o.Answer(ctx, brand, in.ReplyID, in.Body, outbound.AuthorAI)
 		if err != nil {
 			return nil, err
 		}
@@ -447,7 +491,7 @@ func conversationsRun(ctx context.Context, t *mcpctx.ToolContext, in Conversatio
 		}
 		return map[string]string{"result": "marked as partner"}, nil
 	}
-	return nil, mcpctx.NewValidationError("action must be list, reply, classify or mark_partner", "action")
+	return nil, mcpctx.NewValidationError("action must be list, reply, classify, mark_partner or export", "action")
 }
 
 // ---- pause ------------------------------------------------------------------
@@ -475,10 +519,11 @@ type ExplainInput struct {
 	MessageID  string `json:"message_id,omitempty" jsonschema:"why an email did or didn't send"`
 	MailboxID  string `json:"mailbox_id,omitempty" jsonschema:"why a mailbox is paused"`
 	ProspectID string `json:"prospect_id,omitempty" jsonschema:"why a prospect can't be enrolled"`
+	Topic      string `json:"topic,omitempty" jsonschema:"start_from_website: the calls that go from a business's website to drafted outreach, and what this brand still lacks"`
 }
 
 func explainRun(ctx context.Context, t *mcpctx.ToolContext, in ExplainInput) (any, error) {
-	s, err := t.Svc().Outbound.Explain(ctx, t.Brand(ctx), in.MessageID, in.MailboxID, in.ProspectID)
+	s, err := t.Svc().Outbound.Explain(ctx, t.Brand(ctx), outbound.ExplainQuery{MessageID: in.MessageID, MailboxID: in.MailboxID, ProspectID: in.ProspectID, Topic: in.Topic})
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +560,7 @@ func defineOutbound[In any](name, title, desc string, ann *mcp.ToolAnnotations, 
 
 var outboundTools = []outboundTool{
 	defineOutbound("outreach_overview", "Outreach overview",
-		"Outreach at a glance: whether outbound is on, domains and their DNS, each mailbox's sends today against its limit, bounces and complaints, drafts and replies waiting, anything paused and why, what to do next, and every campaign's results (reached, replied, reply rate, interested, partners, clicks, bounces, opt-outs). With campaign_id: that campaign step by step, to see which email gets the replies.\n\nExamples: outreach_overview(action: get); outreach_overview(action: get, campaign_id: \"...\")",
+		"Outreach at a glance: whether outbound is on, domains and their DNS, each mailbox's sends today against its limit, bounces and complaints, drafts and replies waiting, anything paused and why, the pace dial and whether today's new prospects are reached, what to do next, every campaign's results (reached, replied, reply rate, interested, partners, clicks, bounces, opt-outs, its segment, who wrote it) and each segment's (its people by status and its campaigns' results). With campaign_id: that campaign step by step, to see which email gets the replies, why people stopped early (stopped_by_reason) and the materials it was written from.\n\nExamples: outreach_overview(action: get); outreach_overview(action: get, campaign_id: \"...\")",
 		readOnly(), overviewRun),
 	defineOutbound("setup_sending", "Set up sending",
 		"Set up where outreach sends from. Outreach uses separate outreach domains, never the brand's own or a protected company domain, and never SES.\n"+
@@ -527,6 +572,8 @@ var outboundTools = []outboundTool{
 			"- list: the brand's mailbox pools with their limits (daily limit, warm-up, spacing, health pauses), and each mailbox with its own limit and today's sends\n"+
 			"- set_limits: limits (all of them), pool_id (default: the pool carrying outreach). Brand admins only\n"+
 			"- mailbox_limit: mailbox_id, daily_limit (leave it out to use its connection's or the pool's). Brand admins only\n"+
+			"- pace: the daily pace dial, how many new prospects get their first email each day across the pool, today's count, and what each preset means (sends a day once follow-ups catch up, mailboxes needed at the pool's daily limit, cost where known)\n"+
+			"- set_pace: pace (light 25, typical 50, growth 100, unlimited) or daily_new_prospects (0: no limit). At the day's number first emails wait for the next day's window (nothing is lost), follow-ups go on, and webhooks get outreach.paused once that day. Brand admins only\n"+
 			"Connections: a pool holds any number of mailbox services side by side (several of one service too), each with its own API key, plus manual connections for mailboxes added by hand (Google Workspace, Microsoft 365). Each outreach domain belongs to one connection; the pool sends from all their mailboxes under its limits, one mailbox per prospect for the whole thread:\n"+
 			"- connections: pool_id (optional). Each connection with its service, key status, domains, mailbox count, daily limit and warm-up\n"+
 			"- add_connection: service (manual|maildoso|cheapinboxes|infraforge), api_key (required for a service, tested first), name, pool_id, daily_limit, warmup_start, warmup_step (all left out: the service's terms, Maildoso 15 a day warming up from 5 by 1; else the pool's). Brand admins only\n"+
@@ -542,23 +589,25 @@ var outboundTools = []outboundTool{
 			"- delete_mailbox: mailbox_id, confirm: true. Deletes it at the service (CheapInboxes: cancels at the period's end) and pauses it in the pool. Brand admins only",
 		changesOnly(), setupSendingRun),
 	defineOutbound("add_prospects", "Add prospects",
-		"Import up to 100 people to reach into an outreach list (made if missing). They become contacts that never signed up: campaigns and newsletters never reach them. Creator fields (platform, channel_url, audience_size, niche, recent_video, personal_line) and email_source, where the address was published for business. Removes duplicates and checks suppression; each address added comes back 'verifying' and is checked within a minute, then becomes a prospect, or held (never sent) when risky. Only prospects can be enrolled.\n\nExample: add_prospects(action: add, prospects: [{email, first_name, platform: youtube, channel_url, recent_video, personal_line, email_source: \"YouTube About page\"}])",
+		"Import up to 100 people to reach into a segment (an outreach list, by name; made if missing). They become contacts that never signed up: campaigns and newsletters never reach them. Company fields (company, title, country, region, industry, company_size), creator fields (platform, channel_url, audience_size, niche, recent_video, personal_line), custom fields, and email_source, where the address was published for business. Every field is a merge tag. Removes duplicates, checks suppression and do-not-contact (anyone the brand already knows: its customers, its own domains, its do-not-contact lists) and says why each was excluded; notes anyone outside the segment's filters. Each address added comes back 'verifying' and is checked within a minute, then becomes a prospect, or held (never sent) when risky. Only prospects can be enrolled.\n\nExample: add_prospects(action: add, list: \"Dental clinics in Utah\", prospects: [{email, first_name, company, title, country: \"US\", region: \"UT\", industry: \"dental\", personal_line, email_source: \"clinic website, contact page\"}])",
 		changesOnly(), addProspectsRun),
 	defineOutbound("draft_outreach", "Draft outreach",
-		"Create a campaign of 1 to 5 steps and draft every first email for its prospects. Templates use {{first_name}}, {{name}}, {{channel_url}}, {{recent_video}}, {{personal_line}}, {{sender_first}} and custom fields, and {a|b} variants. A missing value skips that prospect rather than sending a blank. Each prospect gets one mailbox for the whole sequence, and follow-ups reply in the same thread. The opt-out line and mailing address are added. track_clicks and track_opens send links and an open pixel through each domain's go. subdomain (both off by default: reply rate is the main measure, pixels hurt cold delivery, and Apple Mail inflates opens). dry_run returns previews of the first emails without saving anything. Nothing sends until approved (approval_mode every by default).",
+		"brief: what to write a campaign from, for a segment (list): the brand profile, the segment's definition and how many prospects it can take, the merge tags its prospects have, the materials (the segment's and the brand-wide ones, or material_ids) and the rules. Call it before writing.\n"+
+			"create: a campaign of 1 to 5 steps, drafting every first email for its prospects: prospect_ids, or none to enroll the segment's (list) prospects free to enroll, up to 100. Pin the materials it was written from with material_ids. Everyone is checked against do-not-contact before anything is queued, and again before each follow-up; skipped says why for each. Templates use {{first_name}}, {{name}}, {{company}}, {{title}}, {{personal_line}}, {{sender_first}} and any other field the prospects have, and {a|b} variants. A missing value skips that prospect rather than sending a blank. Each prospect gets one mailbox for the whole sequence, and follow-ups reply in the same thread. The opt-out line and mailing address are added. track_clicks and track_opens send links and an open pixel through each domain's go. subdomain (both off by default: reply rate is the main measure, pixels hurt cold delivery, and Apple Mail inflates opens). dry_run returns previews of the first emails without saving anything. Nothing sends until approved (approval_mode every by default). Emails written here are marked as written by an AI, so the reviewer knows what to check.\n\nExamples: draft_outreach(action: brief, list: \"Dental clinics in Utah\"); draft_outreach(action: create, campaign: {name, list: \"Dental clinics in Utah\", steps: [{subject, body}, {delay_days: 4, body}], material_ids: [\"...\"], dry_run: true})",
 		changesOnly(), draftOutreachRun),
 	defineOutbound("review_drafts", "Review drafts",
-		"List emails waiting for approval, each with its message_id, campaign and step, then approve, edit or skip them by message_id (up to 100 at a time). Approving lets them send, paced per mailbox inside the sending window.",
+		"List emails waiting for approval, each with its message_id, campaign, step and authored_by (ai; ai_edited when a person edited what an AI wrote; person), then approve, edit or skip them by message_id (up to 100 at a time). Approving lets them send, paced per mailbox inside the sending window.",
 		sends(), reviewDraftsRun),
 	defineOutbound("conversations", "Conversations",
-		"Replies to outreach. Any reply stops that person's sequence; opt-outs and bounces go on the suppression list. list shows replies needing attention, each with the campaign it answers; classify records what one means; reply answers in the same thread from the same mailbox; mark_partner records a creator who said yes.",
+		"Replies to outreach. Any reply stops that person's sequence; opt-outs and bounces go on the suppression list. list shows replies needing attention, each with the campaign it answers and its segment (classification: interested lists the hot leads); classify records what one means; reply answers in the same thread from the same mailbox; mark_partner records a creator who said yes; export gives the leads as CSV, one row per person per campaign (email, name, company, title, segment, campaign, status, stopped_reason, reply_classification, replied_at), narrowed by campaign_id and classification, with next_cursor to continue.",
 		sends(), conversationsRun),
 	defineOutbound("pause", "Pause outreach",
 		"Pause or resume all outreach, one mailbox or one campaign. A mailbox paused for DNS or health resumes only once the problem is gone.",
 		changesOnly(), pauseRun),
 	defineOutbound("explain", "Explain",
-		"Plain answers to \"why didn't this send?\" (message_id), \"why is this mailbox paused?\" (mailbox_id) and \"why can't this prospect be enrolled?\" (prospect_id).",
+		"Plain answers to \"why didn't this send?\" (message_id), \"why is this mailbox paused?\" (mailbox_id), \"why can't this prospect be enrolled?\" (prospect_id, do-not-contact included) and \"how do I start from a business's website?\" (topic: start_from_website: the calls, in order, from reading the site to drafted outreach, and what this brand still lacks).",
 		readOnly(), explainRun),
+	defineOutbound("targeting", "Targeting", targetingDesc, changesOnly(), targetingRun),
 }
 
 // RegisterOutboundTools adds the outreach tools to the MCP server.

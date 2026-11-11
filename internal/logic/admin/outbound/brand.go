@@ -58,3 +58,37 @@ func convertInto[T any](src any) (T, error) {
 }
 
 func ok(msg string) *types.Response { return &types.Response{Success: true, Message: msg} }
+
+// saveSegment creates a segment (id empty) or changes one, from its request.
+func saveSegment(ctx context.Context, svcCtx *svc.ServiceContext, id string, req any) (*types.OutboundSegment, error) {
+	org, err := brand(ctx, svcCtx, access.Member)
+	if err != nil {
+		return nil, err
+	}
+	in, err := convertInto[outbound.SegmentInput](req)
+	if err != nil {
+		return nil, err
+	}
+	sg, err := svcCtx.Outbound.SaveSegment(ctx, org, id, in)
+	if err != nil {
+		return nil, apiErr(err)
+	}
+	return convert[types.OutboundSegment](sg)
+}
+
+// saveMaterial creates a material (id empty) or changes one, from its request.
+func saveMaterial(ctx context.Context, svcCtx *svc.ServiceContext, id string, req any) (*types.OutboundMaterial, error) {
+	org, err := brand(ctx, svcCtx, access.Member)
+	if err != nil {
+		return nil, err
+	}
+	in, err := convertInto[outbound.MaterialInput](req)
+	if err != nil {
+		return nil, err
+	}
+	m, err := svcCtx.Outbound.SaveMaterial(ctx, org, id, in)
+	if err != nil {
+		return nil, apiErr(err)
+	}
+	return convert[types.OutboundMaterial](m)
+}

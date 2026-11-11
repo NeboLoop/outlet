@@ -1526,8 +1526,9 @@ type OutboundAddProspectsResponse struct {
 }
 
 type OutboundAnswerRequest struct {
-	Id   string `path:"id"`
-	Body string `json:"body"`
+	Id         string `path:"id"`
+	Body       string `json:"body"`
+	AuthoredBy string `json:"authored_by,optional"` // SDK: ai or person (default person); the app is always person
 }
 
 type OutboundCampaignRef struct {
@@ -1537,9 +1538,11 @@ type OutboundCampaignRef struct {
 
 type OutboundCampaignRequest struct {
 	Name            string              `json:"name"`
-	List            string              `json:"list,optional"`
+	List            string              `json:"list,optional"` // the segment (outreach list); with no prospect_ids, its enrollable prospects are enrolled
 	Steps           []OutboundStepInput `json:"steps"`
-	ProspectIDs     []string            `json:"prospect_ids"`
+	ProspectIDs     []string            `json:"prospect_ids,optional"`
+	MaterialIDs     []string            `json:"material_ids,optional"` // the materials it was written from, pinned to it
+	AuthoredBy      string              `json:"authored_by,optional"`  // SDK: ai or person (default person); the app is always person
 	ApprovalMode    string              `json:"approval_mode,optional"`
 	TrackOpens      bool                `json:"track_opens,optional"`
 	TrackClicks     bool                `json:"track_clicks,optional"`
@@ -1550,45 +1553,100 @@ type OutboundCampaignRequest struct {
 }
 
 type OutboundCampaignResponse struct {
-	CampaignId string            `json:"campaign_id,optional"`
-	Enrolled   int               `json:"enrolled"`
-	Drafts     []OutboundDraft   `json:"drafts,optional"`   // the saved drafts
-	Previews   []OutboundPreview `json:"previews,optional"` // dry_run: the first emails, not saved
-	Skipped    map[string]string `json:"skipped,optional"`
-	Next       string            `json:"next"`
+	CampaignId string             `json:"campaign_id,optional"`
+	Enrolled   int                `json:"enrolled"`
+	Drafts     []OutboundDraft    `json:"drafts,optional"`   // the saved drafts
+	Previews   []OutboundPreview  `json:"previews,optional"` // dry_run: the first emails, not saved
+	Skipped    map[string]string  `json:"skipped,optional"`
+	Materials  []OutboundMaterial `json:"materials,optional"` // pinned to the campaign
+	Next       string             `json:"next"`
 }
 
 type OutboundCampaignResults struct {
-	Id          string               `json:"id"`
-	Name        string               `json:"name"`
-	Status      string               `json:"status"`
-	Enrolled    int64                `json:"enrolled"`
-	Reached     int64                `json:"reached"`
-	Replied     int64                `json:"replied"`
-	ReplyRate   float64              `json:"reply_rate"`
-	Opened      int64                `json:"opened"`
-	OpenRate    float64              `json:"open_rate"`
-	Clicked     int64                `json:"clicked"`
-	ClickRate   float64              `json:"click_rate"`
-	Interested  int64                `json:"interested"`
-	Partners    int64                `json:"partners"`
-	Bounced     int64                `json:"bounced"`
-	BounceRate  float64              `json:"bounce_rate"`
-	BounceLimit float64              `json:"bounce_limit"` // percent: the outreach pathway pauses a mailbox above it; 0: never
-	SpamBlocks  int64                `json:"spam_blocks"`
-	OptedOut    int64                `json:"opted_out"`
-	InProgress  int64                `json:"in_progress"`
-	NoReply     int64                `json:"finished_no_reply"`
-	Waiting     int64                `json:"drafts_waiting"`
-	TrackOpens  bool                 `json:"track_opens"`
-	TrackClick  bool                 `json:"track_clicks"`
-	Steps       []OutboundStepResult `json:"steps,optional"`
-	Replies     map[string]int64     `json:"replies_by_kind,optional"`
+	Id              string               `json:"id"`
+	Name            string               `json:"name"`
+	Status          string               `json:"status"`
+	Enrolled        int64                `json:"enrolled"`
+	Reached         int64                `json:"reached"`
+	Replied         int64                `json:"replied"`
+	ReplyRate       float64              `json:"reply_rate"`
+	Opened          int64                `json:"opened"`
+	OpenRate        float64              `json:"open_rate"`
+	Clicked         int64                `json:"clicked"`
+	ClickRate       float64              `json:"click_rate"`
+	Interested      int64                `json:"interested"`
+	Partners        int64                `json:"partners"`
+	Bounced         int64                `json:"bounced"`
+	BounceRate      float64              `json:"bounce_rate"`
+	BounceLimit     float64              `json:"bounce_limit"` // percent: the outreach pathway pauses a mailbox above it; 0: never
+	SpamBlocks      int64                `json:"spam_blocks"`
+	OptedOut        int64                `json:"opted_out"`
+	InProgress      int64                `json:"in_progress"`
+	NoReply         int64                `json:"finished_no_reply"`
+	Waiting         int64                `json:"drafts_waiting"`
+	TrackOpens      bool                 `json:"track_opens"`
+	TrackClick      bool                 `json:"track_clicks"`
+	Steps           []OutboundStepResult `json:"steps,optional"`
+	Replies         map[string]int64     `json:"replies_by_kind,optional"`
+	SegmentId       string               `json:"segment_id"` // the segment (outreach list) it runs on
+	Segment         string               `json:"segment"`
+	AuthoredBy      string               `json:"authored_by"`                // who wrote its steps: ai or person
+	StoppedByReason map[string]int64     `json:"stopped_by_reason,optional"` // people stopped before the end, by why (replied, do not contact: customer, ...)
+	Materials       []OutboundMaterial   `json:"materials,optional"`         // pinned: what it was written from
 }
 
 type OutboundClassifyRequest struct {
 	Id             string `path:"id"`
 	Classification string `json:"classification"`
+}
+
+type OutboundDNC struct {
+	Settings OutboundDNCSettings `json:"settings"`
+	Lists    []OutboundDNCList   `json:"lists"`
+}
+
+type OutboundDNCAddRequest struct {
+	List    string   `json:"list"`
+	Entries []string `json:"entries"` // email addresses or domains
+}
+
+type OutboundDNCAddResponse struct {
+	Added      int               `json:"added"`
+	Duplicates int               `json:"duplicates"`
+	Refused    map[string]string `json:"refused,optional"`
+}
+
+type OutboundDNCCheck struct {
+	Excluded bool   `json:"excluded"`
+	Source   string `json:"source,optional"` // suppressed, own_domain, customer, customer_domain, do_not_contact_list, outside_check
+	Reason   string `json:"reason,optional"`
+}
+
+type OutboundDNCCheckRequest struct {
+	Email string `form:"email"`
+}
+
+type OutboundDNCDeleteRequest struct {
+	List string `form:"list"`
+}
+
+type OutboundDNCList struct {
+	Name      string `json:"name"`
+	Emails    int64  `json:"emails"`
+	Domains   int64  `json:"domains"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type OutboundDNCSettings struct {
+	CustomerDomains bool   `json:"customer_domains"` // also skip everyone at a customer's company domain
+	CheckURL        string `json:"check_url"`        // the outside check; empty: none
+	CheckSecretSet  bool   `json:"check_secret_set"`
+}
+
+type OutboundDNCSettingsRequest struct {
+	CustomerDomains *bool   `json:"customer_domains,optional"`
+	CheckURL        *string `json:"check_url,optional"`    // empty turns the outside check off
+	CheckSecret     string  `json:"check_secret,optional"` // write-only; needed with a new check_url
 }
 
 type OutboundDNSCheck struct {
@@ -1654,6 +1712,7 @@ type OutboundDraft struct {
 	CampaignId   string `json:"campaign_id"`
 	CampaignName string `json:"campaign_name"`
 	Step         int64  `json:"step"`
+	AuthoredBy   string `json:"authored_by"` // ai, ai_edited (a person edited what an AI wrote) or person
 	ProspectId   string `json:"prospect_id"`
 	To           string `json:"to"`
 	From         string `json:"from"`
@@ -1667,9 +1726,10 @@ type OutboundDraftList struct {
 }
 
 type OutboundEditDraftRequest struct {
-	Id      string `path:"id"`
-	Subject string `json:"subject,optional"`
-	Body    string `json:"body,optional"`
+	Id         string `path:"id"`
+	Subject    string `json:"subject,optional"`
+	Body       string `json:"body,optional"`
+	AuthoredBy string `json:"authored_by,optional"` // SDK: who edits, ai or person (default person); the app is always person
 }
 
 type OutboundEnabledRequest struct {
@@ -1680,6 +1740,7 @@ type OutboundExplainRequest struct {
 	MessageId  string `form:"message_id,optional"`
 	MailboxId  string `form:"mailbox_id,optional"`
 	ProspectId string `form:"prospect_id,optional"`
+	Topic      string `form:"topic,optional"` // start_from_website
 }
 
 type OutboundExplainResponse struct {
@@ -1705,8 +1766,9 @@ type OutboundListRef struct {
 }
 
 type OutboundListRepliesRequest struct {
-	Handled bool `form:"handled,optional"`
-	Limit   int  `form:"limit,optional,default=25"`
+	Handled        bool   `form:"handled,optional"`
+	Classification string `form:"classification,optional"` // interested is a hot lead; empty: any
+	Limit          int    `form:"limit,optional,default=25"`
 }
 
 type OutboundListRequest struct {
@@ -1758,6 +1820,40 @@ type OutboundMailboxResult struct {
 	Error string `json:"error,optional"`
 }
 
+type OutboundMaterial struct {
+	Id        string `json:"id"`
+	Kind      string `json:"kind"` // case_study, proof_point, offer, link, asset
+	Title     string `json:"title"`
+	Summary   string `json:"summary"`
+	Details   string `json:"details,optional"`
+	Url       string `json:"url,optional"`
+	SegmentId string `json:"segment_id,optional"` // empty: any segment
+	Segment   string `json:"segment,optional"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type OutboundMaterialIDRequest struct {
+	Id string `path:"id"`
+}
+
+type OutboundMaterialList struct {
+	Materials []OutboundMaterial `json:"materials"`
+}
+
+type OutboundMaterialListRequest struct {
+	Kind    string `form:"kind,optional"`
+	Segment string `form:"segment,optional"` // a segment's own and the brand-wide ones
+}
+
+type OutboundMaterialRequest struct {
+	Kind    string `json:"kind"`
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	Details string `json:"details,optional"`
+	Url     string `json:"url,optional"`
+	Segment string `json:"segment,optional"` // id or name; empty: brand-wide
+}
+
 type OutboundOverview struct {
 	Enabled        bool                      `json:"enabled"`
 	Paused         string                    `json:"paused,optional"`
@@ -1773,7 +1869,34 @@ type OutboundOverview struct {
 	DraftsWaiting  int64                     `json:"drafts_waiting"`
 	ReplyRate      float64                   `json:"reply_rate"` // replied over reached across every campaign, percent
 	Campaigns      []OutboundCampaignResults `json:"campaigns"`
+	Segments       []OutboundSegment         `json:"segments"`     // each segment's people and its campaigns' results
+	Pace           int64                     `json:"pace"`         // new prospects a day (the pace dial); 0: no limit
+	PaceReached    bool                      `json:"pace_reached"` // today's are reached: first emails wait for tomorrow
 	Next           []string                  `json:"next"`
+}
+
+type OutboundPace struct {
+	PoolId            string                 `json:"pool_id"`
+	Current           OutboundPaceEstimate   `json:"current"`
+	NewToday          int64                  `json:"new_today"`
+	StepsPerCampaign  float64                `json:"steps_per_campaign"`
+	MailboxDailyLimit int64                  `json:"mailbox_daily_limit"`
+	MailboxesActive   int64                  `json:"mailboxes_active"`
+	Capacity          int64                  `json:"capacity"` // emails a day the active mailboxes may send now; 0: no limit
+	Presets           []OutboundPaceEstimate `json:"presets"`
+	Cost              string                 `json:"cost"`
+}
+
+type OutboundPaceEstimate struct {
+	Pace              string `json:"pace"` // light, typical, growth, unlimited or custom
+	DailyNewProspects int64  `json:"daily_new_prospects"`
+	SendsPerDay       int64  `json:"sends_per_day"`    // the most a day once follow-ups catch up
+	MailboxesNeeded   int64  `json:"mailboxes_needed"` // at the pool's daily limit per mailbox; 0: either has none
+}
+
+type OutboundPaceRequest struct {
+	Pace              string `json:"pace,optional"`                // light, typical, growth or unlimited
+	DailyNewProspects *int64 `json:"daily_new_prospects,optional"` // instead of a preset; 0: no limit
 }
 
 type OutboundPauseRequest struct {
@@ -1789,6 +1912,15 @@ type OutboundPreview struct {
 	Subject    string `json:"subject"`
 	Body       string `json:"body"`
 	SendsAfter string `json:"sends_after,optional"`
+}
+
+type OutboundProfile struct {
+	Website   string `json:"website,optional"`
+	Sells     string `json:"sells,optional"`    // what the business sells
+	Audience  string `json:"audience,optional"` // who buys it
+	Proof     string `json:"proof,optional"`    // customers, results, numbers
+	Voice     string `json:"voice,optional"`    // how its emails sound
+	UpdatedAt string `json:"updated_at,optional"`
 }
 
 type OutboundProspectInfo struct {
@@ -1815,6 +1947,12 @@ type OutboundProspectInput struct {
 	Niche        string            `json:"niche,optional"`
 	RecentVideo  string            `json:"recent_video,optional"`
 	PersonalLine string            `json:"personal_line,optional"`
+	Company      string            `json:"company,optional"`
+	Title        string            `json:"title,optional"`
+	Country      string            `json:"country,optional"`
+	Region       string            `json:"region,optional"`
+	Industry     string            `json:"industry,optional"`
+	CompanySize  string            `json:"company_size,optional"` // a head count or a range: 11-50
 	EmailSource  string            `json:"email_source"`
 	Fields       map[string]string `json:"fields,optional"`
 }
@@ -1844,6 +1982,7 @@ type OutboundReplyInfo struct {
 	ContactId      string `json:"contact_id"`
 	SequenceId     string `json:"sequence_id"`
 	CampaignName   string `json:"campaign_name"` // the campaign it answers
+	SegmentName    string `json:"segment_name"`  // that campaign's segment
 	FromEmail      string `json:"from_email"`
 	Subject        string `json:"subject"`
 	Body           string `json:"body"`
@@ -1864,6 +2003,47 @@ type OutboundReviewRequest struct {
 type OutboundReviewResponse struct {
 	Done    int               `json:"done"`
 	Refused map[string]string `json:"refused,optional"`
+}
+
+type OutboundSegment struct {
+	Id          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Filters     OutboundSegmentFilters `json:"filters"`
+	Prospects   map[string]int64       `json:"prospects"` // by status
+	Results     OutboundSegmentResults `json:"results"`
+}
+
+type OutboundSegmentAddRequest struct {
+	Id          string   `path:"id"`
+	ProspectIds []string `json:"prospect_ids"`
+}
+
+type OutboundSegmentFilters struct {
+	Countries     []string          `json:"countries,optional"`
+	Regions       []string          `json:"regions,optional"`
+	Industries    []string          `json:"industries,optional"`
+	CompanySizes  []string          `json:"company_sizes,optional"` // 1-10, 11-50, 51-200, 201-1000, 1000+
+	TitleKeywords []string          `json:"title_keywords,optional"`
+	Fields        map[string]string `json:"fields,optional"` // custom field values
+}
+
+type OutboundSegmentList struct {
+	Segments []OutboundSegment `json:"segments"`
+}
+
+type OutboundSegmentRequest struct {
+	Name        string                  `json:"name"`
+	Description string                  `json:"description,optional"`
+	Filters     *OutboundSegmentFilters `json:"filters,optional"`
+}
+
+type OutboundSegmentResults struct {
+	Campaigns  int64   `json:"campaigns"`
+	Reached    int64   `json:"reached"`
+	Replied    int64   `json:"replied"`
+	ReplyRate  float64 `json:"reply_rate"`
+	Interested int64   `json:"interested"`
 }
 
 type OutboundSettingsRequest struct {
@@ -2515,6 +2695,23 @@ type UpdateOrgRequest struct {
 	Plan        string `json:"plan,optional"`
 	MaxContacts int    `json:"max_contacts,optional"`
 	AppUrl      string `json:"app_url,optional"`
+}
+
+type UpdateOutboundMaterialRequest struct {
+	Id      string `path:"id"`
+	Kind    string `json:"kind,optional"` // each field left empty is kept
+	Title   string `json:"title,optional"`
+	Summary string `json:"summary,optional"`
+	Details string `json:"details,optional"`
+	Url     string `json:"url,optional"`
+	Segment string `json:"segment,optional"` // id or name; any: brand-wide
+}
+
+type UpdateOutboundSegmentRequest struct {
+	Id          string                  `path:"id"`
+	Name        string                  `json:"name,optional"`        // empty: kept
+	Description string                  `json:"description,optional"` // empty: kept
+	Filters     *OutboundSegmentFilters `json:"filters,optional"`     // left out: kept
 }
 
 type UpdateSendingPathwayRequest struct {
