@@ -55,48 +55,12 @@ func (l *RefreshTokenLogic) RefreshToken(req *types.RefreshTokenRequest) (resp *
 		}
 	}
 
-	// Generate new access token
-	accessExpire := time.Duration(l.svcCtx.Config.Auth.AccessExpire) * time.Second
-	accessToken, err := utils.GenerateToken(
-		user.ID,
-		user.Email,
-		user.Role,
-		l.svcCtx.Config.Auth.AccessSecret,
-		accessExpire,
-	)
+	// A new access token and a rotated refresh token.
+	resp, err = issueSession(l.svcCtx.Config, user)
 	if err != nil {
-		l.Errorf("Error generating access token: %v", err)
+		l.Errorf("Error issuing session: %v", err)
 		return nil, fmt.Errorf("failed to generate access token")
 	}
-
-	// Generate new refresh token (rotate refresh tokens for security)
-	refreshExpire := time.Duration(l.svcCtx.Config.Auth.RefreshExpire) * time.Second
-	newRefreshToken, err := utils.GenerateToken(
-		user.ID,
-		user.Email,
-		user.Role,
-		l.svcCtx.Config.Auth.RefreshSecret,
-		refreshExpire,
-	)
-	if err != nil {
-		l.Errorf("Error generating refresh token: %v", err)
-		return nil, fmt.Errorf("failed to generate refresh token")
-	}
-
 	l.Infof("Token refreshed for user: %s", user.Email)
-
-	expiresAt := time.Now().Add(accessExpire)
-
-	return &types.LoginResponse{
-		Token:        accessToken,
-		RefreshToken: newRefreshToken,
-		ExpiresAt:    expiresAt.Format(time.RFC3339),
-		User: types.UserInfo{
-			Id:        user.ID,
-			Email:     user.Email,
-			Name:      user.Name,
-			Role:      user.Role,
-			CreatedAt: utils.FormatNullString(user.CreatedAt),
-		},
-	}, nil
+	return resp, nil
 }

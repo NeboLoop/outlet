@@ -40,6 +40,17 @@ type (
 	ForgotPasswordResponse {
 		Message string `json:"message"`
 	}
+	SendSignInEmailRequest {
+		Email string `json:"email"`
+	}
+	SendSignInEmailResponse {
+		Message string `json:"message"`
+	}
+	SignInWithEmailRequest {
+		Token string `json:"token,optional"` // the token from the emailed sign-in link
+		Email string `json:"email,optional"` // with code: the address the code was sent to
+		Code  string `json:"code,optional"` // the 6-digit code from the email
+	}
 	ResetPasswordRequest {
 		Token           string `json:"token"`
 		NewPassword     string `json:"new_password"`
@@ -2510,6 +2521,14 @@ service outlet {
 	@doc "Create an account from an invitation (Outlet is invite-only)"
 	@handler register
 	post /auth/register (RegisterRequest) returns (RegisterResponse)
+
+	@doc "Email a sign-in link and code (the same answer whether or not the address has an account)"
+	@handler sendSignInEmail
+	post /auth/sign-in-email (SendSignInEmailRequest) returns (SendSignInEmailResponse)
+
+	@doc "Sign in with the emailed link's token, or with the email and its code"
+	@handler signInWithEmail
+	post /auth/sign-in-email/verify (SignInWithEmailRequest) returns (LoginResponse)
 
 	@doc "Request password reset"
 	@handler forgotPassword

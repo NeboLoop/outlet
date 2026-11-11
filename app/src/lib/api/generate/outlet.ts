@@ -1484,6 +1484,22 @@ export function resetPassword(req: components.ResetPasswordRequest) {
 }
 
 /**
+ * @description "Email a sign-in link and code (the same answer whether or not the address has an account)"
+ * @param req
+ */
+export function sendSignInEmail(req: components.SendSignInEmailRequest) {
+	return webapi.post<components.SendSignInEmailResponse>(`/api/v1/auth/sign-in-email`, req)
+}
+
+/**
+ * @description "Sign in with the emailed link's token, or with the email and its code"
+ * @param req
+ */
+export function signInWithEmail(req: components.SignInWithEmailRequest) {
+	return webapi.post<components.LoginResponse>(`/api/v1/auth/sign-in-email/verify`, req)
+}
+
+/**
  * @description "Validate invitation token and get user details"
  * @param params
  */

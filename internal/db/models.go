@@ -740,6 +740,16 @@ type SequenceEntryRule struct {
 	CreatedAt   sql.NullString `json:"created_at"`
 }
 
+type SignInCode struct {
+	ID        string         `json:"id"`
+	UserID    string         `json:"user_id"`
+	TokenHash string         `json:"token_hash"`
+	CodeHash  string         `json:"code_hash"`
+	Attempts  int64          `json:"attempts"`
+	ExpiresAt string         `json:"expires_at"`
+	CreatedAt sql.NullString `json:"created_at"`
+}
+
 type SubscriberCustomField struct {
 	ID         int64          `json:"id"`
 	ListID     int64          `json:"list_id"`
