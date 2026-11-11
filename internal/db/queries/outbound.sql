@@ -339,8 +339,13 @@ UPDATE email_replies SET classification = ?, handled = ? WHERE id = ? AND org_id
 -- name: SetEmailReplyHandled :exec
 UPDATE email_replies SET handled = 1 WHERE id = ? AND org_id = ?;
 
--- name: CountUnhandledEmailReplies :one
-SELECT COUNT(*) FROM email_replies WHERE org_id = ? AND handled = 0;
+-- name: CountEmailReplies :one
+-- How many replies ListEmailReplies returns for the same filter, without
+-- its limit: the overview's counts of replies waiting are this, so they
+-- always match the Replies tab.
+SELECT COUNT(*) FROM email_replies r
+WHERE r.org_id = sqlc.arg(org_id) AND r.handled = sqlc.arg(handled)
+  AND (CAST(sqlc.arg(classification) AS TEXT) = '' OR r.classification = sqlc.arg(classification));
 
 -- ---- results ------------------------------------------------------------------
 -- Reply rate is the main measure; opens and clicks count when the sequence

@@ -178,7 +178,7 @@
 		showNewJob = true;
 		if (!listsLoaded) {
 			try {
-				const res = await listLists();
+				const res = await listLists({});
 				lists = res.lists || [];
 			} catch (err) {
 				console.error('Failed to load lists:', err);

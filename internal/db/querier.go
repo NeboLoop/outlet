@@ -94,6 +94,10 @@ type Querier interface {
 	CountCustomFieldsByList(ctx context.Context, listID int64) (int64, error)
 	CountEmailDesigns(ctx context.Context, orgID string) (int64, error)
 	CountEmailDesignsByCategory(ctx context.Context, arg CountEmailDesignsByCategoryParams) (int64, error)
+	// How many replies ListEmailReplies returns for the same filter, without
+	// its limit: the overview's counts of replies waiting are this, so they
+	// always match the Replies tab.
+	CountEmailReplies(ctx context.Context, arg CountEmailRepliesParams) (int64, error)
 	// Inactive contacts: on a list as an active subscriber (added, imported or
 	// confirmed), not unsubscribed, with no open in the opens
 	// window and no click in the clicks window. Count and Delete share the one
@@ -135,7 +139,6 @@ type Querier interface {
 	// hand, imported, confirmed or found for outreach is never one. Count and
 	// Delete share the one predicate, so the preview is what the delete removes.
 	CountUnconfirmedContactsOlderThan(ctx context.Context, arg CountUnconfirmedContactsOlderThanParams) (int64, error)
-	CountUnhandledEmailReplies(ctx context.Context, orgID string) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CountValidationJobStatuses(ctx context.Context, jobID sql.NullString) ([]CountValidationJobStatusesRow, error)
 	CountValidationJobs(ctx context.Context, orgID string) (int64, error)
@@ -332,10 +335,13 @@ type Querier interface {
 	GetBackupsByType(ctx context.Context, arg GetBackupsByTypeParams) ([]BackupHistory, error)
 	GetBackupsInProgress(ctx context.Context) ([]BackupHistory, error)
 	GetBlockedDomain(ctx context.Context, arg GetBlockedDomainParams) (BlockedDomain, error)
-	// What a brand's email did in a date range: every kind it sent (campaign
-	// sends, queued sequence and outreach email, transactional sends), with
-	// opens and clicks, and the brand's contacts who bounced, complained or
-	// unsubscribed. Dates are UTC 'YYYY-MM-DD HH:MM:SS', as stored.
+	// What a brand's newsletter email did in a date range: campaign sends,
+	// queued sequence email and transactional sends, with opens and clicks,
+	// and the brand's contacts who bounced, complained or unsubscribed.
+	// Outreach is left out: its queued email (kind 'outreach'), the bounces and
+	// complaints it records (subtype and type 'outreach') and its lists' opt-outs
+	// (lists of kind 'outreach') are Outbound's numbers. Dates are UTC
+	// 'YYYY-MM-DD HH:MM:SS', as stored.
 	GetBrandEmailStats(ctx context.Context, arg GetBrandEmailStatsParams) (GetBrandEmailStatsRow, error)
 	GetBrandMaterial(ctx context.Context, arg GetBrandMaterialParams) (BrandMaterial, error)
 	// ---- the brand profile --------------------------------------------------------------
@@ -606,7 +612,9 @@ type Querier interface {
 	ListDueWebhookDeliveries(ctx context.Context, arg ListDueWebhookDeliveriesParams) ([]ListDueWebhookDeliveriesRow, error)
 	ListEmailDesigns(ctx context.Context, orgID string) ([]EmailDesign, error)
 	ListEmailDesignsByCategory(ctx context.Context, arg ListEmailDesignsByCategoryParams) ([]EmailDesign, error)
-	ListEmailLists(ctx context.Context, orgID string) ([]EmailList, error)
+	// A brand's lists of one kind: subscribers (newsletter lists) or outreach
+	// (empty: every list).
+	ListEmailLists(ctx context.Context, arg ListEmailListsParams) ([]EmailList, error)
 	ListEmailQueueByOrg(ctx context.Context, arg ListEmailQueueByOrgParams) ([]ListEmailQueueByOrgRow, error)
 	// Replies with the name of the campaign each answers and its segment
 	// (the campaign's outreach list), handled or not, of one classification

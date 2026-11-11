@@ -56,7 +56,7 @@
 		error = '';
 
 		try {
-			const response = await listLists();
+			const response = await listLists({});
 			lists = response.lists || [];
 		} catch (err) {
 			console.error('Failed to load lists:', err);

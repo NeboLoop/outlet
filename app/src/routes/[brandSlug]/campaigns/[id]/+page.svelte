@@ -59,7 +59,7 @@
 		loading = true;
 		error = '';
 		try {
-			const [c, l] = await Promise.all([getCampaign({}, campaignId), listLists()]);
+			const [c, l] = await Promise.all([getCampaign({}, campaignId), listLists({})]);
 			campaign = c;
 			lists = l.lists || [];
 			await loadLinks(campaignId);

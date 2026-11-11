@@ -8,7 +8,7 @@
 	import { TrendingUp, TrendingDown, Users, Mail, Send, MousePointerClick, AlertTriangle, UserMinus, ArrowRight, Plus, RefreshCw, MessageSquare, Flame } from '@lucide/svelte';
 	import { outbound, refreshOutbound } from '$lib/stores/outbound.svelte';
 	import SetupCard from './outbound/SetupCard.svelte';
-	import { dashboardOutbound, hotLeads, percent, waitingOnYou } from './outbound/shared';
+	import { dashboardOutbound, percent, waitingOnYou } from './outbound/shared';
 
 	interface Props {
 		data: {
@@ -60,7 +60,8 @@
 					statsError = err.message || 'Failed to load email stats';
 					return null;
 				}),
-				listLists().catch(() => ({ lists: [] })),
+				// Newsletter lists only: outreach lists are Outbound's.
+				listLists({ kind: 'subscribers' }).catch(() => ({ lists: [] })),
 				listCampaigns({ limit: 5 }).catch(() => ({ campaigns: [] }))
 			]);
 
@@ -171,8 +172,8 @@
 							<div class="flex items-start justify-between">
 								<div>
 									<p class="stat-label">Hot leads</p>
-									<p class="stat-value mt-1">{formatNumber(hotLeads(o.campaigns || []))}</p>
-									<p class="text-xs text-text-muted mt-1">Replied interested</p>
+									<p class="stat-value mt-1">{formatNumber(o.hot_leads_waiting)}</p>
+									<p class="text-xs text-text-muted mt-1">Interested, waiting on you</p>
 								</div>
 								<div class="p-2 bg-warning/10 rounded-lg">
 									<Flame class="h-5 w-5 text-warning" />

@@ -1090,6 +1090,10 @@ type ListInfo struct {
 	UnsubscribeScope       string `json:"unsubscribe_scope,optional"`
 }
 
+type ListListsRequest struct {
+	Kind string `form:"kind,optional"` // subscribers (newsletter lists) or outreach; empty: every list
+}
+
 type ListListsResponse struct {
 	Lists []ListInfo `json:"lists"`
 }
@@ -1855,26 +1859,27 @@ type OutboundMaterialRequest struct {
 }
 
 type OutboundOverview struct {
-	Enabled        bool                      `json:"enabled"`
-	Paused         string                    `json:"paused,optional"`
-	MailingAddress string                    `json:"mailing_address"`
-	OptOutLine     string                    `json:"opt_out_line"`
-	Timezone       string                    `json:"timezone"`
-	DNSTokenSet    bool                      `json:"dns_token_set"`
-	Domains        []OutboundDomainInfo      `json:"domains"`
-	Mailboxes      []OutboundMailboxHealth   `json:"mailboxes"`
-	Prospects      map[string]int64          `json:"prospects"`
-	ProspectsTotal int64                     `json:"prospects_total"` // every person on the brand's outreach lists, once each (the Prospects tab's total)
-	Messages       map[string]int64          `json:"messages"`
-	RepliesWaiting int64                     `json:"replies_waiting"`
-	DraftsWaiting  int64                     `json:"drafts_waiting"`
-	ReplyRate      float64                   `json:"reply_rate"` // replied over reached across every campaign, percent
-	Campaigns      []OutboundCampaignResults `json:"campaigns"`
-	Segments       []OutboundSegment         `json:"segments"`     // each segment's people and its campaigns' results
-	Pace           int64                     `json:"pace"`         // new prospects a day (the pace dial); 0: no limit
-	PaceReached    bool                      `json:"pace_reached"` // today's are reached: first emails wait for tomorrow
-	Next           []string                  `json:"next"`
-	Setup          []OutboundSetupStep       `json:"setup"` // the five steps of setting outbound up, each done or not from the brand's data
+	Enabled         bool                      `json:"enabled"`
+	Paused          string                    `json:"paused,optional"`
+	MailingAddress  string                    `json:"mailing_address"`
+	OptOutLine      string                    `json:"opt_out_line"`
+	Timezone        string                    `json:"timezone"`
+	DNSTokenSet     bool                      `json:"dns_token_set"`
+	Domains         []OutboundDomainInfo      `json:"domains"`
+	Mailboxes       []OutboundMailboxHealth   `json:"mailboxes"`
+	Prospects       map[string]int64          `json:"prospects"`
+	ProspectsTotal  int64                     `json:"prospects_total"` // every person on the brand's outreach lists, once each (the Prospects tab's total)
+	Messages        map[string]int64          `json:"messages"`
+	RepliesWaiting  int64                     `json:"replies_waiting"`
+	HotLeadsWaiting int64                     `json:"hot_leads_waiting"` // interested replies not yet handled: the Replies tab's Needs attention with Hot leads only
+	DraftsWaiting   int64                     `json:"drafts_waiting"`
+	ReplyRate       float64                   `json:"reply_rate"` // replied over reached across every campaign, percent
+	Campaigns       []OutboundCampaignResults `json:"campaigns"`
+	Segments        []OutboundSegment         `json:"segments"`     // each segment's people and its campaigns' results
+	Pace            int64                     `json:"pace"`         // new prospects a day (the pace dial); 0: no limit
+	PaceReached     bool                      `json:"pace_reached"` // today's are reached: first emails wait for tomorrow
+	Next            []string                  `json:"next"`
+	Setup           []OutboundSetupStep       `json:"setup"` // the five steps of setting outbound up, each done or not from the brand's data
 }
 
 type OutboundPace struct {

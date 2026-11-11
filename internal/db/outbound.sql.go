@@ -59,6 +59,28 @@ func (q *Queries) ClaimOutreachEmail(ctx context.Context, arg ClaimOutreachEmail
 	return result.RowsAffected()
 }
 
+const countEmailReplies = `-- name: CountEmailReplies :one
+SELECT COUNT(*) FROM email_replies r
+WHERE r.org_id = ?1 AND r.handled = ?2
+  AND (CAST(?3 AS TEXT) = '' OR r.classification = ?3)
+`
+
+type CountEmailRepliesParams struct {
+	OrgID          string `json:"org_id"`
+	Handled        int64  `json:"handled"`
+	Classification string `json:"classification"`
+}
+
+// How many replies ListEmailReplies returns for the same filter, without
+// its limit: the overview's counts of replies waiting are this, so they
+// always match the Replies tab.
+func (q *Queries) CountEmailReplies(ctx context.Context, arg CountEmailRepliesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countEmailReplies, arg.OrgID, arg.Handled, arg.Classification)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countMailboxRepliesSince = `-- name: CountMailboxRepliesSince :one
 SELECT COUNT(*) FROM email_replies
 WHERE mailbox_id = ?1 AND classification = ?2 AND received_at >= ?3
@@ -224,17 +246,6 @@ func (q *Queries) CountProspectsByStatus(ctx context.Context, orgID string) ([]C
 		return nil, err
 	}
 	return items, nil
-}
-
-const countUnhandledEmailReplies = `-- name: CountUnhandledEmailReplies :one
-SELECT COUNT(*) FROM email_replies WHERE org_id = ? AND handled = 0
-`
-
-func (q *Queries) CountUnhandledEmailReplies(ctx context.Context, orgID string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countUnhandledEmailReplies, orgID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
 }
 
 const createEmailReply = `-- name: CreateEmailReply :one

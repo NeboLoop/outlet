@@ -448,9 +448,10 @@ export function getEmailDashboardStats(params: components.EmailDashboardStatsReq
 
 /**
  * @description 
+ * @param params
  */
-export function listLists() {
-	return webapi.get<components.ListListsResponse>(`/api/admin/lists`)
+export function listLists(params: components.ListListsRequestParams) {
+	return webapi.get<components.ListListsResponse>(`/api/admin/lists`, params)
 }
 
 /**
