@@ -7,38 +7,135 @@
 @import 'tailwindcss';
 @plugin "@tailwindcss/typography";
 @plugin "daisyui" {
-	themes: light --default, dark;
+	themes: false;
 }
 
-/* ===== Theme Tokens ===== */
+/* ===== DaisyUI themes =====
+   One neutral palette with a single indigo accent, thin borders instead of
+   shadows. Light is the default; dark follows the system setting.
+   The --outlet-* values feed Outlet's own tokens below, so screens that use
+   text-text, bg-bg, border-border or the base-50..900 grays follow the
+   theme too. */
+@plugin "daisyui/theme" {
+	name: 'outlet';
+	default: true;
+	prefersdark: false;
+	color-scheme: light;
+
+	--color-base-100: oklch(1 0 0);
+	--color-base-200: oklch(0.97 0 0);
+	--color-base-300: oklch(0.922 0 0);
+	--color-base-content: oklch(0.145 0 0);
+	--color-primary: oklch(0.511 0.262 276.966);
+	--color-primary-content: oklch(0.985 0 0);
+	--color-secondary: oklch(0.97 0 0);
+	--color-secondary-content: oklch(0.205 0 0);
+	--color-accent: oklch(0.945 0.03 276.966);
+	--color-accent-content: oklch(0.38 0.2 276.966);
+	--color-neutral: oklch(0.205 0 0);
+	--color-neutral-content: oklch(0.985 0 0);
+	--color-info: oklch(0.546 0.245 262.881);
+	--color-info-content: oklch(0.985 0 0);
+	--color-success: oklch(0.527 0.154 150.069);
+	--color-success-content: oklch(0.985 0 0);
+	--color-warning: oklch(0.555 0.163 48.998);
+	--color-warning-content: oklch(0.985 0 0);
+	--color-error: oklch(0.577 0.245 27.325);
+	--color-error-content: oklch(0.985 0 0);
+
+	--radius-selector: 0.5rem;
+	--radius-field: 0.625rem;
+	--radius-box: 0.875rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+
+	--outlet-page: oklch(1 0 0);
+	--outlet-sidebar: oklch(0.985 0 0);
+	--outlet-subtle: oklch(0.985 0 0);
+	--outlet-text-secondary: oklch(0.371 0 0);
+	--outlet-text-muted: oklch(0.5 0 0);
+	--outlet-gray-400: oklch(0.708 0 0);
+	--outlet-gray-500: oklch(0.556 0 0);
+	--outlet-gray-600: oklch(0.439 0 0);
+	--outlet-gray-700: oklch(0.371 0 0);
+	--outlet-gray-800: oklch(0.269 0 0);
+	--outlet-gray-900: oklch(0.205 0 0);
+}
+
+@plugin "daisyui/theme" {
+	name: 'outlet-dark';
+	default: false;
+	prefersdark: true;
+	color-scheme: dark;
+
+	--color-base-100: oklch(0.205 0 0);
+	--color-base-200: oklch(0.269 0 0);
+	--color-base-300: oklch(0.32 0 0);
+	--color-base-content: oklch(0.985 0 0);
+	--color-primary: oklch(0.64 0.19 277);
+	--color-primary-content: oklch(0.145 0 0);
+	--color-secondary: oklch(0.269 0 0);
+	--color-secondary-content: oklch(0.985 0 0);
+	--color-accent: oklch(0.32 0.08 277.117);
+	--color-accent-content: oklch(0.9 0.06 277.117);
+	--color-neutral: oklch(0.922 0 0);
+	--color-neutral-content: oklch(0.205 0 0);
+	--color-info: oklch(0.707 0.165 254.624);
+	--color-info-content: oklch(0.145 0 0);
+	--color-success: oklch(0.723 0.192 149.579);
+	--color-success-content: oklch(0.145 0 0);
+	--color-warning: oklch(0.828 0.189 84.429);
+	--color-warning-content: oklch(0.145 0 0);
+	--color-error: oklch(0.704 0.191 22.216);
+	--color-error-content: oklch(0.145 0 0);
+
+	--radius-selector: 0.5rem;
+	--radius-field: 0.625rem;
+	--radius-box: 0.875rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+
+	--outlet-page: oklch(0.145 0 0);
+	--outlet-sidebar: oklch(0.175 0 0);
+	--outlet-subtle: oklch(0.175 0 0);
+	--outlet-text-secondary: oklch(0.87 0 0);
+	--outlet-text-muted: oklch(0.708 0 0);
+	--outlet-gray-400: oklch(0.556 0 0);
+	--outlet-gray-500: oklch(0.708 0 0);
+	--outlet-gray-600: oklch(0.8 0 0);
+	--outlet-gray-700: oklch(0.87 0 0);
+	--outlet-gray-800: oklch(0.922 0 0);
+	--outlet-gray-900: oklch(0.97 0 0);
+}
+
+/* ===== Theme Tokens =====
+   DaisyUI owns primary, secondary, the status colors and base-100..300;
+   everything here reads from the active theme. */
 @theme {
 	/* Fonts - using system fonts for better performance */
 	--font-display: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	--font-body: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
-	/* Base palette - Neutral grays */
-	--color-base-900: #111827;
-	--color-base-800: #1f2937;
-	--color-base-700: #374151;
-	--color-base-600: #4b5563;
-	--color-base-500: #6b7280;
-	--color-base-400: #9ca3af;
-	--color-base-300: #d1d5db;
-	--color-base-200: #e5e7eb;
-	--color-base-100: #f3f4f6;
-	--color-base-50: #f9fafb;
+	/* Neutral grays, flipped in dark mode so text-base-600 stays readable */
+	--color-base-900: var(--outlet-gray-900);
+	--color-base-800: var(--outlet-gray-800);
+	--color-base-700: var(--outlet-gray-700);
+	--color-base-600: var(--outlet-gray-600);
+	--color-base-500: var(--outlet-gray-500);
+	--color-base-400: var(--outlet-gray-400);
+	--color-base-50: var(--outlet-subtle);
 
-	/* Accent colors - Professional indigo/blue */
-	--color-primary: #4f46e5;
-	--color-primary-light: #6366f1;
-	--color-primary-dark: #4338ca;
-	--color-secondary: #64748b;
-	--color-tertiary: #475569;
-	--color-success: #22c55e;
-	--color-warning: #f59e0b;
-	--color-error: #ef4444;
-	--color-info: #3b82f6;
-	--color-security: #ef4444;
+	/* Accent shades */
+	--color-primary-light: color-mix(in oklch, var(--color-primary), white 12%);
+	--color-primary-dark: color-mix(in oklch, var(--color-primary), black 12%);
+	--color-tertiary: var(--outlet-text-muted);
+	--color-security: var(--color-error);
 
 	/* Accent aliases (for semantic clarity) */
 	--color-accent-primary: var(--color-primary);
@@ -51,22 +148,19 @@
 	--color-accent-error: var(--color-error);
 	--color-accent-info: var(--color-info);
 
-	/* Semantic colors (light theme) */
-	--color-text: var(--color-base-900);
-	--color-text-secondary: var(--color-base-600);
-	--color-text-muted: var(--color-base-500);
-	--color-bg: #ffffff;
-	--color-bg-secondary: var(--color-base-50);
-	--color-border: var(--color-base-200);
+	/* Semantic colors */
+	--color-text: var(--color-base-content);
+	--color-text-secondary: var(--outlet-text-secondary);
+	--color-text-muted: var(--outlet-text-muted);
+	--color-bg: var(--color-base-100);
+	--color-bg-secondary: var(--color-base-200);
+	--color-border: var(--color-base-300);
 
-	/* Shadows */
+	/* Shadows: borders carry the structure; only floating things cast one */
 	--shadow-glow: 0 0 40px color-mix(in srgb, var(--color-primary) 20%, transparent);
-	--shadow-card:
-		0 0 0 1px color-mix(in srgb, black 5%, transparent),
-		0 1px 3px color-mix(in srgb, black 10%, transparent),
-		0 6px 16px color-mix(in srgb, black 8%, transparent);
-	--shadow-button: 0 1px 3px color-mix(in srgb, var(--color-primary) 30%, transparent);
-	--shadow-button-hover: 0 4px 12px color-mix(in srgb, var(--color-primary) 40%, transparent);
+	--shadow-card: none;
+	--shadow-button: none;
+	--shadow-button-hover: none;
 	--shadow-dropdown: 0 10px 40px color-mix(in srgb, black 15%, transparent);
 }
 
@@ -205,7 +299,8 @@
 
 	/* ===== Admin Layout ===== */
 	.admin-layout {
-		@apply flex min-h-screen bg-base-50;
+		@apply flex min-h-screen;
+		background-color: var(--outlet-page);
 	}
 
 	.admin-sidebar {
@@ -299,7 +394,7 @@
 	}
 
 	.data-table th {
-		@apply px-4 py-3 text-xs font-medium uppercase tracking-wide;
+		@apply px-4 py-3 text-sm font-medium;
 		color: var(--color-text-muted);
 	}
 
@@ -356,7 +451,7 @@
 		}
 
 		.data-table-stack td[data-label]::before {
-			@apply block text-xs font-medium uppercase tracking-wide;
+			@apply block text-xs font-medium;
 			content: attr(data-label);
 			color: var(--color-text-muted);
 		}
@@ -395,16 +490,14 @@
 		flex-shrink: 0;
 	}
 
-	/* The bottom rule is an inset shadow so the active underline can sit on it
-	   inside a scrolling row */
+	/* A segmented control: a muted track with the current tab raised on it */
 	.tab-nav {
-		@apply flex gap-1;
-		box-shadow: inset 0 -1px 0 var(--color-border);
+		@apply inline-flex w-fit gap-0.5 rounded-lg p-[3px];
+		background-color: var(--color-bg-secondary);
 	}
 
 	.tab-nav-item {
-		@apply flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap;
-		border-color: transparent;
+		@apply flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap;
 		color: var(--color-text-muted);
 	}
 
@@ -413,25 +506,26 @@
 	}
 
 	.tab-nav-item.active {
-		border-color: var(--color-primary);
-		color: var(--color-primary);
+		background-color: var(--color-bg);
+		color: var(--color-text);
+		box-shadow: 0 0 0 1px var(--color-border);
 	}
 
 	.tab-nav-count {
 		@apply px-2 py-0.5 text-xs rounded-full;
-		background-color: var(--color-bg-secondary);
+		background-color: var(--color-bg);
 	}
 
 	.tab-nav-item.active .tab-nav-count {
-		background-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
-		color: var(--color-primary);
+		background-color: var(--color-bg-secondary);
+		color: var(--color-text);
 	}
 
 	/* ===== Sidebar ===== */
 	.sidebar {
 		@apply flex flex-col h-full border-r;
 		width: 220px;
-		background-color: var(--color-bg);
+		background-color: var(--outlet-sidebar);
 		border-color: var(--color-border);
 		transition: width 0.2s ease;
 	}
@@ -479,8 +573,8 @@
 	}
 
 	.sidebar-link.active {
-		background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		color: var(--color-primary);
+		background-color: var(--color-bg-secondary);
+		color: var(--color-text);
 	}
 
 	.sidebar.collapsed .sidebar-link {
@@ -613,7 +707,7 @@
 	}
 
 	.help-section-title {
-		@apply mt-8 mb-3 text-xs font-medium uppercase tracking-wide;
+		@apply mt-8 mb-3 text-sm font-medium;
 		color: var(--color-text-muted);
 	}
 
@@ -693,7 +787,6 @@
 		@apply flex h-9 w-9 items-center justify-center rounded-xl;
 		background-color: var(--color-primary);
 		color: var(--color-primary-content);
-		box-shadow: 0 1px 2px color-mix(in oklab, var(--color-primary) 40%, transparent);
 	}
 
 	.brand-mark-name {
@@ -838,9 +931,39 @@
 		opacity: 0.85;
 	}
 
-	.auth-card {
+	/* Cards: a thin border, no shadow. Screens add shadow-* utilities to
+	   cards; the theme draws them flat, and a card that is a link darkens
+	   its border on hover instead of lifting. */
+	:where(.card) {
 		border: 1px solid var(--color-base-300);
-		--tw-shadow-color: rgb(0 0 0 / 0.05);
+	}
+
+	:where(a:hover > .card, .card.cursor-pointer:hover) {
+		border-color: color-mix(in oklab, var(--color-base-content) 22%, var(--color-base-100));
+	}
+
+	.card,
+	.card:hover {
+		box-shadow: none;
+	}
+
+	/* Badges: quiet. A plain or neutral badge is outlined; a colored one is a
+	   soft tint with its color darkened (light) or lightened (dark) enough to
+	   read. */
+	.badge {
+		font-weight: 500;
+	}
+
+	.badge:is(.badge-primary, .badge-secondary, .badge-accent, .badge-info, .badge-success, .badge-warning, .badge-error):not(.badge-outline, .badge-dash) {
+		color: color-mix(in oklab, var(--badge-color) 62%, var(--color-base-content));
+		background-color: color-mix(in oklab, var(--badge-color) 10%, var(--color-base-100));
+		border-color: color-mix(in oklab, var(--badge-color) 24%, var(--color-base-100));
+	}
+
+	.badge:not(.badge-primary, .badge-secondary, .badge-accent, .badge-info, .badge-success, .badge-warning, .badge-error, .badge-outline, .badge-dash) {
+		color: var(--color-base-content);
+		background-color: transparent;
+		border-color: var(--color-base-300);
 	}
 
 	.auth-card > .card-body {
