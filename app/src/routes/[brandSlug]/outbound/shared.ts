@@ -1,6 +1,6 @@
 // Helpers shared by the Outbound screens.
 
-import type { OutboundCampaignResults, OutboundMailboxHealth, OutboundSetupStep } from '$lib/api';
+import type { OutboundCampaignResults, OutboundMailboxHealth, OutboundOverview, OutboundSetupStep } from '$lib/api';
 
 export function errorMessage(err: unknown, fallback: string): string {
 	return err instanceof Error && err.message ? err.message : fallback;
@@ -167,4 +167,29 @@ export function askAIPrompt(
 		case 'campaign':
 			return `${brand}: draft our first outreach campaign on the segment "${o.segment || 'Outreach'}" with draft_outreach. Read its brief, write from its materials, and show me a dry run of the first emails. If the segment has no prospects free to enroll, find people who fit it and add them with add_prospects first, saying where each address came from. Then save it with approval_mode ${o.approval || 'every'}.`;
 	}
+}
+
+// What the brand dashboard shows for outbound: nothing while it is off, the
+// "Finish setup" card until setup is done, then the numbers.
+export function dashboardOutbound(o: OutboundOverview | null): 'off' | 'setup' | 'running' {
+	if (!o || !o.enabled) return 'off';
+	return nextSetupStep(o.setup || []) ? 'setup' : 'running';
+}
+
+// Hot leads are people who replied interested, across every campaign.
+export function hotLeads(campaigns: OutboundCampaignResults[]): number {
+	return campaigns.reduce((n, c) => n + c.interested, 0);
+}
+
+// What waits on the person, each with the tab it is done on. A count of
+// zero is left out.
+export function waitingOnYou(o: OutboundOverview, base: string): { label: string; href: string }[] {
+	const out: { label: string; href: string }[] = [];
+	if (o.drafts_waiting > 0) {
+		out.push({ label: `${o.drafts_waiting} ${o.drafts_waiting === 1 ? 'draft' : 'drafts'} to approve`, href: `${base}/drafts` });
+	}
+	if (o.replies_waiting > 0) {
+		out.push({ label: `${o.replies_waiting} ${o.replies_waiting === 1 ? 'reply' : 'replies'} to answer`, href: `${base}/replies` });
+	}
+	return out;
 }

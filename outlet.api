@@ -2022,6 +2022,7 @@ type (
 		Domains        []OutboundDomainInfo      `json:"domains"`
 		Mailboxes      []OutboundMailboxHealth   `json:"mailboxes"`
 		Prospects      map[string]int64          `json:"prospects"`
+		ProspectsTotal int64                     `json:"prospects_total"` // every person on the brand's outreach lists, once each (the Prospects tab's total)
 		Messages       map[string]int64          `json:"messages"`
 		RepliesWaiting int64                     `json:"replies_waiting"`
 		DraftsWaiting  int64                     `json:"drafts_waiting"`

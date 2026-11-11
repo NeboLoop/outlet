@@ -16,13 +16,15 @@
 		Zap,
 		Megaphone
 	} from '@lucide/svelte';
+	import { repliesWaitingLabel } from '$lib/stores/outbound.svelte';
 
 	interface Props {
 		brandSlug: string;
 		orgName?: string;
+		repliesWaiting?: number; // outbound replies waiting for an answer: Outbound's badge
 	}
 
-	const { brandSlug, orgName = 'Outlet' }: Props = $props();
+	const { brandSlug, orgName = 'Outlet', repliesWaiting = 0 }: Props = $props();
 
 	const STORAGE_KEY = 'sidebar-collapsed';
 
@@ -91,15 +93,20 @@
 	<nav class="sidebar-nav">
 		{#each navItems as item}
 			{@const Icon = item.icon}
+			{@const badge = item.id === 'outbound' ? repliesWaiting : 0}
 			<a
 				href="{basePath}{item.href}"
 				class="sidebar-link"
 				class:active={isActive(item.href, item.exact)}
 				title={collapsed ? item.label : undefined}
+				aria-label={badge > 0 ? `${item.label}, ${repliesWaitingLabel(badge)}` : undefined}
 			>
 				<Icon class="sidebar-icon" />
 				{#if !collapsed}
 					<span class="sidebar-label">{item.label}</span>
+				{/if}
+				{#if badge > 0}
+					<span class="sidebar-badge" aria-hidden="true">{badge > 99 ? '99+' : badge}</span>
 				{/if}
 			</a>
 		{/each}

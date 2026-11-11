@@ -74,6 +74,10 @@ type Overview struct {
 	Domains        []DomainInfo      `json:"domains"`
 	Mailboxes      []MailboxHealth   `json:"mailboxes"`
 	Prospects      map[string]int64  `json:"prospects"`
+	// ProspectsTotal is every person on the brand's outreach lists, once
+	// each (prospects counts list places by status: a person on two lists
+	// is in it twice).
+	ProspectsTotal int64             `json:"prospects_total"`
 	Messages       map[string]int64  `json:"messages"`
 	RepliesWaiting int64             `json:"replies_waiting"`
 	DraftsWaiting  int64             `json:"drafts_waiting"`
@@ -144,6 +148,7 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 			o.Prospects[r.Status.String] = r.N
 		}
 	}
+	o.ProspectsTotal, _ = s.db.CountProspectPeople(ctx, org.ID)
 	if rows, err := s.db.CountOutreachEmailsByStatus(ctx, sql.NullString{String: org.ID, Valid: true}); err == nil {
 		for _, r := range rows {
 			o.Messages[r.Status.String] = r.N

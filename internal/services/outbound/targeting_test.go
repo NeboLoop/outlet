@@ -556,3 +556,31 @@ func TestStartFromWebsite(t *testing.T) {
 	_, err = h.svc.Explain(ctx, h.org, ExplainQuery{Topic: "nope"})
 	assert.ErrorContains(t, err, "Topics")
 }
+
+// The overview counts each person on the brand's outreach lists once, the
+// number the Prospects tab shows, while prospects counts their list places.
+func TestOverviewProspectsTotal(t *testing.T) {
+	h := newHarness(t)
+	ctx := h.ctx
+
+	o, err := h.svc.Overview(ctx, h.org)
+	require.NoError(t, err)
+	assert.Zero(t, o.ProspectsTotal)
+
+	_, err = h.svc.SaveSegment(ctx, h.org, "", SegmentInput{Name: "Utah dental", Description: "Dental clinics in Utah."})
+	require.NoError(t, err)
+	h.prospects(business("amy@clinic-a.com", "Amy", "Clinic A", "US"), business("bo@clinic-b.com", "Bo", "Clinic B", "US"))
+	h.addTo("Utah dental", business("amy@clinic-a.com", "Amy", "Clinic A", "US"))
+
+	o, err = h.svc.Overview(ctx, h.org)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, o.ProspectsTotal, "Amy is on two lists and counts once")
+	var places int64
+	for _, n := range o.Prospects {
+		places += n
+	}
+	assert.EqualValues(t, 3, places, "her two list places")
+	page, err := h.svc.ListProspects(ctx, h.org, ProspectQuery{})
+	require.NoError(t, err)
+	assert.Equal(t, page.Total, o.ProspectsTotal, "the Prospects tab's total")
+}
