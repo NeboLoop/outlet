@@ -341,7 +341,7 @@
 						: 'This job has no results.'}
 			/>
 		{:else}
-			<div class="data-table overflow-x-auto">
+			<div class="data-table data-table-stack overflow-x-auto">
 				<table class="w-full text-sm">
 					<thead>
 						<tr>
@@ -358,10 +358,10 @@
 							<tr>
 								<td class="font-medium text-text break-all">{r.address}</td>
 								<td><ValidationBadge status={r.status} showSubStatus={false} /></td>
-								<td class="text-text-muted">{subStatusLabel(r.sub_status) || '-'}</td>
-								<td class="text-text-muted">{r.domain || '-'}</td>
-								<td class="text-text-muted">{r.free_email ? 'Yes' : 'No'}</td>
-								<td class="text-text-muted">{r.did_you_mean || '-'}</td>
+								<td class="text-text-muted" data-label="Reason">{subStatusLabel(r.sub_status) || '-'}</td>
+								<td class="text-text-muted" data-label="Domain">{r.domain || '-'}</td>
+								<td class="text-text-muted" data-label="Free">{r.free_email ? 'Yes' : 'No'}</td>
+								<td class="text-text-muted" data-label="Suggestion">{r.did_you_mean || '-'}</td>
 							</tr>
 						{/each}
 					</tbody>

@@ -203,21 +203,18 @@
 	{/if}
 
 	<!-- Tabs -->
-	<div class="border-b border-border mb-6">
-		<nav class="tab-scroll -mb-px flex space-x-8">
-			{#each tabs as tab}
-				<button
-					onclick={() => activeTab = tab.id}
-					class="whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium flex items-center gap-2 {activeTab === tab.id
-						? 'border-primary text-primary'
-						: 'border-transparent text-text-muted hover:border-border hover:text-text'}"
-				>
-					<svelte:component this={tab.icon} class="h-4 w-4" />
-					{tab.label}
-				</button>
-			{/each}
-		</nav>
-	</div>
+	<nav class="tab-nav mb-6">
+		{#each tabs as tab}
+			<button
+				onclick={() => activeTab = tab.id}
+				class="tab-nav-item"
+				class:active={activeTab === tab.id}
+			>
+				<svelte:component this={tab.icon} class="h-4 w-4" />
+				{tab.label}
+			</button>
+		{/each}
+	</nav>
 
 	<!-- Tab Content -->
 	{#if activeTab === 'emails'}

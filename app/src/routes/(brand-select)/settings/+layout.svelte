@@ -26,21 +26,18 @@
 			<p class="mt-1 text-sm text-text-muted">Manage your account settings</p>
 		</div>
 
-		<div class="border-b border-border">
-			<nav class="tab-scroll -mb-px flex space-x-8" use:scrollActiveTab={$page.url.pathname}>
-				{#each tabs as tab}
-					<a
-						href={tab.href}
-						aria-current={isActive(tab.href) ? 'page' : undefined}
-						class="whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium {isActive(tab.href)
-							? 'border-primary text-primary'
-							: 'border-transparent text-text-muted hover:border-border hover:text-text'}"
-					>
-						{tab.name}
-					</a>
-				{/each}
-			</nav>
-		</div>
+		<nav class="tab-nav" use:scrollActiveTab={$page.url.pathname}>
+			{#each tabs as tab}
+				<a
+					href={tab.href}
+					aria-current={isActive(tab.href) ? 'page' : undefined}
+					class="tab-nav-item"
+					class:active={isActive(tab.href)}
+				>
+					{tab.name}
+				</a>
+			{/each}
+		</nav>
 
 		<div class="mt-6">
 			{@render children()}
