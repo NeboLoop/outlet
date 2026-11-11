@@ -192,7 +192,7 @@
 				<Input type="text" value={mcpEndpoint} readonly class="font-mono text-sm" />
 				<Button type="secondary" onclick={copyEndpoint}>
 					{#if copiedEndpoint}
-						<CheckCircle class="h-4 w-4 text-green-500" />
+						<CheckCircle class="h-4 w-4 text-success" />
 					{:else}
 						<Copy class="h-4 w-4" />
 					{/if}

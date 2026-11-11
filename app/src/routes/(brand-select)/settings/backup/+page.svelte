@@ -305,7 +305,7 @@
 												</Button>
 											{/if}
 											<Button type="ghost" size="icon" onclick={() => confirmDelete(backup)}>
-												<Trash2 class="h-4 w-4 text-red-500" />
+												<Trash2 class="h-4 w-4 text-error" />
 											</Button>
 										</div>
 									</td>
@@ -359,7 +359,7 @@
 						<!-- Show configured state -->
 						<div class="flex items-center justify-between p-4 bg-surface-secondary rounded-lg border border-border">
 							<div class="flex items-center gap-3">
-								<CheckCircle class="h-5 w-5 text-green-500" />
+								<CheckCircle class="h-5 w-5 text-success" />
 								<div>
 									<p class="font-medium text-text">AWS Credentials Configured</p>
 									<p class="text-sm text-text-muted">

@@ -133,7 +133,7 @@
 		<!-- Inactive Contacts -->
 		<Card>
 			<div class="flex items-start gap-4">
-				<div class="p-3 rounded-lg bg-orange-100 text-orange-600">
+				<div class="p-3 rounded-lg bg-warning/10 text-warning">
 					<UserX class="h-6 w-6" />
 				</div>
 				<div class="flex-1">
@@ -170,21 +170,21 @@
 					</div>
 
 					{#if inactiveResult}
-						<div class="mt-4 p-4 rounded-lg {inactiveResult.dry_run ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}">
+						<div class="mt-4 p-4 rounded-lg {inactiveResult.dry_run ? 'bg-warning/10 border border-warning/30' : 'bg-success/10 border border-success/30'}">
 							<div class="flex items-center gap-2">
 								{#if inactiveResult.dry_run}
-									<AlertTriangle class="h-5 w-5 text-yellow-600" />
-									<span class="font-medium text-yellow-800">Preview:</span>
+									<AlertTriangle class="h-5 w-5 text-warning" />
+									<span class="font-medium text-warning">Preview:</span>
 								{:else}
-									<CheckCircle class="h-5 w-5 text-green-600" />
-									<span class="font-medium text-green-800">Completed:</span>
+									<CheckCircle class="h-5 w-5 text-success" />
+									<span class="font-medium text-success">Completed:</span>
 								{/if}
-								<span class="{inactiveResult.dry_run ? 'text-yellow-700' : 'text-green-700'}">
+								<span class="{inactiveResult.dry_run ? 'text-warning' : 'text-success'}">
 									{inactiveResult.message}
 								</span>
 							</div>
 							{#if inactiveResult.dry_run && inactiveResult.affected_count > 0}
-								<p class="mt-2 text-sm text-yellow-700">
+								<p class="mt-2 text-sm text-warning">
 									{inactiveResult.affected_count} contact{inactiveResult.affected_count === 1 ? '' : 's'} will be deleted.
 								</p>
 							{/if}
@@ -225,7 +225,7 @@
 		<!-- Unconfirmed Subscriptions -->
 		<Card>
 			<div class="flex items-start gap-4">
-				<div class="p-3 rounded-lg bg-blue-100 text-blue-600">
+				<div class="p-3 rounded-lg bg-info/10 text-info">
 					<Clock class="h-6 w-6" />
 				</div>
 				<div class="flex-1">
@@ -247,21 +247,21 @@
 					</div>
 
 					{#if unconfirmedResult}
-						<div class="mt-4 p-4 rounded-lg {unconfirmedResult.dry_run ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}">
+						<div class="mt-4 p-4 rounded-lg {unconfirmedResult.dry_run ? 'bg-warning/10 border border-warning/30' : 'bg-success/10 border border-success/30'}">
 							<div class="flex items-center gap-2">
 								{#if unconfirmedResult.dry_run}
-									<AlertTriangle class="h-5 w-5 text-yellow-600" />
-									<span class="font-medium text-yellow-800">Preview:</span>
+									<AlertTriangle class="h-5 w-5 text-warning" />
+									<span class="font-medium text-warning">Preview:</span>
 								{:else}
-									<CheckCircle class="h-5 w-5 text-green-600" />
-									<span class="font-medium text-green-800">Completed:</span>
+									<CheckCircle class="h-5 w-5 text-success" />
+									<span class="font-medium text-success">Completed:</span>
 								{/if}
-								<span class="{unconfirmedResult.dry_run ? 'text-yellow-700' : 'text-green-700'}">
+								<span class="{unconfirmedResult.dry_run ? 'text-warning' : 'text-success'}">
 									{unconfirmedResult.message}
 								</span>
 							</div>
 							{#if unconfirmedResult.dry_run && unconfirmedResult.affected_count > 0}
-								<p class="mt-2 text-sm text-yellow-700">
+								<p class="mt-2 text-sm text-warning">
 									{unconfirmedResult.affected_count} subscription{unconfirmedResult.affected_count === 1 ? '' : 's'} will be deleted.
 								</p>
 							{/if}

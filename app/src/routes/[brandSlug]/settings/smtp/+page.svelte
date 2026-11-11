@@ -180,7 +180,7 @@ $mail->send();`);
 						</code>
 						<Button type="secondary" size="sm" onclick={() => copyToClipboard(smtpHost)}>
 							{#if copiedText === smtpHost}
-								<CheckCircle class="h-4 w-4 text-green-500" />
+								<CheckCircle class="h-4 w-4 text-success" />
 							{:else}
 								<Copy class="h-4 w-4" />
 							{/if}
@@ -206,7 +206,7 @@ $mail->send();`);
 						</code>
 						<Button type="secondary" size="sm" onclick={() => copyToClipboard(brandSlug)}>
 							{#if copiedText === brandSlug}
-								<CheckCircle class="h-4 w-4 text-green-500" />
+								<CheckCircle class="h-4 w-4 text-success" />
 							{:else}
 								<Copy class="h-4 w-4" />
 							{/if}

@@ -98,7 +98,7 @@
 
 	<!-- Description (below value) -->
 	{#if description}
-		<p class="text-xs text-text-muted/70 mt-1">{description}</p>
+		<p class="text-xs text-text-muted mt-1">{description}</p>
 	{/if}
 
 	<!-- Trend -->

@@ -68,7 +68,7 @@
 	<div class="space-y-3">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-2">
-				<HelpCircle class="w-4 h-4 text-amber-500" />
+				<HelpCircle class="w-4 h-4 text-warning" />
 				<span class="text-sm font-medium text-text">Required IAM Policy</span>
 			</div>
 			<button
@@ -97,7 +97,7 @@
 	<Card>
 		<div class="flex items-center justify-between mb-4">
 			<div class="flex items-center gap-2">
-				<HelpCircle class="w-5 h-5 text-amber-500" />
+				<HelpCircle class="w-5 h-5 text-warning" />
 				<h3 class="font-semibold text-text">Required IAM Policy</h3>
 			</div>
 			<button

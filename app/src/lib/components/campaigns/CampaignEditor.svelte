@@ -257,9 +257,9 @@
 							type="text"
 							bind:value={name}
 							placeholder="Campaign Name"
-							class="text-lg font-semibold text-base-content bg-transparent border-none focus:outline-none focus:ring-0 placeholder:text-base-content/40 w-full sm:w-64"
+							class="text-lg font-semibold text-base-content bg-transparent border-none focus:outline-none focus:ring-0 placeholder:text-text-muted w-full sm:w-64"
 						/>
-						<p class="text-xs text-base-content/50">{campaign ? 'Editing draft' : 'New Campaign'}</p>
+						<p class="text-xs text-text-muted">{campaign ? 'Editing draft' : 'New Campaign'}</p>
 					</div>
 				</div>
 				<div class="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -327,7 +327,7 @@
 								bind:value={previewText}
 								placeholder="Text shown after subject..."
 							/>
-							<p class="mt-1 text-xs text-base-content/50 italic">
+							<p class="mt-1 text-xs text-text-muted italic">
 								Shown in inbox previews after the subject line.
 							</p>
 						</div>
@@ -348,7 +348,7 @@
 											/>
 											<div class="flex-1 min-w-0 flex items-center justify-between">
 												<span class="text-sm text-base-content truncate">{list.name}</span>
-												<span class="text-xs text-base-content/50 ml-2">{list.subscriber_count.toLocaleString()}</span>
+												<span class="text-xs text-text-muted ml-2">{list.subscriber_count.toLocaleString()}</span>
 											</div>
 										</label>
 									{/each}
@@ -402,7 +402,7 @@
 									bind:value={replyTo}
 								/>
 							</div>
-							<p class="mt-2 text-xs text-base-content/50 italic">
+							<p class="mt-2 text-xs text-text-muted italic">
 								Leave blank to use organization defaults.
 							</p>
 						</div>
@@ -411,17 +411,17 @@
 						{#if designs.length > 0}
 							<div class="border-t border-base-300 pt-6">
 								<h4 class="text-sm font-medium text-base-content mb-1">Design</h4>
-								<p class="text-xs text-base-content/50 mb-3">Your content is placed in the design when the campaign is sent.</p>
+								<p class="text-xs text-text-muted mb-3">Your content is placed in the design when the campaign is sent.</p>
 								<div class="space-y-2">
 									<button
 										type="button"
 										onclick={() => handleDesignSelect('')}
 										class="w-full p-3 rounded-lg border text-left transition-colors flex items-center gap-3 {selectedDesignId === '' ? 'border-primary bg-primary/5' : 'border-base-300 hover:border-base-content/20'}"
 									>
-										<FileText class="h-5 w-5 text-base-content/50" />
+										<FileText class="h-5 w-5 text-text-muted" />
 										<div>
 											<span class="text-sm font-medium text-base-content block">None</span>
-											<span class="text-xs text-base-content/50">Send the content as it is</span>
+											<span class="text-xs text-text-muted">Send the content as it is</span>
 										</div>
 									</button>
 									{#each designs as design}
@@ -433,7 +433,7 @@
 											<FileText class="h-5 w-5 text-primary" />
 											<div class="min-w-0">
 												<span class="text-sm font-medium text-base-content block truncate">{design.name}</span>
-												<span class="text-xs text-base-content/50">{design.category}</span>
+												<span class="text-xs text-text-muted">{design.category}</span>
 											</div>
 										</button>
 									{/each}
@@ -472,7 +472,7 @@
 								placeholder="your@email.com"
 								bind:value={testEmailAddress}
 							/>
-							<p class="mt-1 text-xs text-base-content/50 italic">
+							<p class="mt-1 text-xs text-text-muted italic">
 								Enter an email address and click "Send Test" to preview.
 							</p>
 						</div>
@@ -513,7 +513,7 @@
 							placeholder="Auto-generated from HTML if left empty..."
 							rows={4}
 						/>
-						<p class="mt-1 text-xs text-base-content/50 italic">
+						<p class="mt-1 text-xs text-text-muted italic">
 							Plain text version for email clients that don't support HTML.
 						</p>
 					</div>

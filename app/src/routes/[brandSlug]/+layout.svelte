@@ -164,7 +164,7 @@
 			</div>
 
 			<!-- Mobile Header -->
-			<div class="fixed top-0 left-0 right-0 h-14 px-4 flex items-center justify-between z-40 border-b border-base-200 bg-white md:hidden">
+			<div class="fixed top-0 left-0 right-0 h-14 px-4 flex items-center justify-between z-40 border-b border-base-200 bg-base-100 md:hidden">
 				<button
 					onclick={() => mobileMenuOpen = !mobileMenuOpen}
 					class="p-2 rounded-lg transition-colors text-text-muted hover:bg-base-100"
@@ -185,9 +185,9 @@
 						<ChevronDown class="h-4 w-4 text-text-muted" />
 					</button>
 					{#if showBrandSwitcher}
-						<div class="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-64 rounded-lg shadow-lg py-1 z-50 bg-white border border-base-200">
+						<div class="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-64 rounded-lg shadow-lg py-1 z-50 bg-base-100 border border-base-200">
 							<div class="px-3 py-2 border-b border-border">
-								<p class="text-xs font-medium text-text-muted uppercase tracking-wide">Brands</p>
+								<p class="text-xs font-medium text-text-muted">Brands</p>
 							</div>
 							<div class="max-h-64 overflow-y-auto">
 								{#each allOrgs as brand}
@@ -221,12 +221,12 @@
 							onclick={(e) => { e.stopPropagation(); showBrandSwitcher = false; showUserMenu = !showUserMenu; }}
 							class="flex items-center gap-2 p-1 rounded-lg transition-colors hover:bg-base-100"
 						>
-							<div class="flex items-center justify-center h-8 w-8 rounded-full text-sm font-medium text-white bg-primary">
+							<div class="flex items-center justify-center h-8 w-8 rounded-full text-sm font-medium text-primary-content bg-primary">
 								{(user?.name || user?.email || 'U')[0].toUpperCase()}
 							</div>
 						</button>
 						{#if showUserMenu}
-							<div class="absolute right-0 top-full mt-2 w-56 rounded-lg shadow-lg py-1 z-50 bg-white border border-base-200">
+							<div class="absolute right-0 top-full mt-2 w-56 rounded-lg shadow-lg py-1 z-50 bg-base-100 border border-base-200">
 								<div class="px-4 py-3 border-b border-border">
 									<p class="text-sm font-medium text-text truncate">{user?.email}</p>
 								</div>
@@ -263,7 +263,7 @@
 			<!-- Main Content -->
 			<div class="admin-main">
 				<!-- Top Bar (Desktop) -->
-				<header class="h-16 px-6 items-center justify-end border-b border-base-200 sticky top-0 z-20 bg-white hidden md:flex">
+				<header class="h-16 px-6 items-center justify-end border-b border-base-200 sticky top-0 z-20 bg-base-100 hidden md:flex">
 					<div class="flex items-center gap-4">
 						<HelpLink />
 						<!-- Brand Switcher -->
@@ -277,9 +277,9 @@
 								<ChevronDown class="h-4 w-4 text-text-muted group-hover:text-text transition-colors" />
 							</button>
 							{#if showBrandSwitcher}
-								<div class="absolute right-0 top-full mt-2 w-64 rounded-lg shadow-lg py-1 z-50 bg-white border border-base-200">
+								<div class="absolute right-0 top-full mt-2 w-64 rounded-lg shadow-lg py-1 z-50 bg-base-100 border border-base-200">
 									<div class="px-3 py-2 border-b border-border">
-										<p class="text-xs font-medium text-text-muted uppercase tracking-wide">Brands</p>
+										<p class="text-xs font-medium text-text-muted">Brands</p>
 									</div>
 									<div class="max-h-64 overflow-y-auto">
 										{#each allOrgs as brand}
@@ -312,13 +312,13 @@
 								onclick={(e) => { e.stopPropagation(); showBrandSwitcher = false; showUserMenu = !showUserMenu; }}
 								class="flex items-center gap-2 p-1 rounded-lg transition-colors hover:bg-base-100"
 							>
-								<div class="flex items-center justify-center h-8 w-8 rounded-full text-sm font-medium text-white bg-primary">
+								<div class="flex items-center justify-center h-8 w-8 rounded-full text-sm font-medium text-primary-content bg-primary">
 									{(user?.name || user?.email || 'U')[0].toUpperCase()}
 								</div>
 								<span class="text-sm text-text-muted hidden lg:block">{user?.email}</span>
 							</button>
 							{#if showUserMenu}
-								<div class="absolute right-0 top-full mt-2 w-56 rounded-lg shadow-lg py-1 z-50 bg-white border border-base-200">
+								<div class="absolute right-0 top-full mt-2 w-56 rounded-lg shadow-lg py-1 z-50 bg-base-100 border border-base-200">
 									<div class="px-4 py-3 border-b border-border">
 										<p class="text-sm font-medium text-text truncate">{user?.email}</p>
 										<p class="text-xs text-text-muted capitalize">{user?.role || 'user'}</p>

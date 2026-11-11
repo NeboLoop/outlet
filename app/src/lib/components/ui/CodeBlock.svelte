@@ -110,7 +110,7 @@
 		{:else}
 			<div class="flex text-sm font-mono">
 				{#if showLineNumbers}
-					<div class="flex-shrink-0 py-4 pl-4 pr-2 text-right select-none text-gray-500 border-r border-border/30">
+					<div class="flex-shrink-0 py-4 pl-4 pr-2 text-right select-none text-gray-400 border-r border-border/30">
 						{#each codeLines as _, i}
 							<div class="leading-6">{i + 1}</div>
 						{/each}

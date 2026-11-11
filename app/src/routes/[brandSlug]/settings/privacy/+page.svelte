@@ -314,7 +314,7 @@
 				</div>
 
 				{#if exportResult}
-					<div class="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+					<div class="p-4 bg-success/10 border border-success/20 rounded-lg">
 						<p class="text-sm font-medium text-text mb-2">Export Ready</p>
 						<p class="text-xs text-text-muted mb-3">
 							{exportResult.filename} ({exportResult.format})
@@ -326,9 +326,9 @@
 					</div>
 				{/if}
 
-				<div class="flex items-center justify-between p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+				<div class="flex items-center justify-between p-4 bg-error/10 border border-error/20 rounded-lg">
 					<div class="flex items-center gap-3">
-						<UserX class="h-5 w-5 text-red-500" />
+						<UserX class="h-5 w-5 text-error" />
 						<div>
 							<p class="text-sm font-medium text-text">Delete All Data</p>
 							<p class="text-xs text-text-muted">Permanently delete this contact and all associated data (GDPR Article 17)</p>

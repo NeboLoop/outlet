@@ -273,7 +273,7 @@
 							<div class="sm:col-span-6">
 								<div class="flex items-center justify-between p-4 bg-surface-secondary rounded-lg border border-border">
 									<div class="flex items-center gap-3">
-										<CheckCircle class="h-5 w-5 text-green-500" />
+										<CheckCircle class="h-5 w-5 text-success" />
 										<div>
 											<p class="font-medium text-text">AWS Credentials Configured</p>
 											<p class="text-sm text-text-muted">
@@ -373,7 +373,7 @@
 							<div class="sm:col-span-3">
 								<label class="form-label">Password / API Key</label>
 								<div class="flex items-center gap-2 p-2 bg-surface-secondary rounded-lg border border-border">
-									<CheckCircle class="h-4 w-4 text-green-500 flex-shrink-0" />
+									<CheckCircle class="h-4 w-4 text-success flex-shrink-0" />
 									<code class="text-sm text-text-muted">••••••••••••••••</code>
 									<Button type="secondary" size="sm" class="ml-auto" onclick={() => (editingSmtp = true)}>
 										<Pencil class="h-3 w-3 mr-1" />

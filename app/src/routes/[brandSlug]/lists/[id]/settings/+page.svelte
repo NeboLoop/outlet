@@ -337,7 +337,7 @@
 						{#if editConfirmationSubject}
 							<span class="text-text-muted ml-2">{editConfirmationSubject}</span>
 						{:else}
-							<span class="text-text-muted/50 ml-2 italic">Using default: "Please confirm your subscription"</span>
+							<span class="text-text-muted ml-2 italic">Using default: "Please confirm your subscription"</span>
 						{/if}
 					</div>
 					<div class="text-sm mt-2">
@@ -345,7 +345,7 @@
 						{#if editConfirmationBody}
 							<span class="text-text-muted ml-2">{getEmailPreview(editConfirmationBody)}</span>
 						{:else}
-							<span class="text-text-muted/50 ml-2 italic">Using default confirmation email template</span>
+							<span class="text-text-muted ml-2 italic">Using default confirmation email template</span>
 						{/if}
 					</div>
 				</div>
@@ -370,7 +370,7 @@
 					<p class="mt-1 text-xs text-text-muted">
 						Where to redirect after someone submits the subscribe form (before confirmation if double opt-in).
 					</p>
-					<p class="mt-0.5 text-xs text-text-muted/60 italic">
+					<p class="mt-0.5 text-xs text-text-muted italic">
 						A generic success page will be shown if left empty.
 					</p>
 				</div>
@@ -387,7 +387,7 @@
 						<p class="mt-1 text-xs text-text-muted">
 							Where to redirect after someone confirms their subscription (clicks the confirmation link).
 						</p>
-						<p class="mt-0.5 text-xs text-text-muted/60 italic">
+						<p class="mt-0.5 text-xs text-text-muted italic">
 							A generic confirmation page will be shown if left empty.
 						</p>
 					</div>
@@ -404,7 +404,7 @@
 					<p class="mt-1 text-xs text-text-muted">
 						Where to redirect if someone tries to subscribe but is already on the list.
 					</p>
-					<p class="mt-0.5 text-xs text-text-muted/60 italic">
+					<p class="mt-0.5 text-xs text-text-muted italic">
 						A generic "already subscribed" page will be shown if left empty.
 					</p>
 				</div>
@@ -430,7 +430,7 @@
 								{#if editThankYouEmailSubject}
 									<span class="text-text-muted ml-2">{editThankYouEmailSubject}</span>
 								{:else}
-									<span class="text-text-muted/50 ml-2 italic">Using default: "Welcome!"</span>
+									<span class="text-text-muted ml-2 italic">Using default: "Welcome!"</span>
 								{/if}
 							</div>
 							<div class="text-sm mt-2">
@@ -438,7 +438,7 @@
 								{#if editThankYouEmailBody}
 									<span class="text-text-muted ml-2">{getEmailPreview(editThankYouEmailBody)}</span>
 								{:else}
-									<span class="text-text-muted/50 ml-2 italic">Using default welcome email template</span>
+									<span class="text-text-muted ml-2 italic">Using default welcome email template</span>
 								{/if}
 							</div>
 						</div>
@@ -530,7 +530,7 @@
 					<p class="mt-1 text-xs text-text-muted">
 						Where to redirect after someone unsubscribes.
 					</p>
-					<p class="mt-0.5 text-xs text-text-muted/60 italic">
+					<p class="mt-0.5 text-xs text-text-muted italic">
 						A generic unsubscribe confirmation page will be shown if left empty.
 					</p>
 				</div>
@@ -556,7 +556,7 @@
 								{#if editGoodbyeEmailSubject}
 									<span class="text-text-muted ml-2">{editGoodbyeEmailSubject}</span>
 								{:else}
-									<span class="text-text-muted/50 ml-2 italic">Using default: "Sorry to see you go"</span>
+									<span class="text-text-muted ml-2 italic">Using default: "Sorry to see you go"</span>
 								{/if}
 							</div>
 							<div class="text-sm mt-2">
@@ -564,7 +564,7 @@
 								{#if editGoodbyeEmailBody}
 									<span class="text-text-muted ml-2">{getEmailPreview(editGoodbyeEmailBody)}</span>
 								{:else}
-									<span class="text-text-muted/50 ml-2 italic">Using default goodbye email template</span>
+									<span class="text-text-muted ml-2 italic">Using default goodbye email template</span>
 								{/if}
 							</div>
 						</div>
@@ -598,7 +598,7 @@
 		</Card>
 
 		<Card>
-			<h2 class="text-lg font-medium text-red-600 mb-4">Danger Zone</h2>
+			<h2 class="text-lg font-medium text-error mb-4">Danger Zone</h2>
 			<p class="text-sm text-text-muted mb-4">
 				Permanently delete this list and all its subscribers. This action cannot be undone.
 			</p>
@@ -646,7 +646,7 @@
 								bind:value={editConfirmationSubject}
 								placeholder="Please confirm your subscription"
 							/>
-							<p class="mt-1 text-xs text-base-content/50 italic">
+							<p class="mt-1 text-xs text-text-muted italic">
 								A generic subject line will be used if you leave this field empty.
 							</p>
 						</div>
@@ -657,7 +657,7 @@
 								This email is sent when someone subscribes to your list with double opt-in enabled.
 								It must include a confirmation link for the subscriber to click.
 							</p>
-							<p class="text-xs text-base-content/50 italic mt-2">
+							<p class="text-xs text-text-muted italic mt-2">
 								A generic email message will be used if you leave the body empty.
 							</p>
 						</div>
@@ -697,7 +697,7 @@
 							placeholder="Plain text version of this email"
 							rows={4}
 						/>
-						<p class="mt-1 text-xs text-base-content/50 italic">
+						<p class="mt-1 text-xs text-text-muted italic">
 							Auto-generated from HTML if left empty. Edit to customize.
 						</p>
 					</div>
@@ -743,7 +743,7 @@
 								bind:value={editThankYouEmailSubject}
 								placeholder="Welcome to our list!"
 							/>
-							<p class="mt-1 text-xs text-base-content/50 italic">
+							<p class="mt-1 text-xs text-text-muted italic">
 								A generic subject line will be used if you leave this field empty.
 							</p>
 						</div>
@@ -754,7 +754,7 @@
 								This email is sent after someone successfully subscribes to your list.
 								Use it to welcome new subscribers and set expectations.
 							</p>
-							<p class="text-xs text-base-content/50 italic mt-2">
+							<p class="text-xs text-text-muted italic mt-2">
 								A generic email message will be used if you leave the body empty.
 							</p>
 						</div>
@@ -794,7 +794,7 @@
 							placeholder="Plain text version of this email"
 							rows={4}
 						/>
-						<p class="mt-1 text-xs text-base-content/50 italic">
+						<p class="mt-1 text-xs text-text-muted italic">
 							Auto-generated from HTML if left empty. Edit to customize.
 						</p>
 					</div>
@@ -840,7 +840,7 @@
 								bind:value={editGoodbyeEmailSubject}
 								placeholder="Sorry to see you go"
 							/>
-							<p class="mt-1 text-xs text-base-content/50 italic">
+							<p class="mt-1 text-xs text-text-muted italic">
 								A generic subject line will be used if you leave this field empty.
 							</p>
 						</div>
@@ -851,7 +851,7 @@
 								This email is sent after someone unsubscribes from your list.
 								Consider including a way for them to resubscribe if they change their mind.
 							</p>
-							<p class="text-xs text-base-content/50 italic mt-2">
+							<p class="text-xs text-text-muted italic mt-2">
 								A generic email message will be used if you leave the body empty.
 							</p>
 						</div>
@@ -891,7 +891,7 @@
 							placeholder="Plain text version of this email"
 							rows={4}
 						/>
-						<p class="mt-1 text-xs text-base-content/50 italic">
+						<p class="mt-1 text-xs text-text-muted italic">
 							Auto-generated from HTML if left empty. Edit to customize.
 						</p>
 					</div>

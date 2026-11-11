@@ -229,7 +229,7 @@
 											{#if deletingFieldId === field.id}
 												<LoadingSpinner size="small" />
 											{:else}
-												<Trash2 class="h-4 w-4 text-red-500" />
+												<Trash2 class="h-4 w-4 text-error" />
 											{/if}
 										</Button>
 									</div>

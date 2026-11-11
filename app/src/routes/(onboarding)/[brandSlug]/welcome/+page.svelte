@@ -106,8 +106,8 @@
 		<div class="lg:col-span-3">
 			<Card>
 				<div class="text-center">
-					<div class="mx-auto w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-6">
-						<Check class="w-8 h-8 text-green-500" />
+					<div class="mx-auto w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mb-6">
+						<Check class="w-8 h-8 text-success" />
 					</div>
 					<h2 class="text-2xl font-bold text-text mb-2">You're all set!</h2>
 					<p class="text-text-muted mb-8">
@@ -126,24 +126,24 @@
 			<div class="sticky top-8 space-y-6">
 				<Card>
 					<div class="flex items-center gap-2 mb-4">
-						<Lightbulb class="w-5 h-5 text-amber-500" />
+						<Lightbulb class="w-5 h-5 text-warning" />
 						<h3 class="font-semibold text-text">What's next?</h3>
 					</div>
 					<ul class="space-y-3 text-sm text-text-muted">
 						<li class="flex items-start gap-2">
-							<Check class="w-4 h-4 text-green-500 mt-0.5" />
+							<Check class="w-4 h-4 text-success mt-0.5" />
 							<span>Create your first email list</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Check class="w-4 h-4 text-green-500 mt-0.5" />
+							<Check class="w-4 h-4 text-success mt-0.5" />
 							<span>Add subscribers manually or import a CSV</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Check class="w-4 h-4 text-green-500 mt-0.5" />
+							<Check class="w-4 h-4 text-success mt-0.5" />
 							<span>Create your first campaign</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Check class="w-4 h-4 text-green-500 mt-0.5" />
+							<Check class="w-4 h-4 text-success mt-0.5" />
 							<span>Set up welcome email automation</span>
 						</li>
 					</ul>
@@ -251,20 +251,20 @@
 
 				<Card>
 					<div class="flex items-center gap-2 mb-4">
-						<Lightbulb class="w-5 h-5 text-amber-500" />
+						<Lightbulb class="w-5 h-5 text-warning" />
 						<h3 class="font-semibold text-text">Best practices</h3>
 					</div>
 					<ul class="space-y-2 text-sm text-text-muted">
 						<li class="flex items-start gap-2">
-							<Check class="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+							<Check class="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
 							<span>Use a recognizable sender name</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Check class="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+							<Check class="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
 							<span>Use a domain you own (not gmail.com)</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Check class="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+							<Check class="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
 							<span>Monitor your reply-to inbox regularly</span>
 						</li>
 					</ul>
@@ -272,7 +272,7 @@
 
 				<Card>
 					<div class="flex items-center gap-2 mb-4">
-						<Shield class="w-5 h-5 text-green-500" />
+						<Shield class="w-5 h-5 text-success" />
 						<h3 class="font-semibold text-text">Email verification</h3>
 					</div>
 					<p class="text-sm text-text-muted">

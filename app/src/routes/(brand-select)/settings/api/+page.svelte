@@ -311,7 +311,7 @@ Optional headers:
 					<Input type="text" value={apiBaseUrl} readonly class="font-mono text-sm" />
 					<Button type="secondary" onclick={() => copyToClipboard(apiBaseUrl)}>
 						{#if copiedText === apiBaseUrl}
-							<CheckCircle class="h-4 w-4 text-green-500" />
+							<CheckCircle class="h-4 w-4 text-success" />
 						{:else}
 							<Copy class="h-4 w-4" />
 						{/if}
@@ -353,7 +353,7 @@ Optional headers:
 					<Input type="text" value={newKeyValue} readonly class="font-mono text-sm" />
 					<Button type="secondary" onclick={() => copyToClipboard(newKeyValue)}>
 						{#if copiedText === newKeyValue}
-							<CheckCircle class="h-4 w-4 text-green-500" />
+							<CheckCircle class="h-4 w-4 text-success" />
 						{:else}
 							<Copy class="h-4 w-4" />
 						{/if}
