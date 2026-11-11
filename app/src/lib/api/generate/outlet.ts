@@ -957,6 +957,14 @@ export function updateOutboundSegment(params: components.UpdateOutboundSegmentRe
 /**
  * @description 
  * @param params
+ */
+export function deleteOutboundSegment(params: components.OutboundIDRequestParams, id: string) {
+	return webapi.delete<components.Response>(`/api/admin/outbound/segments/${id}`, params)
+}
+
+/**
+ * @description 
+ * @param params
  * @param req
  */
 export function addOutboundSegmentProspects(params: components.OutboundSegmentAddRequestParams, req: components.OutboundSegmentAddRequest, id: string) {

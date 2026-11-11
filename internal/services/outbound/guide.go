@@ -130,13 +130,7 @@ func (s *Service) explainTopic(ctx context.Context, org db.Organization, topic s
 			have = append(have, "a profile ("+firstNonEmpty(p.Website, p.Sells)+")")
 		}
 		lists, _ := s.db.ListOutreachLists(ctx, org.ID)
-		defined := 0
-		for _, l := range lists {
-			if l.SegmentDescription != "" {
-				defined++
-			}
-		}
-		if defined > 0 {
+		if defined := definedSegments(lists); defined > 0 {
 			have = append(have, fmt.Sprintf("%d defined segments", defined))
 		}
 		if mats, err := s.db.ListBrandMaterials(ctx, db.ListBrandMaterialsParams{OrgID: org.ID}); err == nil && len(mats) > 0 {

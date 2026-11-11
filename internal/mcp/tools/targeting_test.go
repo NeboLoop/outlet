@@ -76,11 +76,16 @@ func TestTargetingFirstCalls(t *testing.T) {
 	_, err = registry.Call(ctx, "targeting", map[string]any{"resource": "segment", "action": "explode"})
 	assert.Error(t, err)
 
-	// The four changes are audited off the request path; the test ends once
+	call("targeting", map[string]any{"resource": "segment", "action": "create", "segment": map[string]any{"name": "Spare", "description": "Nobody yet"}})
+	assert.Equal(t, map[string]string{"result": "deleted"}, call("targeting", map[string]any{"resource": "segment", "action": "delete", "id": "Spare"}))
+	_, err = registry.Call(ctx, "targeting", map[string]any{"resource": "segment", "action": "delete", "id": "Utah dental"})
+	assert.ErrorContains(t, err, "materials of its own")
+
+	// The six changes are audited off the request path; the test ends once
 	// they are written, so no write lands while its database is removed.
 	require.Eventually(t, func() bool {
 		var n int
 		require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM mcp_audit_log WHERE user_id = 'nebo' AND result = 'ok'`).Scan(&n))
-		return n == 4
+		return n == 6
 	}, 2*time.Second, 10*time.Millisecond)
 }

@@ -149,7 +149,7 @@ var policy = map[string]toolPolicy{
 	}},
 	"targeting": {resources: true, rules: map[string]rule{
 		"profile.get": obRead(), "profile.update": obWrite(),
-		"segment.list": obRead(), "segment.get": obRead(), "segment.create": obWrite(), "segment.update": obWrite(), "segment.add": obWrite(),
+		"segment.list": obRead(), "segment.get": obRead(), "segment.create": obWrite(), "segment.update": obWrite(), "segment.add": obWrite(), "segment.delete": obWrite(),
 		"material.list": obRead(), "material.create": obWrite(), "material.update": obWrite(), "material.delete": obWrite(),
 		"do_not_contact.list": obRead(), "do_not_contact.add": obWrite(), "do_not_contact.delete": obWrite(),
 		"do_not_contact.check": obRead(), "do_not_contact.settings": obAdmin(),

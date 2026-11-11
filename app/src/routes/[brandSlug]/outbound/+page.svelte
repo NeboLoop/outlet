@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import {
 		getOutboundOverview,
 		pauseOutbound,
@@ -8,9 +9,9 @@
 		type OutboundMailboxHealth
 	} from '$lib/api';
 	import { Button, Alert, LoadingSpinner, Badge, EmptyState } from '$lib/components/ui';
-	import { Send, Pause, Play } from '@lucide/svelte';
+	import { Send, Pause, Play, ArrowRight } from '@lucide/svelte';
 	import CampaignTable from './CampaignTable.svelte';
-	import { errorMessage, mailboxLimit, percent } from './shared';
+	import { SETUP_STEPS, errorMessage, mailboxLimit, nextSetupStep, percent, setupSkipped, setupTitle } from './shared';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -22,6 +23,9 @@
 
 	let sentToday = $derived((overview?.mailboxes || []).reduce((n, m) => n + m.sent_today, 0));
 	let allowedToday = $derived((overview?.mailboxes || []).reduce((n, m) => n + m.allowed_today, 0));
+	// The setup step to do next; none once setup is done.
+	let nextStep = $derived(overview ? nextSetupStep(overview.setup || []) : undefined);
+	let setupDoneCount = $derived((overview?.setup || []).filter((s) => s.done).length);
 
 	$effect(() => {
 		load();
@@ -32,6 +36,13 @@
 		error = '';
 		try {
 			overview = await getOutboundOverview();
+			// Until setup is done, the guided setup opens, unless this browser
+			// was told to skip it.
+			const slug = $page.params.brandSlug || '';
+			if (nextSetupStep(overview.setup || []) && !setupSkipped(slug)) {
+				goto(`${base}/get-started`, { replaceState: true });
+				return;
+			}
 		} catch (err) {
 			error = errorMessage(err, 'Could not load outbound');
 		} finally {
@@ -81,6 +92,21 @@
 		<LoadingSpinner size="large" />
 	</div>
 {:else if overview}
+	{#if nextStep}
+		<div class="setup-card">
+			<div class="min-w-0">
+				<p class="font-medium text-text">Finish setup</p>
+				<p class="text-sm text-text-muted">
+					{setupDoneCount} of {SETUP_STEPS.length} steps done. Next: {setupTitle(nextStep.step)}{#if nextStep.needs}, which
+						needs {nextStep.needs}{/if}.
+				</p>
+			</div>
+			<Button type="primary" size="sm" href="{base}/get-started?step={nextStep.step}">
+				Continue setup
+				<ArrowRight class="ml-2 h-4 w-4" />
+			</Button>
+		</div>
+	{/if}
 	<div class="rounded-lg border border-border p-4 mb-6">
 		<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 			<div class="flex flex-wrap items-center gap-2">

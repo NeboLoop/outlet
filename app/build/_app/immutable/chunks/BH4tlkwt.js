@@ -1,0 +1,1 @@
+import{_r as e,gr as t}from"./B0og3B0b.js";function n(n,r={}){return t(e(`/api/admin/lists/${n}/export`,r),`list-${n}-subscribers.csv`)}function r(e,n){return t(`/api/admin/backup/${encodeURIComponent(e)}/download`,n)}function i(n={}){return t(e(`/api/admin/outbound/leads/export`,n),`leads.csv`)}export{n,i as r,r as t};

@@ -2031,6 +2031,12 @@ type (
 		Pace           int64                     `json:"pace"` // new prospects a day (the pace dial); 0: no limit
 		PaceReached    bool                      `json:"pace_reached"` // today's are reached: first emails wait for tomorrow
 		Next           []string                  `json:"next"`
+		Setup          []OutboundSetupStep       `json:"setup"` // the five steps of setting outbound up, each done or not from the brand's data
+	}
+	OutboundSetupStep {
+		Step  string `json:"step"` // business, targeting, sending, do_not_contact, campaign
+		Done  bool   `json:"done"`
+		Needs string `json:"needs,optional"` // what a step not done still needs
 	}
 	OutboundEnabledRequest {
 		Enabled bool `json:"enabled"`
@@ -3616,6 +3622,9 @@ service outlet {
 
 	@handler UpdateOutboundSegment
 	put /outbound/segments/:id (UpdateOutboundSegmentRequest) returns (OutboundSegment)
+
+	@handler DeleteOutboundSegment
+	delete /outbound/segments/:id (OutboundIDRequest) returns (Response)
 
 	@handler AddOutboundSegmentProspects
 	post /outbound/segments/:id/prospects (OutboundSegmentAddRequest) returns (OutboundAddProspectsResponse)

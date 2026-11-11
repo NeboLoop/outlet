@@ -1,32 +1,25 @@
 <script lang="ts">
 	import {
 		getOutboundDoNotContact,
-		addOutboundDoNotContact,
-		deleteOutboundDoNotContactList,
 		checkOutboundDoNotContact,
 		updateOutboundDoNotContactSettings,
 		type OutboundDNC,
 		type OutboundDNCCheck
 	} from '$lib/api';
-	import { Button, Alert, LoadingSpinner, Input, Textarea, Toggle } from '$lib/components/ui';
+	import { Button, Alert, LoadingSpinner, Input, Toggle } from '$lib/components/ui';
 	import { errorMessage } from '../shared';
+	import DncLists from '../DncLists.svelte';
 
 	// People outreach never writes to. Before anything is queued, and again
 	// before each follow-up goes, everyone is checked against suppression,
 	// the brand's own domains, its customers, these lists and the outside
 	// check. The first that matches is the reason, and every skip says it.
 
-	const MAX_ENTRIES = 10000;
-
 	let loading = $state(true);
 	let error = $state('');
 	let notice = $state('');
 	let dnc = $state<OutboundDNC | null>(null);
 	let busy = $state('');
-
-	let listName = $state('Customers');
-	let entriesText = $state('');
-	let entries = $derived(entriesText.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean));
 
 	let checkEmail = $state('');
 	let checked = $state<OutboundDNCCheck | null>(null);
@@ -65,29 +58,6 @@
 		} finally {
 			busy = '';
 		}
-	}
-
-	function upload() {
-		act('upload', async () => {
-			const res = await addOutboundDoNotContact({ list: listName.trim(), entries: entries.slice(0, MAX_ENTRIES) });
-			entriesText = '';
-			const refused = Object.keys(res.refused || {}).length;
-			return `Added ${res.added} to ${listName.trim()}${res.duplicates ? `, ${res.duplicates} already there` : ''}${refused ? `, ${refused} not an address or domain` : ''}.`;
-		});
-	}
-
-	async function readFile(e: Event) {
-		const file = (e.currentTarget as HTMLInputElement).files?.[0];
-		if (!file) return;
-		// A CSV's cells: every address or domain in it, whatever the columns.
-		entriesText = (await file.text()).replace(/"/g, '');
-	}
-
-	function removeList(name: string) {
-		act(`delete:${name}`, async () => {
-			await deleteOutboundDoNotContactList({ list: name });
-			return `${name} deleted.`;
-		});
 	}
 
 	async function check() {
@@ -159,57 +129,7 @@
 
 		<section>
 			<h2 class="text-lg font-semibold text-text mb-3">Lists</h2>
-			{#if dnc.lists.length === 0}
-				<p class="text-sm text-text-muted mb-4">No lists yet.</p>
-			{:else}
-				<div class="data-table overflow-x-auto mb-4">
-					<table class="w-full text-sm">
-						<thead>
-							<tr>
-								<th class="text-left">List</th>
-								<th class="text-right">Addresses</th>
-								<th class="text-right">Domains</th>
-								<th></th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each dnc.lists as l (l.name)}
-								<tr>
-									<td>{l.name}</td>
-									<td class="text-right">{l.emails}</td>
-									<td class="text-right">{l.domains}</td>
-									<td class="text-right">
-										<Button type="ghost" size="xs" onclick={() => removeList(l.name)} disabled={busy !== ''}>Delete</Button>
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			{/if}
-			<div class="rounded-lg border border-border p-4 space-y-4">
-				<div>
-					<label for="dnc-list" class="form-label">List</label>
-					<Input id="dnc-list" bind:value={listName} placeholder="Customers, Open deals" />
-				</div>
-				<div>
-					<label for="dnc-entries" class="form-label">Addresses or domains</label>
-					<Textarea id="dnc-entries" bind:value={entriesText} rows={5} placeholder="ann@client.com&#10;client2.com" />
-					<p class="form-hint">
-						One per line, or separated by commas. A domain skips everyone at it; a website counts as its domain.
-						{entries.length} entries.
-					</p>
-				</div>
-				<div>
-					<label for="dnc-file" class="form-label">Or read a CSV</label>
-					<input id="dnc-file" type="file" accept=".csv,.txt" class="file-input file-input-bordered file-input-sm w-full" onchange={readFile} />
-				</div>
-				<div class="flex justify-end">
-					<Button type="primary" onclick={upload} disabled={busy !== '' || !listName.trim() || entries.length === 0}>
-						{busy === 'upload' ? 'Adding...' : 'Add to list'}
-					</Button>
-				</div>
-			</div>
+			<DncLists />
 		</section>
 
 		<section>
