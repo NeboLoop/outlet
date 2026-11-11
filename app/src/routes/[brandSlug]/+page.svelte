@@ -133,7 +133,7 @@
 			<div class="flex justify-center gap-3">
 				<a
 					href="{basePath}/lists"
-					class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 transition-colors"
+					class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-content font-medium hover:bg-primary/90 transition-colors"
 				>
 					<Plus class="h-4 w-4" />
 					Create a List
@@ -148,12 +148,12 @@
 				<Card class="hover:shadow-md transition-shadow cursor-pointer">
 					<div class="flex items-start justify-between">
 						<div>
-							<p class="text-xs font-medium text-text-muted uppercase tracking-wide">Subscribers</p>
-							<p class="text-2xl font-bold text-text mt-1">{formatNumber(totalSubscribers)}</p>
+							<p class="stat-label">Subscribers</p>
+							<p class="stat-value mt-1">{formatNumber(totalSubscribers)}</p>
 							<p class="text-xs text-text-muted mt-1">{lists.length} list{lists.length !== 1 ? 's' : ''}</p>
 						</div>
-						<div class="p-2 bg-blue-100 rounded-lg">
-							<Users class="h-5 w-5 text-blue-600" />
+						<div class="p-2 bg-info/10 rounded-lg">
+							<Users class="h-5 w-5 text-info" />
 						</div>
 					</div>
 				</Card>
@@ -164,12 +164,12 @@
 				<Card class="hover:shadow-md transition-shadow cursor-pointer">
 					<div class="flex items-start justify-between">
 						<div>
-							<p class="text-xs font-medium text-text-muted uppercase tracking-wide">Emails Sent</p>
-							<p class="text-2xl font-bold text-text mt-1">{formatNumber(emailStats?.total_sent)}</p>
+							<p class="stat-label">Emails Sent</p>
+							<p class="stat-value mt-1">{formatNumber(emailStats?.total_sent)}</p>
 							<p class="text-xs text-text-muted mt-1">All time</p>
 						</div>
-						<div class="p-2 bg-green-100 rounded-lg">
-							<Send class="h-5 w-5 text-green-600" />
+						<div class="p-2 bg-success/10 rounded-lg">
+							<Send class="h-5 w-5 text-success" />
 						</div>
 					</div>
 				</Card>
@@ -180,12 +180,12 @@
 				<Card class="hover:shadow-md transition-shadow cursor-pointer">
 					<div class="flex items-start justify-between">
 						<div>
-							<p class="text-xs font-medium text-text-muted uppercase tracking-wide">Open Rate</p>
-							<p class="text-2xl font-bold text-text mt-1">{formatPercent(emailStats?.open_rate)}</p>
+							<p class="stat-label">Open Rate</p>
+							<p class="stat-value mt-1">{formatPercent(emailStats?.open_rate)}</p>
 							<p class="text-xs text-text-muted mt-1">{formatNumber(emailStats?.total_opened)} opened</p>
 						</div>
-						<div class="p-2 bg-purple-100 rounded-lg">
-							<Mail class="h-5 w-5 text-purple-600" />
+						<div class="p-2 bg-primary/10 rounded-lg">
+							<Mail class="h-5 w-5 text-primary" />
 						</div>
 					</div>
 				</Card>
@@ -196,12 +196,12 @@
 				<Card class="hover:shadow-md transition-shadow cursor-pointer">
 					<div class="flex items-start justify-between">
 						<div>
-							<p class="text-xs font-medium text-text-muted uppercase tracking-wide">Click Rate</p>
-							<p class="text-2xl font-bold text-text mt-1">{formatPercent(emailStats?.click_rate)}</p>
+							<p class="stat-label">Click Rate</p>
+							<p class="stat-value mt-1">{formatPercent(emailStats?.click_rate)}</p>
 							<p class="text-xs text-text-muted mt-1">{formatNumber(emailStats?.total_clicked)} clicked</p>
 						</div>
-						<div class="p-2 bg-cyan-100 rounded-lg">
-							<MousePointerClick class="h-5 w-5 text-cyan-600" />
+						<div class="p-2 bg-info/10 rounded-lg">
+							<MousePointerClick class="h-5 w-5 text-info" />
 						</div>
 					</div>
 				</Card>
@@ -212,8 +212,8 @@
 		{#if emailStats && (emailStats.total_bounced > 0 || emailStats.total_complaints > 0 || emailStats.total_unsubscribed > 0)}
 			<div class="grid grid-cols-3 gap-4">
 				<Card class="flex items-center gap-3 p-4">
-					<div class="p-2 bg-amber-100 rounded-lg">
-						<AlertTriangle class="h-4 w-4 text-amber-600" />
+					<div class="p-2 bg-warning/10 rounded-lg">
+						<AlertTriangle class="h-4 w-4 text-warning" />
 					</div>
 					<div>
 						<p class="text-sm font-medium text-text">{formatNumber(emailStats.total_bounced)}</p>
@@ -222,8 +222,8 @@
 				</Card>
 
 				<Card class="flex items-center gap-3 p-4">
-					<div class="p-2 bg-red-100 rounded-lg">
-						<AlertTriangle class="h-4 w-4 text-red-600" />
+					<div class="p-2 bg-error/10 rounded-lg">
+						<AlertTriangle class="h-4 w-4 text-error" />
 					</div>
 					<div>
 						<p class="text-sm font-medium text-text">{formatNumber(emailStats.total_complaints)}</p>
@@ -232,8 +232,8 @@
 				</Card>
 
 				<Card class="flex items-center gap-3 p-4">
-					<div class="p-2 bg-gray-100 rounded-lg">
-						<UserMinus class="h-4 w-4 text-gray-600" />
+					<div class="p-2 bg-base-200 rounded-lg">
+						<UserMinus class="h-4 w-4 text-text-muted" />
 					</div>
 					<div>
 						<p class="text-sm font-medium text-text">{formatNumber(emailStats.total_unsubscribed)}</p>
@@ -331,8 +331,8 @@
 					href="{basePath}/campaigns/new"
 					class="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-bg-secondary transition-colors"
 				>
-					<div class="p-2 bg-green-100 rounded-lg">
-						<Send class="h-4 w-4 text-green-600" />
+					<div class="p-2 bg-success/10 rounded-lg">
+						<Send class="h-4 w-4 text-success" />
 					</div>
 					<div>
 						<p class="text-sm font-medium text-text">New Campaign</p>
@@ -343,8 +343,8 @@
 					href="{basePath}/lists"
 					class="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-bg-secondary transition-colors"
 				>
-					<div class="p-2 bg-blue-100 rounded-lg">
-						<Users class="h-4 w-4 text-blue-600" />
+					<div class="p-2 bg-info/10 rounded-lg">
+						<Users class="h-4 w-4 text-info" />
 					</div>
 					<div>
 						<p class="text-sm font-medium text-text">Manage Lists</p>
@@ -355,8 +355,8 @@
 					href="{basePath}/templates"
 					class="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-bg-secondary transition-colors"
 				>
-					<div class="p-2 bg-amber-100 rounded-lg">
-						<Mail class="h-4 w-4 text-amber-600" />
+					<div class="p-2 bg-warning/10 rounded-lg">
+						<Mail class="h-4 w-4 text-warning" />
 					</div>
 					<div>
 						<p class="text-sm font-medium text-text">Designs</p>

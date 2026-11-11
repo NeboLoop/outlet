@@ -40,7 +40,7 @@
 	--color-success-content: oklch(0.985 0 0);
 	--color-warning: oklch(0.555 0.163 48.998);
 	--color-warning-content: oklch(0.985 0 0);
-	--color-error: oklch(0.577 0.245 27.325);
+	--color-error: oklch(0.55 0.23 27.325);
 	--color-error-content: oklch(0.985 0 0);
 
 	--radius-selector: 0.5rem;
@@ -53,6 +53,7 @@
 	--noise: 0;
 
 	--outlet-page: oklch(1 0 0);
+	--outlet-auth: oklch(0.97 0 0);
 	--outlet-sidebar: oklch(0.985 0 0);
 	--outlet-subtle: oklch(0.985 0 0);
 	--outlet-text-secondary: oklch(0.371 0 0);
@@ -75,7 +76,7 @@
 	--color-base-200: oklch(0.269 0 0);
 	--color-base-300: oklch(0.32 0 0);
 	--color-base-content: oklch(0.985 0 0);
-	--color-primary: oklch(0.64 0.19 277);
+	--color-primary: oklch(0.67 0.18 277);
 	--color-primary-content: oklch(0.145 0 0);
 	--color-secondary: oklch(0.269 0 0);
 	--color-secondary-content: oklch(0.985 0 0);
@@ -102,6 +103,7 @@
 	--noise: 0;
 
 	--outlet-page: oklch(0.145 0 0);
+	--outlet-auth: oklch(0.145 0 0);
 	--outlet-sidebar: oklch(0.175 0 0);
 	--outlet-subtle: oklch(0.175 0 0);
 	--outlet-text-secondary: oklch(0.87 0 0);
@@ -264,6 +266,17 @@
 		outline: none !important;
 	}
 
+
+	/* Stat tiles: a quiet label over a big number */
+	.stat-label {
+		@apply text-sm font-medium;
+		color: var(--color-text-muted);
+	}
+
+	.stat-value {
+		@apply text-3xl font-semibold tracking-tight tabular-nums;
+		color: var(--color-text);
+	}
 
 	.form-hint {
 		@apply text-xs mt-1;
@@ -492,7 +505,7 @@
 
 	/* A segmented control: a muted track with the current tab raised on it */
 	.tab-nav {
-		@apply inline-flex w-fit gap-0.5 rounded-lg p-[3px];
+		@apply flex w-fit gap-0.5 rounded-lg p-[3px];
 		background-color: var(--color-bg-secondary);
 	}
 
@@ -757,7 +770,7 @@
 	/* The page: content near the top on phones, centered from sm up */
 	.auth-shell {
 		@apply flex min-h-dvh flex-col items-center px-4 pt-8 pb-10 sm:justify-center sm:px-6 sm:py-12;
-		background-color: var(--color-base-200);
+		background-color: var(--outlet-auth);
 		color: var(--color-base-content);
 	}
 
@@ -920,6 +933,24 @@
 		background-image: none;
 		border-color: color-mix(in oklab, var(--alert-color) 30%, var(--color-base-100));
 		box-shadow: none;
+	}
+
+	/* Tabs: the ones not chosen read at muted-text strength, not half
+	   transparent, so they stay readable in both themes */
+	.tab {
+		color: var(--color-text-muted);
+	}
+
+	.tab:is(.tab-active, [aria-selected='true'], :checked, :hover) {
+		color: var(--color-base-content);
+	}
+
+	/* A stacked table row on a phone reads left to right: a cell that is
+	   right-aligned in the desktop table sits under its label instead */
+	@media (max-width: 639px) {
+		.data-table-stack td {
+			text-align: left;
+		}
 	}
 
 	/* A primary button that is busy keeps its color, so it reads as working
