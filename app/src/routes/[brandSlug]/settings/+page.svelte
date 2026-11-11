@@ -179,7 +179,7 @@
 							class="flex-shrink-0 p-1.5 text-text-muted hover:text-text rounded transition-colors"
 						>
 							{#if copied}
-								<Check class="h-4 w-4 text-green-500" />
+								<Check class="h-4 w-4 text-success" />
 							{:else}
 								<Copy class="h-4 w-4" />
 							{/if}
@@ -198,7 +198,7 @@
 
 				<!-- Danger Zone -->
 				<Card>
-					<h2 class="text-lg font-medium text-red-600 mb-4">Danger Zone</h2>
+					<h2 class="text-lg font-medium text-error mb-4">Danger Zone</h2>
 					<p class="text-sm text-text-muted mb-4">
 						Permanently delete this brand and all of its data including contacts, lists, and campaigns.
 						This action cannot be undone.

@@ -433,7 +433,7 @@
 						<div class="text-text-muted">
 							<GripVertical class="h-5 w-5" />
 						</div>
-						<div class="flex items-center justify-center h-8 w-8 rounded-full bg-primary text-white text-sm font-medium">
+						<div class="flex items-center justify-center h-8 w-8 rounded-full bg-primary text-primary-content text-sm font-medium">
 							{i + 1}
 						</div>
 						<div class="flex-1 min-w-0">
@@ -516,7 +516,7 @@
 								/>
 								<span class="text-sm text-base-content/70">hours after {templates.length === 0 && !editingEmail ? 'signup' : 'previous email'}</span>
 							</div>
-							<p class="mt-1 text-xs text-base-content/50 italic">
+							<p class="mt-1 text-xs text-text-muted italic">
 								{editorDelay === 0 ? 'Sends immediately' : `Waits ${editorDelay} hours`}
 							</p>
 						</div>
@@ -563,7 +563,7 @@
 							placeholder="Plain text version of this email"
 							rows={4}
 						/>
-						<p class="mt-1 text-xs text-base-content/50 italic">
+						<p class="mt-1 text-xs text-text-muted italic">
 							Auto-generated from HTML if left empty. Edit to customize.
 						</p>
 					</div>

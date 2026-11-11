@@ -236,7 +236,7 @@
 				<button
 					type="button"
 					onclick={switchToVisual}
-					class="px-4 py-2 text-sm font-medium flex items-center gap-2 {editorMode === 'visual' ? 'bg-primary text-white' : 'bg-bg text-text hover:bg-bg-secondary'}"
+					class="px-4 py-2 text-sm font-medium flex items-center gap-2 {editorMode === 'visual' ? 'bg-primary text-primary-content' : 'bg-bg text-text hover:bg-bg-secondary'}"
 				>
 					<Eye size={16} />
 					Visual
@@ -244,7 +244,7 @@
 				<button
 					type="button"
 					onclick={switchToHtml}
-					class="px-4 py-2 text-sm font-medium flex items-center gap-2 border-l border-border {editorMode === 'html' ? 'bg-primary text-white' : 'bg-bg text-text hover:bg-bg-secondary'}"
+					class="px-4 py-2 text-sm font-medium flex items-center gap-2 border-l border-border {editorMode === 'html' ? 'bg-primary text-primary-content' : 'bg-bg text-text hover:bg-bg-secondary'}"
 				>
 					<Code size={16} />
 					HTML
@@ -252,7 +252,7 @@
 				<button
 					type="button"
 					onclick={switchToText}
-					class="px-4 py-2 text-sm font-medium flex items-center gap-2 border-l border-border {editorMode === 'text' ? 'bg-primary text-white' : 'bg-bg text-text hover:bg-bg-secondary'}"
+					class="px-4 py-2 text-sm font-medium flex items-center gap-2 border-l border-border {editorMode === 'text' ? 'bg-primary text-primary-content' : 'bg-bg text-text hover:bg-bg-secondary'}"
 				>
 					<FileText size={16} />
 					Text
@@ -270,7 +270,7 @@
 					<button
 						type="button"
 						onclick={() => insertVariable(`{{${variable.name}}}`)}
-						class="px-2 py-1 text-xs font-mono rounded transition-colors {variable.required ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-800' : 'bg-bg-secondary hover:bg-border text-text-muted'}"
+						class="px-2 py-1 text-xs font-mono rounded transition-colors {variable.required ? 'bg-warning/15 hover:bg-warning/25 text-warning' : 'bg-bg-secondary hover:bg-border text-text-muted'}"
 						title={variable.label || variable.name}
 					>{`{{${variable.name}}}`}</button>
 				{/each}

@@ -205,7 +205,7 @@
 					<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between py-4 first:pt-0 last:pb-0">
 						<div class="flex items-center gap-3 min-w-0">
 							<div class="h-10 w-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-								<span class="text-sm font-medium text-white">
+								<span class="text-sm font-medium text-primary-content">
 									{(user.name || user.email)[0].toUpperCase()}
 								</span>
 							</div>

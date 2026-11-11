@@ -289,14 +289,14 @@
 			</div>
 
 			<div class="border border-border rounded-lg">
-				<div class="p-4 flex items-center justify-between">
-					<div class="flex items-center gap-4">
-						<div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-							<Mail class="h-6 w-6 text-blue-600" />
+				<div class="p-4 flex flex-wrap items-center justify-between gap-3">
+					<div class="flex items-center gap-4 min-w-0">
+						<div class="w-12 h-12 bg-info/10 rounded-lg flex items-center justify-center flex-shrink-0">
+							<Mail class="h-6 w-6 text-info" />
 						</div>
-						<div>
+						<div class="min-w-0">
 							<h3 class="card-section-title">Email Sender</h3>
-							<p class="card-section-subtitle">
+							<p class="card-section-subtitle break-words">
 								{#if isConfigured}
 									{org?.from_name || 'No name'} &lt;{org?.from_email || 'No email'}&gt;
 								{:else}
@@ -307,7 +307,7 @@
 					</div>
 					<div class="flex items-center gap-2">
 						{#if isConfigured}
-							<div class="flex items-center gap-2 text-green-600">
+							<div class="flex items-center gap-2 text-success">
 								<Check class="h-5 w-5" />
 								<span class="text-sm font-medium">Configured</span>
 							</div>
@@ -379,7 +379,7 @@
 			{#if domainIdentities.length === 0}
 				<div class="border border-border rounded-lg p-6 text-center">
 					<div class="w-12 h-12 mx-auto bg-base-200 rounded-lg flex items-center justify-center mb-4">
-						<Shield class="h-6 w-6 text-base-content/50" />
+						<Shield class="h-6 w-6 text-text-muted" />
 					</div>
 					<h3 class="text-base font-medium mb-2">No domains configured</h3>
 					<p class="text-sm text-base-content/60 mb-4">
@@ -462,10 +462,10 @@
 									<table class="table table-sm w-full">
 										<thead>
 											<tr>
-												<th class="text-xs font-medium text-base-content/60 uppercase">Type</th>
-												<th class="text-xs font-medium text-base-content/60 uppercase">Name/Host</th>
-												<th class="text-xs font-medium text-base-content/60 uppercase">Value</th>
-												<th class="text-xs font-medium text-base-content/60 uppercase">Purpose</th>
+												<th class="text-xs font-medium text-base-content/60">Type</th>
+												<th class="text-xs font-medium text-base-content/60">Name/Host</th>
+												<th class="text-xs font-medium text-base-content/60">Value</th>
+												<th class="text-xs font-medium text-base-content/60">Purpose</th>
 												<th class="w-10"></th>
 											</tr>
 										</thead>
@@ -519,8 +519,8 @@
 		<!-- Info Card -->
 		<Card>
 			<div class="flex items-start gap-4">
-				<div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-					<svg class="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<div class="w-10 h-10 bg-info/10 rounded-lg flex items-center justify-center flex-shrink-0">
+					<svg class="h-5 w-5 text-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
 					</svg>
 				</div>

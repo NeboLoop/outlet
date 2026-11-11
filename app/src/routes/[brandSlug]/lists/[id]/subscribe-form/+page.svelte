@@ -75,7 +75,7 @@
 				</div>
 				<Button type="secondary" onclick={copyUrl} class="flex-shrink-0">
 					{#if urlCopied}
-						<Check class="mr-2 h-4 w-4 text-green-500" />
+						<Check class="mr-2 h-4 w-4 text-success" />
 						Copied
 					{:else}
 						<Copy class="mr-2 h-4 w-4" />
@@ -105,7 +105,7 @@
 				<div class="absolute top-2 right-2">
 					<Button type="secondary" size="sm" onclick={copyHtml}>
 						{#if htmlCopied}
-							<Check class="mr-1 h-3 w-3 text-green-500" />
+							<Check class="mr-1 h-3 w-3 text-success" />
 							Copied
 						{:else}
 							<Copy class="mr-1 h-3 w-3" />

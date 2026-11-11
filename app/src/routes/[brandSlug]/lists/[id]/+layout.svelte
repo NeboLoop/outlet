@@ -140,7 +140,7 @@
 
 					<!-- Quick Stats -->
 					<div class="mt-6 pt-6 border-t border-border">
-						<h3 class="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Quick Stats</h3>
+						<h3 class="text-sm font-medium text-text-muted mb-3">Quick Stats</h3>
 						<div class="space-y-2 text-sm">
 							<div class="flex justify-between">
 								<span class="text-text-muted">Active</span>
@@ -155,7 +155,7 @@
 
 					<!-- Tags Section (placeholder for future) -->
 					<div class="mt-6 pt-6 border-t border-border">
-						<h3 class="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Tags</h3>
+						<h3 class="text-sm font-medium text-text-muted mb-3">Tags</h3>
 						<p class="text-xs text-text-muted italic">No tags yet</p>
 						<!-- Future: Add tag management here -->
 					</div>
@@ -182,7 +182,7 @@
 
 			<!-- Quick Stats -->
 			<div class="mt-6 pt-6 border-t border-border">
-				<h3 class="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Quick Stats</h3>
+				<h3 class="text-sm font-medium text-text-muted mb-3">Quick Stats</h3>
 				<div class="space-y-2 text-sm">
 					<div class="flex justify-between">
 						<span class="text-text-muted">Active</span>
@@ -197,7 +197,7 @@
 
 			<!-- Tags Section -->
 			<div class="mt-6 pt-6 border-t border-border">
-				<h3 class="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Tags</h3>
+				<h3 class="text-sm font-medium text-text-muted mb-3">Tags</h3>
 				<p class="text-xs text-text-muted italic">No tags yet</p>
 			</div>
 		</Drawer>

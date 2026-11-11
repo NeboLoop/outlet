@@ -220,7 +220,7 @@
 								type="text"
 								bind:value={editName}
 								placeholder="Design Name"
-								class="text-lg font-semibold text-base-content bg-transparent border-none focus:outline-none focus:ring-0 placeholder:text-base-content/40 w-full sm:w-64"
+								class="text-lg font-semibold text-base-content bg-transparent border-none focus:outline-none focus:ring-0 placeholder:text-text-muted w-full sm:w-64"
 							/>
 							<Badge variant={getCategoryVariant(editCategory)} size="sm">
 								{getCategoryLabel(editCategory)}
@@ -231,7 +231,7 @@
 								<Badge variant="default" size="sm">Inactive</Badge>
 							{/if}
 						</div>
-						<p class="text-xs text-base-content/50">Email Design</p>
+						<p class="text-xs text-text-muted">Email Design</p>
 					</div>
 				</div>
 				<div class="flex flex-wrap items-center gap-3">
@@ -277,7 +277,7 @@
 						<div>
 							<label class="form-label">Slug</label>
 							<p class="text-sm text-base-content/70 bg-base-200 px-3 py-2 rounded-md font-mono">{editSlug}</p>
-							<p class="mt-1 text-xs text-base-content/50 italic">Cannot be changed after creation</p>
+							<p class="mt-1 text-xs text-text-muted italic">Cannot be changed after creation</p>
 						</div>
 
 						<!-- Description -->
@@ -355,7 +355,7 @@
 							placeholder="Auto-generated from HTML if left empty..."
 							rows={4}
 						/>
-						<p class="mt-1 text-xs text-base-content/50 italic">
+						<p class="mt-1 text-xs text-text-muted italic">
 							Plain text version for email clients that don't support HTML.
 						</p>
 					</div>

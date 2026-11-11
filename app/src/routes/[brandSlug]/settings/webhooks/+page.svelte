@@ -309,9 +309,9 @@
 							</td>
 							<td>
 								<div class="text-sm">
-									<span class="text-green-600">{webhook.deliveries_success || 0}</span>
+									<span class="text-success">{webhook.deliveries_success || 0}</span>
 									<span class="text-text-muted"> / </span>
-									<span class="text-red-600">{webhook.deliveries_failed || 0}</span>
+									<span class="text-error">{webhook.deliveries_failed || 0}</span>
 								</div>
 							</td>
 							<td class="text-sm text-text-muted">
@@ -374,7 +374,7 @@
 									<Button
 										variant="ghost"
 										size="sm"
-										class="text-red-600 hover:text-red-700"
+										class="text-error hover:text-error/80"
 										onclick={() => confirmDeleteWebhook(webhook.id)}
 										title="Delete"
 									>
@@ -502,17 +502,17 @@
 							</td>
 							<td>
 								{#if log.status_code >= 200 && log.status_code < 300}
-									<span class="flex items-center gap-1 text-green-600">
+									<span class="flex items-center gap-1 text-success">
 										<Check size={14} />
 										{log.status_code}
 									</span>
 								{:else if log.error}
-									<span class="flex items-center gap-1 text-red-600">
+									<span class="flex items-center gap-1 text-error">
 										<X size={14} />
 										Error
 									</span>
 								{:else}
-									<span class="text-red-600">{log.status_code}</span>
+									<span class="text-error">{log.status_code}</span>
 								{/if}
 							</td>
 							<td class="text-sm text-text-muted">

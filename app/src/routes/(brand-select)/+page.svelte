@@ -225,14 +225,14 @@
 						<div class="flex rounded-lg border border-border overflow-hidden">
 							<button
 								onclick={() => sortBy = 'name'}
-								class="flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors {sortBy === 'name' ? 'bg-primary text-white' : 'bg-bg hover:bg-bg-secondary text-text-muted'}"
+								class="flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors {sortBy === 'name' ? 'bg-primary text-primary-content' : 'bg-bg hover:bg-bg-secondary text-text-muted'}"
 							>
 								<ArrowUpAZ class="h-3.5 w-3.5" />
 								Name
 							</button>
 							<button
 								onclick={() => sortBy = 'date'}
-								class="flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors {sortBy === 'date' ? 'bg-primary text-white' : 'bg-bg hover:bg-bg-secondary text-text-muted'}"
+								class="flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors {sortBy === 'date' ? 'bg-primary text-primary-content' : 'bg-bg hover:bg-bg-secondary text-text-muted'}"
 							>
 								<CalendarDays class="h-3.5 w-3.5" />
 								Newest

@@ -624,17 +624,17 @@
 								<div class="bg-base-200 rounded-lg p-4 text-center">
 									<Mail class="h-5 w-5 mx-auto mb-2 text-base-content/60" />
 									<div class="text-2xl font-bold">{subscriberDetail.emails_sent}</div>
-									<div class="text-xs text-base-content/60 uppercase">Sent</div>
+									<div class="text-xs text-base-content/60">Sent</div>
 								</div>
 								<div class="bg-base-200 rounded-lg p-4 text-center">
 									<Eye class="h-5 w-5 mx-auto mb-2 text-base-content/60" />
 									<div class="text-2xl font-bold">{subscriberDetail.emails_opened}</div>
-									<div class="text-xs text-base-content/60 uppercase">Opened</div>
+									<div class="text-xs text-base-content/60">Opened</div>
 								</div>
 								<div class="bg-base-200 rounded-lg p-4 text-center">
 									<MousePointer class="h-5 w-5 mx-auto mb-2 text-base-content/60" />
 									<div class="text-2xl font-bold">{subscriberDetail.emails_clicked}</div>
-									<div class="text-xs text-base-content/60 uppercase">Clicked</div>
+									<div class="text-xs text-base-content/60">Clicked</div>
 								</div>
 							</div>
 
@@ -718,14 +718,14 @@
 															{#if activity.opened_at}
 																<Badge variant="success" size="sm">{activity.open_count}</Badge>
 															{:else}
-																<span class="text-base-content/40">-</span>
+																<span class="text-text-muted">-</span>
 															{/if}
 														</td>
 														<td class="text-center">
 															{#if activity.clicked_at}
 																<Badge variant="info" size="sm">{activity.click_count}</Badge>
 															{:else}
-																<span class="text-base-content/40">-</span>
+																<span class="text-text-muted">-</span>
 															{/if}
 														</td>
 													</tr>

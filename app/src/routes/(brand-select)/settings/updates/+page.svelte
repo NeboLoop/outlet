@@ -142,9 +142,9 @@
 						</div>
 					</div>
 				{:else}
-					<div class="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
+					<div class="bg-success/10 border border-success/20 rounded-lg p-4">
 						<div class="flex items-center gap-3">
-							<CheckCircle class="h-5 w-5 text-green-500" />
+							<CheckCircle class="h-5 w-5 text-success" />
 							<div>
 								<h3 class="font-medium text-text">You're up to date!</h3>
 								<p class="text-sm text-text-muted mt-1">

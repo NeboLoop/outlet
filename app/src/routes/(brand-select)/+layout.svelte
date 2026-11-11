@@ -100,7 +100,7 @@
 <AuthGuard>
 <div class="min-h-screen bg-base-50">
 	<!-- Minimal navbar for brand selection / global settings -->
-	<nav class="border-b border-base-200 bg-white">
+	<nav class="border-b border-base-200 bg-base-100">
 		<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 			<div class="flex h-16 justify-between">
 				<div class="flex items-center">
@@ -119,9 +119,9 @@
 							<ChevronDown class="h-4 w-4 text-text-muted group-hover:text-text transition-colors" />
 						</button>
 						{#if showBrandSwitcher}
-							<div class="absolute right-0 top-full mt-2 w-64 rounded-lg shadow-lg py-1 z-50 bg-white border border-base-200">
+							<div class="absolute right-0 top-full mt-2 w-64 rounded-lg shadow-lg py-1 z-50 bg-base-100 border border-base-200">
 								<div class="px-3 py-2 border-b border-border">
-									<p class="text-xs font-medium text-text-muted uppercase tracking-wide">Brands</p>
+									<p class="text-xs font-medium text-text-muted">Brands</p>
 								</div>
 								<div class="max-h-64 overflow-y-auto">
 									{#each allOrgs as brand}
@@ -129,7 +129,7 @@
 											onclick={() => navigateToOrg(brand.slug)}
 											class="w-full px-3 py-2 flex items-center gap-3 text-left transition-colors hover:bg-base-100"
 										>
-											<span class="flex items-center justify-center h-8 w-8 rounded-md text-xs font-semibold text-white bg-primary flex-shrink-0">
+											<span class="flex items-center justify-center h-8 w-8 rounded-md text-xs font-semibold text-primary-content bg-primary flex-shrink-0">
 												{brand.name[0].toUpperCase()}
 											</span>
 											<span class="flex-1 text-sm font-medium text-text truncate">{brand.name}</span>
@@ -161,8 +161,8 @@
 								aria-haspopup="true"
 							>
 								<span class="sr-only">Open user menu</span>
-								<div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white">
-									<span class="text-sm font-medium text-white">
+								<div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-content">
+									<span class="text-sm font-medium text-primary-content">
 										{(user?.name || user?.email || 'U')[0].toUpperCase()}
 									</span>
 								</div>
@@ -170,7 +170,7 @@
 						</div>
 
 						{#if showUserMenu}
-							<div class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-lg py-1 bg-white border border-base-200 shadow-lg" role="menu" aria-orientation="vertical">
+							<div class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-lg py-1 bg-base-100 border border-base-200 shadow-lg" role="menu" aria-orientation="vertical">
 								<div class="px-4 py-3 border-b border-border">
 									<p class="text-sm font-medium text-text truncate">{user?.name || user?.email}</p>
 									<p class="text-xs text-text-muted capitalize">{user?.role}</p>

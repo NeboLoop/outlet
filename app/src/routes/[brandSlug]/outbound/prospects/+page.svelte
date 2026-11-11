@@ -224,8 +224,12 @@
 <div class="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
 	<SearchInput bind:value={search} placeholder="Search email or name" size="sm" class="lg:w-72" onsearch={searchSoon} onclear={searchSoon} />
 	<div class="flex flex-wrap items-center gap-3">
-		<Select size="sm" bind:value={listId} options={listOptions} class="w-44" />
-		<Select size="sm" bind:value={status} options={STATUSES} class="w-36" />
+		<div class="w-44">
+			<Select size="sm" bind:value={listId} options={listOptions} />
+		</div>
+		<div class="w-36">
+			<Select size="sm" bind:value={status} options={STATUSES} />
+		</div>
 		<Checkbox bind:checked={enrollable} label="Free to enroll" size="sm" />
 	</div>
 </div>
@@ -263,7 +267,7 @@
 								<Badge variant="error" size="sm">Suppressed</Badge>
 							{/if}
 						</td>
-						<td>{p.name}</td>
+						<td class="whitespace-nowrap">{p.name}</td>
 						<td>
 							<div class="flex flex-wrap gap-1">
 								{#each p.lists as l (l.id)}
@@ -279,7 +283,7 @@
 							{/each}
 						</td>
 						<td class="hidden sm:table-cell text-text-muted">{p.validation_status || 'Not yet'}</td>
-						<td class="hidden md:table-cell text-text-muted">{p.email_source}</td>
+						<td class="hidden md:table-cell text-text-muted min-w-40">{p.email_source}</td>
 						<td class="hidden md:table-cell text-text-muted whitespace-nowrap">{formatDate(p.created_at, 'datetime')}</td>
 					</tr>
 				{/each}

@@ -150,7 +150,7 @@
 					>
 						<div class="flex items-center gap-3 min-w-0">
 							<div class="h-10 w-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-								<span class="text-sm font-medium text-white">
+								<span class="text-sm font-medium text-primary-content">
 									{org.name[0].toUpperCase()}
 								</span>
 							</div>
