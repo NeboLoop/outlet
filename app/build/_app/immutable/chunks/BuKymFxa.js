@@ -1,0 +1,1 @@
+import{lt as e,q as t,ut as n}from"./BKXUg6nK.js";import{Pt as r}from"./j-DxK_jk.js";var i=n(null),a=``,o=0,s={get overview(){return t(i)}};async function c(t){let n=++o;t!==a&&(a=t,e(i,null));try{let t=await r();n===o&&e(i,t,!0)}catch{n===o&&e(i,null)}}function l(e){return`${e} ${e===1?`reply`:`replies`} waiting`}export{c as n,l as r,s as t};
