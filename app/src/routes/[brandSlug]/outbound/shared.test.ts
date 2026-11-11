@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { OutboundCampaignResults, OutboundMailboxHealth, OutboundSetupStep } from '$lib/api';
+import type { OutboundCampaignResults, OutboundMailboxHealth, OutboundOverview, OutboundSetupStep } from '$lib/api';
 import {
 	askAIPrompt,
+	dashboardOutbound,
+	hotLeads,
+	waitingOnYou,
 	nextSetupStep,
 	openingStep,
 	setupDone,
@@ -153,5 +156,45 @@ describe('askAIPrompt', () => {
 		expect(askAIPrompt('campaign', { brand: 'acme', segment: 'Utah dental', approval: 'first' })).toContain(
 			'approval_mode first'
 		);
+	});
+});
+
+describe('the dashboard outbound row', () => {
+	const steps = (done: boolean): OutboundSetupStep[] =>
+		['business', 'targeting', 'sending', 'do_not_contact', 'campaign'].map((step) => ({ step, done }));
+	const overview = (o: Partial<OutboundOverview>) =>
+		({ enabled: true, setup: steps(true), drafts_waiting: 0, replies_waiting: 0, campaigns: [], ...o }) as OutboundOverview;
+
+	it('shows nothing while outbound is off or not loaded', () => {
+		expect(dashboardOutbound(null)).toBe('off');
+		expect(dashboardOutbound(overview({ enabled: false }))).toBe('off');
+		expect(dashboardOutbound(overview({ enabled: false, setup: steps(false) }))).toBe('off');
+	});
+
+	it('shows the setup card until setup is done, then the numbers', () => {
+		expect(dashboardOutbound(overview({ setup: steps(false) }))).toBe('setup');
+		const oneLeft = steps(true);
+		oneLeft[4].done = false;
+		expect(dashboardOutbound(overview({ setup: oneLeft }))).toBe('setup');
+		expect(dashboardOutbound(overview({}))).toBe('running');
+	});
+
+	it('adds hot leads across campaigns', () => {
+		expect(hotLeads([])).toBe(0);
+		expect(hotLeads([{ interested: 2 }, { interested: 3 }] as OutboundCampaignResults[])).toBe(5);
+	});
+
+	it('leaves out a waiting count of zero', () => {
+		expect(waitingOnYou(overview({}), '/acme/outbound')).toEqual([]);
+		expect(waitingOnYou(overview({ drafts_waiting: 3 }), '/acme/outbound')).toEqual([
+			{ label: '3 drafts to approve', href: '/acme/outbound/drafts' }
+		]);
+		expect(waitingOnYou(overview({ replies_waiting: 1 }), '/acme/outbound')).toEqual([
+			{ label: '1 reply to answer', href: '/acme/outbound/replies' }
+		]);
+		expect(waitingOnYou(overview({ drafts_waiting: 1, replies_waiting: 2 }), '/acme/outbound').map((w) => w.label)).toEqual([
+			'1 draft to approve',
+			'2 replies to answer'
+		]);
 	});
 });

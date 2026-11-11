@@ -5,7 +5,10 @@
 	import { Card, Badge, LoadingSpinner, EmptyState, Alert } from '$lib/components/ui';
 	import { ChartCard, AreaChart } from '$lib/components/charts';
 	import { getEmailDashboardStats, listLists, listCampaigns, getCurrentUser, type EmailDashboardStatsResponse, type ListInfo, type CampaignInfo } from '$lib/api';
-	import { TrendingUp, TrendingDown, Users, Mail, Send, MousePointerClick, AlertTriangle, UserMinus, ArrowRight, Plus, RefreshCw } from '@lucide/svelte';
+	import { TrendingUp, TrendingDown, Users, Mail, Send, MousePointerClick, AlertTriangle, UserMinus, ArrowRight, Plus, RefreshCw, MessageSquare, Flame } from '@lucide/svelte';
+	import { outbound, refreshOutbound } from '$lib/stores/outbound.svelte';
+	import SetupCard from './outbound/SetupCard.svelte';
+	import { dashboardOutbound, hotLeads, percent, waitingOnYou } from './outbound/shared';
 
 	interface Props {
 		data: {
@@ -23,6 +26,12 @@
 	let lists = $state<ListInfo[]>([]);
 	let recentCampaigns = $state<CampaignInfo[]>([]);
 	let orgName = $state('');
+
+	// Outbound's numbers come from the overview the brand layout loads on
+	// each navigation; the row shows only while outbound is on.
+	let outboundBase = $derived(`${basePath}/outbound`);
+	let outboundView = $derived(dashboardOutbound(outbound.overview));
+	let waiting = $derived(outbound.overview ? waitingOnYou(outbound.overview, outboundBase) : []);
 
 	$effect(() => {
 		loadDashboardData();
@@ -70,6 +79,12 @@
 		}
 	}
 
+	function refresh() {
+		loadDashboardData();
+		const orgId = browser ? localStorage.getItem('currentOrgId') : null;
+		if (orgId) refreshOutbound(orgId);
+	}
+
 	function formatNumber(num: number | null | undefined): string {
 		if (num == null) return '0';
 		if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -91,6 +106,94 @@
 	let hasData = $derived(lists.length > 0 || (emailStats && emailStats.total_sent > 0));
 </script>
 
+{#snippet outboundRow()}
+	{#if outbound.overview && outboundView !== 'off'}
+		{@const o = outbound.overview}
+		<section aria-labelledby="dash-outbound-title">
+			<div class="flex items-center justify-between gap-3 mb-3">
+				<h2 id="dash-outbound-title" class="text-lg font-semibold text-text">Outbound</h2>
+				<a href={outboundBase} class="text-sm font-medium text-primary hover:underline flex items-center gap-1">
+					Open outbound
+					<ArrowRight class="h-4 w-4" />
+				</a>
+			</div>
+			{#if outboundView === 'setup'}
+				<SetupCard setup={o.setup || []} base={outboundBase} />
+			{:else}
+				<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+					<a href="{outboundBase}/prospects" class="block">
+						<Card class="hover:shadow-md transition-shadow cursor-pointer">
+							<div class="flex items-start justify-between">
+								<div>
+									<p class="stat-label">Prospects</p>
+									<p class="stat-value mt-1">{formatNumber(o.prospects_total)}</p>
+									<p class="text-xs text-text-muted mt-1">On outreach lists</p>
+								</div>
+								<div class="p-2 bg-info/10 rounded-lg">
+									<Users class="h-5 w-5 text-info" />
+								</div>
+							</div>
+						</Card>
+					</a>
+
+					<a href="{outboundBase}/campaigns" class="block">
+						<Card class="hover:shadow-md transition-shadow cursor-pointer">
+							<div class="flex items-start justify-between">
+								<div>
+									<p class="stat-label">Emails sent</p>
+									<p class="stat-value mt-1">{formatNumber(o.messages?.sent)}</p>
+									<p class="text-xs text-text-muted mt-1">From your mailboxes</p>
+								</div>
+								<div class="p-2 bg-success/10 rounded-lg">
+									<Send class="h-5 w-5 text-success" />
+								</div>
+							</div>
+						</Card>
+					</a>
+
+					<a href={outboundBase} class="block">
+						<Card class="hover:shadow-md transition-shadow cursor-pointer">
+							<div class="flex items-start justify-between">
+								<div>
+									<p class="stat-label">Reply rate</p>
+									<p class="stat-value mt-1">{percent(o.reply_rate)}</p>
+									<p class="text-xs text-text-muted mt-1">Across campaigns</p>
+								</div>
+								<div class="p-2 bg-primary/10 rounded-lg">
+									<MessageSquare class="h-5 w-5 text-primary" />
+								</div>
+							</div>
+						</Card>
+					</a>
+
+					<a href="{outboundBase}/replies?hot=1" class="block">
+						<Card class="hover:shadow-md transition-shadow cursor-pointer">
+							<div class="flex items-start justify-between">
+								<div>
+									<p class="stat-label">Hot leads</p>
+									<p class="stat-value mt-1">{formatNumber(hotLeads(o.campaigns || []))}</p>
+									<p class="text-xs text-text-muted mt-1">Replied interested</p>
+								</div>
+								<div class="p-2 bg-warning/10 rounded-lg">
+									<Flame class="h-5 w-5 text-warning" />
+								</div>
+							</div>
+						</Card>
+					</a>
+				</div>
+				{#if waiting.length > 0}
+					<p class="dash-waiting">
+						<span class="font-medium text-text">Waiting on you</span>
+						{#each waiting as w (w.href)}
+							<a href={w.href} class="dash-waiting-link">{w.label}</a>
+						{/each}
+					</p>
+				{/if}
+			{/if}
+		</section>
+	{/if}
+{/snippet}
+
 <svelte:head>
 	<title>Dashboard - {orgName || 'Admin'}</title>
 </svelte:head>
@@ -103,7 +206,7 @@
 			<p class="mt-1 text-sm text-text-muted">{orgName}</p>
 		</div>
 		<button
-			onclick={loadDashboardData}
+			onclick={refresh}
 			disabled={loading}
 			class="p-2 rounded-lg hover:bg-bg-secondary transition-colors"
 			title="Refresh"
@@ -140,6 +243,7 @@
 				</a>
 			</div>
 		</Card>
+		{@render outboundRow()}
 	{:else}
 		<!-- Email Metrics -->
 		<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -207,6 +311,8 @@
 				</Card>
 			</a>
 		</div>
+
+		{@render outboundRow()}
 
 		<!-- Secondary Stats Row -->
 		{#if emailStats && (emailStats.total_bounced > 0 || emailStats.total_complaints > 0 || emailStats.total_unsubscribed > 0)}

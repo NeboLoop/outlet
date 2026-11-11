@@ -117,6 +117,9 @@ type Querier interface {
 	CountPathwayDomain(ctx context.Context, arg CountPathwayDomainParams) (int64, error)
 	CountPendingCampaignSends(ctx context.Context, campaignID string) (int64, error)
 	CountPendingValidations(ctx context.Context, jobID sql.NullString) (int64, error)
+	// Every person on a brand's outreach lists, once each: the Prospects tab's
+	// total with no filter.
+	CountProspectPeople(ctx context.Context, orgID string) (int64, error)
 	CountProspectsByStatus(ctx context.Context, orgID string) ([]CountProspectsByStatusRow, error)
 	// Each outreach list's people by status.
 	CountSegmentProspects(ctx context.Context, orgID string) ([]CountSegmentProspectsRow, error)

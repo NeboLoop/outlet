@@ -419,6 +419,14 @@ SELECT ls.status, COUNT(*) AS n FROM list_subscribers ls
 JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'
 WHERE el.org_id = ? GROUP BY ls.status;
 
+-- name: CountProspectPeople :one
+-- Every person on a brand's outreach lists, once each: the Prospects tab's
+-- total with no filter.
+SELECT COUNT(DISTINCT c.id) FROM list_subscribers ls
+JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'
+JOIN contacts c ON c.id = ls.contact_id
+WHERE el.org_id = ?;
+
 -- name: GetOutreachSequenceBySlug :one
 SELECT * FROM email_sequences WHERE org_id = ? AND slug = ? AND sequence_type = 'outreach';
 

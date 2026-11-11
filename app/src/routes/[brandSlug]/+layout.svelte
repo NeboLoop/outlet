@@ -8,6 +8,8 @@
 	import HelpLink from '$lib/components/ui/HelpLink.svelte';
 	import { getCurrentUser, logout } from '$lib/auth';
 	import { Search, X, Menu, ChevronDown, Building2, Check, Plus } from '@lucide/svelte';
+	import { untrack } from 'svelte';
+	import { outbound, refreshOutbound } from '$lib/stores/outbound.svelte';
 
 	interface Props {
 		data: {
@@ -49,6 +51,16 @@
 		$page.url.pathname;
 		mobileMenuOpen = false;
 	});
+
+	// The Outbound badge (and the dashboard's outbound row) load with the
+	// brand and again on each navigation, never on a timer.
+	$effect(() => {
+		$page.url.pathname;
+		const id = org?.id;
+		if (id) untrack(() => refreshOutbound(id));
+	});
+
+	let repliesWaiting = $derived(outbound.overview?.replies_waiting || 0);
 
 	async function loadOrg() {
 		loading = true;
@@ -160,7 +172,7 @@
 		<div class="admin-layout">
 			<!-- Desktop Sidebar -->
 			<div class="admin-sidebar hidden md:block">
-				<Sidebar brandSlug={data.brandSlug} orgName={org?.name} />
+				<Sidebar brandSlug={data.brandSlug} orgName={org?.name} {repliesWaiting} />
 			</div>
 
 			<!-- Mobile Header -->
@@ -256,7 +268,7 @@
 					tabindex="-1"
 				></div>
 				<div class="fixed inset-y-0 left-0 z-50 w-[220px] md:hidden">
-					<Sidebar brandSlug={data.brandSlug} orgName={org?.name} />
+					<Sidebar brandSlug={data.brandSlug} orgName={org?.name} {repliesWaiting} />
 				</div>
 			{/if}
 

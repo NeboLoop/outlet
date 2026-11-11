@@ -176,6 +176,22 @@ func (q *Queries) CountOutreachEmailsByStatus(ctx context.Context, orgID sql.Nul
 	return items, nil
 }
 
+const countProspectPeople = `-- name: CountProspectPeople :one
+SELECT COUNT(DISTINCT c.id) FROM list_subscribers ls
+JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'
+JOIN contacts c ON c.id = ls.contact_id
+WHERE el.org_id = ?
+`
+
+// Every person on a brand's outreach lists, once each: the Prospects tab's
+// total with no filter.
+func (q *Queries) CountProspectPeople(ctx context.Context, orgID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countProspectPeople, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countProspectsByStatus = `-- name: CountProspectsByStatus :many
 SELECT ls.status, COUNT(*) AS n FROM list_subscribers ls
 JOIN email_lists el ON el.id = ls.list_id AND el.kind = 'outreach'

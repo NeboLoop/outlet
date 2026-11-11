@@ -1988,6 +1988,7 @@ export interface OutboundOverview {
 	domains: Array<OutboundDomainInfo>
 	mailboxes: Array<OutboundMailboxHealth>
 	prospects: { [key: string]: number }
+	prospects_total: number // every person on the brand's outreach lists, once each (the Prospects tab's total)
 	messages: { [key: string]: number }
 	replies_waiting: number
 	drafts_waiting: number

@@ -598,11 +598,22 @@
 		border-color: var(--color-border);
 	}
 
-	/* The Overview's "Finish setup" card */
+	/* The "Finish setup" card (Outbound's Overview and the brand dashboard) */
 	.setup-card {
-		@apply mb-6 flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between;
+		@apply flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between;
 		border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
 		background-color: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg));
+	}
+
+	/* The brand dashboard's outbound row */
+	.dash-waiting {
+		@apply mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm;
+		color: var(--color-text-muted);
+	}
+
+	.dash-waiting-link {
+		@apply font-medium hover:underline;
+		color: var(--color-primary);
 	}
 
 	/* ===== Sidebar ===== */
@@ -647,7 +658,7 @@
 	}
 
 	.sidebar-link {
-		@apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all;
+		@apply relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all;
 		color: var(--color-text-muted);
 	}
 
@@ -671,6 +682,18 @@
 
 	.sidebar-label {
 		@apply truncate;
+	}
+
+	/* An unread count on a nav item (Outbound: replies waiting) */
+	.sidebar-badge {
+		@apply ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold tabular-nums;
+		background-color: var(--color-primary);
+		color: var(--color-primary-content);
+	}
+
+	.sidebar.collapsed .sidebar-badge {
+		@apply absolute top-0.5 right-1.5 ml-0 h-4 min-w-4 px-1;
+		font-size: 0.625rem;
 	}
 
 	.sidebar-collapse-btn {

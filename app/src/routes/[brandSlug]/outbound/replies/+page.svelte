@@ -15,8 +15,9 @@
 
 	let base = $derived(`/${$page.params.brandSlug}/outbound`);
 	let handled = $state(false);
-	// Hot leads are the replies sorted as interested.
-	let hotOnly = $state(false);
+	// Hot leads are the replies sorted as interested. ?hot=1 (the
+	// dashboard's Hot leads link) opens with them.
+	let hotOnly = $state($page.url.searchParams.get('hot') === '1');
 	let exporting = $state(false);
 	let loading = $state(true);
 	let error = $state('');
