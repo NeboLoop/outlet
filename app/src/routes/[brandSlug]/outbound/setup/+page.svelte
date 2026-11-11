@@ -19,6 +19,7 @@
 	import { Plus, Check, X, Copy } from '@lucide/svelte';
 	import { page } from '$app/stores';
 	import { errorMessage, mailboxLimit } from '../shared';
+	import PaceDial from '../PaceDial.svelte';
 
 	let brandSlug = $derived($page.params.brandSlug);
 
@@ -365,6 +366,8 @@
 				</div>
 			</div>
 		</section>
+
+		<PaceDial />
 
 		<section>
 			<div class="flex items-center gap-2 mb-3">

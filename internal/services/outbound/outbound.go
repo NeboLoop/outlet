@@ -9,8 +9,10 @@ package outbound
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"math/rand/v2"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +56,7 @@ type Service struct {
 	protected []string
 	tracking  string
 	verify    Verifier
+	http      *http.Client // the outside do-not-contact check
 	dns       Resolver
 	doAPI     string // DigitalOcean API base, replaced in tests
 	now       func() time.Time
@@ -63,11 +66,13 @@ type Service struct {
 	serviceAPI map[string]string // a mailbox service's API base, replaced in tests
 }
 
-// New makes the service. Outbound is off for a brand until its admin turns it on.
+// New makes the service, and has the sequence engine run the do-not-contact
+// check before it queues any outreach step. Outbound is off for a brand
+// until its admin turns it on.
 func New(store *db.Store, cryptoSvc *crypto.Service, cfg Config) *Service {
 	s := &Service{
 		db: store, crypto: cryptoSvc, mailer: cfg.Mailer, seq: cfg.Sequences,
-		tracking: normDomain(cfg.TrackingTarget), verify: cfg.Verify,
+		tracking: normDomain(cfg.TrackingTarget), verify: cfg.Verify, http: &http.Client{Timeout: outsideCheckTimeout},
 		dns: netResolver{}, doAPI: "https://api.digitalocean.com", now: time.Now,
 		rnd: rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
 	}
@@ -75,6 +80,9 @@ func New(store *db.Store, cryptoSvc *crypto.Service, cfg Config) *Service {
 		if d = normDomain(d); d != "" {
 			s.protected = append(s.protected, d)
 		}
+	}
+	if s.seq != nil {
+		s.seq.SetOutreachGate(s.Gate)
 	}
 	return s
 }
@@ -130,3 +138,5 @@ func domainOf(address string) string {
 }
 
 func normEmail(e string) string { return strings.ToLower(strings.TrimSpace(e)) }
+
+func nullStr(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }

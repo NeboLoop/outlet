@@ -423,22 +423,24 @@ func (q *Queries) CreateOutreachDomain(ctx context.Context, arg CreateOutreachDo
 }
 
 const editOutreachEmail = `-- name: EditOutreachEmail :execrows
-UPDATE email_queue SET subject = ?1, body = ?2
-WHERE email_queue.id = ?3 AND status IN ('draft', 'pending') AND kind = 'outreach'
-  AND contact_id IN (SELECT c.id FROM contacts c WHERE c.org_id = ?4)
+UPDATE email_queue SET subject = ?1, body = ?2, authored_by = ?3
+WHERE email_queue.id = ?4 AND status IN ('draft', 'pending') AND kind = 'outreach'
+  AND contact_id IN (SELECT c.id FROM contacts c WHERE c.org_id = ?5)
 `
 
 type EditOutreachEmailParams struct {
-	Subject sql.NullString `json:"subject"`
-	Body    sql.NullString `json:"body"`
-	ID      string         `json:"id"`
-	OrgID   sql.NullString `json:"org_id"`
+	Subject    sql.NullString `json:"subject"`
+	Body       sql.NullString `json:"body"`
+	AuthoredBy string         `json:"authored_by"`
+	ID         string         `json:"id"`
+	OrgID      sql.NullString `json:"org_id"`
 }
 
 func (q *Queries) EditOutreachEmail(ctx context.Context, arg EditOutreachEmailParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, editOutreachEmail,
 		arg.Subject,
 		arg.Body,
+		arg.AuthoredBy,
 		arg.ID,
 		arg.OrgID,
 	)
@@ -628,7 +630,7 @@ func (q *Queries) GetOutreachDomain(ctx context.Context, arg GetOutreachDomainPa
 }
 
 const getOutreachEmail = `-- name: GetOutreachEmail :one
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.email AS to_email, c.name AS to_name, c.org_id AS org_id,
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, eq.authored_by, c.email AS to_email, c.name AS to_name, c.org_id AS org_id,
        COALESCE(et.position, 0) AS position, et.sequence_id AS sequence_id
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
@@ -665,6 +667,7 @@ type GetOutreachEmailRow struct {
 	ClaimToken     sql.NullString `json:"claim_token"`
 	ClaimedAt      sql.NullString `json:"claimed_at"`
 	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	AuthoredBy     string         `json:"authored_by"`
 	ToEmail        string         `json:"to_email"`
 	ToName         string         `json:"to_name"`
 	OrgID          sql.NullString `json:"org_id"`
@@ -700,6 +703,7 @@ func (q *Queries) GetOutreachEmail(ctx context.Context, arg GetOutreachEmailPara
 		&i.ClaimToken,
 		&i.ClaimedAt,
 		&i.FirstRefusedAt,
+		&i.AuthoredBy,
 		&i.ToEmail,
 		&i.ToName,
 		&i.OrgID,
@@ -710,7 +714,7 @@ func (q *Queries) GetOutreachEmail(ctx context.Context, arg GetOutreachEmailPara
 }
 
 const getOutreachEmailByMessageID = `-- name: GetOutreachEmailByMessageID :one
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.org_id AS org_id, et.sequence_id AS sequence_id
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, eq.authored_by, c.org_id AS org_id, et.sequence_id AS sequence_id
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
 LEFT JOIN email_templates et ON et.id = eq.template_id
@@ -741,6 +745,7 @@ type GetOutreachEmailByMessageIDRow struct {
 	ClaimToken     sql.NullString `json:"claim_token"`
 	ClaimedAt      sql.NullString `json:"claimed_at"`
 	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	AuthoredBy     string         `json:"authored_by"`
 	OrgID          sql.NullString `json:"org_id"`
 	SequenceID     sql.NullString `json:"sequence_id"`
 }
@@ -772,6 +777,7 @@ func (q *Queries) GetOutreachEmailByMessageID(ctx context.Context, messageID sql
 		&i.ClaimToken,
 		&i.ClaimedAt,
 		&i.FirstRefusedAt,
+		&i.AuthoredBy,
 		&i.OrgID,
 		&i.SequenceID,
 	)
@@ -779,7 +785,7 @@ func (q *Queries) GetOutreachEmailByMessageID(ctx context.Context, messageID sql
 }
 
 const getOutreachSequence = `-- name: GetOutreachSequence :one
-SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks FROM email_sequences WHERE id = ? AND org_id = ? AND sequence_type = 'outreach'
+SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks, authored_by FROM email_sequences WHERE id = ? AND org_id = ? AND sequence_type = 'outreach'
 `
 
 type GetOutreachSequenceParams struct {
@@ -808,12 +814,13 @@ func (q *Queries) GetOutreachSequence(ctx context.Context, arg GetOutreachSequen
 		&i.WindowEndHour,
 		&i.TrackOpens,
 		&i.TrackClicks,
+		&i.AuthoredBy,
 	)
 	return i, err
 }
 
 const getOutreachSequenceBySlug = `-- name: GetOutreachSequenceBySlug :one
-SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks FROM email_sequences WHERE org_id = ? AND slug = ? AND sequence_type = 'outreach'
+SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks, authored_by FROM email_sequences WHERE org_id = ? AND slug = ? AND sequence_type = 'outreach'
 `
 
 type GetOutreachSequenceBySlugParams struct {
@@ -842,12 +849,13 @@ func (q *Queries) GetOutreachSequenceBySlug(ctx context.Context, arg GetOutreach
 		&i.WindowEndHour,
 		&i.TrackOpens,
 		&i.TrackClicks,
+		&i.AuthoredBy,
 	)
 	return i, err
 }
 
 const getSequenceOptions = `-- name: GetSequenceOptions :one
-SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks FROM email_sequences WHERE id = ?
+SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks, authored_by FROM email_sequences WHERE id = ?
 `
 
 func (q *Queries) GetSequenceOptions(ctx context.Context, id string) (EmailSequence, error) {
@@ -871,6 +879,7 @@ func (q *Queries) GetSequenceOptions(ctx context.Context, id string) (EmailSeque
 		&i.WindowEndHour,
 		&i.TrackOpens,
 		&i.TrackClicks,
+		&i.AuthoredBy,
 	)
 	return i, err
 }
@@ -1152,16 +1161,20 @@ func (q *Queries) ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity,
 }
 
 const listEmailReplies = `-- name: ListEmailReplies :many
-SELECT r.id, r.org_id, r.mailbox_id, r.contact_id, r.queue_id, r.sequence_id, r.from_email, r.subject, r.body, r.message_id, r.in_reply_to, r.refs, r.classification, r.handled, r.received_at, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
+SELECT r.id, r.org_id, r.mailbox_id, r.contact_id, r.queue_id, r.sequence_id, r.from_email, r.subject, r.body, r.message_id, r.in_reply_to, r.refs, r.classification, r.handled, r.received_at, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name, CAST(COALESCE(el.name, '') AS TEXT) AS segment_name
 FROM email_replies r
 LEFT JOIN email_sequences es ON es.id = r.sequence_id
-WHERE r.org_id = ? AND r.handled = ? ORDER BY r.received_at DESC LIMIT ?
+LEFT JOIN email_lists el ON el.id = es.list_id
+WHERE r.org_id = ?1 AND r.handled = ?2
+  AND (CAST(?3 AS TEXT) = '' OR r.classification = ?3)
+ORDER BY r.received_at DESC LIMIT ?4
 `
 
 type ListEmailRepliesParams struct {
-	OrgID   string `json:"org_id"`
-	Handled int64  `json:"handled"`
-	Limit   int64  `json:"limit"`
+	OrgID          string `json:"org_id"`
+	Handled        int64  `json:"handled"`
+	Classification string `json:"classification"`
+	LimitCount     int64  `json:"limit_count"`
 }
 
 type ListEmailRepliesRow struct {
@@ -1181,11 +1194,19 @@ type ListEmailRepliesRow struct {
 	Handled        int64          `json:"handled"`
 	ReceivedAt     string         `json:"received_at"`
 	CampaignName   string         `json:"campaign_name"`
+	SegmentName    string         `json:"segment_name"`
 }
 
-// Replies with the name of the campaign each answers.
+// Replies with the name of the campaign each answers and its segment
+// (the campaign's outreach list), handled or not, of one classification
+// (empty: any; interested is a hot lead).
 func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesParams) ([]ListEmailRepliesRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEmailReplies, arg.OrgID, arg.Handled, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listEmailReplies,
+		arg.OrgID,
+		arg.Handled,
+		arg.Classification,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1210,6 +1231,7 @@ func (q *Queries) ListEmailReplies(ctx context.Context, arg ListEmailRepliesPara
 			&i.Handled,
 			&i.ReceivedAt,
 			&i.CampaignName,
+			&i.SegmentName,
 		); err != nil {
 			return nil, err
 		}
@@ -1325,7 +1347,7 @@ func (q *Queries) ListOutreachDomains(ctx context.Context, orgID string) ([]Doma
 }
 
 const listOutreachEmails = `-- name: ListOutreachEmails :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email,
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, eq.authored_by, c.email AS to_email, c.name AS to_name, COALESCE(et.position, 0) AS position, m.email AS from_email,
        CAST(COALESCE(es.id, '') AS TEXT) AS campaign_id, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
@@ -1367,6 +1389,7 @@ type ListOutreachEmailsRow struct {
 	ClaimToken     sql.NullString `json:"claim_token"`
 	ClaimedAt      sql.NullString `json:"claimed_at"`
 	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	AuthoredBy     string         `json:"authored_by"`
 	ToEmail        string         `json:"to_email"`
 	ToName         string         `json:"to_name"`
 	Position       int64          `json:"position"`
@@ -1410,6 +1433,7 @@ func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmails
 			&i.ClaimToken,
 			&i.ClaimedAt,
 			&i.FirstRefusedAt,
+			&i.AuthoredBy,
 			&i.ToEmail,
 			&i.ToName,
 			&i.Position,
@@ -1431,7 +1455,7 @@ func (q *Queries) ListOutreachEmails(ctx context.Context, arg ListOutreachEmails
 }
 
 const listOutreachEmailsForSequence = `-- name: ListOutreachEmailsForSequence :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.email AS to_email, m.email AS from_email, et.position
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, eq.authored_by, c.email AS to_email, m.email AS from_email, et.position
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
@@ -1464,6 +1488,7 @@ type ListOutreachEmailsForSequenceRow struct {
 	ClaimToken     sql.NullString `json:"claim_token"`
 	ClaimedAt      sql.NullString `json:"claimed_at"`
 	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	AuthoredBy     string         `json:"authored_by"`
 	ToEmail        string         `json:"to_email"`
 	FromEmail      string         `json:"from_email"`
 	Position       int64          `json:"position"`
@@ -1502,6 +1527,7 @@ func (q *Queries) ListOutreachEmailsForSequence(ctx context.Context, sequenceID 
 			&i.ClaimToken,
 			&i.ClaimedAt,
 			&i.FirstRefusedAt,
+			&i.AuthoredBy,
 			&i.ToEmail,
 			&i.FromEmail,
 			&i.Position,
@@ -1520,7 +1546,7 @@ func (q *Queries) ListOutreachEmailsForSequence(ctx context.Context, sequenceID 
 }
 
 const listOutreachLists = `-- name: ListOutreachLists :many
-SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind FROM email_lists WHERE org_id = ? AND kind = 'outreach' ORDER BY created_at
+SELECT id, public_id, org_id, name, slug, description, double_optin, confirmation_email_subject, confirmation_email_body, created_at, updated_at, public_page_enabled, thank_you_url, confirm_redirect_url, unsubscribe_redirect_url, thank_you_email_enabled, thank_you_email_subject, thank_you_email_body, already_subscribed_url, goodbye_email_enabled, goodbye_email_subject, goodbye_email_body, unsubscribe_behavior, unsubscribe_scope, kind, segment_description, segment_filters FROM email_lists WHERE org_id = ? AND kind = 'outreach' ORDER BY created_at
 `
 
 func (q *Queries) ListOutreachLists(ctx context.Context, orgID string) ([]EmailList, error) {
@@ -1558,6 +1584,8 @@ func (q *Queries) ListOutreachLists(ctx context.Context, orgID string) ([]EmailL
 			&i.UnsubscribeBehavior,
 			&i.UnsubscribeScope,
 			&i.Kind,
+			&i.SegmentDescription,
+			&i.SegmentFilters,
 		); err != nil {
 			return nil, err
 		}
@@ -1573,7 +1601,7 @@ func (q *Queries) ListOutreachLists(ctx context.Context, orgID string) ([]EmailL
 }
 
 const listOutreachSequences = `-- name: ListOutreachSequences :many
-SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks FROM email_sequences WHERE org_id = ? AND sequence_type = 'outreach' ORDER BY created_at DESC
+SELECT id, org_id, list_id, slug, name, trigger_event, is_active, send_hour, send_timezone, sequence_type, created_at, on_completion_sequence_id, approval_mode, window_start_hour, window_end_hour, track_opens, track_clicks, authored_by FROM email_sequences WHERE org_id = ? AND sequence_type = 'outreach' ORDER BY created_at DESC
 `
 
 func (q *Queries) ListOutreachSequences(ctx context.Context, orgID sql.NullString) ([]EmailSequence, error) {
@@ -1603,6 +1631,7 @@ func (q *Queries) ListOutreachSequences(ctx context.Context, orgID sql.NullStrin
 			&i.WindowEndHour,
 			&i.TrackOpens,
 			&i.TrackClicks,
+			&i.AuthoredBy,
 		); err != nil {
 			return nil, err
 		}
@@ -1618,7 +1647,7 @@ func (q *Queries) ListOutreachSequences(ctx context.Context, orgID sql.NullStrin
 }
 
 const listOutreachThread = `-- name: ListOutreachThread :many
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at FROM email_queue eq
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, eq.authored_by FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 WHERE eq.contact_id = ? AND et.sequence_id = ? AND eq.kind = 'outreach' AND eq.status = 'sent'
 ORDER BY eq.sent_at
@@ -1663,6 +1692,7 @@ func (q *Queries) ListOutreachThread(ctx context.Context, arg ListOutreachThread
 			&i.ClaimToken,
 			&i.ClaimedAt,
 			&i.FirstRefusedAt,
+			&i.AuthoredBy,
 		); err != nil {
 			return nil, err
 		}
@@ -1882,7 +1912,7 @@ func (q *Queries) ListSequenceSteps(ctx context.Context, sequenceID sql.NullStri
 }
 
 const listStuckOutreach = `-- name: ListStuckOutreach :many
-SELECT id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at, first_refused_at FROM email_queue WHERE kind = 'outreach' AND status = 'sending' AND claimed_at < ?
+SELECT id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at, first_refused_at, authored_by FROM email_queue WHERE kind = 'outreach' AND status = 'sending' AND claimed_at < ?
 `
 
 // Rows left in sending by a crash. Nobody knows whether they went, so they
@@ -1920,6 +1950,7 @@ func (q *Queries) ListStuckOutreach(ctx context.Context, claimedAt sql.NullStrin
 			&i.ClaimToken,
 			&i.ClaimedAt,
 			&i.FirstRefusedAt,
+			&i.AuthoredBy,
 		); err != nil {
 			return nil, err
 		}
@@ -1994,7 +2025,7 @@ func (q *Queries) MarkOutreachSent(ctx context.Context, arg MarkOutreachSentPara
 }
 
 const nextOutreachForMailbox = `-- name: NextOutreachForMailbox :one
-SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, c.email AS to_email, c.org_id AS org_id, COALESCE(et.position, 0) AS position, et.sequence_id AS sequence_id
+SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, eq.authored_by, c.email AS to_email, c.org_id AS org_id, COALESCE(et.position, 0) AS position, et.sequence_id AS sequence_id
 FROM email_queue eq
 JOIN contacts c ON c.id = eq.contact_id
 LEFT JOIN email_templates et ON et.id = eq.template_id
@@ -2036,6 +2067,7 @@ type NextOutreachForMailboxRow struct {
 	ClaimToken     sql.NullString `json:"claim_token"`
 	ClaimedAt      sql.NullString `json:"claimed_at"`
 	FirstRefusedAt sql.NullString `json:"first_refused_at"`
+	AuthoredBy     string         `json:"authored_by"`
 	ToEmail        string         `json:"to_email"`
 	OrgID          sql.NullString `json:"org_id"`
 	Position       int64          `json:"position"`
@@ -2071,6 +2103,7 @@ func (q *Queries) NextOutreachForMailbox(ctx context.Context, arg NextOutreachFo
 		&i.ClaimToken,
 		&i.ClaimedAt,
 		&i.FirstRefusedAt,
+		&i.AuthoredBy,
 		&i.ToEmail,
 		&i.OrgID,
 		&i.Position,
@@ -2284,9 +2317,9 @@ const queueOutreachEmail = `-- name: QueueOutreachEmail :one
 
 INSERT INTO email_queue (
     id, contact_id, template_id, scheduled_for, status, tracking_token,
-    kind, mailbox_id, subject, body, message_id, in_reply_to, refs
-) VALUES (?, ?, ?, ?, ?, ?, 'outreach', ?, ?, ?, ?, ?, ?)
-RETURNING id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at, first_refused_at
+    kind, mailbox_id, subject, body, message_id, in_reply_to, refs, authored_by
+) VALUES (?, ?, ?, ?, ?, ?, 'outreach', ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, contact_id, template_id, scheduled_for, sent_at, status, error_message, created_at, tracking_token, opened_at, open_count, clicked_at, click_count, kind, mailbox_id, subject, body, message_id, in_reply_to, refs, claim_token, claimed_at, first_refused_at, authored_by
 `
 
 type QueueOutreachEmailParams struct {
@@ -2302,6 +2335,7 @@ type QueueOutreachEmailParams struct {
 	MessageID     sql.NullString `json:"message_id"`
 	InReplyTo     sql.NullString `json:"in_reply_to"`
 	Refs          sql.NullString `json:"refs"`
+	AuthoredBy    string         `json:"authored_by"`
 }
 
 // ---- the outreach queue (email_queue rows of kind 'outreach') -----------------
@@ -2319,6 +2353,7 @@ func (q *Queries) QueueOutreachEmail(ctx context.Context, arg QueueOutreachEmail
 		arg.MessageID,
 		arg.InReplyTo,
 		arg.Refs,
+		arg.AuthoredBy,
 	)
 	var i EmailQueue
 	err := row.Scan(
@@ -2345,6 +2380,7 @@ func (q *Queries) QueueOutreachEmail(ctx context.Context, arg QueueOutreachEmail
 		&i.ClaimToken,
 		&i.ClaimedAt,
 		&i.FirstRefusedAt,
+		&i.AuthoredBy,
 	)
 	return i, err
 }
@@ -2627,7 +2663,7 @@ func (q *Queries) SetOutreachSchedule(ctx context.Context, arg SetOutreachSchedu
 const setOutreachSequenceOptions = `-- name: SetOutreachSequenceOptions :exec
 UPDATE email_sequences
 SET sequence_type = 'outreach', approval_mode = ?, window_start_hour = ?, window_end_hour = ?,
-    track_opens = ?, track_clicks = ?, send_timezone = ?
+    track_opens = ?, track_clicks = ?, send_timezone = ?, authored_by = ?
 WHERE id = ? AND org_id = ?
 `
 
@@ -2638,6 +2674,7 @@ type SetOutreachSequenceOptionsParams struct {
 	TrackOpens      int64          `json:"track_opens"`
 	TrackClicks     int64          `json:"track_clicks"`
 	SendTimezone    sql.NullString `json:"send_timezone"`
+	AuthoredBy      string         `json:"authored_by"`
 	ID              string         `json:"id"`
 	OrgID           sql.NullString `json:"org_id"`
 }
@@ -2650,6 +2687,7 @@ func (q *Queries) SetOutreachSequenceOptions(ctx context.Context, arg SetOutreac
 		arg.TrackOpens,
 		arg.TrackClicks,
 		arg.SendTimezone,
+		arg.AuthoredBy,
 		arg.ID,
 		arg.OrgID,
 	)

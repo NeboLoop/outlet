@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { OutboundCampaignResults, OutboundMailboxHealth } from '$lib/api';
-import { classificationLabel, mailboxLimit, overBounceLimit, pageRange } from './shared';
+import { authorLabel, authorVariant, classificationLabel, joinList, mailboxLimit, materialKindLabel, overBounceLimit, pageRange, splitList } from './shared';
 
 describe('pageRange', () => {
 	it('says which rows a page shows', () => {
@@ -68,5 +68,29 @@ describe('classificationLabel', () => {
 		expect(classificationLabel('interested')).toBe('Interested');
 		expect(classificationLabel('needs_review')).toBe('Not sorted');
 		expect(classificationLabel('')).toBe('Not sorted');
+	});
+});
+
+describe('authorLabel', () => {
+	it('says who wrote an email, and marks an AI\'s for the closest read', () => {
+		expect(authorLabel('ai')).toBe('Written by AI');
+		expect(authorLabel('ai_edited')).toBe('AI, edited by a person');
+		expect(authorLabel('person')).toBe('Written by a person');
+		expect(authorLabel('')).toBe('');
+		expect(authorVariant('ai')).toBe('warning');
+		expect(authorVariant('person')).toBe('default');
+	});
+});
+
+describe('lists in a field', () => {
+	it('splits on commas and drops blanks', () => {
+		expect(splitList(' US, CA ,, ')).toEqual(['US', 'CA']);
+		expect(joinList(['US', 'CA'])).toBe('US, CA');
+		expect(joinList(undefined)).toBe('');
+	});
+
+	it('names material kinds', () => {
+		expect(materialKindLabel('case_study')).toBe('Case study');
+		expect(materialKindLabel('other')).toBe('other');
 	});
 });

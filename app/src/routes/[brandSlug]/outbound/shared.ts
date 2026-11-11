@@ -47,3 +47,47 @@ export function classificationLabel(value: string): string {
 	if (!value || value === 'needs_review') return 'Not sorted';
 	return CLASSIFICATIONS.find((c) => c.value === value)?.label || value;
 }
+
+// Who wrote an outreach email, for the reviewer: an AI's email needs the
+// closest read, one a person edited less, a person's own the least.
+export function authorLabel(authoredBy: string): string {
+	switch (authoredBy) {
+		case 'ai':
+			return 'Written by AI';
+		case 'ai_edited':
+			return 'AI, edited by a person';
+		case 'person':
+			return 'Written by a person';
+	}
+	return '';
+}
+
+export function authorVariant(authoredBy: string): 'warning' | 'info' | 'default' {
+	if (authoredBy === 'ai') return 'warning';
+	if (authoredBy === 'ai_edited') return 'info';
+	return 'default';
+}
+
+export const MATERIAL_KINDS: { value: string; label: string }[] = [
+	{ value: 'case_study', label: 'Case study' },
+	{ value: 'proof_point', label: 'Proof point' },
+	{ value: 'offer', label: 'Offer' },
+	{ value: 'link', label: 'Link' },
+	{ value: 'asset', label: 'Asset' }
+];
+
+export function materialKindLabel(kind: string): string {
+	return MATERIAL_KINDS.find((k) => k.value === kind)?.label || kind;
+}
+
+// A comma-separated field as a list, and back.
+export function splitList(value: string): string[] {
+	return value
+		.split(',')
+		.map((v) => v.trim())
+		.filter(Boolean);
+}
+
+export function joinList(values?: string[]): string {
+	return (values || []).join(', ');
+}

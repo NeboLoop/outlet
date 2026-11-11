@@ -31,6 +31,7 @@ func (l *CreateOutboundCampaignLogic) CreateOutboundCampaign(req *types.Outbound
 	if err != nil {
 		return nil, err
 	}
+	req.AuthoredBy = outbound.AuthorPerson // the app is a person
 	return CreateOutboundCampaign(l.ctx, l.svcCtx, org, req)
 }
 

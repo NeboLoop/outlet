@@ -28,6 +28,9 @@ export const screenGuides: Record<string, string> = {
 	'/[brandSlug]/outbound/drafts': 'set-up-outreach',
 	'/[brandSlug]/outbound/replies': 'set-up-outreach',
 	'/[brandSlug]/outbound/prospects': 'set-up-outreach',
+	'/[brandSlug]/outbound/targeting': 'outreach-targeting',
+	'/[brandSlug]/outbound/materials': 'outreach-targeting',
+	'/[brandSlug]/outbound/do-not-contact': 'outreach-targeting',
 	'/[brandSlug]/outbound/setup': 'set-up-outreach',
 
 	'/[brandSlug]/settings': 'getting-started',

@@ -707,6 +707,45 @@ export function setOutboundDNSToken(req: components.OutboundDNSTokenRequest) {
 
 /**
  * @description 
+ */
+export function getOutboundDoNotContact() {
+	return webapi.get<components.OutboundDNC>(`/api/admin/outbound/do-not-contact`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function addOutboundDoNotContact(req: components.OutboundDNCAddRequest) {
+	return webapi.post<components.OutboundDNCAddResponse>(`/api/admin/outbound/do-not-contact`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function deleteOutboundDoNotContactList(params: components.OutboundDNCDeleteRequestParams) {
+	return webapi.delete<components.Response>(`/api/admin/outbound/do-not-contact`, params)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function checkOutboundDoNotContact(params: components.OutboundDNCCheckRequestParams) {
+	return webapi.get<components.OutboundDNCCheck>(`/api/admin/outbound/do-not-contact/check`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function updateOutboundDoNotContactSettings(req: components.OutboundDNCSettingsRequest) {
+	return webapi.put<components.OutboundDNCSettings>(`/api/admin/outbound/do-not-contact/settings`, req)
+}
+
+/**
+ * @description 
  * @param req
  */
 export function addOutboundDomain(req: components.OutboundDomainRequest) {
@@ -772,10 +811,73 @@ export function addOutboundMailboxes(req: components.OutboundAddMailboxesRequest
 
 /**
  * @description 
+ * @param params
+ */
+export function listOutboundMaterials(params: components.OutboundMaterialListRequestParams) {
+	return webapi.get<components.OutboundMaterialList>(`/api/admin/outbound/materials`, params)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function createOutboundMaterial(req: components.OutboundMaterialRequest) {
+	return webapi.post<components.OutboundMaterial>(`/api/admin/outbound/materials`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function updateOutboundMaterial(params: components.UpdateOutboundMaterialRequestParams, req: components.UpdateOutboundMaterialRequest, id: string) {
+	return webapi.put<components.OutboundMaterial>(`/api/admin/outbound/materials/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ */
+export function deleteOutboundMaterial(params: components.OutboundMaterialIDRequestParams, id: string) {
+	return webapi.delete<components.Response>(`/api/admin/outbound/materials/${id}`, params)
+}
+
+/**
+ * @description 
+ */
+export function getOutboundPace() {
+	return webapi.get<components.OutboundPace>(`/api/admin/outbound/pace`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function setOutboundPace(req: components.OutboundPaceRequest) {
+	return webapi.put<components.OutboundPace>(`/api/admin/outbound/pace`, req)
+}
+
+/**
+ * @description 
  * @param req
  */
 export function pauseOutbound(req: components.OutboundPauseRequest) {
 	return webapi.post<components.Response>(`/api/admin/outbound/pause`, req)
+}
+
+/**
+ * @description 
+ */
+export function getOutboundProfile() {
+	return webapi.get<components.OutboundProfile>(`/api/admin/outbound/profile`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function updateOutboundProfile(req: components.OutboundProfile) {
+	return webapi.put<components.OutboundProfile>(`/api/admin/outbound/profile`, req)
 }
 
 /**
@@ -826,6 +928,39 @@ export function answerOutboundReply(params: components.OutboundAnswerRequestPara
  */
 export function classifyOutboundReply(params: components.OutboundClassifyRequestParams, req: components.OutboundClassifyRequest, id: string) {
 	return webapi.post<components.Response>(`/api/admin/outbound/replies/${id}/classify`, params, req)
+}
+
+/**
+ * @description 
+ */
+export function listOutboundSegments() {
+	return webapi.get<components.OutboundSegmentList>(`/api/admin/outbound/segments`)
+}
+
+/**
+ * @description 
+ * @param req
+ */
+export function createOutboundSegment(req: components.OutboundSegmentRequest) {
+	return webapi.post<components.OutboundSegment>(`/api/admin/outbound/segments`, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function updateOutboundSegment(params: components.UpdateOutboundSegmentRequestParams, req: components.UpdateOutboundSegmentRequest, id: string) {
+	return webapi.put<components.OutboundSegment>(`/api/admin/outbound/segments/${id}`, params, req)
+}
+
+/**
+ * @description 
+ * @param params
+ * @param req
+ */
+export function addOutboundSegmentProspects(params: components.OutboundSegmentAddRequestParams, req: components.OutboundSegmentAddRequest, id: string) {
+	return webapi.post<components.OutboundAddProspectsResponse>(`/api/admin/outbound/segments/${id}/prospects`, params, req)
 }
 
 /**

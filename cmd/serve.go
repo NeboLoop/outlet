@@ -23,6 +23,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/handler"
 	adminbackup "github.com/outlet-sh/outlet/internal/logic/admin/backup"
+	adminoutbound "github.com/outlet-sh/outlet/internal/logic/admin/outbound"
 	publiclogic "github.com/outlet-sh/outlet/internal/logic/public"
 	outletmcp "github.com/outlet-sh/outlet/internal/mcp"
 	mcpoauth "github.com/outlet-sh/outlet/internal/mcp/oauth"
@@ -711,8 +712,9 @@ func registerWebhookRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 	})
 }
 
-// registerListExportRoutes adds the list CSV downloads. They stream rows as
-// they are read, so they are written here rather than in outlet.api, whose
+// registerListExportRoutes adds the list CSV downloads and the outreach
+// leads download. They stream rows as they are read, so they are written
+// here rather than in outlet.api, whose
 // handlers answer with JSON. They have no timeout: a download of any size
 // finishes (middleware.Unbounded lifts the write deadline).
 func registerListExportRoutes(server *rest.Server, ctx *svc.ServiceContext) {
@@ -729,6 +731,14 @@ func registerListExportRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 			Method:  http.MethodGet,
 			Path:    "/sdk/v1/lists/:slug/export",
 			Handler: listexport.SDKHandler(ctx.DB),
+		}),
+		rest.WithTimeout(0),
+	)
+	server.AddRoutes(
+		rest.WithMiddlewares([]rest.Middleware{ctx.Auth}, rest.Route{
+			Method:  http.MethodGet,
+			Path:    "/api/admin/outbound/leads/export",
+			Handler: adminoutbound.LeadsExportHandler(ctx),
 		}),
 		rest.WithTimeout(0),
 	)

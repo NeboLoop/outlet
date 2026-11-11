@@ -4,15 +4,17 @@
 	import { goto } from '$app/navigation';
 	import {
 		createOutboundCampaign,
+		listOutboundMaterials,
 		listOutboundProspects,
 		type OutboundCampaignRequest,
 		type OutboundCampaignResponse,
 		type OutboundListRef,
+		type OutboundMaterial,
 		type OutboundProspectInfo
 	} from '$lib/api';
 	import { Button, Alert, LoadingSpinner, Input, Textarea, Toggle, Select, Checkbox, EmptyState } from '$lib/components/ui';
 	import { ArrowLeft, Plus, Trash2, Users } from '@lucide/svelte';
-	import { errorMessage } from '../../shared';
+	import { errorMessage, materialKindLabel } from '../../shared';
 
 	const MAX_STEPS = 5;
 	const MAX_PROSPECTS = 100;
@@ -36,6 +38,10 @@
 	let prospects = $state<OutboundProspectInfo[]>([]);
 	let totalFree = $state(0);
 	let selected = $state<string[]>([]);
+	// Enroll everyone in the segment free to enroll (up to 100), or pick.
+	let wholeSegment = $state(false);
+	let materials = $state<OutboundMaterial[]>([]);
+	let pinned = $state<string[]>([]);
 
 	let listName = $derived(lists.find((l) => l.id === listId)?.name || '');
 
@@ -52,13 +58,33 @@
 			listName !== '' &&
 			steps[0].subject.trim() !== '' &&
 			steps.every((s) => s.body.trim() !== '') &&
-			selected.length > 0 &&
+			(wholeSegment ? totalFree > 0 : selected.length > 0) &&
 			!working
 	);
 
 	$effect(() => {
 		loadProspects(listId);
 	});
+
+	$effect(() => {
+		loadMaterials(listName);
+	});
+
+	// The segment's own materials and the brand-wide ones.
+	async function loadMaterials(segment: string) {
+		if (!segment) return;
+		try {
+			const res = await listOutboundMaterials({ segment });
+			materials = res.materials || [];
+			pinned = pinned.filter((id) => materials.some((m) => m.id === id));
+		} catch (err) {
+			error = errorMessage(err, 'Could not load materials');
+		}
+	}
+
+	function togglePinned(id: string, on: boolean) {
+		pinned = on ? [...pinned.filter((p) => p !== id), id] : pinned.filter((p) => p !== id);
+	}
 
 	async function loadProspects(id: string) {
 		loadingProspects = true;
@@ -109,7 +135,8 @@
 				body: s.body,
 				delay_days: i === 0 ? undefined : Number(s.delay_days)
 			})),
-			prospect_ids: selected,
+			prospect_ids: wholeSegment ? undefined : selected,
+			material_ids: pinned.length ? pinned : undefined,
 			approval_mode: approvalMode,
 			track_opens: trackOpens,
 			track_clicks: trackClicks,
@@ -170,7 +197,7 @@
 			<Input id="oc-name" bind:value={name} placeholder="Creator partners, spring" />
 		</div>
 		<div>
-			<label for="oc-list" class="form-label">Outreach list</label>
+			<label for="oc-list" class="form-label">Segment</label>
 			<Select id="oc-list" bind:value={listId} options={lists.map((l) => ({ value: l.id, label: l.name }))} />
 		</div>
 	</div>
@@ -178,7 +205,8 @@
 	<div>
 		<h3 class="text-base font-semibold text-text mb-1">Emails</h3>
 		<p class="form-hint mb-3">
-			Merge tags: <code>{'{{first_name}}'}</code>, <code>{'{{name}}'}</code>, <code>{'{{recent_video}}'}</code>,
+			Merge tags: <code>{'{{first_name}}'}</code>, <code>{'{{name}}'}</code>, <code>{'{{company}}'}</code>,
+			<code>{'{{title}}'}</code>, <code>{'{{recent_video}}'}</code>,
 			<code>{'{{personal_line}}'}</code>, <code>{'{{channel_url}}'}</code>, <code>{'{{sender_first}}'}</code>, or any
 			custom field. Add a fallback with <code>{'{{first_name,fallback=there}}'}</code>. Vary wording with
 			<code>{'{Hi|Hey}'}</code>. The first email may have at most one link.
@@ -254,14 +282,36 @@
 		<Toggle bind:checked={trackClicks} label="Track clicks" />
 	</div>
 
+	{#if materials.length}
+		<div>
+			<h3 class="text-base font-semibold text-text mb-1">Written from</h3>
+			<p class="form-hint mb-3">Pin the materials the emails draw on, so the campaign shows what to check claims against.</p>
+			<div class="space-y-2">
+				{#each materials as m (m.id)}
+					<Checkbox
+						checked={pinned.includes(m.id)}
+						onchange={(on) => togglePinned(m.id, on)}
+						label={`${materialKindLabel(m.kind)}: ${m.title}`}
+						size="sm"
+					/>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
 	<div>
 		<h3 class="text-base font-semibold text-text mb-1">Prospects</h3>
+		<div class="mb-3">
+			<Toggle bind:checked={wholeSegment} label={`Everyone in ${listName || 'the segment'} free to enroll (up to ${MAX_PROSPECTS})`} />
+		</div>
 		<p class="form-hint mb-3">
 			People on {listName || 'the list'} free to enroll: prospects in no other campaign and not suppressed. Pick up to
 			{MAX_PROSPECTS}. {selected.length} selected.{#if totalFree > prospects.length}
 				Showing the newest {prospects.length} of {totalFree}.{/if}
 		</p>
-		{#if loadingProspects}
+		{#if wholeSegment}
+			<p class="text-sm text-text">{Math.min(totalFree, MAX_PROSPECTS)} of {totalFree} free to enroll will be enrolled. Anyone the brand already knows is skipped, with the reason.</p>
+		{:else if loadingProspects}
 			<div class="flex justify-center py-6">
 				<LoadingSpinner />
 			</div>

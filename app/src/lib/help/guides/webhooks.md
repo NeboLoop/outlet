@@ -23,9 +23,11 @@ Each event is one `POST` to your address with a JSON body holding `event`, `time
 - `X-Webhook-Event`: the event name, such as `email.bounced`.
 - `X-Webhook-ID`: the webhook's id.
 
-The event names are `contact.created`, `contact.unsubscribed`, `email.sent`, `email.delivered`, `email.bounced`, `email.complained` (Marked as Spam), `email.opened`, `email.clicked` and `email.replied`.
+The event names are `contact.created`, `contact.unsubscribed`, `email.sent`, `email.delivered`, `email.bounced`, `email.complained` (Marked as Spam), `email.opened`, `email.clicked`, `email.replied` and `outreach.paused`.
 
 `email.replied` fires when a person answers an outreach email. It carries the contact's `email`, the `mailbox` the reply reached, its `subject`, `message_id` and `received_at`, the `sequence_id` and the answered `email_id` when known, and its `classification` (for example `interested`, `out_of_office`, `unsubscribe` or `needs_review`). Bounces arrive as `email.bounced`, never as replies.
+
+`outreach.paused` fires when outreach stops on its own, so you hear about it without checking. Its `scope` is `pace` when the day's new prospects (the pace dial) were reached: first emails wait for the next day's window (`resumes_at`) and follow-ups go on. It is `mailbox` when a mailbox paused for its health or its DNS (`mailbox`, `reason`). Nothing waiting is lost.
 
 Any answer in the 200s counts as delivered. Outlet waits up to 30 seconds for it. When your system fails or doesn't answer, Outlet tries the event again, waiting longer each time: after 5 minutes, 1 hour, 6 hours and 18 hours, 5 tries over about a day. Every try carries the same body, signature and `X-Webhook-Delivery` ID, so your system can tell a repeat from a new event.
 

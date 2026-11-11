@@ -134,18 +134,25 @@ var policy = map[string]toolPolicy{
 	"outreach_overview": {rules: map[string]rule{"get": obRead()}},
 	"setup_sending": {rules: map[string]rule{
 		"settings": obWrite(), "dns_token": obAdmin(), "add_domain": obAdmin(), "check_domain": obWrite(),
-		"add_mailboxes": obAdmin(), "list": obRead(), "set_limits": obAdmin(), "mailbox_limit": obAdmin(),
+		"add_mailboxes": obAdmin(), "list": obRead(), "set_limits": obAdmin(), "mailbox_limit": obAdmin(), "pace": obRead(), "set_pace": obAdmin(),
 		"connections": obRead(), "add_connection": obAdmin(), "update_connection": obAdmin(), "remove_connection": obAdmin(),
 		"move_domain": obAdmin(), "service_inventory": obRead(), "connect_domain": obAdmin(), "quote": obWrite(),
 		"buy": obAdmin(), "sync": obAdmin(), "delete_mailbox": obAdmin(),
 	}},
 	"add_prospects":  {rules: map[string]rule{"add": obWrite()}},
-	"draft_outreach": {rules: map[string]rule{"create": obWrite()}},
+	"draft_outreach": {rules: map[string]rule{"brief": obRead(), "create": obWrite()}},
 	"review_drafts": {rules: map[string]rule{
 		"list": obRead(), "approve": obSend(), "edit": obWrite(), "skip": obWrite(),
 	}},
 	"conversations": {rules: map[string]rule{
-		"list": obRead(), "reply": obSend(), "classify": obWrite(), "mark_partner": obWrite(),
+		"list": obRead(), "reply": obSend(), "classify": obWrite(), "mark_partner": obWrite(), "export": obRead(),
+	}},
+	"targeting": {resources: true, rules: map[string]rule{
+		"profile.get": obRead(), "profile.update": obWrite(),
+		"segment.list": obRead(), "segment.get": obRead(), "segment.create": obWrite(), "segment.update": obWrite(), "segment.add": obWrite(),
+		"material.list": obRead(), "material.create": obWrite(), "material.update": obWrite(), "material.delete": obWrite(),
+		"do_not_contact.list": obRead(), "do_not_contact.add": obWrite(), "do_not_contact.delete": obWrite(),
+		"do_not_contact.check": obRead(), "do_not_contact.settings": obAdmin(),
 	}},
 	"pause":   {rules: map[string]rule{"pause": obWrite(), "resume": obSend()}},
 	"explain": {rules: map[string]rule{"get": obRead()}},

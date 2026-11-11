@@ -3,7 +3,7 @@
 	import { getOutboundCampaign, pauseOutbound, type OutboundCampaignResults } from '$lib/api';
 	import { Button, Alert, LoadingSpinner, Badge } from '$lib/components/ui';
 	import { ArrowLeft, Pause, Play } from '@lucide/svelte';
-	import { classificationLabel, errorMessage, overBounceLimit, percent } from '../../shared';
+	import { authorLabel, authorVariant, classificationLabel, errorMessage, materialKindLabel, overBounceLimit, percent } from '../../shared';
 
 	let loading = $state(true);
 	let error = $state('');
@@ -13,6 +13,7 @@
 	let base = $derived(`/${$page.params.brandSlug}/outbound`);
 	let id = $derived($page.params.id || '');
 	let kinds = $derived(Object.entries(campaign?.replies_by_kind || {}).filter(([, n]) => n > 0));
+	let stopped = $derived(Object.entries(campaign?.stopped_by_reason || {}).filter(([, n]) => n > 0));
 
 	$effect(() => {
 		if (id) load(id);
@@ -65,6 +66,9 @@
 		<div class="flex items-center gap-3">
 			<h2 class="text-xl font-semibold text-text">{campaign.name}</h2>
 			<Badge variant={campaign.status === 'active' ? 'success' : 'warning'}>{campaign.status}</Badge>
+			{#if campaign.authored_by}
+				<Badge variant={authorVariant(campaign.authored_by)}>{authorLabel(campaign.authored_by)}</Badge>
+			{/if}
 		</div>
 		<Button type="secondary" size="sm" onclick={togglePause} disabled={busy}>
 			{#if campaign.status === 'paused'}
@@ -127,6 +131,9 @@
 		<div><span class="text-text-muted">In progress:</span> {campaign.in_progress}</div>
 		<div><span class="text-text-muted">Finished, no reply:</span> {campaign.finished_no_reply}</div>
 		<div><a href="{base}/drafts" class="text-primary">Drafts waiting: {campaign.drafts_waiting}</a></div>
+		{#if campaign.segment}
+			<div><span class="text-text-muted">Segment:</span> <a href="{base}/targeting" class="text-primary">{campaign.segment}</a></div>
+		{/if}
 	</div>
 	{#if campaign.track_opens}
 		<p class="form-hint mb-6">
@@ -175,5 +182,28 @@
 		</div>
 	{:else}
 		<p class="text-sm text-text-muted">No replies yet.</p>
+	{/if}
+
+	{#if stopped.length}
+		<h3 class="text-lg font-semibold text-text mt-6 mb-3">Stopped early</h3>
+		<p class="form-hint mb-2">People whose emails stopped before the last step, and why.</p>
+		<div class="flex flex-wrap gap-2">
+			{#each stopped as [reason, n]}
+				<Badge variant={reason.startsWith('do not contact') ? 'warning' : 'default'}>{reason}: {n}</Badge>
+			{/each}
+		</div>
+	{/if}
+
+	{#if campaign.materials?.length}
+		<h3 class="text-lg font-semibold text-text mt-6 mb-3">Written from</h3>
+		<ul class="space-y-2">
+			{#each campaign.materials as m (m.id)}
+				<li class="text-sm">
+					<Badge variant="default" size="sm">{materialKindLabel(m.kind)}</Badge>
+					<span class="font-medium text-text ml-1">{m.title}</span>
+					<span class="text-text-muted">: {m.summary}</span>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 {/if}

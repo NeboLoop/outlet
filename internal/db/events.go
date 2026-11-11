@@ -214,3 +214,14 @@ func (s *Store) CreateEmailReply(ctx context.Context, arg CreateEmailReplyParams
 	publish(s.events, events.TopicEmailReplied, evt)
 	return r, nil
 }
+
+// PublishOutreachPaused tells webhooks that outreach stopped on its own.
+func (s *Store) PublishOutreachPaused(evt events.OutreachPausedEvent) {
+	if s.events == nil {
+		return
+	}
+	if evt.Timestamp.IsZero() {
+		evt.Timestamp = time.Now().UTC()
+	}
+	publish(s.events, events.TopicOutreachPaused, evt)
+}

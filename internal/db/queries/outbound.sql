@@ -162,7 +162,7 @@ ORDER BY es.name;
 -- name: SetOutreachSequenceOptions :exec
 UPDATE email_sequences
 SET sequence_type = 'outreach', approval_mode = ?, window_start_hour = ?, window_end_hour = ?,
-    track_opens = ?, track_clicks = ?, send_timezone = ?
+    track_opens = ?, track_clicks = ?, send_timezone = ?, authored_by = ?
 WHERE id = ? AND org_id = ?;
 
 -- name: GetOutreachSequence :one
@@ -206,8 +206,8 @@ WHERE sequence_id = ? AND mailbox_id IS NOT NULL GROUP BY mailbox_id;
 -- name: QueueOutreachEmail :one
 INSERT INTO email_queue (
     id, contact_id, template_id, scheduled_for, status, tracking_token,
-    kind, mailbox_id, subject, body, message_id, in_reply_to, refs
-) VALUES (?, ?, ?, ?, ?, ?, 'outreach', ?, ?, ?, ?, ?, ?)
+    kind, mailbox_id, subject, body, message_id, in_reply_to, refs, authored_by
+) VALUES (?, ?, ?, ?, ?, ?, 'outreach', ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetOutreachEmail :one
@@ -294,7 +294,7 @@ WHERE email_queue.id = sqlc.arg(id) AND status = 'draft' AND kind = 'outreach'
   AND contact_id IN (SELECT c.id FROM contacts c WHERE c.org_id = sqlc.arg(org_id));
 
 -- name: EditOutreachEmail :execrows
-UPDATE email_queue SET subject = sqlc.arg(subject), body = sqlc.arg(body)
+UPDATE email_queue SET subject = sqlc.arg(subject), body = sqlc.arg(body), authored_by = sqlc.arg(authored_by)
 WHERE email_queue.id = sqlc.arg(id) AND status IN ('draft', 'pending') AND kind = 'outreach'
   AND contact_id IN (SELECT c.id FROM contacts c WHERE c.org_id = sqlc.arg(org_id));
 
@@ -322,11 +322,16 @@ RETURNING *;
 SELECT * FROM email_replies WHERE id = ? AND org_id = ?;
 
 -- name: ListEmailReplies :many
--- Replies with the name of the campaign each answers.
-SELECT r.*, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name
+-- Replies with the name of the campaign each answers and its segment
+-- (the campaign's outreach list), handled or not, of one classification
+-- (empty: any; interested is a hot lead).
+SELECT r.*, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name, CAST(COALESCE(el.name, '') AS TEXT) AS segment_name
 FROM email_replies r
 LEFT JOIN email_sequences es ON es.id = r.sequence_id
-WHERE r.org_id = ? AND r.handled = ? ORDER BY r.received_at DESC LIMIT ?;
+LEFT JOIN email_lists el ON el.id = es.list_id
+WHERE r.org_id = sqlc.arg(org_id) AND r.handled = sqlc.arg(handled)
+  AND (CAST(sqlc.arg(classification) AS TEXT) = '' OR r.classification = sqlc.arg(classification))
+ORDER BY r.received_at DESC LIMIT sqlc.arg(limit_count);
 
 -- name: SetEmailReplyClassification :exec
 UPDATE email_replies SET classification = ?, handled = ? WHERE id = ? AND org_id = ?;

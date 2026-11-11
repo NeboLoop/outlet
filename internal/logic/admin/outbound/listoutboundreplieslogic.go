@@ -36,14 +36,14 @@ func (l *ListOutboundRepliesLogic) ListOutboundReplies(req *types.OutboundListRe
 // ListOutboundReplies runs for a brand already resolved: the admin route's signed-in
 // person, or the API key of /sdk/v1/outbound.
 func ListOutboundReplies(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundListRepliesRequest) (*types.OutboundReplyList, error) {
-	rows, err := svcCtx.Outbound.ListReplies(ctx, org, req.Handled, req.Limit)
+	rows, err := svcCtx.Outbound.ListReplies(ctx, org, req.Handled, req.Classification, req.Limit)
 	if err != nil {
 		return nil, err
 	}
 	out := &types.OutboundReplyList{Replies: make([]types.OutboundReplyInfo, 0, len(rows))}
 	for _, r := range rows {
 		out.Replies = append(out.Replies, types.OutboundReplyInfo{
-			Id: r.ID, MailboxId: r.MailboxID, ContactId: r.ContactID.String, SequenceId: r.SequenceID.String, CampaignName: r.CampaignName, FromEmail: r.FromEmail,
+			Id: r.ID, MailboxId: r.MailboxID, ContactId: r.ContactID.String, SequenceId: r.SequenceID.String, CampaignName: r.CampaignName, SegmentName: r.SegmentName, FromEmail: r.FromEmail,
 			Subject: r.Subject, Body: r.Body, Classification: r.Classification, Handled: r.Handled == 1, ReceivedAt: r.ReceivedAt,
 		})
 	}

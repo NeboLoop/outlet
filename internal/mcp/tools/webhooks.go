@@ -142,6 +142,7 @@ Available Events ("*" for all):
 - email.sent, email.delivered, email.bounced, email.complained
 - email.opened, email.clicked
 - email.replied (a person answered outreach; bounces are email.bounced)
+- outreach.paused (outreach stopped on its own: the day's pace was reached, or a mailbox paused for health or DNS)
 
 Examples:
   webhook(action: create, url: "https://example.com/webhook", events: "contact.created,email.sent")

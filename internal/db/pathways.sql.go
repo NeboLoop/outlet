@@ -111,7 +111,7 @@ INSERT INTO sending_pathways (
     daily_limit, warmup_start, warmup_step, min_gap_seconds, max_gap_seconds,
     pause_bounce_rate, pause_min_bounces, pause_spam_blocks, pause_complaints
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, name, provider, carries_transactional, carries_marketing, carries_outreach, aws_region, aws_access_key_enc, aws_secret_key_enc, smtp_host, smtp_port, smtp_username, smtp_password_enc, daily_limit, warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate, pause_min_bounces, pause_spam_blocks, pause_complaints, next_send_at, created_at
+RETURNING id, org_id, name, provider, carries_transactional, carries_marketing, carries_outreach, aws_region, aws_access_key_enc, aws_secret_key_enc, smtp_host, smtp_port, smtp_username, smtp_password_enc, daily_limit, warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate, pause_min_bounces, pause_spam_blocks, pause_complaints, next_send_at, created_at, daily_new_prospects
 `
 
 type CreateSendingPathwayParams struct {
@@ -189,6 +189,7 @@ func (q *Queries) CreateSendingPathway(ctx context.Context, arg CreateSendingPat
 		&i.PauseComplaints,
 		&i.NextSendAt,
 		&i.CreatedAt,
+		&i.DailyNewProspects,
 	)
 	return i, err
 }
@@ -284,7 +285,7 @@ func (q *Queries) EnsureSendCount(ctx context.Context, arg EnsureSendCountParams
 }
 
 const getMailboxPathway = `-- name: GetMailboxPathway :one
-SELECT p.id, p.org_id, p.name, p.provider, p.carries_transactional, p.carries_marketing, p.carries_outreach, p.aws_region, p.aws_access_key_enc, p.aws_secret_key_enc, p.smtp_host, p.smtp_port, p.smtp_username, p.smtp_password_enc, p.daily_limit, p.warmup_start, p.warmup_step, p.min_gap_seconds, p.max_gap_seconds, p.pause_bounce_rate, p.pause_min_bounces, p.pause_spam_blocks, p.pause_complaints, p.next_send_at, p.created_at FROM sending_pathways p
+SELECT p.id, p.org_id, p.name, p.provider, p.carries_transactional, p.carries_marketing, p.carries_outreach, p.aws_region, p.aws_access_key_enc, p.aws_secret_key_enc, p.smtp_host, p.smtp_port, p.smtp_username, p.smtp_password_enc, p.daily_limit, p.warmup_start, p.warmup_step, p.min_gap_seconds, p.max_gap_seconds, p.pause_bounce_rate, p.pause_min_bounces, p.pause_spam_blocks, p.pause_complaints, p.next_send_at, p.created_at, p.daily_new_prospects FROM sending_pathways p
 JOIN domain_identities d ON d.pathway_id = p.id
 JOIN mailboxes m ON m.domain_id = d.id
 WHERE m.id = ?
@@ -320,12 +321,13 @@ func (q *Queries) GetMailboxPathway(ctx context.Context, id string) (SendingPath
 		&i.PauseComplaints,
 		&i.NextSendAt,
 		&i.CreatedAt,
+		&i.DailyNewProspects,
 	)
 	return i, err
 }
 
 const getPathwayForKind = `-- name: GetPathwayForKind :one
-SELECT id, org_id, name, provider, carries_transactional, carries_marketing, carries_outreach, aws_region, aws_access_key_enc, aws_secret_key_enc, smtp_host, smtp_port, smtp_username, smtp_password_enc, daily_limit, warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate, pause_min_bounces, pause_spam_blocks, pause_complaints, next_send_at, created_at FROM sending_pathways
+SELECT id, org_id, name, provider, carries_transactional, carries_marketing, carries_outreach, aws_region, aws_access_key_enc, aws_secret_key_enc, smtp_host, smtp_port, smtp_username, smtp_password_enc, daily_limit, warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate, pause_min_bounces, pause_spam_blocks, pause_complaints, next_send_at, created_at, daily_new_prospects FROM sending_pathways
 WHERE org_id = ?1
   AND ((?2 = 'transactional' AND carries_transactional = 1)
     OR (?2 = 'marketing' AND carries_marketing = 1)
@@ -367,12 +369,13 @@ func (q *Queries) GetPathwayForKind(ctx context.Context, arg GetPathwayForKindPa
 		&i.PauseComplaints,
 		&i.NextSendAt,
 		&i.CreatedAt,
+		&i.DailyNewProspects,
 	)
 	return i, err
 }
 
 const getSendingPathway = `-- name: GetSendingPathway :one
-SELECT id, org_id, name, provider, carries_transactional, carries_marketing, carries_outreach, aws_region, aws_access_key_enc, aws_secret_key_enc, smtp_host, smtp_port, smtp_username, smtp_password_enc, daily_limit, warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate, pause_min_bounces, pause_spam_blocks, pause_complaints, next_send_at, created_at FROM sending_pathways WHERE id = ? AND org_id = ?
+SELECT id, org_id, name, provider, carries_transactional, carries_marketing, carries_outreach, aws_region, aws_access_key_enc, aws_secret_key_enc, smtp_host, smtp_port, smtp_username, smtp_password_enc, daily_limit, warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate, pause_min_bounces, pause_spam_blocks, pause_complaints, next_send_at, created_at, daily_new_prospects FROM sending_pathways WHERE id = ? AND org_id = ?
 `
 
 type GetSendingPathwayParams struct {
@@ -409,6 +412,7 @@ func (q *Queries) GetSendingPathway(ctx context.Context, arg GetSendingPathwayPa
 		&i.PauseComplaints,
 		&i.NextSendAt,
 		&i.CreatedAt,
+		&i.DailyNewProspects,
 	)
 	return i, err
 }
@@ -580,7 +584,7 @@ func (q *Queries) ListSendCountsForDay(ctx context.Context, arg ListSendCountsFo
 }
 
 const listSendingPathways = `-- name: ListSendingPathways :many
-SELECT id, org_id, name, provider, carries_transactional, carries_marketing, carries_outreach, aws_region, aws_access_key_enc, aws_secret_key_enc, smtp_host, smtp_port, smtp_username, smtp_password_enc, daily_limit, warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate, pause_min_bounces, pause_spam_blocks, pause_complaints, next_send_at, created_at FROM sending_pathways WHERE org_id = ? ORDER BY created_at, name
+SELECT id, org_id, name, provider, carries_transactional, carries_marketing, carries_outreach, aws_region, aws_access_key_enc, aws_secret_key_enc, smtp_host, smtp_port, smtp_username, smtp_password_enc, daily_limit, warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate, pause_min_bounces, pause_spam_blocks, pause_complaints, next_send_at, created_at, daily_new_prospects FROM sending_pathways WHERE org_id = ? ORDER BY created_at, name
 `
 
 func (q *Queries) ListSendingPathways(ctx context.Context, orgID string) ([]SendingPathway, error) {
@@ -618,6 +622,7 @@ func (q *Queries) ListSendingPathways(ctx context.Context, orgID string) ([]Send
 			&i.PauseComplaints,
 			&i.NextSendAt,
 			&i.CreatedAt,
+			&i.DailyNewProspects,
 		); err != nil {
 			return nil, err
 		}

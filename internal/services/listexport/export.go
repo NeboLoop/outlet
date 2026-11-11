@@ -76,7 +76,7 @@ func Write(ctx context.Context, q db.Querier, w io.Writer, listID int64, opts Op
 	for _, f := range fields {
 		header = append(header, f.FieldKey)
 	}
-	if err := cw.Write(safeRow(header)); err != nil {
+	if err := cw.Write(SafeRow(header)); err != nil {
 		return Result{}, err
 	}
 
@@ -111,7 +111,7 @@ func Write(ctx context.Context, q db.Querier, w io.Writer, listID int64, opts Op
 			for _, f := range fields {
 				record = append(record, values[r.ID][f.ID])
 			}
-			if err := cw.Write(safeRow(record)); err != nil {
+			if err := cw.Write(SafeRow(record)); err != nil {
 				return res, err
 			}
 		}
@@ -161,9 +161,9 @@ func customValues(ctx context.Context, q db.Querier, rows []db.ListListSubscribe
 	return out, nil
 }
 
-// safeRow keeps a spreadsheet from reading a cell as a formula: a cell that
+// SafeRow keeps a spreadsheet from reading a cell as a formula: a cell that
 // starts with =, +, -, @, a tab or a carriage return gets a leading '.
-func safeRow(record []string) []string {
+func SafeRow(record []string) []string {
 	for i, cell := range record {
 		if cell != "" && strings.ContainsRune("=+-@\t\r", rune(cell[0])) {
 			record[i] = "'" + cell

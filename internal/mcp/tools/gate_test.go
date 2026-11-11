@@ -184,4 +184,18 @@ func TestOutboundScopes(t *testing.T) {
 		assert.ErrorContains(t, check(write, "setup_sending", `{"action":"`+action+`","confirm":true}`), "admin", action)
 	}
 	assert.NoError(t, check([]string{"mcp:full"}, "conversations", `{"action":"list"}`))
+
+	// Targeting: read can look and check, write can define, the outside
+	// check's settings (a secret) need the brand's admin. Reading the pace
+	// dial is a read; setting it, an admin's.
+	assert.NoError(t, check(read, "targeting", `{"resource":"segment","action":"list"}`))
+	assert.NoError(t, check(read, "targeting", `{"resource":"do_not_contact","action":"check"}`))
+	assert.NoError(t, check(read, "draft_outreach", `{"action":"brief"}`))
+	assert.NoError(t, check(read, "conversations", `{"action":"export"}`))
+	assert.ErrorContains(t, check(read, "targeting", `{"resource":"segment","action":"create"}`), "outbound:write")
+	assert.NoError(t, check(write, "targeting", `{"resource":"material","action":"create"}`))
+	assert.NoError(t, check(write, "targeting", `{"resource":"do_not_contact","action":"add"}`))
+	assert.ErrorContains(t, check(write, "targeting", `{"resource":"do_not_contact","action":"settings"}`), "admin")
+	assert.NoError(t, check(read, "setup_sending", `{"action":"pace"}`))
+	assert.ErrorContains(t, check(write, "setup_sending", `{"action":"set_pace"}`), "admin")
 }

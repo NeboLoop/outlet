@@ -12,6 +12,9 @@
 		{ name: 'Drafts', href: `${base}/drafts`, exact: false },
 		{ name: 'Replies', href: `${base}/replies`, exact: false },
 		{ name: 'Prospects', href: `${base}/prospects`, exact: false },
+		{ name: 'Targeting', href: `${base}/targeting`, exact: false },
+		{ name: 'Materials', href: `${base}/materials`, exact: false },
+		{ name: 'Do not contact', href: `${base}/do-not-contact`, exact: false },
 		{ name: 'Setup', href: `${base}/setup`, exact: false }
 	]);
 

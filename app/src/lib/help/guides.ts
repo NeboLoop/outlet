@@ -29,6 +29,7 @@ const order: { section: string; slugs: string[] }[] = [
 		slugs: [
 			'outreach-overview',
 			'set-up-outreach',
+			'outreach-targeting',
 			'connect-a-mailbox-service',
 			'several-mailbox-services',
 			'google-workspace-and-microsoft-365',
