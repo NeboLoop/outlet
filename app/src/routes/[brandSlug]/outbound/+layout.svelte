@@ -18,6 +18,9 @@
 		{ name: 'Setup', href: `${base}/setup`, exact: false }
 	]);
 
+	// The guided setup stands on its own, without the tabs over it.
+	let inSetup = $derived($page.url.pathname.replace(/\/$/, '') === `${base}/get-started`);
+
 	function isActive(href: string, exact: boolean): boolean {
 		const path = $page.url.pathname.replace(/\/$/, '');
 		return exact ? path === href : path === href || path.startsWith(`${href}/`);
@@ -36,6 +39,7 @@
 		</p>
 	</div>
 
+	{#if !inSetup}
 	<nav class="tab-nav mb-6" use:scrollActiveTab={$page.url.pathname}>
 		{#each tabs as tab}
 			<a
@@ -48,6 +52,7 @@
 			</a>
 		{/each}
 	</nav>
+	{/if}
 
 	{@render children()}
 </div>

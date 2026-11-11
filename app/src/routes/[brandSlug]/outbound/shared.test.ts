@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { OutboundCampaignResults, OutboundMailboxHealth } from '$lib/api';
-import { authorLabel, authorVariant, classificationLabel, joinList, mailboxLimit, materialKindLabel, overBounceLimit, pageRange, splitList } from './shared';
+import type { OutboundCampaignResults, OutboundMailboxHealth, OutboundSetupStep } from '$lib/api';
+import {
+	askAIPrompt,
+	nextSetupStep,
+	openingStep,
+	setupDone,
+	setupSkipped,
+	skipSetup,
+	authorLabel, authorVariant, classificationLabel, joinList, mailboxLimit, materialKindLabel, overBounceLimit, pageRange, splitList } from './shared';
 
 describe('pageRange', () => {
 	it('says which rows a page shows', () => {
@@ -92,5 +99,59 @@ describe('lists in a field', () => {
 	it('names material kinds', () => {
 		expect(materialKindLabel('case_study')).toBe('Case study');
 		expect(materialKindLabel('other')).toBe('other');
+	});
+});
+
+describe('setup steps', () => {
+	const steps = (...done: boolean[]): OutboundSetupStep[] =>
+		['business', 'targeting', 'sending', 'do_not_contact', 'campaign'].map((step, i) => ({ step, done: done[i] }));
+
+	it('names the first step not done as next, in order', () => {
+		expect(nextSetupStep(steps(true, false, true, false, false))?.step).toBe('targeting');
+		expect(nextSetupStep(steps(true, true, true, true, false))?.step).toBe('campaign');
+	});
+
+	it('is done only once every step is', () => {
+		expect(setupDone(steps(true, true, true, true, true))).toBe(true);
+		expect(setupDone(steps(true, true, true, true, false))).toBe(false);
+		expect(setupDone([]), 'nothing read yet is not done').toBe(false);
+	});
+
+	it('follows the server, which can take a step back', () => {
+		// A do-not-contact list deleted after setup: the step is open again.
+		const after = steps(true, true, true, false, true);
+		expect(setupDone(after)).toBe(false);
+		expect(nextSetupStep(after)?.step).toBe('do_not_contact');
+	});
+
+	it('opens on the step asked for, else the next one, else the first', () => {
+		const s = steps(true, false, false, false, false);
+		expect(openingStep(s, 'sending')).toBe('sending');
+		expect(openingStep(s, 'nonsense')).toBe('targeting');
+		expect(openingStep(s, null)).toBe('targeting');
+		expect(openingStep(steps(true, true, true, true, true), null)).toBe('business');
+	});
+});
+
+describe('setup skipped', () => {
+	it('is remembered per brand and can be undone', () => {
+		expect(setupSkipped('acme')).toBe(false);
+		skipSetup('acme', true);
+		expect(setupSkipped('acme')).toBe(true);
+		expect(setupSkipped('other')).toBe(false);
+		skipSetup('acme', false);
+		expect(setupSkipped('acme')).toBe(false);
+	});
+});
+
+describe('askAIPrompt', () => {
+	it('names the brand and what to read or write from', () => {
+		expect(askAIPrompt('business', { brand: 'acme', website: 'https://acme.com' })).toContain('"acme": read https://acme.com');
+		expect(askAIPrompt('campaign', { brand: 'acme', segment: 'Utah dental', approval: 'first' })).toContain(
+			'segment "Utah dental"'
+		);
+		expect(askAIPrompt('campaign', { brand: 'acme', segment: 'Utah dental', approval: 'first' })).toContain(
+			'approval_mode first'
+		);
 	});
 });

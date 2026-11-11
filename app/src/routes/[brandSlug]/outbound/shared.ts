@@ -1,6 +1,6 @@
 // Helpers shared by the Outbound screens.
 
-import type { OutboundCampaignResults, OutboundMailboxHealth } from '$lib/api';
+import type { OutboundCampaignResults, OutboundMailboxHealth, OutboundSetupStep } from '$lib/api';
 
 export function errorMessage(err: unknown, fallback: string): string {
 	return err instanceof Error && err.message ? err.message : fallback;
@@ -99,3 +99,72 @@ export function joinList(values?: string[]): string {
 	return (values || []).join(', ');
 }
 
+// The guided setup's five steps, in order. Whether each is done comes from
+// the server (the overview's setup), read from the brand's data.
+export const SETUP_STEPS: { step: string; label: string; title: string }[] = [
+	{ step: 'business', label: 'Business', title: 'Your business' },
+	{ step: 'targeting', label: 'Targeting', title: 'Who to target' },
+	{ step: 'sending', label: 'Sending', title: 'Sending' },
+	{ step: 'do_not_contact', label: 'Do not contact', title: 'Who never to contact' },
+	{ step: 'campaign', label: 'Campaign', title: 'First campaign' }
+];
+
+export function setupTitle(step: string): string {
+	return SETUP_STEPS.find((s) => s.step === step)?.title || step;
+}
+
+// The first step not done; undefined once setup is done.
+export function nextSetupStep(setup: OutboundSetupStep[]): OutboundSetupStep | undefined {
+	return SETUP_STEPS.map((s) => setup.find((x) => x.step === s.step)).find((x) => x && !x.done);
+}
+
+export function setupDone(setup: OutboundSetupStep[]): boolean {
+	return setup.length > 0 && nextSetupStep(setup) === undefined;
+}
+
+// Which step the setup opens on: the one asked for, else the first not
+// done, else the first.
+export function openingStep(setup: OutboundSetupStep[], asked: string | null): string {
+	if (asked && SETUP_STEPS.some((s) => s.step === asked)) return asked;
+	return nextSetupStep(setup)?.step || SETUP_STEPS[0].step;
+}
+
+// Whether this browser was told to stop opening the guided setup for a
+// brand. It only stops the setup opening by itself: whether setup is done
+// never comes from here.
+const skipKey = (brand: string) => `outboundSetupSkipped_${brand}`;
+
+export function setupSkipped(brand: string): boolean {
+	try {
+		return localStorage.getItem(skipKey(brand)) === '1';
+	} catch {
+		return false;
+	}
+}
+
+export function skipSetup(brand: string, skipped: boolean): void {
+	try {
+		if (skipped) localStorage.setItem(skipKey(brand), '1');
+		else localStorage.removeItem(skipKey(brand));
+	} catch {
+		// Storage is off: the setup opens again next time, nothing else changes.
+	}
+}
+
+// What to ask an AI connected to Outlet over MCP for, in each step it can
+// do. Outlet itself doesn't browse or write: the AI does, through Outlet's
+// tools, and the setup shows what it saved.
+export function askAIPrompt(
+	step: 'business' | 'targeting' | 'campaign',
+	o: { brand: string; website?: string; segment?: string; approval?: string }
+): string {
+	const brand = `In Outlet, on the brand "${o.brand}"`;
+	switch (step) {
+		case 'business':
+			return `${brand}: read ${o.website || 'our website'} (home, pricing, customers, about) and fill in the brand profile: what we sell, who buys it, our proof, and how our emails sound. explain(topic: start_from_website) has the steps.`;
+		case 'targeting':
+			return `${brand}: from the brand profile, propose 2 to 4 segments of who buys from us, in plain words with filters, and create them. I'll keep, edit or remove them in Outlet.`;
+		case 'campaign':
+			return `${brand}: draft our first outreach campaign on the segment "${o.segment || 'Outreach'}" with draft_outreach. Read its brief, write from its materials, and show me a dry run of the first emails. If the segment has no prospects free to enroll, find people who fit it and add them with add_prospects first, saying where each address came from. Then save it with approval_mode ${o.approval || 'every'}.`;
+	}
+}
