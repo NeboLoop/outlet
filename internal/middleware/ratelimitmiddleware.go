@@ -2,7 +2,11 @@ package middleware
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"net/netip"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -26,14 +30,14 @@ func DefaultAuthRateLimitConfig() RateLimitConfig {
 	}
 }
 
-// rateLimitEntry tracks attempts for an IP
+// rateLimitEntry tracks attempts from a client on an endpoint
 type rateLimitEntry struct {
 	attempts  int
 	firstSeen time.Time
 	blockedAt time.Time
 }
 
-// RateLimitMiddleware provides rate limiting based on IP address
+// RateLimitMiddleware provides rate limiting per client address and endpoint
 type RateLimitMiddleware struct {
 	config  RateLimitConfig
 	entries map[string]*rateLimitEntry
@@ -71,44 +75,71 @@ func (m *RateLimitMiddleware) cleanup() {
 	}
 }
 
-// getClientIP extracts the client IP from the request
+// getClientIP is the address of the client that sent the request. A
+// proxy's own address is on a private or loopback network, so the client is
+// the nearest address that isn't: RemoteAddr itself when Outlet is reached
+// directly (forwarding headers are then ignored, as anyone could write
+// them), otherwise the X-Forwarded-For chain read from the right, the end the
+// proxies wrote, falling back to the X-Real-IP a proxy sets. When every hop
+// is private it is the farthest one known.
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header first (for reverse proxies)
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		// Take the first IP in the chain
-		if idx := len(xff); idx > 0 {
-			for i := 0; i < len(xff); i++ {
-				if xff[i] == ',' {
-					return xff[:i]
-				}
-			}
-			return xff
-		}
+	remote := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(remote); err == nil {
+		remote = host
 	}
-
-	// Check X-Real-IP header
-	xri := r.Header.Get("X-Real-IP")
-	if xri != "" {
+	if !trustedProxy(remote) {
+		return remote
+	}
+	hops := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	farthest := ""
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop := strings.TrimSpace(hops[i])
+		if hop == "" {
+			continue
+		}
+		if !trustedProxy(hop) {
+			return hop
+		}
+		farthest = hop
+	}
+	if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
 		return xri
 	}
+	if farthest != "" {
+		return farthest
+	}
+	return remote
+}
 
-	// Fall back to RemoteAddr
-	return r.RemoteAddr
+// trustedProxy reports whether an address is a proxy's: one on a private or
+// loopback network. Anything that isn't an address is not trusted.
+func trustedProxy(addr string) bool {
+	ip, err := netip.ParseAddr(addr)
+	if err != nil {
+		return false
+	}
+	return ip.IsPrivate() || ip.IsLoopback()
+}
+
+// limitKey is what a request is counted under: the client and the endpoint.
+// Each endpoint has its own count, so wrong passwords on sign-in don't block
+// "Forgot password", a reset link or an emailed sign-in.
+func limitKey(r *http.Request) string {
+	return getClientIP(r) + " " + r.URL.Path
 }
 
 // Handle wraps an HTTP handler with rate limiting
 func (m *RateLimitMiddleware) Handle(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := getClientIP(r)
+		key := limitKey(r)
 
 		m.mu.Lock()
-		entry, exists := m.entries[ip]
+		entry, exists := m.entries[key]
 		now := time.Now()
 
 		if !exists {
-			// First request from this IP
-			m.entries[ip] = &rateLimitEntry{
+			// First request from this client to this endpoint
+			m.entries[key] = &rateLimitEntry{
 				attempts:  1,
 				firstSeen: now,
 			}
@@ -124,7 +155,7 @@ func (m *RateLimitMiddleware) Handle(next http.HandlerFunc) http.HandlerFunc {
 				m.mu.Unlock()
 				remainingSeconds := int(blockExpiry.Sub(now).Seconds())
 				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("Retry-After", string(rune(remainingSeconds)))
+				w.Header().Set("Retry-After", strconv.Itoa(remainingSeconds))
 				w.WriteHeader(http.StatusTooManyRequests)
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"error":         "Too many attempts. Please try again later.",
@@ -160,7 +191,7 @@ func (m *RateLimitMiddleware) Handle(next http.HandlerFunc) http.HandlerFunc {
 			entry.blockedAt = now
 			m.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Retry-After", string(rune(m.config.BlockDurationSeconds)))
+			w.Header().Set("Retry-After", strconv.Itoa(m.config.BlockDurationSeconds))
 			w.WriteHeader(http.StatusTooManyRequests)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"error":         "Too many attempts. Please try again later.",
@@ -178,14 +209,14 @@ func (m *RateLimitMiddleware) Handle(next http.HandlerFunc) http.HandlerFunc {
 // RecordFailure allows logic layers to record a failed authentication attempt
 // This allows the rate limiter to track failed logins even for correct IPs with wrong passwords
 func (m *RateLimitMiddleware) RecordFailure(r *http.Request) {
-	ip := getClientIP(r)
+	key := limitKey(r)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	entry, exists := m.entries[ip]
+	entry, exists := m.entries[key]
 	if !exists {
-		m.entries[ip] = &rateLimitEntry{
+		m.entries[key] = &rateLimitEntry{
 			attempts:  1,
 			firstSeen: time.Now(),
 		}
@@ -203,12 +234,13 @@ func (m *RateLimitMiddleware) RecordFailure(r *http.Request) {
 	}
 }
 
-// ResetForIP clears rate limit tracking for a specific IP (e.g., after successful login)
+// ResetForIP clears rate limit tracking for a request's client on its
+// endpoint (e.g., after successful login)
 func (m *RateLimitMiddleware) ResetForIP(r *http.Request) {
-	ip := getClientIP(r)
+	key := limitKey(r)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	delete(m.entries, ip)
+	delete(m.entries, key)
 }

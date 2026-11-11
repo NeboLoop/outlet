@@ -2193,6 +2193,14 @@ export interface SendEmailResponse {
 	message?: string
 }
 
+export interface SendSignInEmailRequest {
+	email: string
+}
+
+export interface SendSignInEmailResponse {
+	message: string
+}
+
 export interface SendingLimits {
 	daily_limit: number // per sender per day; 0: no limit
 	warmup_start: number // a new sender's first day; 0: no warm-up
@@ -2325,6 +2333,12 @@ export interface SetupStatusResponse {
 	has_smtp: boolean // Has SMTP configured (deprecated)
 	platform_configured: boolean // Has AWS/email settings
 	missing_settings: Array<string> // List of missing required settings
+}
+
+export interface SignInWithEmailRequest {
+	token?: string // the token from the emailed sign-in link
+	email?: string // with code: the address the code was sent to
+	code?: string // the 6-digit code from the email
 }
 
 export interface StatsOverviewResponse {

@@ -1,0 +1,1 @@
+import{$n as e,er as t}from"./DadxOX5y.js";function n(n,r={}){return e(t(`/api/admin/lists/${n}/export`,r),`list-${n}-subscribers.csv`)}function r(t,n){return e(`/api/admin/backup/${encodeURIComponent(t)}/download`,n)}export{n,r as t};

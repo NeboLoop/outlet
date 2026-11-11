@@ -1,0 +1,1 @@
+import{B as e,M as t,R as n,ot as r,rt as i,yt as a}from"../chunks/C_OAeTtO.js";import"../chunks/xihTtKlq.js";import{H as o}from"../chunks/DPDoKt-b.js";var s=e(`<div class="auth-shell"><main class="auth-container"><!> <!></main></div>`);function c(e,c){var l=s(),u=i(l),d=i(u);o(d,{});var f=r(d,2);t(f,()=>c.children),a(u),a(l),n(e,l)}export{c as component};

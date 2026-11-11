@@ -115,6 +115,7 @@ type Querier interface {
 	CountPendingValidations(ctx context.Context, jobID sql.NullString) (int64, error)
 	CountProspectsByStatus(ctx context.Context, orgID string) ([]CountProspectsByStatusRow, error)
 	CountSentCampaignSends(ctx context.Context, campaignID string) (int64, error)
+	CountSignInCodeAttempt(ctx context.Context, userID string) (SignInCode, error)
 	CountSuppressedEmails(ctx context.Context, orgID string) (int64, error)
 	CountTemplatesBySequence(ctx context.Context, sequenceID sql.NullString) (int64, error)
 	CountTransactionalEmails(ctx context.Context, orgID string) (int64, error)
@@ -270,6 +271,7 @@ type Querier interface {
 	DeleteRuleTemplate(ctx context.Context, id string) error
 	DeleteSendingPathway(ctx context.Context, arg DeleteSendingPathwayParams) (int64, error)
 	DeleteSequence(ctx context.Context, id string) error
+	DeleteSignInCode(ctx context.Context, id string) (int64, error)
 	DeleteSuppressionByID(ctx context.Context, arg DeleteSuppressionByIDParams) error
 	DeleteTemplate(ctx context.Context, id string) error
 	DeleteTransactionalEmail(ctx context.Context, arg DeleteTransactionalEmailParams) error
@@ -480,6 +482,7 @@ type Querier interface {
 	GetSequenceOrgID(ctx context.Context, id string) (string, error)
 	GetSequenceStateFull(ctx context.Context, arg GetSequenceStateFullParams) (ContactSequenceState, error)
 	GetSequenceStats(ctx context.Context, sequenceID sql.NullString) (GetSequenceStatsRow, error)
+	GetSignInCodeByTokenHash(ctx context.Context, tokenHash string) (SignInCode, error)
 	GetSubscriberCampaignActivity(ctx context.Context, contactID string) ([]GetSubscriberCampaignActivityRow, error)
 	// Returns field_key -> value pairs for use in email merge tags
 	GetSubscriberCustomFieldsForMerge(ctx context.Context, subscriberID string) ([]GetSubscriberCustomFieldsForMergeRow, error)
@@ -706,6 +709,7 @@ type Querier interface {
 	RemoveContactTag(ctx context.Context, arg RemoveContactTagParams) error
 	RemoveSubscriberFromList(ctx context.Context, arg RemoveSubscriberFromListParams) error
 	RemoveUserFromOrganization(ctx context.Context, arg RemoveUserFromOrganizationParams) error
+	ReplaceSignInCode(ctx context.Context, arg ReplaceSignInCodeParams) error
 	ResetFailedLogins(ctx context.Context, id string) error
 	ResubscribeContact(ctx context.Context, id string) error
 	ResumeContactSequence(ctx context.Context, arg ResumeContactSequenceParams) error

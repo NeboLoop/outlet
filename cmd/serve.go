@@ -737,8 +737,8 @@ func registerListExportRoutes(server *rest.Server, ctx *svc.ServiceContext) {
 // registerMCPOAuthRoutes adds MCP OAuth 2.1 endpoints for ChatGPT and other AI integrations
 func registerMCPOAuthRoutes(server *rest.Server, ctx *svc.ServiceContext, baseURL string) {
 	oauthHandler := mcpoauth.NewHandler(ctx, baseURL)
-	// The sign-in form checks passwords: it shares the admin sign-in's
-	// per-address limit.
+	// The sign-in form checks passwords: it takes the admin sign-in's
+	// per-address limit (counted for its own path).
 	signInLimit := ctx.AuthRateLimit
 
 	// Well-known metadata endpoints

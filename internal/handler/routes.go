@@ -1207,6 +1207,18 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Handler: auth.ResetPasswordHandler(serverCtx),
 				},
 				{
+					// Email a sign-in link and code (the same answer whether or not the address has an account)
+					Method:  http.MethodPost,
+					Path:    "/auth/sign-in-email",
+					Handler: auth.SendSignInEmailHandler(serverCtx),
+				},
+				{
+					// Sign in with the emailed link's token, or with the email and its code
+					Method:  http.MethodPost,
+					Path:    "/auth/sign-in-email/verify",
+					Handler: auth.SignInWithEmailHandler(serverCtx),
+				},
+				{
 					// Validate invitation token and get user details
 					Method:  http.MethodGet,
 					Path:    "/auth/validate-invitation",

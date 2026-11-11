@@ -323,62 +323,96 @@ func TestRateLimitMiddleware_DifferentIPsIndependent(t *testing.T) {
 
 // ========== Client IP Extraction Tests ==========
 
-func TestGetClientIP_FromXForwardedFor(t *testing.T) {
+func TestGetClientIP(t *testing.T) {
 	testCases := []struct {
 		name       string
+		remoteAddr string
 		xff        string
+		xri        string
 		expectedIP string
 	}{
-		{"Single IP", "203.0.113.50", "203.0.113.50"},
-		{"Multiple IPs", "203.0.113.50, 70.41.3.18, 150.172.238.178", "203.0.113.50"},
-		{"IPv6", "2001:db8::1", "2001:db8::1"},
-		{"Mixed chain", "192.0.2.1, 2001:db8::1", "192.0.2.1"},
+		{"Direct client, no port", "203.0.113.7:5555", "", "", "203.0.113.7"},
+		{"Direct client ignores forwarding headers anyone could write", "203.0.113.7:5555", "198.51.100.1", "198.51.100.2", "203.0.113.7"},
+		{"Behind a proxy: the client the proxy saw", "10.0.0.2:5555", "203.0.113.50", "", "203.0.113.50"},
+		{"Behind two proxies", "10.0.0.2:5555", "203.0.113.50, 10.132.0.8", "", "203.0.113.50"},
+		{"A spoofed left-most entry is not believed", "10.0.0.2:5555", "198.51.100.66, 203.0.113.50, 10.132.0.8", "", "203.0.113.50"},
+		{"IPv6 client behind a proxy", "[::1]:5555", "2001:db8::1", "", "2001:db8::1"},
+		{"Behind a proxy that sets X-Real-IP only", "127.0.0.1:5555", "", "203.0.113.9", "203.0.113.9"},
+		{"Every hop private: the farthest known", "10.0.0.2:5555", "10.132.0.8", "", "10.132.0.8"},
+		{"Private, no headers", "192.168.0.1:8080", "", "", "192.168.0.1"},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req.Header.Set("X-Forwarded-For", tc.xff)
-
-			ip := getClientIP(req)
-			assert.Equal(t, tc.expectedIP, ip)
+			req.RemoteAddr = tc.remoteAddr
+			if tc.xff != "" {
+				req.Header.Set("X-Forwarded-For", tc.xff)
+			}
+			if tc.xri != "" {
+				req.Header.Set("X-Real-IP", tc.xri)
+			}
+			assert.Equal(t, tc.expectedIP, getClientIP(req))
 		})
 	}
 }
 
-func TestGetClientIP_FromXRealIP(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Real-IP", "10.0.0.50")
-
-	ip := getClientIP(req)
-	assert.Equal(t, "10.0.0.50", ip)
+// Wrong passwords block sign-in, not "Forgot password", a reset or an
+// emailed sign-in from the same address.
+func TestRateLimitMiddleware_EndpointsCountedSeparately(t *testing.T) {
+	middleware := NewRateLimitMiddleware(DefaultAuthRateLimitConfig())
+	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	send := func(path string) int {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "10.0.0.2:5555"
+		req.Header.Set("X-Forwarded-For", "203.0.113.50, 10.132.0.8")
+		rr := httptest.NewRecorder()
+		handler(rr, req)
+		return rr.Code
+	}
+	for i := 0; i < 6; i++ {
+		send("/api/v1/auth/login")
+	}
+	assert.Equal(t, http.StatusTooManyRequests, send("/api/v1/auth/login"))
+	for _, path := range []string{"/api/v1/auth/forgot-password", "/api/v1/auth/reset-password", "/api/v1/auth/sign-in-email", "/api/v1/auth/sign-in-email/verify"} {
+		assert.Equal(t, http.StatusOK, send(path), path)
+	}
 }
 
-func TestGetClientIP_FallbackToRemoteAddr(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "192.168.0.1:8080"
-
-	ip := getClientIP(req)
-	assert.Equal(t, "192.168.0.1:8080", ip)
+// Two people behind the same proxies are counted apart.
+func TestRateLimitMiddleware_ClientsBehindProxyCountedSeparately(t *testing.T) {
+	middleware := NewRateLimitMiddleware(DefaultAuthRateLimitConfig())
+	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	send := func(client string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req.RemoteAddr = "10.0.0.2:5555"
+		req.Header.Set("X-Forwarded-For", client+", 10.132.0.8")
+		rr := httptest.NewRecorder()
+		handler(rr, req)
+		return rr.Code
+	}
+	for i := 0; i < 6; i++ {
+		send("203.0.113.50")
+	}
+	assert.Equal(t, http.StatusTooManyRequests, send("203.0.113.50"))
+	assert.Equal(t, http.StatusOK, send("203.0.113.51"))
 }
 
-func TestGetClientIP_XForwardedForTakesPrecedence(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Forwarded-For", "203.0.113.50")
-	req.Header.Set("X-Real-IP", "10.0.0.1")
-	req.RemoteAddr = "127.0.0.1:8080"
-
-	ip := getClientIP(req)
-	assert.Equal(t, "203.0.113.50", ip, "X-Forwarded-For should take precedence")
-}
-
-func TestGetClientIP_XRealIPTakesPrecedenceOverRemoteAddr(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Real-IP", "10.0.0.1")
-	req.RemoteAddr = "127.0.0.1:8080"
-
-	ip := getClientIP(req)
-	assert.Equal(t, "10.0.0.1", ip, "X-Real-IP should take precedence over RemoteAddr")
+func TestRateLimitMiddleware_RetryAfterIsSeconds(t *testing.T) {
+	middleware := NewRateLimitMiddleware(DefaultAuthRateLimitConfig())
+	handler := middleware.Handle(func(w http.ResponseWriter, r *http.Request) {})
+	var rr *httptest.ResponseRecorder
+	for i := 0; i < 6; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		rr = httptest.NewRecorder()
+		handler(rr, req)
+	}
+	assert.Equal(t, http.StatusTooManyRequests, rr.Code)
+	assert.Equal(t, "300", rr.Header().Get("Retry-After"))
 }
 
 // ========== Concurrent Request Handling Tests ==========
@@ -566,7 +600,7 @@ func TestRateLimitMiddleware_RecordFailure_NewIP(t *testing.T) {
 
 	// Entry should exist
 	middleware.mu.RLock()
-	entry, exists := middleware.entries["192.168.1.9:12345"]
+	entry, exists := middleware.entries["192.168.1.9 /api/login"]
 	middleware.mu.RUnlock()
 
 	assert.True(t, exists, "Entry should exist after RecordFailure")
@@ -590,7 +624,7 @@ func TestRateLimitMiddleware_RecordFailure_ExistingIP(t *testing.T) {
 	middleware.RecordFailure(req)
 
 	middleware.mu.RLock()
-	entry, _ := middleware.entries["192.168.1.10:12345"]
+	entry, _ := middleware.entries["192.168.1.10 /api/login"]
 	middleware.mu.RUnlock()
 
 	assert.Equal(t, 3, entry.attempts)
@@ -613,7 +647,7 @@ func TestRateLimitMiddleware_RecordFailure_TriggersBlock(t *testing.T) {
 	middleware.RecordFailure(req) // This should trigger block
 
 	middleware.mu.RLock()
-	entry, _ := middleware.entries["192.168.1.11:12345"]
+	entry, _ := middleware.entries["192.168.1.11 /api/login"]
 	middleware.mu.RUnlock()
 
 	assert.False(t, entry.blockedAt.IsZero(), "IP should be blocked after exceeding limit")
@@ -636,7 +670,7 @@ func TestRateLimitMiddleware_RecordFailure_DoesNotIncrementWhenBlocked(t *testin
 	}
 
 	middleware.mu.RLock()
-	entry, _ := middleware.entries["192.168.1.12:12345"]
+	entry, _ := middleware.entries["192.168.1.12 /api/login"]
 	attemptsAfterBlock := entry.attempts
 	middleware.mu.RUnlock()
 
@@ -645,7 +679,7 @@ func TestRateLimitMiddleware_RecordFailure_DoesNotIncrementWhenBlocked(t *testin
 	middleware.RecordFailure(req)
 
 	middleware.mu.RLock()
-	entry, _ = middleware.entries["192.168.1.12:12345"]
+	entry, _ = middleware.entries["192.168.1.12 /api/login"]
 	middleware.mu.RUnlock()
 
 	assert.Equal(t, attemptsAfterBlock, entry.attempts, "Attempts should not increment when blocked")
@@ -675,7 +709,7 @@ func TestRateLimitMiddleware_ResetForIP(t *testing.T) {
 
 	// Verify entry exists
 	middleware.mu.RLock()
-	_, exists := middleware.entries["192.168.1.13:12345"]
+	_, exists := middleware.entries["192.168.1.13 /api/login"]
 	middleware.mu.RUnlock()
 	assert.True(t, exists)
 
@@ -686,7 +720,7 @@ func TestRateLimitMiddleware_ResetForIP(t *testing.T) {
 
 	// Verify entry is gone
 	middleware.mu.RLock()
-	_, exists = middleware.entries["192.168.1.13:12345"]
+	_, exists = middleware.entries["192.168.1.13 /api/login"]
 	middleware.mu.RUnlock()
 	assert.False(t, exists, "Entry should be removed after ResetForIP")
 }

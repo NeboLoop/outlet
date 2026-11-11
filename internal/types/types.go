@@ -2069,6 +2069,14 @@ type SendEmailResponse struct {
 	Message   string `json:"message,optional"`
 }
 
+type SendSignInEmailRequest struct {
+	Email string `json:"email"`
+}
+
+type SendSignInEmailResponse struct {
+	Message string `json:"message"`
+}
+
 type SendingLimits struct {
 	DailyLimit      int64   `json:"daily_limit"`     // per sender per day; 0: no limit
 	WarmupStart     int64   `json:"warmup_start"`    // a new sender's first day; 0: no warm-up
@@ -2199,6 +2207,12 @@ type SetupStatusResponse struct {
 	HasSmtp            bool     `json:"has_smtp"`            // Has SMTP configured (deprecated)
 	PlatformConfigured bool     `json:"platform_configured"` // Has AWS/email settings
 	MissingSettings    []string `json:"missing_settings"`    // List of missing required settings
+}
+
+type SignInWithEmailRequest struct {
+	Token string `json:"token,optional"` // the token from the emailed sign-in link
+	Email string `json:"email,optional"` // with code: the address the code was sent to
+	Code  string `json:"code,optional"`  // the 6-digit code from the email
 }
 
 type StatsOverviewResponse struct {

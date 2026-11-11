@@ -1061,6 +1061,9 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 	_, err = h.conn.Exec(`UPDATE email_queue SET sent_at = ? WHERE tracking_token = ?`, time.Now().UTC().Add(-2*time.Minute).Format(time.DateTime), token)
 	require.NoError(t, err)
 	require.NoError(t, tracker.RecordClick(ctx, token, target))
+	// The tracker runs on the real clock, so the send now carries a real time;
+	// the reply has to come after it for the per-step count to place it.
+	h.clock = time.Now().UTC()
 
 	h.mail.deliver(t, kaiBox(kai[0]), "From: kai@example.org\nTo: x\nSubject: Re: hi\nMessage-ID: <r-kai@example.org>\nIn-Reply-To: "+kai[0].Header.Get("Message-Id")+"\n\nI'm in. What's next?\n")
 	h.svc.PollReplies(ctx)
