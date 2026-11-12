@@ -68,8 +68,9 @@ func (l *GetDashboardStatsLogic) GetDashboardStats(req *types.GetDashboardStatsR
 		}
 	}
 
-	// Check lists
-	lists, err := l.svcCtx.DB.ListEmailLists(l.ctx, db.ListEmailListsParams{OrgID: orgID})
+	// Check lists: newsletter lists only, as on the dashboard. An outreach
+	// list holds prospects, who never signed up.
+	lists, err := l.svcCtx.DB.ListEmailLists(l.ctx, db.ListEmailListsParams{OrgID: orgID, Kind: "subscribers"})
 	resp.HasLists = err == nil && len(lists) > 0
 
 	// Check if org has email configured (from_email set)

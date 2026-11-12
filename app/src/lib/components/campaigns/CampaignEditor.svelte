@@ -109,7 +109,7 @@
 
 		try {
 			const [listsRes, designsRes] = await Promise.all([
-				listLists({}),
+				listLists({ kind: 'subscribers' }),
 				listEmailDesigns({})
 			]);
 			lists = listsRes.lists || [];

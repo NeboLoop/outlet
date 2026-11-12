@@ -43,6 +43,9 @@ func (l *UpdateCampaignLogic) UpdateCampaign(req *types.UpdateCampaignRequest) (
 		if err != nil {
 			return nil, err
 		}
+		if err := email.CheckOptInLists(l.ctx, l.svcCtx.DB, ids); err != nil {
+			return nil, err
+		}
 		listIds = db.EncodeListIDs(ids)
 	}
 	if len(req.ExcludeListIds) > 0 {

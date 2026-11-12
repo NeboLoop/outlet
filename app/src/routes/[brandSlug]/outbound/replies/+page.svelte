@@ -149,8 +149,8 @@
 						<p class="text-sm text-text">{r.subject}</p>
 						<p class="text-xs text-text-muted">
 							{formatDate(r.received_at, 'datetime')}{#if r.campaign_name}, to
-								<a href="{base}/campaigns/{r.sequence_id}" class="link link-primary">{r.campaign_name}</a>{/if}{#if r.segment_name}
-								in {r.segment_name}{/if}
+								<a href="{base}/campaigns/{r.sequence_id}" class="link link-primary">{r.campaign_name}</a>{/if}{#if r.segment_name}{' '}in
+								{r.segment_name}{/if}
 						</p>
 					</div>
 					<Badge variant={badgeVariant[r.classification] || 'default'} size="sm">

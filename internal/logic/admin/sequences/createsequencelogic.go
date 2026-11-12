@@ -7,6 +7,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -46,6 +47,12 @@ func (l *CreateSequenceLogic) CreateSequence(req *types.CreateSequenceRequest) (
 			return nil, err
 		}
 		listIDInt64, _ = strconv.ParseInt(req.ListId, 10, 64)
+		// Only an outreach sequence mails an outreach list.
+		if sequenceType != "outreach" {
+			if err := email.CheckOptInLists(l.ctx, l.svcCtx.DB, []int64{listIDInt64}); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// A new sequence starts active unless the request says otherwise.
