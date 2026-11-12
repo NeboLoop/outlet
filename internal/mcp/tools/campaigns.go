@@ -41,7 +41,7 @@ type CampaignInput struct {
 	ReplyTo        string `json:"reply_to,omitempty" jsonschema:"Reply-to email address"`
 	HTMLBody       string `json:"html_body,omitempty" jsonschema:"HTML content of the email"`
 	PlainText      string `json:"plain_text,omitempty" jsonschema:"Plain text version of the email"`
-	ListIDs        string `json:"list_ids,omitempty" jsonschema:"Comma-separated list IDs to send to"`
+	ListIDs        string `json:"list_ids,omitempty" jsonschema:"Comma-separated IDs of the newsletter lists to send to: email(resource: list, action: list, kind: subscribers) shows them. An outreach list is refused."`
 	ExcludeListIDs string `json:"exclude_list_ids,omitempty" jsonschema:"Comma-separated list IDs to exclude"`
 	TrackOpens     *bool  `json:"track_opens,omitempty" jsonschema:"Track email opens (default: true)"`
 	TrackClicks    *bool  `json:"track_clicks,omitempty" jsonschema:"Track link clicks (default: true)"`
@@ -160,7 +160,7 @@ func RegisterCampaignTool(server *mcp.Server, toolCtx *mcpctx.ToolContext) {
 PREREQUISITE: You must first select a brand using brand(resource: brand, action: select).
 
 Actions and Required Fields:
-- create: Create a new campaign (requires: name, subject, html_body, list_ids)
+- create: Create a new campaign (requires: name, subject, html_body, list_ids). A campaign is a newsletter: it goes only to newsletter lists (kind subscribers), never to an outreach list of prospects.
 - list: List all campaigns (optional: status filter)
 - get: Get campaign details with full content (requires: id)
 - update: Update a draft campaign (requires: id)
@@ -240,6 +240,9 @@ func handleCampaignCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	}
 	listIDs, err := access.BrandLists(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), splitIDs(input.ListIDs))
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := email.CheckOptInLists(ctx, toolCtx.DB(), listIDs); err != nil {
 		return nil, nil, err
 	}
 	excludeListIDs, err := access.BrandLists(ctx, toolCtx.DB(), toolCtx.BrandID(ctx), splitIDs(input.ExcludeListIDs))
@@ -411,6 +414,9 @@ func handleCampaignUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := email.CheckOptInLists(ctx, toolCtx.DB(), ids); err != nil {
+			return nil, nil, err
+		}
 		listIDs = db.EncodeListIDs(ids)
 	}
 	if strings.TrimSpace(input.ExcludeListIDs) != "" {
@@ -507,6 +513,15 @@ func handleCampaignSchedule(ctx context.Context, toolCtx *mcpctx.ToolContext, in
 		return nil, nil, mcpctx.NewValidationError("scheduled_at must be ISO 8601, like 2026-01-15T10:00:00Z", "scheduled_at")
 	}
 
+	// A newsletter campaign goes only to newsletter lists.
+	current, err := toolCtx.DB().GetCampaign(ctx, db.GetCampaignParams{ID: input.ID, OrgID: toolCtx.BrandID(ctx)})
+	if err != nil {
+		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("campaign %s not found", input.ID))
+	}
+	if err := email.CheckOptInLists(ctx, toolCtx.DB(), db.DecodeListIDs(current.ListIds.String)); err != nil {
+		return nil, nil, err
+	}
+
 	campaign, err := toolCtx.DB().ScheduleCampaign(ctx, db.ScheduleCampaignParams{
 		ID:          input.ID,
 		OrgID:       toolCtx.BrandID(ctx),
@@ -546,6 +561,10 @@ func handleCampaignSend(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 		return nil, nil, mcpctx.NewValidationError(
 			fmt.Sprintf("campaign is in '%s' status, only draft campaigns can be sent", campaign.Status.String),
 			"id")
+	}
+
+	if err := email.CheckOptInLists(ctx, toolCtx.DB(), db.DecodeListIDs(campaign.ListIds.String)); err != nil {
+		return nil, nil, err
 	}
 
 	// Schedule it for now: the scheduler is the one sending path.

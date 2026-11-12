@@ -215,6 +215,10 @@ func CheckEntryRule(trigger, sourceID string) error {
 // on this list. A contact already in a sequence stays where they are, so
 // calling it again for the same subscription is safe.
 func (s *SequenceService) SubscriptionActivated(ctx context.Context, contactID string, listID int64) error {
+	// An outreach list starts no opt-in sequence: its people are prospects.
+	if err := CheckOptInLists(ctx, s.db, []int64{listID}); err != nil {
+		return fmt.Errorf("no sequence started for contact %s: %w", contactID, err)
+	}
 	return errors.Join(
 		s.StartSequence(ctx, contactID, listID, TriggerSignup),
 		s.runEntryRules(ctx, TriggerListJoin, strconv.FormatInt(listID, 10), contactID),
@@ -273,6 +277,13 @@ func (s *SequenceService) StartSequenceByID(ctx context.Context, contactID strin
 	sequence, err := s.db.GetSequenceByID(ctx, sequenceID)
 	if err != nil {
 		return fmt.Errorf("sequence not found: %w", err)
+	}
+	// Only an outreach sequence mails an outreach list, whatever put the
+	// sequence on one.
+	if sequence.SequenceType.String != "outreach" && sequence.ListID.Valid {
+		if err := CheckOptInLists(ctx, s.db, []int64{sequence.ListID.Int64}); err != nil {
+			return fmt.Errorf("sequence %s not started: %w", sequence.Slug, err)
+		}
 	}
 
 	// Check if contact is already in this sequence

@@ -8,6 +8,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -37,6 +38,17 @@ func (l *ScheduleCampaignLogic) ScheduleCampaign(req *types.ScheduleCampaignRequ
 	scheduledAt, err := time.Parse(time.RFC3339, req.ScheduledAt)
 	if err != nil {
 		return nil, errors.New("invalid scheduled_at format, use ISO8601")
+	}
+
+	// A newsletter campaign goes only to newsletter lists.
+	current, err := l.svcCtx.DB.GetCampaign(l.ctx, db.GetCampaignParams{ID: req.Id, OrgID: orgID})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil {
+		if err := email.CheckOptInLists(l.ctx, l.svcCtx.DB, db.DecodeListIDs(current.ListIds.String)); err != nil {
+			return nil, err
+		}
 	}
 
 	campaign, err := l.svcCtx.DB.ScheduleCampaign(l.ctx, db.ScheduleCampaignParams{

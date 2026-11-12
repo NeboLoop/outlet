@@ -7,6 +7,7 @@ import (
 
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 	"github.com/outlet-sh/outlet/internal/utils"
@@ -98,6 +99,16 @@ func (l *UpdateSequenceLogic) UpdateSequence(req *types.UpdateSequenceRequest) (
 		newListID, parseErr := strconv.ParseInt(*req.ListId, 10, 64)
 		if parseErr == nil {
 			listID = sql.NullInt64{Int64: newListID, Valid: true}
+		}
+	}
+
+	// Only an outreach sequence mails an outreach list: checked when the
+	// list or the type changes, so a sequence can always be renamed or
+	// turned off.
+	changesTarget := req.SequenceType != "" || (req.ListId != nil && *req.ListId != "")
+	if changesTarget && sequenceType.String != "outreach" && listID.Valid {
+		if err := email.CheckOptInLists(l.ctx, l.svcCtx.DB, []int64{listID.Int64}); err != nil {
+			return nil, err
 		}
 	}
 

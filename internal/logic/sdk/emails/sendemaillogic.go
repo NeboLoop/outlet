@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/middleware"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
@@ -176,6 +177,8 @@ func Send(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, 
 			}, err
 		case errors.Is(err, errNoList):
 			return fail("List '" + req.ListSlug + "' not found")
+		case errors.As(err, new(*errorx.CodeError)):
+			return fail(err.Error())
 		case err != nil:
 			l.Errorf("Failed to check the list subscription: %v", err)
 			return failInternal("Failed to prepare email for sending", err)
@@ -401,13 +404,17 @@ var errNoList = errors.New("no such list")
 
 // activeSubscriber returns the brand's contact for this address when it is
 // an active subscriber of the list: subscribed, and not unsubscribed from
-// everything or blocked. Otherwise it returns ErrNotSubscribed, or errNoList.
+// everything or blocked. Otherwise it returns ErrNotSubscribed, errNoList, or
+// the refusal of an outreach list (marketing mail goes only to newsletter lists).
 func activeSubscriber(ctx context.Context, store *db.Store, orgID, listSlug, to string) (string, error) {
 	list, err := store.GetEmailListByOrgAndSlug(ctx, db.GetEmailListByOrgAndSlugParams{OrgID: orgID, Slug: listSlug})
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", errNoList
 	}
 	if err != nil {
+		return "", err
+	}
+	if err := email.CheckOptInLists(ctx, store, []int64{list.ID}); err != nil {
 		return "", err
 	}
 	addr, err := mail.ParseAddress(to)

@@ -38,6 +38,19 @@ func (l *CreateEntryRuleLogic) CreateEntryRule(req *types.CreateEntryRuleRequest
 	if err := email.CheckEntryRule(req.TriggerType, req.SourceId); err != nil {
 		return nil, errorx.NewBadRequestError(err.Error())
 	}
+	if req.TriggerType == email.TriggerListJoin {
+		seq, err := l.svcCtx.DB.GetSequenceByID(l.ctx, req.SequenceId)
+		if err != nil {
+			return nil, err
+		}
+		// Only an outreach sequence starts from an outreach list.
+		if seq.SequenceType.String != "outreach" {
+			listID, _ := strconv.ParseInt(req.SourceId, 10, 64)
+			if err := email.CheckOptInLists(l.ctx, l.svcCtx.DB, []int64{listID}); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	rule, err := l.svcCtx.DB.CreateEntryRule(l.ctx, db.CreateEntryRuleParams{
 		ID:          uuid.New().String(),

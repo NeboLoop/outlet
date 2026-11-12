@@ -83,6 +83,7 @@ type EmailInput struct {
 	Name                string `json:"name,omitempty" jsonschema:"Name for list or sequence (create/update)"`
 	Description         string `json:"description,omitempty" jsonschema:"List description"`
 	DoubleOptin         *bool  `json:"double_optin,omitempty" jsonschema:"Require email confirmation (list)"`
+	Kind                string `json:"kind,omitempty" jsonschema:"List kind to show (list.list): subscribers (newsletter lists, people who signed up) or outreach (prospects for Outbound, who never signed up); empty: every list"`
 	ConfirmationSubject string `json:"confirmation_subject,omitempty" jsonschema:"Custom subject for double opt-in confirmation email (list.update)"`
 	ConfirmationBody    string `json:"confirmation_body,omitempty" jsonschema:"Custom HTML body for double opt-in confirmation email. Use {{confirm_url}} for the confirmation link (list.update)"`
 
@@ -137,8 +138,8 @@ Actions and Required Fields:
 
 LIST RESOURCE:
 - list.create: Create an email list (requires: name)
-- list.list: List all email lists
-- list.get: Get an email list (requires: id)
+- list.list: List email lists, each with its kind (optional: kind: subscribers or outreach; empty: every list). A subscribers list is a newsletter list: people who signed up. An outreach list holds prospects for Outbound, who never signed up; newsletter campaigns and sequences other than outreach never go to one.
+- list.get: Get an email list with its kind (requires: id)
 - list.update: Update an email list (requires: id, optional: name, description, double_optin, confirmation_subject, confirmation_body)
 - list.delete: Delete an email list (requires: id)
 - list.stats: Get list statistics (requires: id)
@@ -181,6 +182,7 @@ QUEUE RESOURCE:
 
 Examples:
   email(resource: list, action: create, name: "Newsletter")
+  email(resource: list, action: list, kind: "subscribers")
   email(resource: list, action: subscribe, id: "1", email: "user@example.com")
   email(resource: list, action: export, id: "1", status: "active")
   email(resource: sequence, action: create, name: "Welcome Series", list_id: "1")
@@ -236,6 +238,7 @@ type ListItem struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
 	Slug            string `json:"slug"`
+	Kind            string `json:"kind"` // subscribers (a newsletter list) or outreach (prospects)
 	Description     string `json:"description,omitempty"`
 	DoubleOptin     bool   `json:"double_optin"`
 	SubscriberCount int64  `json:"subscriber_count"`
@@ -262,6 +265,7 @@ type ListGetOutput struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
 	Slug            string `json:"slug"`
+	Kind            string `json:"kind"` // subscribers (a newsletter list) or outreach (prospects)
 	Description     string `json:"description,omitempty"`
 	DoubleOptin     bool   `json:"double_optin"`
 	SubscriberCount int64  `json:"subscriber_count"`
@@ -425,7 +429,10 @@ func handleListList(ctx context.Context, toolCtx *mcpctx.ToolContext, input Emai
 		return nil, nil, err
 	}
 
-	lists, err := toolCtx.DB().ListEmailLists(ctx, db.ListEmailListsParams{OrgID: toolCtx.BrandID(ctx)})
+	if input.Kind != "" && input.Kind != "subscribers" && input.Kind != "outreach" {
+		return nil, nil, mcpctx.NewValidationError("kind is subscribers or outreach", "kind")
+	}
+	lists, err := toolCtx.DB().ListEmailLists(ctx, db.ListEmailListsParams{OrgID: toolCtx.BrandID(ctx), Kind: input.Kind})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list lists: %w", err)
 	}
@@ -444,6 +451,7 @@ func handleListList(ctx context.Context, toolCtx *mcpctx.ToolContext, input Emai
 			ID:              fmt.Sprintf("%d", list.ID),
 			Name:            list.Name,
 			Slug:            list.Slug,
+			Kind:            list.Kind,
 			Description:     list.Description.String,
 			DoubleOptin:     int64ToBool(list.DoubleOptin),
 			SubscriberCount: count,
@@ -491,6 +499,7 @@ func handleListGet(ctx context.Context, toolCtx *mcpctx.ToolContext, input Email
 		ID:              fmt.Sprintf("%d", list.ID),
 		Name:            list.Name,
 		Slug:            list.Slug,
+		Kind:            list.Kind,
 		Description:     list.Description.String,
 		DoubleOptin:     int64ToBool(list.DoubleOptin),
 		SubscriberCount: count,
@@ -862,6 +871,12 @@ func handleSequenceCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	if sequenceType == "" {
 		sequenceType = "lifecycle"
 	}
+	// Only an outreach sequence mails an outreach list.
+	if sequenceType != "outreach" {
+		if err := email.CheckOptInLists(ctx, toolCtx.DB(), []int64{listID}); err != nil {
+			return nil, nil, err
+		}
+	}
 	active := true
 	if input.Active != nil {
 		active = *input.Active
@@ -1023,6 +1038,12 @@ func handleSequenceUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	sequenceType := seq.SequenceType.String
 	if input.SequenceType != "" {
 		sequenceType = input.SequenceType
+		// Only an outreach sequence mails an outreach list.
+		if sequenceType != "outreach" && seq.ListID.Valid {
+			if err := email.CheckOptInLists(ctx, toolCtx.DB(), []int64{seq.ListID.Int64}); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 	active := int64ToBool(seq.IsActive)
 	if input.Active != nil {
@@ -2001,6 +2022,13 @@ func handleEntryRuleCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inp
 	}
 	if seq.OrgID.String != toolCtx.BrandID(ctx) {
 		return nil, nil, mcpctx.NewNotFoundError(fmt.Sprintf("sequence %s not found", input.SequenceID))
+	}
+	// Only an outreach sequence starts from an outreach list.
+	if input.TriggerType == email.TriggerListJoin && seq.SequenceType.String != "outreach" {
+		listID, _ := strconv.ParseInt(input.SourceID, 10, 64)
+		if err := email.CheckOptInLists(ctx, toolCtx.DB(), []int64{listID}); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	priority := input.Priority

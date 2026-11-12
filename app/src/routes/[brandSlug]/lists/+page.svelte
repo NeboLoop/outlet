@@ -25,6 +25,9 @@
 
 	let loading = $state(true);
 	let lists = $state<ListInfo[]>([]);
+	// Outreach lists hold prospects for Outbound, who never signed up: they
+	// live in Outbound, Prospects, and this page only points there.
+	let outreachLists = $state<ListInfo[]>([]);
 	let error = $state('');
 	let searchQuery = $state('');
 
@@ -56,8 +59,12 @@
 		error = '';
 
 		try {
-			const response = await listLists({});
-			lists = response.lists || [];
+			const [newsletter, outreach] = await Promise.all([
+				listLists({ kind: 'subscribers' }),
+				listLists({ kind: 'outreach' })
+			]);
+			lists = newsletter.lists || [];
+			outreachLists = outreach.lists || [];
 		} catch (err) {
 			console.error('Failed to load lists:', err);
 			error = 'Failed to load email lists';
@@ -313,6 +320,21 @@
 				No lists match "{searchQuery}"
 			</div>
 		{/if}
+	{/if}
+
+	{#if !loading && outreachLists.length > 0}
+		<section class="mt-8 rounded-lg border border-border p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+			<div class="min-w-0">
+				<h2 class="font-medium text-text">Outreach lists</h2>
+				<p class="mt-1 text-sm text-text-muted">
+					{outreachLists.length === 1 ? '1 outreach list holds' : `${outreachLists.length} outreach lists hold`}
+					prospects for Outbound: people who never signed up. They're kept apart from your newsletter lists, and newsletter campaigns never go to them.
+				</p>
+			</div>
+			<Button type="secondary" onclick={() => goto(`${basePath}/outbound/prospects`)}>
+				Open Prospects
+			</Button>
+		</section>
 	{/if}
 </div>
 

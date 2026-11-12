@@ -265,6 +265,16 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 		})
 	}
 
+	// A newsletter campaign never goes to an outreach list, whatever put the
+	// list on it. One that names one is paused, like one that can't send.
+	if err := email.CheckOptInLists(s.ctx, s.store, db.DecodeListIDs(campaign.ListIds.String)); err != nil {
+		logx.Errorf("Campaign %s can't send: %v", campaign.ID, err)
+		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
+			ID:     campaign.ID,
+			Status: sql.NullString{String: "paused", Valid: true},
+		})
+	}
+
 	// Create pipe for this campaign
 	s.getOrCreatePipe(campaign.ID)
 

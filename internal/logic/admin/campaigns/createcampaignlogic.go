@@ -42,6 +42,9 @@ func (l *CreateCampaignLogic) CreateCampaign(req *types.CreateCampaignRequest) (
 	if err != nil {
 		return nil, err
 	}
+	if err := email.CheckOptInLists(l.ctx, l.svcCtx.DB, listIDs); err != nil {
+		return nil, err
+	}
 	excludeListIDs, err := access.BrandLists(l.ctx, l.svcCtx.DB, orgID, req.ExcludeListIds)
 	if err != nil {
 		return nil, err

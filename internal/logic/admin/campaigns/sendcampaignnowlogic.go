@@ -8,6 +8,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
+	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -32,6 +33,17 @@ func (l *SendCampaignNowLogic) SendCampaignNow(req *types.SendCampaignNowRequest
 	orgID, err := access.RequireBrand(l.ctx, l.svcCtx.DB, access.Member)
 	if err != nil {
 		return nil, err
+	}
+
+	// A newsletter campaign goes only to newsletter lists.
+	current, err := l.svcCtx.DB.GetCampaign(l.ctx, db.GetCampaignParams{ID: req.Id, OrgID: orgID})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil {
+		if err := email.CheckOptInLists(l.ctx, l.svcCtx.DB, db.DecodeListIDs(current.ListIds.String)); err != nil {
+			return nil, err
+		}
 	}
 
 	// Schedule it for now: the scheduler is the one sending path. The
