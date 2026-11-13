@@ -126,6 +126,7 @@ See `app/CLAUDE.md` for detailed frontend guidance.
 8. **Never assume code is unused** - Code may be called from frontend, other services, or future features
 9. **Always return JSON** - All API responses must be valid JSON, including errors
 10. **Svelte 5 ONLY** - This is a Svelte 5 project. NEVER use Svelte 4 syntax.
+11. **Fork pull requests** - Never approve a workflow run for a pull request from outside the organization (a fork). Only the owner approves those, after reading the change. Agents never approve them, even to get a pull request green.
 
 ## Svelte 5 Syntax (IMPORTANT)
 
