@@ -1021,7 +1021,7 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 	h.setup()
 	got := h.prospects(creator("kai@example.org", "Kai", "the setup tour"), creator("lee@example.org", "Lee", "the gear guide"))
 	ids := []string{got["kai@example.org"].ID, got["lee@example.org"].ID}
-	steps := []StepInput{{Subject: "Hi {{first_name}}", Body: "Loved {{recent_video}}. Details: https://neboai.com/creators."}, {DelayDays: 2, Body: "Any thoughts, {{first_name}}?"}}
+	steps := []StepInput{{Subject: "Hi {{first_name}}", Body: "Loved {{recent_video}}. Details: https://example.com/creators."}, {DelayDays: 2, Body: "Any thoughts, {{first_name}}?"}}
 
 	_, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
 	assert.ErrorContains(t, err, "no tracking subdomain")
@@ -1037,18 +1037,18 @@ func TestCampaignResultsAndClicks(t *testing.T) {
 
 	camp, err := h.svc.DraftOutreach(ctx, h.org, CampaignInput{Name: "C", Steps: steps, ProspectIDs: ids, TrackClicks: true})
 	require.NoError(t, err)
-	assert.Contains(t, camp.Drafts[0].Body, "https://neboai.com/creators", "drafts show the real link")
+	assert.Contains(t, camp.Drafts[0].Body, "https://example.com/creators", "drafts show the real link")
 	_, err = h.svc.Review(ctx, h.org, "approve", []string{camp.Drafts[0].MessageID, camp.Drafts[1].MessageID})
 	require.NoError(t, err)
 	h.svc.Tick(ctx)
 	kai := h.mail.sentTo("kai@example.org")
 	require.Len(t, kai, 1)
 	body := bodyOf(t, kai[0])
-	assert.NotContains(t, body, "neboai.com/creators")
+	assert.NotContains(t, body, "example.com/creators")
 	// One signed link on the domain's own go. host, through the one click endpoint.
 	m := regexp.MustCompile(`https://go\.getexample\.com/api/e/c/([^?\s]+)\?url=([^&\s]+)&sig=([0-9a-f]+)`).FindStringSubmatch(body)
 	require.NotNil(t, m, body)
-	token, target := m[1], "https://neboai.com/creators"
+	token, target := m[1], "https://example.com/creators"
 	assert.True(t, h.mailer.VerifyClickLink(token, target, m[3]), "the click endpoint accepts it and redirects to the email's link")
 	assert.False(t, h.mailer.VerifyClickLink(token, "https://evil.example", m[3]), "and nowhere else")
 

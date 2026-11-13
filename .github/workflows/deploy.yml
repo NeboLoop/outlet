@@ -1,11 +1,7 @@
 name: Build and Deploy
 
-# NeboAI's Outlet (NeboLoop/outlet, a fork of outlet-sh/outlet).
-# main pushes ghcr.io/neboloop/outlet:main-<unix-ts>-<sha7>; Flux's ImagePolicy
-# `outlet` picks the newest tag and its image automation rolls the Deployment
-# in the k8s repo (outlet/). Pull requests from this repository build and test
-# without pushing. Nothing here deploys mail.outlet.sh, which pulls
-# ghcr.io/outlet-sh/outlet.
+# main builds, tests and pushes a container image; pull requests from this
+# repository build and test without pushing.
 on:
   push:
     branches: [main]
@@ -21,16 +17,15 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
-# Only the newest image per branch deploys (Flux picks the latest tag), so a
-# newer push cancels any in-flight build of the same ref.
+# A newer push cancels any in-flight build of the same ref.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-and-push:
-    # Self-hosted: org runner in the Lima VM on the stadium Mac mini (arm64).
-    # The Dockerfile cross-compiles on the build platform, so the amd64 image
+    # Self-hosted arm64 runner. The Dockerfile cross-compiles on the build
+    # platform, so the amd64 image
     # is built natively rather than under emulation. Never a GitHub-hosted
     # runner. Pull requests from other repositories do not run here: this
     # repository is public and the runner is ours.
@@ -82,7 +77,6 @@ jobs:
         with:
           context: .
           target: production
-          # DOKS nodes are amd64.
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}

@@ -172,7 +172,7 @@ func TestVerifySNSMessageExpiredCert(t *testing.T) {
 }
 
 func TestTopicAccount(t *testing.T) {
-	assert.Equal(t, "123456789012", topicAccount("arn:aws:sns:us-east-1:123456789012:outlet-ses-nebo-bot"))
+	assert.Equal(t, "123456789012", topicAccount("arn:aws:sns:us-east-1:123456789012:outlet-ses-example"))
 	assert.Equal(t, "", topicAccount("arn:aws:sqs:us-east-1:123456789012:q"))
 	assert.Equal(t, "", topicAccount("not-an-arn"))
 }

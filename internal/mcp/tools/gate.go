@@ -352,7 +352,7 @@ func liveKeyWarning(ctx context.Context, q db.Querier, brandID string) error {
 	return &mcpctx.ToolError{
 		Code: "live_key",
 		Message: fmt.Sprintf("This brand's API key is in live use: it sent %d emails in the last 7 days, the last at %s UTC. "+
-			"Something depends on this brand (NeboAI's sign-in mail is one). To go ahead anyway, call again with confirm_live: true.",
+			"Something depends on this brand. To go ahead anyway, call again with confirm_live: true.",
 			recent.Sends, recent.LastSentAt),
 		Field: "confirm_live",
 	}

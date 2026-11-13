@@ -24,8 +24,8 @@ func TestMigration0013(t *testing.T) {
 	require.NoError(t, goose.UpTo(conn, ".", 12))
 
 	_, err = conn.Exec(`INSERT INTO organizations (id, name, slug, api_key, from_email) VALUES
-		('nebo', 'NeboAI', 'neboai', 'k1', 'hello@Mail.NeboAI.com'),
-		('bot', 'Nebo Bot', 'nebo-bot', 'k2', ' noreply@nebo.bot '),
+		('mail', 'Mail Co', 'mail-co', 'k1', 'hello@Mail.Example.com'),
+		('bot', 'Bot Co', 'bot-co', 'k2', ' noreply@bot.example '),
 		('held', 'Held', 'held', 'k3', 'a@held.example'),
 		('taken', 'Taken', 'taken', 'k4', 'b@shared.example'),
 		('owner', 'Owner', 'owner', 'k5', 'c@other.example'),
@@ -50,20 +50,20 @@ func TestMigration0013(t *testing.T) {
 		}
 		return out
 	}
-	assert.Equal(t, []string{"mail.neboai.com:success"}, domains("nebo"))
-	assert.Equal(t, []string{"nebo.bot:success"}, domains("bot"))
+	assert.Equal(t, []string{"mail.example.com:success"}, domains("mail"))
+	assert.Equal(t, []string{"bot.example:success"}, domains("bot"))
 	assert.Equal(t, []string{"held.example:pending"}, domains("held"))
 	assert.Empty(t, domains("taken"))
 	assert.Equal(t, []string{"other.example:success", "shared.example:success"}, domains("owner"))
 	assert.Empty(t, domains("blank"))
 
 	var id string
-	require.NoError(t, conn.QueryRow(`SELECT id FROM domain_identities WHERE org_id = 'nebo'`).Scan(&id))
+	require.NoError(t, conn.QueryRow(`SELECT id FROM domain_identities WHERE org_id = 'mail'`).Scan(&id))
 	assert.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`, id)
 
 	// A second run adds nothing.
 	_, err = conn.Exec(`DELETE FROM goose_db_version WHERE version_id = 13`)
 	require.NoError(t, err)
 	require.NoError(t, goose.UpTo(conn, ".", 13))
-	assert.Len(t, domains("nebo"), 1)
+	assert.Len(t, domains("mail"), 1)
 }
