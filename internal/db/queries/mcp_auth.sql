@@ -168,3 +168,28 @@ WHERE updated_at < datetime('now', '-30 days');
 -- name: CreateMCPAuditLog :exec
 INSERT INTO mcp_audit_log (id, user_id, user_email, tool, action, org_id, target, result, created_at)
 VALUES (sqlc.arg(id), sqlc.arg(user_id), sqlc.arg(user_email), sqlc.arg(tool), sqlc.arg(action), sqlc.arg(org_id), sqlc.arg(target), sqlc.arg(result), datetime('now'));
+
+-- MCP OAuth sign-ins in progress
+
+-- name: CreateMCPOAuthRequest :exec
+INSERT INTO mcp_oauth_requests (id, request_hash, browser_hash, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, expires_at, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(request_hash), sqlc.arg(browser_hash), sqlc.arg(client_id), sqlc.arg(redirect_uri), sqlc.arg(scope), sqlc.arg(state), sqlc.arg(code_challenge), sqlc.arg(code_challenge_method), sqlc.arg(expires_at), datetime('now'));
+
+-- name: DeleteExpiredMCPOAuthRequests :exec
+DELETE FROM mcp_oauth_requests
+WHERE datetime(expires_at) <= datetime('now');
+
+-- name: GetMCPOAuthRequest :one
+SELECT * FROM mcp_oauth_requests
+WHERE request_hash = sqlc.arg(request_hash)
+  AND datetime(expires_at) > datetime('now');
+
+-- name: SetMCPOAuthRequestEmail :execrows
+UPDATE mcp_oauth_requests
+SET email = sqlc.arg(email), expires_at = sqlc.arg(expires_at)
+WHERE id = sqlc.arg(id)
+  AND datetime(expires_at) > datetime('now');
+
+-- name: DeleteMCPOAuthRequest :execrows
+DELETE FROM mcp_oauth_requests
+WHERE id = sqlc.arg(id);

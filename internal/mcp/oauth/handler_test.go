@@ -29,21 +29,17 @@ func TestPagesEscapeInput(t *testing.T) {
 	h := &Handler{}
 	attack := `"><script>alert(1)</script>`
 
-	rr := httptest.NewRecorder()
-	h.renderLoginPage(rr, AuthorizationRequest{State: attack, Scope: attack, ClientID: attack}, attack, attack)
-	if strings.Contains(rr.Body.String(), "<script>alert(1)") {
-		t.Error("login page renders unescaped input")
-	}
-
-	rr = httptest.NewRecorder()
-	h.renderSuccessPage(rr, "https://app.example/cb?state="+attack, attack)
-	if strings.Contains(rr.Body.String(), "<script>alert(1)") {
-		t.Error("success page renders unescaped input")
+	for _, page := range []string{"email", "code", "link", "elsewhere", "success"} {
+		rr := httptest.NewRecorder()
+		h.renderPage(rr, 200, page, pageData{ClientName: attack, Request: attack, Email: attack, Token: attack, Error: attack, Notice: attack, RedirectURL: "https://app.example/cb?state=" + attack})
+		if strings.Contains(rr.Body.String(), "<script>alert(1)") {
+			t.Errorf("%s page renders unescaped input", page)
+		}
 	}
 
 	// The redirect keeps its query string: a client reads code and state.
-	rr = httptest.NewRecorder()
-	h.renderSuccessPage(rr, "https://claude.ai/api/mcp/auth_callback?code=c1&state=s1", "Claude")
+	rr := httptest.NewRecorder()
+	h.renderPage(rr, 200, "success", pageData{ClientName: "Claude", RedirectURL: "https://claude.ai/api/mcp/auth_callback?code=c1&state=s1"})
 	if !strings.Contains(rr.Body.String(), `window.location.href = "https://claude.ai/api/mcp/auth_callback?code=c1\u0026state=s1";`) {
 		t.Errorf("success page redirect is mangled:\n%s", rr.Body.String())
 	}

@@ -215,6 +215,42 @@ func (q *Queries) CreateMCPOAuthCode(ctx context.Context, arg CreateMCPOAuthCode
 	return i, err
 }
 
+const createMCPOAuthRequest = `-- name: CreateMCPOAuthRequest :exec
+
+INSERT INTO mcp_oauth_requests (id, request_hash, browser_hash, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, expires_at, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'))
+`
+
+type CreateMCPOAuthRequestParams struct {
+	ID                  string `json:"id"`
+	RequestHash         string `json:"request_hash"`
+	BrowserHash         string `json:"browser_hash"`
+	ClientID            string `json:"client_id"`
+	RedirectUri         string `json:"redirect_uri"`
+	Scope               string `json:"scope"`
+	State               string `json:"state"`
+	CodeChallenge       string `json:"code_challenge"`
+	CodeChallengeMethod string `json:"code_challenge_method"`
+	ExpiresAt           string `json:"expires_at"`
+}
+
+// MCP OAuth sign-ins in progress
+func (q *Queries) CreateMCPOAuthRequest(ctx context.Context, arg CreateMCPOAuthRequestParams) error {
+	_, err := q.db.ExecContext(ctx, createMCPOAuthRequest,
+		arg.ID,
+		arg.RequestHash,
+		arg.BrowserHash,
+		arg.ClientID,
+		arg.RedirectUri,
+		arg.Scope,
+		arg.State,
+		arg.CodeChallenge,
+		arg.CodeChallengeMethod,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
 const createMCPOAuthToken = `-- name: CreateMCPOAuthToken :one
 
 INSERT INTO mcp_oauth_tokens (id, client_id, user_id, access_token_hash, refresh_token_hash, scopes, expires_at, refresh_expires_at, created_at, updated_at)
@@ -273,6 +309,16 @@ func (q *Queries) DeactivateMCPOAuthClient(ctx context.Context, id string) error
 	return err
 }
 
+const deleteExpiredMCPOAuthRequests = `-- name: DeleteExpiredMCPOAuthRequests :exec
+DELETE FROM mcp_oauth_requests
+WHERE datetime(expires_at) <= datetime('now')
+`
+
+func (q *Queries) DeleteExpiredMCPOAuthRequests(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredMCPOAuthRequests)
+	return err
+}
+
 const deleteMCPAPIKey = `-- name: DeleteMCPAPIKey :exec
 DELETE FROM mcp_api_keys WHERE id = ?1
 `
@@ -280,6 +326,19 @@ DELETE FROM mcp_api_keys WHERE id = ?1
 func (q *Queries) DeleteMCPAPIKey(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, deleteMCPAPIKey, id)
 	return err
+}
+
+const deleteMCPOAuthRequest = `-- name: DeleteMCPOAuthRequest :execrows
+DELETE FROM mcp_oauth_requests
+WHERE id = ?1
+`
+
+func (q *Queries) DeleteMCPOAuthRequest(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteMCPOAuthRequest, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteMCPSession = `-- name: DeleteMCPSession :exec
@@ -463,6 +522,32 @@ func (q *Queries) GetMCPOAuthCodeByHash(ctx context.Context, codeHash string) (G
 		&i.CreatedAt,
 		&i.OauthClientID,
 		&i.ClientName,
+	)
+	return i, err
+}
+
+const getMCPOAuthRequest = `-- name: GetMCPOAuthRequest :one
+SELECT id, request_hash, browser_hash, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, email, expires_at, created_at FROM mcp_oauth_requests
+WHERE request_hash = ?1
+  AND datetime(expires_at) > datetime('now')
+`
+
+func (q *Queries) GetMCPOAuthRequest(ctx context.Context, requestHash string) (McpOauthRequest, error) {
+	row := q.db.QueryRowContext(ctx, getMCPOAuthRequest, requestHash)
+	var i McpOauthRequest
+	err := row.Scan(
+		&i.ID,
+		&i.RequestHash,
+		&i.BrowserHash,
+		&i.ClientID,
+		&i.RedirectUri,
+		&i.Scope,
+		&i.State,
+		&i.CodeChallenge,
+		&i.CodeChallengeMethod,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -730,6 +815,27 @@ WHERE user_id = ?1 AND revoked_at IS NULL
 func (q *Queries) RevokeMCPOAuthTokensByUser(ctx context.Context, userID string) error {
 	_, err := q.db.ExecContext(ctx, revokeMCPOAuthTokensByUser, userID)
 	return err
+}
+
+const setMCPOAuthRequestEmail = `-- name: SetMCPOAuthRequestEmail :execrows
+UPDATE mcp_oauth_requests
+SET email = ?1, expires_at = ?2
+WHERE id = ?3
+  AND datetime(expires_at) > datetime('now')
+`
+
+type SetMCPOAuthRequestEmailParams struct {
+	Email     string `json:"email"`
+	ExpiresAt string `json:"expires_at"`
+	ID        string `json:"id"`
+}
+
+func (q *Queries) SetMCPOAuthRequestEmail(ctx context.Context, arg SetMCPOAuthRequestEmailParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setMCPOAuthRequestEmail, arg.Email, arg.ExpiresAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateMCPAPIKeyLastUsed = `-- name: UpdateMCPAPIKeyLastUsed :exec

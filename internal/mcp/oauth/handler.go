@@ -8,8 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,6 +16,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
+	"github.com/outlet-sh/outlet/internal/logic/auth"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpauth"
 	"github.com/outlet-sh/outlet/internal/svc"
 )
@@ -48,6 +47,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// OAuth endpoints
 	mux.HandleFunc("GET /mcp/oauth/authorize", h.HandleAuthorize)
 	mux.HandleFunc("POST /mcp/oauth/authorize", h.HandleAuthorizeSubmit)
+	mux.HandleFunc("POST /mcp/oauth/authorize/code", h.HandleAuthorizeCode)
+	mux.HandleFunc("GET /mcp/oauth/authorize/link", h.HandleAuthorizeLink)
+	mux.HandleFunc("POST /mcp/oauth/authorize/link", h.HandleAuthorizeLinkSubmit)
 	mux.HandleFunc("POST /mcp/oauth/token", h.HandleToken)
 }
 
@@ -223,8 +225,87 @@ func (h *Handler) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Render login page
-	h.renderLoginPage(w, req, client.Name, "")
+	// The checked request stays on the server from here on; the pages carry
+	// only its handle. The cookie marks this browser, so the emailed link
+	// finishes the sign-in only where it started.
+	browser := h.browserSecret(w, r)
+	handle := generateSecureToken(32)
+	_ = h.svc.DB.DeleteExpiredMCPOAuthRequests(r.Context())
+	if err := h.svc.DB.CreateMCPOAuthRequest(r.Context(), db.CreateMCPOAuthRequestParams{
+		ID:                  generateSecureToken(16),
+		RequestHash:         mcpauth.HashToken(handle),
+		BrowserHash:         mcpauth.HashToken(browser),
+		ClientID:            req.ClientID,
+		RedirectUri:         req.RedirectURI,
+		Scope:               req.Scope,
+		State:               req.State,
+		CodeChallenge:       req.CodeChallenge,
+		CodeChallengeMethod: req.CodeChallengeMethod,
+		ExpiresAt:           time.Now().UTC().Add(auth.SignInTTL).Format(time.RFC3339),
+	}); err != nil {
+		h.sendError(w, http.StatusInternalServerError, ErrServerError, "Failed to start sign-in")
+		return
+	}
+
+	h.renderPage(w, http.StatusOK, "email", pageData{ClientName: client.Name, Request: handle})
+}
+
+// browserCookie names the cookie that marks the browser a sign-in started
+// in. Its value is a random secret; a sign-in in progress keeps its hash.
+const browserCookie = "outlet_mcp_browser"
+
+// browserSecret is this browser's sign-in secret: the one its cookie already
+// holds, or a new one, set (again) for as long as a sign-in lasts.
+func (h *Handler) browserSecret(w http.ResponseWriter, r *http.Request) string {
+	secret := ""
+	if c, err := r.Cookie(browserCookie); err == nil && len(c.Value) >= 32 {
+		secret = c.Value
+	} else {
+		secret = generateSecureToken(32)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserCookie,
+		Value:    secret,
+		Path:     "/",
+		MaxAge:   int(auth.SignInTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   r.TLS != nil || strings.HasPrefix(h.baseURL, "https://"),
+		SameSite: http.SameSiteLaxMode,
+	})
+	return secret
+}
+
+// sameBrowser reports whether the request comes from the browser the sign-in
+// started in.
+func sameBrowser(r *http.Request, pending db.McpOauthRequest) bool {
+	c, err := r.Cookie(browserCookie)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(mcpauth.HashToken(c.Value)), []byte(pending.BrowserHash)) == 1
+}
+
+// pendingRequest loads the sign-in in progress a page posted back, by its
+// handle, and checks its OAuth request again exactly as the first page did:
+// the client is still known and active, the redirect URI is still one it
+// registered, and the PKCE challenge is S256. On a refusal it writes the
+// page or error and returns false.
+func (h *Handler) pendingRequest(w http.ResponseWriter, r *http.Request, handle string) (db.McpOauthRequest, db.McpOauthClient, bool) {
+	pending, err := h.svc.DB.GetMCPOAuthRequest(r.Context(), mcpauth.HashToken(handle))
+	if err != nil {
+		h.renderPage(w, http.StatusBadRequest, "expired", pageData{})
+		return db.McpOauthRequest{}, db.McpOauthClient{}, false
+	}
+	client, ok := h.checkAuthorizeRequest(w, r, AuthorizationRequest{
+		ResponseType:        "code",
+		ClientID:            pending.ClientID,
+		RedirectURI:         pending.RedirectUri,
+		Scope:               pending.Scope,
+		State:               pending.State,
+		CodeChallenge:       pending.CodeChallenge,
+		CodeChallengeMethod: pending.CodeChallengeMethod,
+	})
+	return pending, client, ok
 }
 
 // checkAuthorizeRequest checks an authorization request: a code request
@@ -287,81 +368,179 @@ func isAllowedRedirectURI(raw string) bool {
 	return true
 }
 
-// handleAuthorizeSubmit processes the login form submission
+// HandleAuthorizeSubmit takes the email page: it emails the address a
+// sign-in link and code, the same ones the app's emailed sign-in sends and
+// under the same answer whether or not the address has an account, and shows
+// the code page. Posted without an email it shows the email page again.
 func (h *Handler) HandleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		h.sendError(w, http.StatusBadRequest, ErrInvalidRequest, "Invalid form data")
 		return
 	}
-
-	// Get OAuth params from form (hidden fields)
-	req := AuthorizationRequest{
-		ResponseType:        r.FormValue("response_type"),
-		ClientID:            r.FormValue("client_id"),
-		RedirectURI:         r.FormValue("redirect_uri"),
-		Scope:               r.FormValue("scope"),
-		State:               r.FormValue("state"),
-		CodeChallenge:       r.FormValue("code_challenge"),
-		CodeChallengeMethod: r.FormValue("code_challenge_method"),
-	}
-
-	// The form carries the request back; check it again as the page did.
-	client, ok := h.checkAuthorizeRequest(w, r, req)
+	handle := r.PostFormValue("request")
+	pending, client, ok := h.pendingRequest(w, r, handle)
 	if !ok {
 		return
 	}
+	page := pageData{ClientName: client.Name, Request: handle}
+	if _, asked := r.PostForm["email"]; !asked {
+		h.renderPage(w, http.StatusOK, "email", page)
+		return
+	}
+	page.Email = strings.TrimSpace(r.PostFormValue("email"))
+	if page.Email == "" {
+		page.Error = "Enter your email."
+		h.renderPage(w, http.StatusOK, "email", page)
+		return
+	}
 
-	// The same sign-in check as the admin sign-in: wrong passwords lock the
-	// account, and only an active person signs in.
-	user, err := access.SignIn(r.Context(), h.svc.DB, r.FormValue("email"), r.FormValue("password"))
+	// The sign-in now lives as long as the code just sent.
+	if n, err := h.svc.DB.SetMCPOAuthRequestEmail(r.Context(), db.SetMCPOAuthRequestEmailParams{
+		ID:        pending.ID,
+		Email:     page.Email,
+		ExpiresAt: time.Now().UTC().Add(auth.SignInTTL).Format(time.RFC3339),
+	}); err != nil || n != 1 {
+		h.renderPage(w, http.StatusBadRequest, "expired", pageData{})
+		return
+	}
+	link := func(token string) string { return h.signInLink(handle, token) }
+	if err := auth.SendSignIn(r.Context(), h.svc, page.Email, link); err != nil {
+		page.Error = "Sign-in failed. Try again."
+		h.renderPage(w, http.StatusOK, "email", page)
+		return
+	}
+	page.Notice = auth.SignInEmailSent
+	h.renderPage(w, http.StatusOK, "code", page)
+}
+
+// signInLink is the emailed link for a sign-in in progress: it opens
+// HandleAuthorizeLink with the sign-in's handle and the link's token.
+func (h *Handler) signInLink(handle, token string) string {
+	return h.baseURL + "/mcp/oauth/authorize/link?request=" + url.QueryEscape(handle) + "&token=" + url.QueryEscape(token)
+}
+
+// HandleAuthorizeCode takes the code page: the 6-digit code from the email,
+// checked as the app's emailed sign-in checks it (wrong codes count, and the
+// fifth retires the email). The right code finishes the sign-in.
+func (h *Handler) HandleAuthorizeCode(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.sendError(w, http.StatusBadRequest, ErrInvalidRequest, "Invalid form data")
+		return
+	}
+	handle := r.PostFormValue("request")
+	pending, client, ok := h.pendingRequest(w, r, handle)
+	if !ok {
+		return
+	}
+	page := pageData{ClientName: client.Name, Request: handle, Email: pending.Email}
+	if pending.Email == "" {
+		h.renderPage(w, http.StatusOK, "email", page)
+		return
+	}
+	user, err := auth.SignInByEmail(r.Context(), h.svc, "", pending.Email, r.PostFormValue("code"))
 	if err != nil {
-		var ce *errorx.CodeError
-		if !errors.As(err, &ce) {
-			h.renderLoginPage(w, req, client.Name, "Sign-in failed. Try again.")
-			return
-		}
-		h.renderLoginPage(w, req, client.Name, ce.Message)
+		page.Error = signInError(err)
+		h.renderPage(w, http.StatusOK, "code", page)
+		return
+	}
+	h.finishSignIn(w, r, pending, client, user)
+}
+
+// HandleAuthorizeLink opens the emailed link. In the browser the sign-in
+// started in, it asks to allow access, and allowing finishes the sign-in; the
+// link is not used by just opening it, so a mail scanner that fetches it uses
+// nothing. Anywhere else the client's redirect would land on the wrong
+// device, so the page says to enter the code where the sign-in started, and
+// the link and code stay unused.
+func (h *Handler) HandleAuthorizeLink(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	handle := q.Get("request")
+	pending, client, ok := h.pendingRequest(w, r, handle)
+	if !ok {
+		return
+	}
+	if !sameBrowser(r, pending) {
+		h.renderPage(w, http.StatusOK, "elsewhere", pageData{ClientName: client.Name})
+		return
+	}
+	h.renderPage(w, http.StatusOK, "link", pageData{ClientName: client.Name, Request: handle, Token: q.Get("token")})
+}
+
+// HandleAuthorizeLinkSubmit allows access from the emailed link, in the
+// browser the sign-in started in, and finishes the sign-in.
+func (h *Handler) HandleAuthorizeLinkSubmit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.sendError(w, http.StatusBadRequest, ErrInvalidRequest, "Invalid form data")
+		return
+	}
+	handle := r.PostFormValue("request")
+	pending, client, ok := h.pendingRequest(w, r, handle)
+	if !ok {
+		return
+	}
+	if !sameBrowser(r, pending) {
+		h.renderPage(w, http.StatusOK, "elsewhere", pageData{ClientName: client.Name})
+		return
+	}
+	user, err := auth.SignInByEmail(r.Context(), h.svc, r.PostFormValue("token"), "", "")
+	if err != nil {
+		h.renderPage(w, http.StatusOK, "code", pageData{ClientName: client.Name, Request: handle, Email: pending.Email, Error: signInError(err)})
+		return
+	}
+	h.finishSignIn(w, r, pending, client, user)
+}
+
+// signInError is the message for a refused emailed sign-in.
+func signInError(err error) string {
+	var ce *errorx.CodeError
+	if errors.As(err, &ce) {
+		return ce.Message
+	}
+	return "Sign-in failed. Try again."
+}
+
+// finishSignIn ends a sign-in in progress: it removes it, so it finishes
+// once, and sends the browser back to the client with an authorization code
+// for the request as it was checked and kept.
+func (h *Handler) finishSignIn(w http.ResponseWriter, r *http.Request, pending db.McpOauthRequest, client db.McpOauthClient, user db.User) {
+	if n, err := h.svc.DB.DeleteMCPOAuthRequest(r.Context(), pending.ID); err != nil || n != 1 {
+		h.renderPage(w, http.StatusBadRequest, "expired", pageData{})
 		return
 	}
 
 	// No scope requested means the server's default: full access, as this
 	// person.
-	if strings.TrimSpace(req.Scope) == "" {
-		req.Scope = mcpauth.ScopeFull
+	scope := pending.Scope
+	if strings.TrimSpace(scope) == "" {
+		scope = mcpauth.ScopeFull
 	}
 
-	// Generate authorization code
 	code := generateSecureToken(32)
-	codeHash := mcpauth.HashToken(code)
-
-	// Store authorization code
-	_, err = h.svc.DB.CreateMCPOAuthCode(r.Context(), db.CreateMCPOAuthCodeParams{
+	if _, err := h.svc.DB.CreateMCPOAuthCode(r.Context(), db.CreateMCPOAuthCodeParams{
 		ID:                  generateSecureToken(16),
 		ClientID:            client.ID,
 		UserID:              user.ID,
-		CodeHash:            codeHash,
-		RedirectUri:         req.RedirectURI,
-		Scopes:              req.Scope,
-		CodeChallenge:       sql.NullString{String: req.CodeChallenge, Valid: req.CodeChallenge != ""},
-		CodeChallengeMethod: sql.NullString{String: req.CodeChallengeMethod, Valid: req.CodeChallengeMethod != ""},
+		CodeHash:            mcpauth.HashToken(code),
+		RedirectUri:         pending.RedirectUri,
+		Scopes:              scope,
+		CodeChallenge:       sql.NullString{String: pending.CodeChallenge, Valid: pending.CodeChallenge != ""},
+		CodeChallengeMethod: sql.NullString{String: pending.CodeChallengeMethod, Valid: pending.CodeChallengeMethod != ""},
 		ExpiresAt:           time.Now().Add(AuthCodeTTL).Format(time.RFC3339),
-	})
-	if err != nil {
-		h.redirectError(w, r, req.RedirectURI, req.State, ErrServerError, "Failed to create authorization code")
+	}); err != nil {
+		h.redirectError(w, r, pending.RedirectUri, pending.State, ErrServerError, "Failed to create authorization code")
 		return
 	}
 
-	// Build redirect URL with code
-	redirectURL, _ := url.Parse(req.RedirectURI)
+	redirectURL, _ := url.Parse(pending.RedirectUri)
 	q := redirectURL.Query()
 	q.Set("code", code)
-	if req.State != "" {
-		q.Set("state", req.State)
+	if pending.State != "" {
+		q.Set("state", pending.State)
 	}
 	redirectURL.RawQuery = q.Encode()
 
 	// Show styled success page that auto-redirects
-	h.renderSuccessPage(w, redirectURL.String(), client.Name)
+	h.renderPage(w, http.StatusOK, "success", pageData{ClientName: client.Name, RedirectURL: redirectURL.String()})
 }
 
 // handleToken handles token exchange and refresh
@@ -567,136 +746,6 @@ func (h *Handler) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(resp)
-}
-
-// renderSuccessPage renders a styled success page that auto-redirects
-func (h *Handler) renderSuccessPage(w http.ResponseWriter, redirectURL, clientName string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	page := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Authentication Successful - Outlet</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f3f4f6; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .container { background: white; padding: 32px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%%; max-width: 400px; text-align: center; }
-        .success-icon { width: 64px; height: 64px; background: #10b981; border-radius: 50%%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; }
-        .success-icon svg { width: 32px; height: 32px; color: white; }
-        h1 { font-size: 24px; margin-bottom: 8px; color: #111827; }
-        .subtitle { color: #6b7280; margin-bottom: 24px; line-height: 1.5; }
-        .client-name { font-weight: 600; color: #111827; }
-        .redirect-note { font-size: 14px; color: #9ca3af; margin-top: 16px; }
-        .spinner { width: 20px; height: 20px; border: 2px solid #e5e7eb; border-top: 2px solid #2563eb; border-radius: 50%%; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
-        @keyframes spin { 0%% { transform: rotate(0deg); } 100%% { transform: rotate(360deg); } }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="success-icon">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-            </svg>
-        </div>
-        <h1>Authentication Successful</h1>
-        <p class="subtitle">You've successfully signed in to <span class="client-name">%s</span>.</p>
-        <p class="redirect-note"><span class="spinner"></span>Redirecting back to the application...</p>
-    </div>
-    <script>
-        setTimeout(function() {
-            window.location.href = %s;
-        }, 1500);
-    </script>
-</body>
-</html>`, html.EscapeString(clientName), jsString(redirectURL))
-
-	w.Write([]byte(page))
-}
-
-// jsString quotes s for a script: JSON escapes <, > and & as \u sequences,
-// so it can't close the script tag, and JavaScript reads them back as the
-// same characters. HTML escaping is wrong here: inside a script &amp; stays
-// &amp;, which broke every redirect's query string.
-func jsString(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
-}
-
-// renderLoginPage renders the OAuth login page
-func (h *Handler) renderLoginPage(w http.ResponseWriter, req AuthorizationRequest, clientName, errorMsg string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	errorHTML := ""
-	if errorMsg != "" {
-		errorHTML = fmt.Sprintf(`<div style="color: #dc2626; background: #fef2f2; padding: 12px; border-radius: 6px; margin-bottom: 16px;">%s</div>`, html.EscapeString(errorMsg))
-	}
-
-	page := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sign in to Outlet</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f3f4f6; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .container { background: white; padding: 32px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%%; max-width: 400px; }
-        h1 { font-size: 24px; margin-bottom: 8px; color: #111827; }
-        .subtitle { color: #6b7280; margin-bottom: 24px; }
-        .client-name { font-weight: 600; color: #111827; }
-        label { display: block; font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 6px; }
-        input[type="email"], input[type="password"] { width: 100%%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; margin-bottom: 16px; }
-        input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
-        button { width: 100%%; padding: 12px; background: #2563eb; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: 500; cursor: pointer; }
-        button:hover { background: #1d4ed8; }
-        .scope { background: #f3f4f6; padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; color: #4b5563; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Sign in to Outlet</h1>
-        <p class="subtitle"><span class="client-name">%s</span> wants to access your account</p>
-
-        %s
-
-        <div class="scope">
-            <strong>Requested access:</strong> Full MCP access to manage your SaaS
-        </div>
-
-        <form method="POST" action="/authorize">
-            <input type="hidden" name="response_type" value="%s">
-            <input type="hidden" name="client_id" value="%s">
-            <input type="hidden" name="redirect_uri" value="%s">
-            <input type="hidden" name="scope" value="%s">
-            <input type="hidden" name="state" value="%s">
-            <input type="hidden" name="code_challenge" value="%s">
-            <input type="hidden" name="code_challenge_method" value="%s">
-
-            <label for="email">Email</label>
-            <input type="email" id="email" name="email" required autofocus>
-
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
-
-            <button type="submit">Sign in and Authorize</button>
-        </form>
-    </div>
-</body>
-</html>`,
-		html.EscapeString(clientName),
-		errorHTML,
-		html.EscapeString(req.ResponseType),
-		html.EscapeString(req.ClientID),
-		html.EscapeString(req.RedirectURI),
-		html.EscapeString(req.Scope),
-		html.EscapeString(req.State),
-		html.EscapeString(req.CodeChallenge),
-		html.EscapeString(req.CodeChallengeMethod),
-	)
-
-	w.Write([]byte(page))
 }
 
 func (h *Handler) sendError(w http.ResponseWriter, status int, errCode, errDesc string) {

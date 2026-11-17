@@ -37,7 +37,7 @@ func signInRows(t *testing.T, s *svc.ServiceContext) int {
 }
 
 func TestSignInMessage(t *testing.T) {
-	m := signInMessage("https://outlet.test/", "ana@example.com", "Ana <b>", "tok123", "042917")
+	m := signInMessage(SignInURL("https://outlet.test/", "tok123"), "ana@example.com", "Ana <b>", "042917")
 	assert.Contains(t, m.HTML, `href="https://outlet.test/auth/sign-in?token=tok123"`, "the link opens the app's sign-in page")
 	assert.Contains(t, m.HTML, "042917")
 	assert.Contains(t, m.HTML, "Hi Ana &lt;b&gt;,")

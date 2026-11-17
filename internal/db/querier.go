@@ -195,6 +195,8 @@ type Querier interface {
 	CreateMCPOAuthClient(ctx context.Context, arg CreateMCPOAuthClientParams) (McpOauthClient, error)
 	// MCP OAuth Authorization Codes
 	CreateMCPOAuthCode(ctx context.Context, arg CreateMCPOAuthCodeParams) (McpOauthCode, error)
+	// MCP OAuth sign-ins in progress
+	CreateMCPOAuthRequest(ctx context.Context, arg CreateMCPOAuthRequestParams) error
 	// MCP OAuth Tokens
 	CreateMCPOAuthToken(ctx context.Context, arg CreateMCPOAuthTokenParams) (McpOauthToken, error)
 	// ---- mailboxes ----------------------------------------------------------------
@@ -268,12 +270,14 @@ type Querier interface {
 	DeleteEntryRule(ctx context.Context, id string) error
 	DeleteEntryRulesBySequence(ctx context.Context, sequenceID string) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
+	DeleteExpiredMCPOAuthRequests(ctx context.Context) error
 	// Finished deliveries older than the cutoff go, with their tries.
 	DeleteFinishedWebhookDeliveries(ctx context.Context, before string) error
 	DeleteFromSuppressionList(ctx context.Context, arg DeleteFromSuppressionListParams) error
 	DeleteImportJob(ctx context.Context, arg DeleteImportJobParams) error
 	DeleteInactiveContacts(ctx context.Context, arg DeleteInactiveContactsParams) (int64, error)
 	DeleteMCPAPIKey(ctx context.Context, id string) error
+	DeleteMCPOAuthRequest(ctx context.Context, id string) (int64, error)
 	DeleteMCPSession(ctx context.Context, sessionID string) error
 	DeleteMailboxConnection(ctx context.Context, arg DeleteMailboxConnectionParams) (int64, error)
 	DeleteOldBackups(ctx context.Context, daysAgo sql.NullString) error
@@ -429,6 +433,7 @@ type Querier interface {
 	GetMCPAPIKeyByPrefix(ctx context.Context, keyPrefix string) ([]McpApiKey, error)
 	GetMCPOAuthClientByClientID(ctx context.Context, clientID string) (McpOauthClient, error)
 	GetMCPOAuthCodeByHash(ctx context.Context, codeHash string) (GetMCPOAuthCodeByHashRow, error)
+	GetMCPOAuthRequest(ctx context.Context, requestHash string) (McpOauthRequest, error)
 	GetMCPOAuthTokenByAccessHash(ctx context.Context, accessTokenHash string) (GetMCPOAuthTokenByAccessHashRow, error)
 	GetMCPOAuthTokenByRefreshHash(ctx context.Context, refreshTokenHash sql.NullString) (GetMCPOAuthTokenByRefreshHashRow, error)
 	GetMCPSession(ctx context.Context, sessionID string) (McpSession, error)
@@ -784,6 +789,7 @@ type Querier interface {
 	SetImportJobTotalRows(ctx context.Context, arg SetImportJobTotalRowsParams) error
 	// ---- outreach lists, prospects and sequences ----------------------------------
 	SetListKind(ctx context.Context, arg SetListKindParams) error
+	SetMCPOAuthRequestEmail(ctx context.Context, arg SetMCPOAuthRequestEmailParams) (int64, error)
 	SetMailboxDailyLimit(ctx context.Context, arg SetMailboxDailyLimitParams) (int64, error)
 	SetMailboxError(ctx context.Context, arg SetMailboxErrorParams) error
 	SetMailboxIMAPState(ctx context.Context, arg SetMailboxIMAPStateParams) error
