@@ -182,7 +182,7 @@ func (s *Service) Overview(ctx context.Context, org db.Organization) (Overview, 
 
 	switch {
 	case !o.Enabled:
-		o.Next = append(o.Next, "Outbound is off for this brand. Its admin turns it on in the Outlet app, in Outbound, Setup.")
+		o.Next = append(o.Next, "Outbound is off for this brand. Its admin turns it on in the Outlet app, in Outbound, Setup, or a platform super admin calls setup_sending(action: enabled, enabled: true).")
 	case org.MailingAddress == "":
 		o.Next = append(o.Next, "Set the brand's mailing address in Outbound, Setup.")
 	case len(domains) == 0:

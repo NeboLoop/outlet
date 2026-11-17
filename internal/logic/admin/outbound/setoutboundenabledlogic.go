@@ -26,7 +26,7 @@ func NewSetOutboundEnabledLogic(ctx context.Context, svcCtx *svc.ServiceContext)
 }
 
 func (l *SetOutboundEnabledLogic) SetOutboundEnabled(req *types.OutboundEnabledRequest) (resp *types.Response, err error) {
-	// Only the brand's admin, and only here: no MCP tool can turn outbound on.
+	// The brand's admin here; over MCP, only a platform super admin (setup_sending).
 	org, err := brand(l.ctx, l.svcCtx, access.Admin)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,7 @@ func (l *SetOutboundEnabledLogic) SetOutboundEnabled(req *types.OutboundEnabledR
 }
 
 // SetOutboundEnabled runs for a brand already resolved: the admin route's signed-in
-// person, or the API key of /sdk/v1/outbound.
+// person, the API key of /sdk/v1/outbound, or the MCP's setup_sending(action: enabled).
 func SetOutboundEnabled(ctx context.Context, svcCtx *svc.ServiceContext, org db.Organization, req *types.OutboundEnabledRequest) (*types.Response, error) {
 	if err := svcCtx.Outbound.SetEnabled(ctx, org.ID, req.Enabled); err != nil {
 		return nil, err

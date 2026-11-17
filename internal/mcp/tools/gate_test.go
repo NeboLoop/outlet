@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/db/migrations"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
+	"github.com/outlet-sh/outlet/internal/services/outbound"
 	"github.com/outlet-sh/outlet/internal/svc"
 
 	"github.com/stretchr/testify/assert"
@@ -206,6 +208,62 @@ func TestOutboundScopes(t *testing.T) {
 	assert.ErrorContains(t, check(write, "targeting", `{"resource":"do_not_contact","action":"settings"}`), "admin")
 	assert.NoError(t, check(read, "setup_sending", `{"action":"pace"}`))
 	assert.ErrorContains(t, check(write, "setup_sending", `{"action":"set_pace"}`), "admin")
+	assert.ErrorContains(t, check(write, "setup_sending", `{"action":"enabled","enabled":true}`), "outbound:send")
+}
+
+// Switching a brand's outreach on or off over MCP needs the outbound:send
+// scope and a platform super admin; the brand's own admin is refused, naming
+// who can. The super admin turns it on and off through the admin app's call.
+func TestOutreachSwitch(t *testing.T) {
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	require.NoError(t, migrations.Run(conn, nil))
+	store := db.NewStore(conn)
+	ctx := context.Background()
+	org, err := store.CreateOrganization(ctx, db.CreateOrganizationParams{ID: "o-id", Name: "o", Slug: "o", ApiKey: "key-o"})
+	require.NoError(t, err)
+	for id, role := range map[string]string{"anne": "agent", "root": "super_admin"} {
+		_, err = store.CreateUser(ctx, db.CreateUserParams{ID: id, Email: id + "@example.com", PasswordHash: "x", Name: id, Role: role, Status: "active", EmailVerified: int64(1)})
+		require.NoError(t, err)
+	}
+	require.NoError(t, store.AddUserToOrganization(ctx, db.AddUserToOrganizationParams{OrgID: org.ID, UserID: "anne", Role: sql.NullString{String: "admin", Valid: true}}))
+	root, err := access.Active(ctx, store, "root")
+	require.NoError(t, err)
+	toolCtx := mcpctx.NewUserToolContext(&svc.ServiceContext{DB: store, Outbound: outbound.New(store, nil, outbound.Config{})}, root, "req", "test", "session")
+	toolCtx.SelectBrand(org)
+
+	check := func(user string, scopes []string, on bool) error {
+		_, err := authorize(ctx, toolCtx, Caller{UserID: user, Scopes: scopes}, "setup_sending", []byte(fmt.Sprintf(`{"action":"enabled","enabled":%t}`, on)))
+		return err
+	}
+	send := []string{"outbound:send"}
+	assert.ErrorContains(t, check("root", []string{"outbound:write"}, true), "outbound:send")
+	assert.ErrorContains(t, check("anne", send, true), "Only a super admin")
+	enabled := func() bool {
+		o, err := store.GetOrganizationByID(ctx, org.ID)
+		require.NoError(t, err)
+		return o.OutboundEnabled == 1
+	}
+	for _, on := range []bool{true, false} {
+		args := fmt.Sprintf(`{"action":"enabled","enabled":%t}`, on)
+		require.NoError(t, gated(ctx, toolCtx, Caller{UserID: "root", Scopes: send}, "setup_sending", []byte(args), func(ctx context.Context) string {
+			_, err := setupSendingRun(ctx, toolCtx, SetupSendingInput{Action: "enabled", Enabled: &on})
+			require.NoError(t, err)
+			return "ok"
+		}))
+		assert.Equal(t, on, enabled())
+	}
+	_, err = setupSendingRun(ctx, toolCtx, SetupSendingInput{Action: "enabled"})
+	assert.ErrorContains(t, err, "true or false")
+
+	// Both switches are audited off the request path; wait for the rows so
+	// no write lands while the database is removed.
+	require.Eventually(t, func() bool {
+		var n int
+		require.NoError(t, conn.QueryRow(`SELECT COUNT(*) FROM mcp_audit_log WHERE user_id = 'root'`).Scan(&n))
+		return n == 2
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 // move_domain with brand needs the caller's admin role in that brand too,

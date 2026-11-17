@@ -139,7 +139,7 @@ var policy = map[string]toolPolicy{
 	}},
 	"outreach_overview": {rules: map[string]rule{"get": obRead()}},
 	"setup_sending": {rules: map[string]rule{
-		"settings": obWrite(), "dns_token": obAdmin(), "add_domain": obAdmin(), "check_domain": obWrite(),
+		"settings": obWrite(), "enabled": {need: access.SuperAdmin, write: true, scope: mcpauth.ScopeOutboundSend}, "dns_token": obAdmin(), "add_domain": obAdmin(), "check_domain": obWrite(),
 		"add_mailboxes": obAdmin(), "list": obRead(), "set_limits": obAdmin(), "mailbox_limit": obAdmin(), "pace": obRead(), "set_pace": obAdmin(),
 		"connections": obRead(), "add_connection": obAdmin(), "update_connection": obAdmin(), "remove_connection": obAdmin(),
 		"move_domain": obAdmin().movesToBrand(), "service_inventory": obRead(), "connect_domain": obAdmin(), "quote": obWrite(),
