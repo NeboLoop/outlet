@@ -601,6 +601,21 @@ type McpOauthCode struct {
 	CreatedAt           sql.NullString `json:"created_at"`
 }
 
+type McpOauthRequest struct {
+	ID                  string         `json:"id"`
+	RequestHash         string         `json:"request_hash"`
+	BrowserHash         string         `json:"browser_hash"`
+	ClientID            string         `json:"client_id"`
+	RedirectUri         string         `json:"redirect_uri"`
+	Scope               string         `json:"scope"`
+	State               string         `json:"state"`
+	CodeChallenge       string         `json:"code_challenge"`
+	CodeChallengeMethod string         `json:"code_challenge_method"`
+	Email               string         `json:"email"`
+	ExpiresAt           string         `json:"expires_at"`
+	CreatedAt           sql.NullString `json:"created_at"`
+}
+
 type McpOauthToken struct {
 	ID               string         `json:"id"`
 	ClientID         string         `json:"client_id"`

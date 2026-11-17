@@ -15,18 +15,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/outlet-sh/outlet/internal/access"
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	emailsvc "github.com/outlet-sh/outlet/internal/services/email"
+	"github.com/outlet-sh/outlet/internal/svc"
+
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 const (
-	// signInTTL is how long an emailed sign-in link and code work.
-	signInTTL = 15 * time.Minute
+	// SignInTTL is how long an emailed sign-in link and code work.
+	SignInTTL = 15 * time.Minute
 	// signInCodeTries is how many codes may be checked against one email;
 	// the last wrong one retires it.
 	signInCodeTries = 5
 )
+
+// SignInEmailSent is the answer to a request for a sign-in email. It is the
+// same whether or not the address has an account, so the form can't be used
+// to find out who has one.
+const SignInEmailSent = "If that email has an account, we sent it a sign-in link and code"
 
 var (
 	errSignInEmailInput = errorx.NewBadRequestError("Open the link in the email, or enter your email and the code from it.")
@@ -61,7 +70,7 @@ func IssueSignIn(ctx context.Context, q db.Querier, secret, userID string) (toke
 		UserID:    userID,
 		TokenHash: signInHash(secret, "link:"+token),
 		CodeHash:  signInHash(secret, "code:"+userID+":"+code),
-		ExpiresAt: time.Now().UTC().Add(signInTTL).Format(time.RFC3339),
+		ExpiresAt: time.Now().UTC().Add(SignInTTL).Format(time.RFC3339),
 	}); err != nil {
 		return "", "", fmt.Errorf("store sign-in code: %w", err)
 	}
@@ -134,6 +143,71 @@ func RedeemSignIn(ctx context.Context, q db.Querier, secret, token, email, code 
 	return row.UserID, nil
 }
 
+// SendSignIn emails a sign-in link and code to the address, if it belongs to
+// an active account, and otherwise does nothing; the caller answers
+// SignInEmailSent either way. link gives the page the emailed link opens for
+// a link token: the app's sign-in page, or the MCP sign-in that started it.
+func SendSignIn(ctx context.Context, svcCtx *svc.ServiceContext, email string, link func(token string) string) error {
+	log := logx.WithContext(ctx)
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return fmt.Errorf("email is required")
+	}
+
+	u, err := svcCtx.DB.GetUserByEmail(ctx, email)
+	if errors.Is(err, sql.ErrNoRows) {
+		log.Infof("Sign-in email requested for an address with no account")
+		return nil
+	}
+	if err != nil {
+		log.Errorf("Database error checking email: %v", err)
+		return nil
+	}
+	// Only an active account can sign in, so only it gets the email.
+	user, err := access.Active(ctx, svcCtx.DB, u.ID)
+	if err != nil {
+		log.Infof("Sign-in email requested for an account that can't sign in: %s", u.ID)
+		return nil
+	}
+
+	token, code, err := IssueSignIn(ctx, svcCtx.DB, svcCtx.Config.Auth.AccessSecret, user.ID)
+	if err != nil {
+		log.Errorf("Error issuing sign-in code: %v", err)
+		return nil
+	}
+
+	// Sent asynchronously, the way the reset email is, so the answer takes as
+	// long whether or not the address has an account.
+	msg := signInMessage(link(token), user.Email, user.Name, code)
+	go func() {
+		if err := svcCtx.EmailService.Send(context.Background(), msg); err != nil {
+			log.Errorf("Error sending sign-in email: %v", err)
+		} else {
+			log.Infof("Sign-in email sent to: %s", user.Email)
+		}
+	}()
+	return nil
+}
+
+// SignInByEmail signs a person in with an emailed sign-in, by its link token
+// or by the email and its code (RedeemSignIn), and returns them if they are
+// still active. The emailed sign-in proves the inbox, as a reset link does:
+// it records the sign-in and clears any lock from wrong passwords.
+func SignInByEmail(ctx context.Context, svcCtx *svc.ServiceContext, token, email, code string) (db.User, error) {
+	userID, err := RedeemSignIn(ctx, svcCtx.DB, svcCtx.Config.Auth.AccessSecret, token, email, code)
+	if err != nil {
+		return db.User{}, err
+	}
+	user, err := access.Active(ctx, svcCtx.DB, userID)
+	if err != nil {
+		return db.User{}, err
+	}
+	if err := svcCtx.DB.UpdateLastLogin(ctx, user.ID); err != nil {
+		logx.WithContext(ctx).Errorf("Could not record the sign-in for %s: %v", user.ID, err)
+	}
+	return user, nil
+}
+
 // SignInURL is the app's page that finishes an emailed sign-in.
 func SignInURL(baseURL, token string) string {
 	return fmt.Sprintf("%s/auth/sign-in?token=%s", strings.TrimSuffix(baseURL, "/"), url.QueryEscape(token))
@@ -141,7 +215,7 @@ func SignInURL(baseURL, token string) string {
 
 // signInMessage is the email with a person's sign-in link and code. Like the
 // reset email it is platform mail: Send gives it the platform's sender.
-func signInMessage(baseURL, to, name, token, code string) emailsvc.Message {
+func signInMessage(link, to, name, code string) emailsvc.Message {
 	body := fmt.Sprintf(`
 <html>
 <body>
@@ -156,6 +230,6 @@ func signInMessage(baseURL, to, name, token, code string) emailsvc.Message {
 <br>
 <p>Best regards,<br>The Outlet Team</p>
 </body>
-</html>`, html.EscapeString(name), SignInURL(baseURL, token), code)
+</html>`, html.EscapeString(name), html.EscapeString(link), code)
 	return emailsvc.Message{To: to, Subject: "Your Outlet sign-in code: " + code, HTML: body}
 }
