@@ -10,10 +10,12 @@ import (
 	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
+	adminoutbound "github.com/outlet-sh/outlet/internal/logic/admin/outbound"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
 	"github.com/outlet-sh/outlet/internal/services/email"
 	"github.com/outlet-sh/outlet/internal/services/outbound"
 	"github.com/outlet-sh/outlet/internal/services/outbound/providers"
+	"github.com/outlet-sh/outlet/internal/types"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -29,7 +31,7 @@ const outboundPrereq = "PREREQUISITE: select the brand first with brand(resource
 // outboundActions lists each outreach tool's actions; the gate has a rule for each.
 var outboundActions = map[string][]string{
 	"outreach_overview": {"get"},
-	"setup_sending":     {"settings", "dns_token", "add_domain", "check_domain", "add_mailboxes", "list", "set_limits", "mailbox_limit", "pace", "set_pace", "connections", "add_connection", "update_connection", "remove_connection", "move_domain", "service_inventory", "connect_domain", "quote", "buy", "sync", "delete_mailbox"},
+	"setup_sending":     {"settings", "enabled", "dns_token", "add_domain", "check_domain", "add_mailboxes", "list", "set_limits", "mailbox_limit", "pace", "set_pace", "connections", "add_connection", "update_connection", "remove_connection", "move_domain", "service_inventory", "connect_domain", "quote", "buy", "sync", "delete_mailbox"},
 	"add_prospects":     {"add"},
 	"draft_outreach":    {"brief", "create"},
 	"review_drafts":     {"list", "approve", "edit", "skip"},
@@ -94,10 +96,11 @@ func overviewRun(ctx context.Context, t *mcpctx.ToolContext, in OverviewInput) (
 // ---- setup_sending ----------------------------------------------------------
 
 type SetupSendingInput struct {
-	Action         string                  `json:"action" jsonschema:"required,One of: settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, pace, set_pace, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync, delete_mailbox"`
+	Action         string                  `json:"action" jsonschema:"required,One of: settings, enabled, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, pace, set_pace, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync, delete_mailbox"`
 	MailingAddress string                  `json:"mailing_address,omitempty" jsonschema:"settings: the postal address every first email carries"`
 	OptOutLine     string                  `json:"opt_out_line,omitempty" jsonschema:"settings: the line that tells people how to stop the emails"`
 	Timezone       string                  `json:"timezone,omitempty" jsonschema:"settings: IANA time zone used when a prospect has none"`
+	Enabled        *bool                   `json:"enabled,omitempty" jsonschema:"enabled: true turns the brand's outreach on, false turns it off (nothing sends)"`
 	Token          string                  `json:"token,omitempty" jsonschema:"dns_token: a DigitalOcean API token limited to domain read and write"`
 	Domain         string                  `json:"domain,omitempty" jsonschema:"add_domain: the outreach domain, e.g. getexample.com"`
 	DNSHost        string                  `json:"dns_host,omitempty" jsonschema:"add_domain: digitalocean (writes the records) or manual (returns them to paste; default)"`
@@ -141,6 +144,11 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 			return nil, err
 		}
 		return map[string]any{"mailing_address": st.MailingAddress, "opt_out_line": st.OutboundOptOutLine, "timezone": st.OutboundTimezone, "dns_token_set": len(st.DnsTokenEnc) > 0}, nil
+	case "enabled":
+		if in.Enabled == nil {
+			return nil, mcpctx.NewValidationError("enabled must be true or false", "enabled")
+		}
+		return adminoutbound.SetOutboundEnabled(ctx, t.Svc(), brand, &types.OutboundEnabledRequest{Enabled: *in.Enabled})
 	case "dns_token":
 		if in.Token == "" {
 			return nil, mcpctx.NewValidationError("token is required", "token")
@@ -222,7 +230,7 @@ func setupSendingRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSending
 	if out, handled, err := mailboxServiceRun(ctx, t, in); handled {
 		return out, err
 	}
-	return nil, mcpctx.NewValidationError("action must be settings, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, pace, set_pace, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync or delete_mailbox", "action")
+	return nil, mcpctx.NewValidationError("action must be settings, enabled, dns_token, add_domain, check_domain, add_mailboxes, list, set_limits, mailbox_limit, pace, set_pace, connections, add_connection, update_connection, remove_connection, move_domain, service_inventory, connect_domain, quote, buy, sync or delete_mailbox", "action")
 }
 
 // connectionLimits are a connection's limits from the input.
@@ -615,6 +623,7 @@ var outboundTools = []outboundTool{
 	defineOutbound("setup_sending", "Set up sending",
 		"Set up where outreach sends from. Outreach uses separate outreach domains, never the brand's own or a protected company domain, and never SES.\n"+
 			"- settings: mailing_address (required before any campaign), opt_out_line, timezone\n"+
+			"- enabled: enabled (true|false) turns the brand's outreach on or off, e.g. setup_sending(action: enabled, enabled: true). Platform super admins only, with the outbound:send scope\n"+
 			"- dns_token: store a DigitalOcean token (domain read/write) so add_domain can write DNS\n"+
 			"- add_domain: domain, dns_host (digitalocean|manual), mail_provider (google|other), mx_hosts, spf_include, dkim_selector, dkim_value, dmarc_report, click_tracking. Writes MX, SPF, DMARC and DKIM when on DigitalOcean, otherwise returns records_to_add. When DigitalOcean fails, dns_error says why and records_to_add holds what to add by hand\n"+
 			"- check_domain: domain_id. Rechecks public DNS (also done daily; failing DNS pauses the domain's mailboxes) and returns the records the domain needs, each marked present or not\n"+

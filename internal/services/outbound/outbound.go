@@ -90,15 +90,16 @@ func New(store *db.Store, cryptoSvc *crypto.Service, cfg Config) *Service {
 // Enabled says whether outbound runs for this brand.
 func (s *Service) Enabled(org db.Organization) bool { return org.OutboundEnabled == 1 }
 
-// SetEnabled turns outbound on or off for a brand. Only the admin app calls
-// it, for the brand's admin; no MCP tool can.
+// SetEnabled turns outbound on or off for a brand. The admin app calls it for
+// the brand's admin, and the MCP calls it (setup_sending action enabled) for a
+// platform super admin with the outbound:send scope.
 func (s *Service) SetEnabled(ctx context.Context, orgID string, on bool) error {
 	return s.db.SetOutboundEnabled(ctx, db.SetOutboundEnabledParams{OutboundEnabled: boolInt(on), ID: orgID})
 }
 
 func (s *Service) requireEnabled(org db.Organization) error {
 	if !s.Enabled(org) {
-		return refuse("Outbound is off for brand %q. The brand's admin turns it on in the Outlet app, in Outbound, Setup.", org.Name)
+		return refuse("Outbound is off for brand %q. The brand's admin turns it on in the Outlet app, in Outbound, Setup, or a platform super admin calls setup_sending(action: enabled, enabled: true).", org.Name)
 	}
 	return nil
 }
