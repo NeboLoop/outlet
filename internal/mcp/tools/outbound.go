@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/mcp/mcpctx"
@@ -108,8 +109,11 @@ type SetupSendingInput struct {
 	DMARCReport    string                  `json:"dmarc_report,omitempty" jsonschema:"add_domain: address for DMARC reports (optional)"`
 	ClickTracking  bool                    `json:"click_tracking,omitempty" jsonschema:"add_domain: set up go.<domain> (a CNAME to this server) so campaigns can track clicks"`
 	DomainID       string                  `json:"domain_id,omitempty" jsonschema:"check_domain: which domain to recheck; move_domain: the outreach domain to move"`
+	DomainIDs      []string                `json:"domain_ids,omitempty" jsonschema:"move_domain with brand: several outreach domains to move together, all or none"`
+	AllDomains     bool                    `json:"all_domains,omitempty" jsonschema:"move_domain with brand: every outreach domain of this brand"`
+	Brand          string                  `json:"brand,omitempty" jsonschema:"move_domain: another brand you manage to move the domains to, by id or slug (default: stay in this brand)"`
 	Mailboxes      []outbound.MailboxInput `json:"mailboxes,omitempty" jsonschema:"add_mailboxes: up to 100 mailboxes; each must log in to SMTP and IMAP"`
-	PoolID         string                  `json:"pool_id,omitempty" jsonschema:"set_limits: the mailbox pool to change; connections and add_connection: the pool (default: the pool carrying outreach)"`
+	PoolID         string                  `json:"pool_id,omitempty" jsonschema:"set_limits: the mailbox pool to change; connections and add_connection: the pool (default: the pool carrying outreach); move_domain with brand: the pool there to join (default: the one carrying its outreach, or its only one)"`
 	Limits         *email.Limits           `json:"limits,omitempty" jsonschema:"set_limits: the pool's limits, all of them: daily_limit (per mailbox per day), warmup_start, warmup_step, min_gap_seconds, max_gap_seconds, pause_bounce_rate (0.03 is 3%), pause_min_bounces, pause_spam_blocks, pause_complaints. 0 turns one off"`
 	MailboxID      string                  `json:"mailbox_id,omitempty" jsonschema:"mailbox_limit: which mailbox"`
 	Pace           string                  `json:"pace,omitempty" jsonschema:"set_pace: light (25 new prospects a day), typical (50), growth (100) or unlimited"`
@@ -117,7 +121,7 @@ type SetupSendingInput struct {
 	DailyLimit     *int64                  `json:"daily_limit,omitempty" jsonschema:"mailbox_limit: the mailbox's own daily limit, leave it out to use its connection's or pool's; add_connection and update_connection: the daily limit of the connection's mailboxes unless one has its own (leave it out for the pool's)"`
 	WarmupStart    *int64                  `json:"warmup_start,omitempty" jsonschema:"add_connection and update_connection: the warm-up's first-day allowance for the connection's mailboxes (leave it out for the pool's)"`
 	WarmupStep     *int64                  `json:"warmup_step,omitempty" jsonschema:"add_connection and update_connection: added to the allowance each day until the daily limit (leave it out for the pool's)"`
-	ConnectionID   string                  `json:"connection_id,omitempty" jsonschema:"the mailbox service connection: update_connection, remove_connection, move_domain (where the domain goes), service_inventory, connect_domain, quote, buy, sync, delete_mailbox; add_domain: a manual connection (default: the pool's first manual one)"`
+	ConnectionID   string                  `json:"connection_id,omitempty" jsonschema:"the mailbox service connection: update_connection, remove_connection, move_domain (where the domain goes; with brand, a connection there to join, default: each domain's own connection moves with it), service_inventory, connect_domain, quote, buy, sync, delete_mailbox; add_domain: a manual connection (default: the pool's first manual one)"`
 	Service        string                  `json:"service,omitempty" jsonschema:"add_connection: manual, maildoso, cheapinboxes or infraforge"`
 	Name           string                  `json:"name,omitempty" jsonschema:"add_connection and update_connection: the connection's name, e.g. Maildoso main (default: the service's name)"`
 	APIKey         string                  `json:"api_key,omitempty" jsonschema:"add_connection and update_connection: the service's API key (write-only, tested before it is saved; update: leave it out to keep the stored one)"`
@@ -267,6 +271,13 @@ func mailboxServiceRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSendi
 		}
 		return map[string]string{"result": "Connection removed. Nothing changed at the service."}, true, nil
 	case "move_domain":
+		if in.Brand != "" {
+			out, err = moveDomainsToBrand(ctx, t, in)
+			return out, true, err
+		}
+		if len(in.DomainIDs) > 0 || in.AllDomains {
+			return nil, true, mcpctx.NewValidationError("domain_ids and all_domains move domains to another brand: pass brand", "brand")
+		}
 		if in.DomainID == "" {
 			return nil, true, mcpctx.NewValidationError("domain_id is required", "domain_id")
 		}
@@ -310,6 +321,45 @@ func mailboxServiceRun(ctx context.Context, t *mcpctx.ToolContext, in SetupSendi
 		return nil, false, nil
 	}
 	return out, true, err
+}
+
+// moveDomainsToBrand moves outreach domains to the brand the gate checked
+// the caller manages too, all or none.
+func moveDomainsToBrand(ctx context.Context, t *mcpctx.ToolContext, in SetupSendingInput) (any, error) {
+	from, to := t.Brand(ctx), t.ToBrand(ctx)
+	if to.ID == "" {
+		return nil, &mcpctx.ToolError{Code: "forbidden", Message: "brand was not checked: call through MCP"}
+	}
+	ids := in.DomainIDs
+	if in.DomainID != "" {
+		ids = append([]string{in.DomainID}, ids...)
+	}
+	if in.AllDomains {
+		all, err := t.DB().ListOutreachDomains(ctx, from.ID)
+		if err != nil {
+			return nil, err
+		}
+		ids = nil
+		for _, d := range all {
+			ids = append(ids, d.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, mcpctx.NewValidationError("name the domains: domain_id, domain_ids or all_domains", "domain_ids")
+	}
+	res, err := t.Svc().Outbound.MoveDomainsToBrand(ctx, from, to, outbound.BrandMoveInput{DomainIDs: ids, PoolID: in.PoolID, ConnectionID: in.ConnectionID})
+	if err != nil {
+		return nil, err
+	}
+	parts := make([]string, 0, len(res.Domains))
+	for _, d := range res.Domains {
+		parts = append(parts, fmt.Sprintf("%s (%d mailboxes, %d sends counted)", d.Domain, d.Mailboxes, d.SendsCounted))
+	}
+	return map[string]any{
+		"moved":  res,
+		"result": fmt.Sprintf("Moved %s to %s, pool %s, with their DNS checks, credentials, warm-up and limits.", strings.Join(parts, ", "), res.Brand, res.Pool),
+		"next":   fmt.Sprintf("They send for %s now: select it with brand(resource: brand, action: select) to use them. Their sent emails, replies, prospects and campaigns stay with %s.", to.Name, from.Name),
+	}, nil
 }
 
 // mailboxPool is the brand's mailbox pool named by id, or the one carrying
@@ -579,7 +629,7 @@ var outboundTools = []outboundTool{
 			"- add_connection: service (manual|maildoso|cheapinboxes|infraforge), api_key (required for a service, tested first), name, pool_id, daily_limit, warmup_start, warmup_step (all left out: the service's terms, Maildoso 15 a day warming up from 5 by 1; else the pool's). Brand admins only\n"+
 			"- update_connection: connection_id, name, api_key (leave it out to keep it), daily_limit, warmup_start, warmup_step (each set as given; left out: the pool's). Brand admins only\n"+
 			"- remove_connection: connection_id. Refused while it holds domains: move them first. Brand admins only\n"+
-			"- move_domain: domain_id, connection_id. Moves an outreach domain and its mailboxes to another connection of the same pool. Brand admins only\n"+
+			"- move_domain: domain_id, connection_id. Moves an outreach domain and its mailboxes to another connection of the same pool. With brand (another brand you are an admin of, by id or slug): moves domain_id, domain_ids or all_domains there, all or none, with their mailboxes, credentials, DNS checks, warm-up, limits and today's send counts, into pool_id or its outreach pool, and to connection_id there or with their own connection. Sent emails, replies, prospects and campaigns stay. Refused while their mailboxes still carry this brand's campaigns or waiting emails. Brand admins of both only. Example: setup_sending(action: move_domain, brand: \"neboai-outreach\", domain_ids: [\"...\", \"...\"])\n"+
 			"Each of these takes connection_id, a mailbox service connection:\n"+
 			"- service_inventory: the domains and mailboxes the brand has at the service\n"+
 			"- connect_domain: domain. Connects a domain the brand owns (free where the service allows) and returns the nameservers to set at its registrar. Brand admins only\n"+

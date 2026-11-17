@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -408,6 +409,9 @@ func (s *Service) Answer(ctx context.Context, org db.Organization, replyID, body
 		return "", refuse("%s opted out or bounced; outreach never writes to them again", r.FromEmail)
 	}
 	mb, err := s.db.GetMailbox(ctx, db.GetMailboxParams{ID: r.MailboxID, OrgID: org.ID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", refuse("the mailbox that received this reply has moved to another brand; answer it in that mailbox itself")
+	}
 	if err != nil {
 		return "", err
 	}
