@@ -34,7 +34,7 @@ type authorizeFixture struct {
 
 func newAuthorizeFixture(t *testing.T) *authorizeFixture {
 	t.Helper()
-	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	require.NoError(t, migrations.Run(conn, nil))
