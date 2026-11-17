@@ -44,6 +44,9 @@ type rule struct {
 	brand brandFrom
 	live  bool   // warn first when the brand's API key is in live use
 	scope string // a narrower scope that also allows this action (besides mcp:full)
+	// toBrand: the call may name a second brand it moves things to (brand:
+	// its id or slug); the caller needs the same role there.
+	toBrand bool
 }
 
 func read(need access.Role) rule  { return rule{need: need} }
@@ -54,6 +57,9 @@ func obRead() rule  { return rule{need: access.Member, scope: mcpauth.ScopeOutbo
 func obWrite() rule { return rule{need: access.Member, write: true, scope: mcpauth.ScopeOutboundWrite} }
 func obSend() rule  { return rule{need: access.Member, write: true, scope: mcpauth.ScopeOutboundSend} }
 func obAdmin() rule { return rule{need: access.Admin, write: true, scope: mcpauth.ScopeOutboundWrite} }
+
+// movesToBrand lets an action name a second brand it moves things to.
+func (r rule) movesToBrand() rule { r.toBrand = true; return r }
 
 // toolPolicy holds one tool's rules, keyed by action, or by resource.action
 // for tools with resources.
@@ -136,7 +142,7 @@ var policy = map[string]toolPolicy{
 		"settings": obWrite(), "dns_token": obAdmin(), "add_domain": obAdmin(), "check_domain": obWrite(),
 		"add_mailboxes": obAdmin(), "list": obRead(), "set_limits": obAdmin(), "mailbox_limit": obAdmin(), "pace": obRead(), "set_pace": obAdmin(),
 		"connections": obRead(), "add_connection": obAdmin(), "update_connection": obAdmin(), "remove_connection": obAdmin(),
-		"move_domain": obAdmin(), "service_inventory": obRead(), "connect_domain": obAdmin(), "quote": obWrite(),
+		"move_domain": obAdmin().movesToBrand(), "service_inventory": obRead(), "connect_domain": obAdmin(), "quote": obWrite(),
 		"buy": obAdmin(), "sync": obAdmin(), "delete_mailbox": obAdmin(),
 	}},
 	"add_prospects":  {rules: map[string]rule{"add": obWrite()}},
@@ -190,6 +196,7 @@ type gateArgs struct {
 	ID          json.RawMessage `json:"id"`
 	BrandID     string          `json:"brand_id"`
 	Slug        string          `json:"slug"`
+	ToBrand     string          `json:"brand"`
 	ContactID   string          `json:"contact_id"`
 	Email       string          `json:"email"`
 	Domain      string          `json:"domain"`
@@ -222,6 +229,7 @@ type gateResult struct {
 	action  string
 	brand   db.Organization // the brand the call acts in, if any
 	brandID string
+	toBrand db.Organization // the brand the call moves things to, if it names one
 	target  string
 }
 
@@ -278,6 +286,16 @@ func authorize(ctx context.Context, toolCtx *mcpctx.ToolContext, caller Caller, 
 	}
 	if _, err := access.Check(ctx, toolCtx.DB(), caller.UserID, res.brandID, r.need); err != nil {
 		return res, err
+	}
+	if r.toBrand && args.ToBrand != "" {
+		to, err := lookupBrand(ctx, toolCtx.DB(), args.ToBrand)
+		if err != nil {
+			return res, err
+		}
+		if _, err := access.Check(ctx, toolCtx.DB(), caller.UserID, to.ID, r.need); err != nil {
+			return res, &mcpctx.ToolError{Code: "forbidden", Message: fmt.Sprintf("Can't move to brand %s: %s", args.ToBrand, err.Error())}
+		}
+		res.toBrand = to
 	}
 
 	if r.live && args.Confirm && !args.ConfirmLive {
@@ -339,6 +357,16 @@ func lookupNamedBrand(ctx context.Context, q db.Querier, brandID, id, slug strin
 	return brand, err
 }
 
+// lookupBrand finds a brand by its id or its slug.
+func lookupBrand(ctx context.Context, q db.Querier, idOrSlug string) (db.Organization, error) {
+	brand, err := lookupNamedBrand(ctx, q, idOrSlug, "", "")
+	var te *mcpctx.ToolError
+	if errors.As(err, &te) && te.Code == "not_found" {
+		return lookupNamedBrand(ctx, q, "", "", idOrSlug)
+	}
+	return brand, err
+}
+
 // liveKeyWarning refuses a destructive call while the brand's API key is
 // sending mail, unless the caller confirms with confirm_live.
 func liveKeyWarning(ctx context.Context, q db.Querier, brandID string) error {
@@ -394,6 +422,9 @@ func gated(ctx context.Context, toolCtx *mcpctx.ToolContext, caller Caller, tool
 	}
 	if g.brand.ID != "" {
 		ctx = mcpctx.WithCallBrand(ctx, g.brand)
+	}
+	if g.toBrand.ID != "" {
+		ctx = mcpctx.WithToBrand(ctx, g.toBrand)
 	}
 	result := run(ctx)
 	if g.audit {

@@ -207,3 +207,49 @@ func TestOutboundScopes(t *testing.T) {
 	assert.NoError(t, check(read, "setup_sending", `{"action":"pace"}`))
 	assert.ErrorContains(t, check(write, "setup_sending", `{"action":"set_pace"}`), "admin")
 }
+
+// move_domain with brand needs the caller's admin role in that brand too,
+// named by id or slug, and hands the brand it checked to the handler.
+func TestMoveDomainChecksTheOtherBrand(t *testing.T) {
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	require.NoError(t, migrations.Run(conn, nil))
+	store := db.NewStore(conn)
+	ctx := context.Background()
+	_, err = store.CreateUser(ctx, db.CreateUserParams{ID: "anne", Email: "anne@example.com", PasswordHash: "x", Name: "A", Role: "agent", Status: "active", EmailVerified: int64(1)})
+	require.NoError(t, err)
+	brands := map[string]db.Organization{}
+	for b, role := range map[string]string{"alpha": "admin", "bravo": "member", "charlie": "admin"} {
+		org, err := store.CreateOrganization(ctx, db.CreateOrganizationParams{ID: b + "-id", Name: b, Slug: b, ApiKey: "key-" + b})
+		require.NoError(t, err)
+		brands[b] = org
+		require.NoError(t, store.AddUserToOrganization(ctx, db.AddUserToOrganizationParams{OrgID: org.ID, UserID: "anne", Role: sql.NullString{String: role, Valid: true}}))
+	}
+	_, err = store.CreateOrganization(ctx, db.CreateOrganizationParams{ID: "delta-id", Name: "delta", Slug: "delta", ApiKey: "key-delta"})
+	require.NoError(t, err)
+	user, err := access.Active(ctx, store, "anne")
+	require.NoError(t, err)
+	toolCtx := mcpctx.NewUserToolContext(&svc.ServiceContext{DB: store}, user, "req", "test", "session")
+	toolCtx.SelectBrand(brands["alpha"])
+	caller := Caller{UserID: "anne", Email: "anne@example.com", Scopes: []string{"mcp:full"}}
+	move := func(brand string) (gateResult, error) {
+		return authorize(ctx, toolCtx, caller, "setup_sending", []byte(`{"action":"move_domain","domain_ids":["d1"],"brand":"`+brand+`"}`))
+	}
+
+	_, err = move("bravo")
+	assert.ErrorContains(t, err, "Can't move to brand bravo: This needs the brand's admin role.")
+	_, err = move("delta")
+	assert.ErrorContains(t, err, "Can't move to brand delta")
+	_, err = move("nobody")
+	assert.ErrorContains(t, err, "brand not found")
+	for _, name := range []string{"charlie", "charlie-id"} {
+		g, err := move(name)
+		require.NoError(t, err, name)
+		assert.Equal(t, "charlie-id", g.toBrand.ID)
+		assert.Equal(t, "alpha-id", g.brand.ID)
+	}
+	g, err := authorize(ctx, toolCtx, caller, "setup_sending", []byte(`{"action":"move_domain","domain_id":"d1","connection_id":"c1"}`))
+	require.NoError(t, err)
+	assert.Empty(t, g.toBrand.ID, "a move inside the brand names no other")
+}

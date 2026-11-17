@@ -92,6 +92,8 @@ type Querier interface {
 	CountContactsByStatus(ctx context.Context, status sql.NullString) (int64, error)
 	CountContactsByTag(ctx context.Context, tag string) (int64, error)
 	CountCustomFieldsByList(ctx context.Context, listID int64) (int64, error)
+	// Outreach emails waiting on a domain's mailboxes: drafts, approved, sending.
+	CountDomainWaitingOutreach(ctx context.Context, domainID string) (int64, error)
 	CountEmailDesigns(ctx context.Context, orgID string) (int64, error)
 	CountEmailDesignsByCategory(ctx context.Context, arg CountEmailDesignsByCategoryParams) (int64, error)
 	// How many replies ListEmailReplies returns for the same filter, without
@@ -611,6 +613,9 @@ type Querier interface {
 	ListCustomFieldValuesForSubscribers(ctx context.Context, subscriberIds []string) ([]ListCustomFieldValuesForSubscribersRow, error)
 	ListCustomFieldsByList(ctx context.Context, listID int64) ([]CustomField, error)
 	ListDoNotContactLists(ctx context.Context, orgID string) ([]ListDoNotContactListsRow, error)
+	// The people still in a campaign on a domain's mailboxes, per campaign
+	// (paused campaigns too: they resume on the same mailbox).
+	ListDomainActiveEnrollments(ctx context.Context, domainID string) ([]ListDomainActiveEnrollmentsRow, error)
 	// The brand's sending domains (SES). Outreach domains are listed by outbound.
 	ListDomainIdentitiesByOrg(ctx context.Context, orgID string) ([]DomainIdentity, error)
 	// Deliveries due for a try, oldest first, for active webhooks only.
@@ -713,6 +718,19 @@ type Querier interface {
 	MarkMCPOAuthCodeUsed(ctx context.Context, id string) error
 	MarkOutreachSent(ctx context.Context, arg MarkOutreachSentParams) error
 	MeterNetworkInstance(ctx context.Context, arg MeterNetworkInstanceParams) error
+	MoveConnectionQuotesToBrand(ctx context.Context, arg MoveConnectionQuotesToBrandParams) error
+	MoveDomainMailboxesToBrand(ctx context.Context, arg MoveDomainMailboxesToBrandParams) (int64, error)
+	// A connection moves whole with its domains, its key (encrypted with the
+	// server's key, the same for every brand) and its limits; the limits it
+	// took from its old pool are written on it, so its mailboxes keep them.
+	MoveMailboxConnectionToBrand(ctx context.Context, arg MoveMailboxConnectionToBrandParams) (int64, error)
+	// ---- moving outreach domains to another brand ---------------------------------
+	// A domain moves with everything keyed to it: its row (DNS checks, DKIM,
+	// tracking host), its mailboxes (credentials, warm-up start, own limits,
+	// reading state), their send counts, and its connection when that moves
+	// whole. Sent history, replies, prospects and campaigns stay with the old
+	// brand.
+	MoveOutreachDomainToBrand(ctx context.Context, arg MoveOutreachDomainToBrandParams) (int64, error)
 	// The oldest approved outreach email due on this mailbox, whose person is
 	// still in an active sequence (or which answers a reply).
 	NextOutreachForMailbox(ctx context.Context, arg NextOutreachForMailboxParams) (NextOutreachForMailboxRow, error)
@@ -827,6 +845,8 @@ type Querier interface {
 	StopSequenceState(ctx context.Context, arg StopSequenceStateParams) error
 	SubscribeToList(ctx context.Context, arg SubscribeToListParams) (ListSubscriber, error)
 	SubscribeToListPending(ctx context.Context, arg SubscribeToListPendingParams) (ListSubscriber, error)
+	// The sends counted for a domain's mailboxes in their pool, every day kept.
+	SumDomainSendCounts(ctx context.Context, arg SumDomainSendCountsParams) (int64, error)
 	// A sender's sends on and after a day.
 	SumSendCountsSince(ctx context.Context, arg SumSendCountsSinceParams) (int64, error)
 	// Adds a job's results with the given statuses to the org's suppression list.

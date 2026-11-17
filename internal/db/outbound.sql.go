@@ -59,6 +59,20 @@ func (q *Queries) ClaimOutreachEmail(ctx context.Context, arg ClaimOutreachEmail
 	return result.RowsAffected()
 }
 
+const countDomainWaitingOutreach = `-- name: CountDomainWaitingOutreach :one
+SELECT COUNT(*) FROM email_queue eq
+JOIN mailboxes m ON m.id = eq.mailbox_id
+WHERE m.domain_id = ? AND eq.kind = 'outreach' AND eq.status IN ('draft', 'pending', 'sending')
+`
+
+// Outreach emails waiting on a domain's mailboxes: drafts, approved, sending.
+func (q *Queries) CountDomainWaitingOutreach(ctx context.Context, domainID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countDomainWaitingOutreach, domainID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countEmailReplies = `-- name: CountEmailReplies :one
 SELECT COUNT(*) FROM email_replies r
 WHERE r.org_id = ?1 AND r.handled = ?2
@@ -1187,6 +1201,47 @@ func (q *Queries) ListAllOutreachDomains(ctx context.Context) ([]DomainIdentity,
 	return items, nil
 }
 
+const listDomainActiveEnrollments = `-- name: ListDomainActiveEnrollments :many
+SELECT es.id AS campaign_id, es.name AS campaign_name, COUNT(*) AS n
+FROM contact_sequence_state css
+JOIN mailboxes m ON m.id = css.mailbox_id
+JOIN email_sequences es ON es.id = css.sequence_id
+WHERE m.domain_id = ? AND css.is_active = 1
+GROUP BY es.id, es.name
+ORDER BY es.name
+`
+
+type ListDomainActiveEnrollmentsRow struct {
+	CampaignID   string `json:"campaign_id"`
+	CampaignName string `json:"campaign_name"`
+	N            int64  `json:"n"`
+}
+
+// The people still in a campaign on a domain's mailboxes, per campaign
+// (paused campaigns too: they resume on the same mailbox).
+func (q *Queries) ListDomainActiveEnrollments(ctx context.Context, domainID string) ([]ListDomainActiveEnrollmentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDomainActiveEnrollments, domainID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDomainActiveEnrollmentsRow
+	for rows.Next() {
+		var i ListDomainActiveEnrollmentsRow
+		if err := rows.Scan(&i.CampaignID, &i.CampaignName, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEmailReplies = `-- name: ListEmailReplies :many
 SELECT r.id, r.org_id, r.mailbox_id, r.contact_id, r.queue_id, r.sequence_id, r.from_email, r.subject, r.body, r.message_id, r.in_reply_to, r.refs, r.classification, r.handled, r.received_at, CAST(COALESCE(es.name, '') AS TEXT) AS campaign_name, CAST(COALESCE(el.name, '') AS TEXT) AS segment_name
 FROM email_replies r
@@ -2051,6 +2106,110 @@ func (q *Queries) MarkOutreachSent(ctx context.Context, arg MarkOutreachSentPara
 	return err
 }
 
+const moveConnectionQuotesToBrand = `-- name: MoveConnectionQuotesToBrand :exec
+UPDATE mailbox_service_quotes SET org_id = ?1 WHERE connection_id = ?2
+`
+
+type MoveConnectionQuotesToBrandParams struct {
+	ToOrgID      string `json:"to_org_id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+func (q *Queries) MoveConnectionQuotesToBrand(ctx context.Context, arg MoveConnectionQuotesToBrandParams) error {
+	_, err := q.db.ExecContext(ctx, moveConnectionQuotesToBrand, arg.ToOrgID, arg.ConnectionID)
+	return err
+}
+
+const moveDomainMailboxesToBrand = `-- name: MoveDomainMailboxesToBrand :execrows
+UPDATE mailboxes SET org_id = ?1
+WHERE domain_id = ?2 AND org_id = ?3
+`
+
+type MoveDomainMailboxesToBrandParams struct {
+	ToOrgID   string `json:"to_org_id"`
+	DomainID  string `json:"domain_id"`
+	FromOrgID string `json:"from_org_id"`
+}
+
+func (q *Queries) MoveDomainMailboxesToBrand(ctx context.Context, arg MoveDomainMailboxesToBrandParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, moveDomainMailboxesToBrand, arg.ToOrgID, arg.DomainID, arg.FromOrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const moveMailboxConnectionToBrand = `-- name: MoveMailboxConnectionToBrand :execrows
+UPDATE mailbox_connections
+SET org_id = ?1, pathway_id = ?2,
+    daily_limit = ?3, warmup_start = ?4, warmup_step = ?5
+WHERE id = ?6 AND org_id = ?7
+`
+
+type MoveMailboxConnectionToBrandParams struct {
+	ToOrgID     string        `json:"to_org_id"`
+	PathwayID   string        `json:"pathway_id"`
+	DailyLimit  sql.NullInt64 `json:"daily_limit"`
+	WarmupStart sql.NullInt64 `json:"warmup_start"`
+	WarmupStep  sql.NullInt64 `json:"warmup_step"`
+	ID          string        `json:"id"`
+	FromOrgID   string        `json:"from_org_id"`
+}
+
+// A connection moves whole with its domains, its key (encrypted with the
+// server's key, the same for every brand) and its limits; the limits it
+// took from its old pool are written on it, so its mailboxes keep them.
+func (q *Queries) MoveMailboxConnectionToBrand(ctx context.Context, arg MoveMailboxConnectionToBrandParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, moveMailboxConnectionToBrand,
+		arg.ToOrgID,
+		arg.PathwayID,
+		arg.DailyLimit,
+		arg.WarmupStart,
+		arg.WarmupStep,
+		arg.ID,
+		arg.FromOrgID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const moveOutreachDomainToBrand = `-- name: MoveOutreachDomainToBrand :execrows
+
+UPDATE domain_identities
+SET org_id = ?1, pathway_id = ?2, connection_id = ?3, updated_at = datetime('now')
+WHERE id = ?4 AND org_id = ?5 AND purpose = 'outreach'
+`
+
+type MoveOutreachDomainToBrandParams struct {
+	ToOrgID      string         `json:"to_org_id"`
+	PathwayID    sql.NullString `json:"pathway_id"`
+	ConnectionID sql.NullString `json:"connection_id"`
+	ID           string         `json:"id"`
+	FromOrgID    string         `json:"from_org_id"`
+}
+
+// ---- moving outreach domains to another brand ---------------------------------
+// A domain moves with everything keyed to it: its row (DNS checks, DKIM,
+// tracking host), its mailboxes (credentials, warm-up start, own limits,
+// reading state), their send counts, and its connection when that moves
+// whole. Sent history, replies, prospects and campaigns stay with the old
+// brand.
+func (q *Queries) MoveOutreachDomainToBrand(ctx context.Context, arg MoveOutreachDomainToBrandParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, moveOutreachDomainToBrand,
+		arg.ToOrgID,
+		arg.PathwayID,
+		arg.ConnectionID,
+		arg.ID,
+		arg.FromOrgID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const nextOutreachForMailbox = `-- name: NextOutreachForMailbox :one
 SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.sent_at, eq.status, eq.error_message, eq.created_at, eq.tracking_token, eq.opened_at, eq.open_count, eq.clicked_at, eq.click_count, eq.kind, eq.mailbox_id, eq.subject, eq.body, eq.message_id, eq.in_reply_to, eq.refs, eq.claim_token, eq.claimed_at, eq.first_refused_at, eq.authored_by, c.email AS to_email, c.org_id AS org_id, COALESCE(et.position, 0) AS position, et.sequence_id AS sequence_id
 FROM email_queue eq
@@ -2800,6 +2959,25 @@ type StopSequenceStateParams struct {
 func (q *Queries) StopSequenceState(ctx context.Context, arg StopSequenceStateParams) error {
 	_, err := q.db.ExecContext(ctx, stopSequenceState, arg.StoppedReason, arg.ID)
 	return err
+}
+
+const sumDomainSendCounts = `-- name: SumDomainSendCounts :one
+SELECT CAST(COALESCE(SUM(sc.n), 0) AS INTEGER) FROM send_counts sc
+WHERE sc.pathway_id = ?1
+  AND sc.sender_id IN (SELECT m.id FROM mailboxes m WHERE m.domain_id = ?2)
+`
+
+type SumDomainSendCountsParams struct {
+	PathwayID string `json:"pathway_id"`
+	DomainID  string `json:"domain_id"`
+}
+
+// The sends counted for a domain's mailboxes in their pool, every day kept.
+func (q *Queries) SumDomainSendCounts(ctx context.Context, arg SumDomainSendCountsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, sumDomainSendCounts, arg.PathwayID, arg.DomainID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const updateOutboundSettings = `-- name: UpdateOutboundSettings :exec

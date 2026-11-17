@@ -116,6 +116,21 @@ func (t *ToolContext) Brand(ctx context.Context) db.Organization {
 	return brand
 }
 
+type toBrandKey struct{}
+
+// WithToBrand records the second brand a tool call moves things to, which
+// the gate checked the caller's access to as well.
+func WithToBrand(ctx context.Context, brand db.Organization) context.Context {
+	return context.WithValue(ctx, toBrandKey{}, brand)
+}
+
+// ToBrand returns the brand this tool call moves things to: the one the
+// gate checked. It is the zero value when the call names none.
+func (t *ToolContext) ToBrand(ctx context.Context) db.Organization {
+	brand, _ := ctx.Value(toBrandKey{}).(db.Organization)
+	return brand
+}
+
 // BrandID returns the ID of the brand this tool call acts in, or "".
 func (t *ToolContext) BrandID(ctx context.Context) string {
 	return t.Brand(ctx).ID

@@ -448,3 +448,54 @@ LIMIT sqlc.arg(limit_count);
 -- A verified prospect becomes 'prospect' (passed) or 'held' (failed).
 UPDATE list_subscribers SET status = sqlc.arg(status)
 WHERE id = sqlc.arg(id) AND status = 'verifying';
+
+-- ---- moving outreach domains to another brand ---------------------------------
+-- A domain moves with everything keyed to it: its row (DNS checks, DKIM,
+-- tracking host), its mailboxes (credentials, warm-up start, own limits,
+-- reading state), their send counts, and its connection when that moves
+-- whole. Sent history, replies, prospects and campaigns stay with the old
+-- brand.
+
+-- name: MoveOutreachDomainToBrand :execrows
+UPDATE domain_identities
+SET org_id = sqlc.arg(to_org_id), pathway_id = sqlc.arg(pathway_id), connection_id = sqlc.arg(connection_id), updated_at = datetime('now')
+WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(from_org_id) AND purpose = 'outreach';
+
+-- name: MoveDomainMailboxesToBrand :execrows
+UPDATE mailboxes SET org_id = sqlc.arg(to_org_id)
+WHERE domain_id = sqlc.arg(domain_id) AND org_id = sqlc.arg(from_org_id);
+
+-- name: MoveMailboxConnectionToBrand :execrows
+-- A connection moves whole with its domains, its key (encrypted with the
+-- server's key, the same for every brand) and its limits; the limits it
+-- took from its old pool are written on it, so its mailboxes keep them.
+UPDATE mailbox_connections
+SET org_id = sqlc.arg(to_org_id), pathway_id = sqlc.arg(pathway_id),
+    daily_limit = sqlc.arg(daily_limit), warmup_start = sqlc.arg(warmup_start), warmup_step = sqlc.arg(warmup_step)
+WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(from_org_id);
+
+-- name: MoveConnectionQuotesToBrand :exec
+UPDATE mailbox_service_quotes SET org_id = sqlc.arg(to_org_id) WHERE connection_id = sqlc.arg(connection_id);
+
+-- name: SumDomainSendCounts :one
+-- The sends counted for a domain's mailboxes in their pool, every day kept.
+SELECT CAST(COALESCE(SUM(sc.n), 0) AS INTEGER) FROM send_counts sc
+WHERE sc.pathway_id = sqlc.arg(pathway_id)
+  AND sc.sender_id IN (SELECT m.id FROM mailboxes m WHERE m.domain_id = sqlc.arg(domain_id));
+
+-- name: ListDomainActiveEnrollments :many
+-- The people still in a campaign on a domain's mailboxes, per campaign
+-- (paused campaigns too: they resume on the same mailbox).
+SELECT es.id AS campaign_id, es.name AS campaign_name, COUNT(*) AS n
+FROM contact_sequence_state css
+JOIN mailboxes m ON m.id = css.mailbox_id
+JOIN email_sequences es ON es.id = css.sequence_id
+WHERE m.domain_id = ? AND css.is_active = 1
+GROUP BY es.id, es.name
+ORDER BY es.name;
+
+-- name: CountDomainWaitingOutreach :one
+-- Outreach emails waiting on a domain's mailboxes: drafts, approved, sending.
+SELECT COUNT(*) FROM email_queue eq
+JOIN mailboxes m ON m.id = eq.mailbox_id
+WHERE m.domain_id = ? AND eq.kind = 'outreach' AND eq.status IN ('draft', 'pending', 'sending');
