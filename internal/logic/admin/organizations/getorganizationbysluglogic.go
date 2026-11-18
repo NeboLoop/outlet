@@ -54,6 +54,7 @@ func (l *GetOrganizationBySlugLogic) GetOrganizationBySlug(req *types.GetOrgBySl
 		FromEmail:        org.FromEmail.String,
 		ReplyTo:          org.ReplyTo.String,
 		AppUrl:           org.AppUrl.String,
+		MailingAddress:   org.MailingAddress,
 		CreatedAt:        org.CreatedAt.String,
 	}, nil
 }

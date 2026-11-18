@@ -62,13 +62,18 @@ DELETE FROM email_lists
 WHERE id = sqlc.arg(id);
 
 -- name: SubscribeToList :one
+-- Never reactivates an unsubscribed subscriber: that one stays unsubscribed
+-- (status 'unsubscribed' comes back). Only a fresh double opt-in
+-- confirmation (SubscribeToListPending, then ConfirmListSubscription)
+-- subscribes them again.
 INSERT INTO list_subscribers (
     id, list_id, contact_id, status, subscribed_at
 ) VALUES (
     sqlc.arg(id), sqlc.arg(list_id), sqlc.arg(contact_id), 'active', datetime('now')
 )
 ON CONFLICT (list_id, contact_id) DO UPDATE
-SET status = 'active', unsubscribed_at = NULL
+SET status = CASE WHEN list_subscribers.status = 'unsubscribed' THEN 'unsubscribed' ELSE 'active' END,
+    unsubscribed_at = CASE WHEN list_subscribers.status = 'unsubscribed' THEN list_subscribers.unsubscribed_at ELSE NULL END
 RETURNING *;
 
 -- name: UnsubscribeFromList :exec

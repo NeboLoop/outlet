@@ -55,6 +55,10 @@ func (l *SendCampaignTestLogic) SendCampaignTest(req *types.SendCampaignTestRequ
 	if err != nil {
 		return nil, err
 	}
+	org, err := l.svcCtx.DB.GetOrganizationByID(l.ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
 	c := email.CampaignEmail{
 		OrgID:         orgID,
 		FromName:      req.FromName,
@@ -66,6 +70,8 @@ func (l *SendCampaignTestLogic) SendCampaignTest(req *types.SendCampaignTestRequ
 		HTML:          req.HtmlBody,
 		Text:          req.PlainText,
 		TrackingToken: testTrackingToken,
+
+		MailingAddress: org.MailingAddress,
 	}
 	if design != nil {
 		c.DesignHTML, c.DesignText = design.HtmlBody, design.PlainText.String

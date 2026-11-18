@@ -112,6 +112,15 @@ func (l *UpdateSequenceLogic) UpdateSequence(req *types.UpdateSequenceRequest) (
 		}
 	}
 
+	// Turning an opt-in sequence on needs the brand's mailing address, which
+	// its emails carry. Checked only when it is turned on, so a sequence can
+	// always be renamed or turned off.
+	if req.IsActive && sequence.IsActive.Int64 != 1 && sequenceType.String != "outreach" {
+		if err := email.CheckMailingAddress(l.ctx, l.svcCtx.DB, orgID); err != nil {
+			return nil, err
+		}
+	}
+
 	err = l.svcCtx.DB.UpdateSequence(l.ctx, db.UpdateSequenceParams{
 		ID:                     req.Id,
 		Name:                   name,

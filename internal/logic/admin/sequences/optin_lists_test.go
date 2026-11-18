@@ -28,7 +28,7 @@ func TestSequences_StayOffOutreachLists(t *testing.T) {
 	require.NoError(t, migrations.Run(conn, nil))
 	for _, q := range []string{
 		`INSERT INTO users (id, email, password_hash, name, role, status, email_verified) VALUES ('mike', 'mike@example.com', 'x', 'M', 'agent', 'active', 1)`,
-		`INSERT INTO organizations (id, name, slug, api_key) VALUES ('alpha-id', 'alpha', 'alpha', 'k-a')`,
+		`INSERT INTO organizations (id, name, slug, api_key, mailing_address) VALUES ('alpha-id', 'alpha', 'alpha', 'k-a', '1 Main St')`,
 		`INSERT INTO org_users (org_id, user_id, role) VALUES ('alpha-id', 'mike', 'admin')`,
 		`INSERT INTO email_lists (id, public_id, org_id, name, slug) VALUES (1, 'p1', 'alpha-id', 'News', 'news')`,
 		`INSERT INTO email_lists (id, public_id, org_id, name, slug, kind) VALUES (2, 'p2', 'alpha-id', 'Utah dental', 'utah-dental', 'outreach')`,

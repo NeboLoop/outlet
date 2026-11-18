@@ -644,38 +644,42 @@ SELECT cs.id, cs.campaign_id, cs.contact_id, cs.list_id, cs.tracking_token, cs.s
        ec.subject, ec.html_body, ec.plain_text, ec.from_name, ec.from_email, ec.reply_to,
        ec.track_opens, ec.track_clicks, ec.org_id,
        CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html,
-       CAST(COALESCE(d.plain_text, '') AS TEXT) AS design_text
+       CAST(COALESCE(d.plain_text, '') AS TEXT) AS design_text,
+       CAST(COALESCE(o.mailing_address, '') AS TEXT) AS mailing_address
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
 LEFT JOIN email_designs d ON d.id = ec.design_id AND d.org_id = ec.org_id
+LEFT JOIN organizations o ON o.id = ec.org_id
 WHERE cs.status = 'pending' AND cs.claim_token = ?1
 ORDER BY cs.created_at ASC
 `
 
 type GetPendingCampaignSendsRow struct {
-	ID            string         `json:"id"`
-	CampaignID    string         `json:"campaign_id"`
-	ContactID     string         `json:"contact_id"`
-	ListID        sql.NullInt64  `json:"list_id"`
-	TrackingToken sql.NullString `json:"tracking_token"`
-	Status        sql.NullString `json:"status"`
-	Email         string         `json:"email"`
-	Name          string         `json:"name"`
-	Subject       string         `json:"subject"`
-	HtmlBody      string         `json:"html_body"`
-	PlainText     sql.NullString `json:"plain_text"`
-	FromName      sql.NullString `json:"from_name"`
-	FromEmail     sql.NullString `json:"from_email"`
-	ReplyTo       sql.NullString `json:"reply_to"`
-	TrackOpens    sql.NullInt64  `json:"track_opens"`
-	TrackClicks   sql.NullInt64  `json:"track_clicks"`
-	OrgID         string         `json:"org_id"`
-	DesignHtml    string         `json:"design_html"`
-	DesignText    string         `json:"design_text"`
+	ID             string         `json:"id"`
+	CampaignID     string         `json:"campaign_id"`
+	ContactID      string         `json:"contact_id"`
+	ListID         sql.NullInt64  `json:"list_id"`
+	TrackingToken  sql.NullString `json:"tracking_token"`
+	Status         sql.NullString `json:"status"`
+	Email          string         `json:"email"`
+	Name           string         `json:"name"`
+	Subject        string         `json:"subject"`
+	HtmlBody       string         `json:"html_body"`
+	PlainText      sql.NullString `json:"plain_text"`
+	FromName       sql.NullString `json:"from_name"`
+	FromEmail      sql.NullString `json:"from_email"`
+	ReplyTo        sql.NullString `json:"reply_to"`
+	TrackOpens     sql.NullInt64  `json:"track_opens"`
+	TrackClicks    sql.NullInt64  `json:"track_clicks"`
+	OrgID          string         `json:"org_id"`
+	DesignHtml     string         `json:"design_html"`
+	DesignText     string         `json:"design_text"`
+	MailingAddress string         `json:"mailing_address"`
 }
 
-// Returns the sends claimed with claim_token, with the campaign's design.
+// Returns the sends claimed with claim_token, with the campaign's design and
+// the brand's mailing address.
 func (q *Queries) GetPendingCampaignSends(ctx context.Context, claimToken sql.NullString) ([]GetPendingCampaignSendsRow, error) {
 	rows, err := q.db.QueryContext(ctx, getPendingCampaignSends, claimToken)
 	if err != nil {
@@ -705,6 +709,7 @@ func (q *Queries) GetPendingCampaignSends(ctx context.Context, claimToken sql.Nu
 			&i.OrgID,
 			&i.DesignHtml,
 			&i.DesignText,
+			&i.MailingAddress,
 		); err != nil {
 			return nil, err
 		}

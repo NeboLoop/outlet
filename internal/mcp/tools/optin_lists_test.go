@@ -26,7 +26,7 @@ func TestTools_KeepOptInMailOffOutreachLists(t *testing.T) {
 	t.Cleanup(func() { conn.Close() })
 	require.NoError(t, migrations.Run(conn, nil))
 	for _, q := range []string{
-		`INSERT INTO organizations (id, name, slug, api_key) VALUES ('org1', 'Brand', 'brand', 'k1')`,
+		`INSERT INTO organizations (id, name, slug, api_key, mailing_address) VALUES ('org1', 'Brand', 'brand', 'k1', '1 Main St')`,
 		`INSERT INTO email_lists (id, public_id, org_id, name, slug) VALUES (1, 'news', 'org1', 'News', 'news')`,
 		`INSERT INTO email_lists (id, public_id, org_id, name, slug, kind) VALUES (2, 'dental', 'org1', 'Utah dental', 'utah-dental', 'outreach')`,
 		`INSERT INTO email_campaigns (id, org_id, name, subject, html_body, list_ids, status) VALUES ('stray', 'org1', 'stray', 'Hi', '<p>Hi</p>', '["2"]', 'draft')`,

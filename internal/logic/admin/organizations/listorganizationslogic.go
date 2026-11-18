@@ -48,6 +48,7 @@ func (l *ListOrganizationsLogic) ListOrganizations() (resp *types.OrgListRespons
 			MaxContacts:      int(org.MaxContacts.Int64),
 			StripeConfigured: false,
 			AppUrl:           org.AppUrl.String,
+			MailingAddress:   org.MailingAddress,
 			FromName:         org.FromName.String,
 			FromEmail:        org.FromEmail.String,
 			ReplyTo:          org.ReplyTo.String,

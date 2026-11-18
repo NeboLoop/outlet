@@ -1589,6 +1589,7 @@ export interface OrgInfo {
 	from_email?: string
 	reply_to?: string
 	app_url?: string
+	mailing_address?: string // the postal address every commercial email carries
 	created_at: string
 }
 
@@ -2855,6 +2856,7 @@ export interface UpdateOrgEmailSettingsRequest {
 	from_name?: string
 	from_email?: string
 	reply_to?: string
+	mailing_address?: string // set with outbound's mailing address: one address
 }
 export interface UpdateOrgEmailSettingsRequestParams {
 }

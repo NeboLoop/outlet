@@ -1482,6 +1482,7 @@ type OrgInfo struct {
 	FromEmail        string `json:"from_email,optional"`
 	ReplyTo          string `json:"reply_to,optional"`
 	AppUrl           string `json:"app_url,optional"`
+	MailingAddress   string `json:"mailing_address,optional"` // the postal address every commercial email carries
 	CreatedAt        string `json:"created_at"`
 }
 
@@ -2696,10 +2697,11 @@ type UpdateOrgEmailConfigRequest struct {
 }
 
 type UpdateOrgEmailSettingsRequest struct {
-	Id        string `path:"id"`
-	FromName  string `json:"from_name,optional"`
-	FromEmail string `json:"from_email,optional"`
-	ReplyTo   string `json:"reply_to,optional"`
+	Id             string `path:"id"`
+	FromName       string `json:"from_name,optional"`
+	FromEmail      string `json:"from_email,optional"`
+	ReplyTo        string `json:"reply_to,optional"`
+	MailingAddress string `json:"mailing_address,optional"` // set with outbound's mailing address: one address
 }
 
 type UpdateOrgRequest struct {

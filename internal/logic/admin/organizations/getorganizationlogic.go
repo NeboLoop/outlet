@@ -48,6 +48,7 @@ func (l *GetOrganizationLogic) GetOrganization(req *types.GetOrgRequest) (resp *
 		FromEmail:        org.FromEmail.String,
 		ReplyTo:          org.ReplyTo.String,
 		AppUrl:           org.AppUrl.String,
+		MailingAddress:   org.MailingAddress,
 		CreatedAt:        org.CreatedAt.String,
 	}, nil
 }

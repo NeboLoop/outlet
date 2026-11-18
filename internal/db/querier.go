@@ -479,9 +479,11 @@ type Querier interface {
 	// The one pathway carrying a kind of mail for a brand.
 	GetPathwayForKind(ctx context.Context, arg GetPathwayForKindParams) (SendingPathway, error)
 	GetPendingAuthToken(ctx context.Context, arg GetPendingAuthTokenParams) (AuthToken, error)
-	// Returns the sends claimed with claim_token, with the campaign's design.
+	// Returns the sends claimed with claim_token, with the campaign's design and
+	// the brand's mailing address.
 	GetPendingCampaignSends(ctx context.Context, claimToken sql.NullString) ([]GetPendingCampaignSendsRow, error)
-	// Returns the sequence emails claimed with claim_token.
+	// Returns the sequence emails claimed with claim_token, with the brand's
+	// mailing address.
 	GetPendingEmails(ctx context.Context, claimToken sql.NullString) ([]GetPendingEmailsRow, error)
 	GetPlatformSetting(ctx context.Context, key string) (PlatformSetting, error)
 	GetPlatformSettingValue(ctx context.Context, key string) (GetPlatformSettingValueRow, error)
@@ -843,6 +845,10 @@ type Querier interface {
 	StartValidationJob(ctx context.Context, arg StartValidationJobParams) (int64, error)
 	// Ends a person's sequence: a reply, bounce, opt-out or complaint.
 	StopSequenceState(ctx context.Context, arg StopSequenceStateParams) error
+	// Never reactivates an unsubscribed subscriber: that one stays unsubscribed
+	// (status 'unsubscribed' comes back). Only a fresh double opt-in
+	// confirmation (SubscribeToListPending, then ConfirmListSubscription)
+	// subscribes them again.
 	SubscribeToList(ctx context.Context, arg SubscribeToListParams) (ListSubscriber, error)
 	SubscribeToListPending(ctx context.Context, arg SubscribeToListPendingParams) (ListSubscriber, error)
 	// The sends counted for a domain's mailboxes in their pool, every day kept.

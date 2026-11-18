@@ -99,3 +99,41 @@ func TestSignupSequence_DoubleOptInStartsOnConfirm(t *testing.T) {
 	confirm()
 	assert.Equal(t, 1, queued(t, store, "bo@example.com", "seq-2"))
 }
+
+// Someone who unsubscribed is subscribed again from the public form only by
+// a fresh confirmation, even on a single opt-in list: the form sends a
+// confirmation and nothing restarts until they confirm. Confirming
+// subscribes them again and starts the welcome sequence.
+func TestSignupForm_ResubscribeNeedsAFreshConfirmation(t *testing.T) {
+	for _, list := range []struct {
+		publicID string
+		id       int
+		seq      string
+	}{{"single", 1, "seq-1"}, {"double", 2, "seq-2"}} {
+		t.Run(list.publicID, func(t *testing.T) {
+			h, store := newSignupFixture(t)
+			for _, q := range []string{
+				`INSERT INTO contacts (id, org_id, name, email) VALUES ('c1', 'org-a', 'Cy', 'cy@example.com')`,
+				`INSERT INTO list_subscribers (id, list_id, contact_id, status, unsubscribed_at) VALUES ('s1', ?, 'c1', 'unsubscribed', datetime('now'))`,
+			} {
+				_, err := store.GetDB().Exec(q, list.id)
+				require.NoError(t, err, q)
+			}
+
+			postSubscribe(h, list.publicID, "cy@example.com")
+			var status string
+			var token sql.NullString
+			require.NoError(t, store.GetDB().QueryRow(`SELECT status, verification_token FROM list_subscribers WHERE id = 's1'`).Scan(&status, &token))
+			assert.Equal(t, "pending", status, "not active again until confirmed")
+			require.True(t, token.Valid)
+			assert.Equal(t, 0, queued(t, store, "cy@example.com", list.seq))
+
+			w := httptest.NewRecorder()
+			h.HandleConfirm(w, httptest.NewRequest(http.MethodGet, "/confirm/"+token.String, nil))
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			require.NoError(t, store.GetDB().QueryRow(`SELECT status FROM list_subscribers WHERE id = 's1'`).Scan(&status))
+			assert.Equal(t, "active", status)
+			assert.Equal(t, 1, queued(t, store, "cy@example.com", list.seq))
+		})
+	}
+}

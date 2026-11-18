@@ -122,7 +122,7 @@ func (s *SequenceService) WriteOutreachStep(ctx context.Context, seq db.EmailSeq
 	if sig := strings.TrimSpace(mb.Signature); sig != "" {
 		body += "\n\n" + sig
 	}
-	body += "\n\n" + strings.TrimSpace(org.OutboundOptOutLine) + "\n" + strings.TrimSpace(org.MailingAddress)
+	body += "\n\n" + strings.TrimSpace(org.OutboundOptOutLine) + "\n" + MailingAddress(org.MailingAddress)
 
 	base := now
 	if len(thread) > 0 {

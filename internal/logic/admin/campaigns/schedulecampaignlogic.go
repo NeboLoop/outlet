@@ -50,6 +50,10 @@ func (l *ScheduleCampaignLogic) ScheduleCampaign(req *types.ScheduleCampaignRequ
 			return nil, err
 		}
 	}
+	// A newsletter campaign carries the brand's mailing address.
+	if err := email.CheckMailingAddress(l.ctx, l.svcCtx.DB, orgID); err != nil {
+		return nil, err
+	}
 
 	campaign, err := l.svcCtx.DB.ScheduleCampaign(l.ctx, db.ScheduleCampaignParams{
 		ID:          req.Id,

@@ -90,6 +90,24 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
 		}
 	}
 
+	// An API subscribe never subscribes again someone who unsubscribed, from
+	// this list or from the whole brand: a retried or repeated call must not
+	// undo an unsubscribe. It succeeds without sending or starting anything.
+	// Only a fresh confirmation from the public signup form subscribes them
+	// again.
+	existing, err := l.svcCtx.DB.GetListSubscriber(l.ctx, db.GetListSubscriberParams{
+		ListID:    list.ID,
+		ContactID: contact.ID,
+	})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		l.Errorf("Failed to look up subscriber: %v", err)
+		return &types.Response{Success: false, Message: "Failed to subscribe"}, nil
+	}
+	if contact.UnsubscribedAt.Valid || (err == nil && existing.Status.String == "unsubscribed") {
+		l.Infof("Previously unsubscribed, not subscribed again: %s to list %s", req.Email, req.Slug)
+		return &types.Response{Success: true, Message: "Previously unsubscribed"}, nil
+	}
+
 	// Handle double opt-in if enabled
 	if list.DoubleOptin.Valid && list.DoubleOptin.Int64 == 1 {
 		// Get org from context (cached by API key middleware)
@@ -245,11 +263,7 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
 	}
 
 	// Single opt-in: check if already subscribed
-	existing, err := l.svcCtx.DB.GetListSubscriber(l.ctx, db.GetListSubscriberParams{
-		ListID:    list.ID,
-		ContactID: contact.ID,
-	})
-	if err == nil && existing.Status.String == "active" {
+	if existing.Status.String == "active" {
 		l.Infof("Already subscribed: %s to list %s", req.Email, req.Slug)
 		return &types.Response{Success: true, Message: "Already subscribed"}, nil
 	}
@@ -263,6 +277,10 @@ func (l *SubscribeToListLogic) SubscribeToList(req *types.SubscribeRequest) (res
 	if err != nil {
 		l.Errorf("Failed to add subscriber: %v", err)
 		return &types.Response{Success: false, Message: "Failed to subscribe"}, nil
+	}
+	// Unsubscribed between the check above and now: it stays that way.
+	if subscriber.Status.String == "unsubscribed" {
+		return &types.Response{Success: true, Message: "Previously unsubscribed"}, nil
 	}
 
 	// Save custom field values if provided
