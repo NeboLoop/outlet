@@ -100,6 +100,7 @@ func (l *CreateOrganizationLogic) CreateOrganization(req *types.CreateOrgRequest
 		FromEmail:        org.FromEmail.String,
 		ReplyTo:          org.ReplyTo.String,
 		AppUrl:           org.AppUrl.String,
+		MailingAddress:   org.MailingAddress,
 		CreatedAt:        org.CreatedAt.String,
 	}, nil
 }

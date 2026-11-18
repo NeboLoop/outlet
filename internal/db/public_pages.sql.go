@@ -32,7 +32,8 @@ SELECT
     CAST(COALESCE(d.plain_text, '') AS TEXT) AS design_text,
     el.name as list_name,
     el.unsubscribe_redirect_url,
-    o.name as org_name
+    o.name as org_name,
+    CAST(COALESCE(o.mailing_address, '') AS TEXT) AS mailing_address
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id
@@ -65,6 +66,7 @@ type GetCampaignSendByTrackingTokenRow struct {
 	ListName               sql.NullString `json:"list_name"`
 	UnsubscribeRedirectUrl sql.NullString `json:"unsubscribe_redirect_url"`
 	OrgName                sql.NullString `json:"org_name"`
+	MailingAddress         string         `json:"mailing_address"`
 }
 
 // The send with all CampaignMessage needs to build it, design included.
@@ -93,6 +95,7 @@ func (q *Queries) GetCampaignSendByTrackingToken(ctx context.Context, token sql.
 		&i.ListName,
 		&i.UnsubscribeRedirectUrl,
 		&i.OrgName,
+		&i.MailingAddress,
 	)
 	return i, err
 }

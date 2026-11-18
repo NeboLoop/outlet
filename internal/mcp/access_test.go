@@ -366,6 +366,14 @@ func TestMCP_SendQueuesThroughTheScheduler(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(text), &created))
 
+	// A newsletter campaign carries the brand's mailing address: without one
+	// sending is refused, with the reason.
+	text, isErr = f.call("mike", "s1", "campaign", map[string]any{"action": "send", "id": created.ID})
+	require.True(t, isErr, text)
+	assert.Contains(t, text, "mailing address")
+	_, err := f.store.GetDB().Exec(`UPDATE organizations SET mailing_address = '1 Main St' WHERE id = 'alpha-id'`)
+	require.NoError(t, err)
+
 	text, isErr = f.call("mike", "s1", "campaign", map[string]any{"action": "send", "id": created.ID})
 	require.False(t, isErr, text)
 	assert.Contains(t, text, `"status":"scheduled"`)

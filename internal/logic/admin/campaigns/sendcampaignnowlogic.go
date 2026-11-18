@@ -45,6 +45,10 @@ func (l *SendCampaignNowLogic) SendCampaignNow(req *types.SendCampaignNowRequest
 			return nil, err
 		}
 	}
+	// A newsletter campaign carries the brand's mailing address.
+	if err := email.CheckMailingAddress(l.ctx, l.svcCtx.DB, orgID); err != nil {
+		return nil, err
+	}
 
 	// Schedule it for now: the scheduler is the one sending path. The
 	// campaign comes back "scheduled" until the scheduler starts it.

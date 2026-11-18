@@ -83,6 +83,7 @@ func (l *UpdateOrganizationLogic) UpdateOrganization(req *types.UpdateOrgRequest
 		FromEmail:        org.FromEmail.String,
 		ReplyTo:          org.ReplyTo.String,
 		AppUrl:           org.AppUrl.String,
+		MailingAddress:   org.MailingAddress,
 		CreatedAt:        org.CreatedAt.String,
 	}, nil
 }

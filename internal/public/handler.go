@@ -188,8 +188,23 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		contactID = existingContact.ID
 	}
 
-	// Check double opt-in setting
+	// Check double opt-in setting. Someone who unsubscribed (from this list
+	// or from the brand) is subscribed again only by a fresh confirmation,
+	// whatever the list's setting: a subscribe never undoes an unsubscribe.
 	requiresConfirmation := list.DoubleOptin.Valid && list.DoubleOptin.Int64 == 1
+	if !requiresConfirmation && existingContact.UnsubscribedAt.Valid {
+		requiresConfirmation = true
+	}
+	if !requiresConfirmation {
+		sub, err := h.svcCtx.DB.GetListSubscriber(r.Context(), db.GetListSubscriberParams{ListID: list.ID, ContactID: contactID})
+		if err != nil && err != sql.ErrNoRows {
+			log.Printf("Error checking existing subscription: %v", err)
+			data["Error"] = "Something went wrong. Please try again."
+			h.renderTemplate(w, "subscribe.html", data)
+			return
+		}
+		requiresConfirmation = err == nil && sub.Status.String == "unsubscribed"
+	}
 
 	successData := map[string]interface{}{
 		"Email":                emailAddr,
@@ -483,6 +498,8 @@ func (h *Handler) HandleWebView(w http.ResponseWriter, r *http.Request) {
 			TrackingToken: campaignSend.TrackingToken.String,
 			TrackOpens:    campaignSend.TrackOpens.Valid && campaignSend.TrackOpens.Int64 == 1,
 			TrackClicks:   campaignSend.TrackClicks.Valid && campaignSend.TrackClicks.Int64 == 1,
+
+			MailingAddress: campaignSend.MailingAddress,
 		})
 		subject = m.Subject
 		htmlBody = m.HTML

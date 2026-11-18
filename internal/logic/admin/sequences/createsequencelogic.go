@@ -60,6 +60,12 @@ func (l *CreateSequenceLogic) CreateSequence(req *types.CreateSequenceRequest) (
 	if req.IsActive != nil && !*req.IsActive {
 		active = 0
 	}
+	// An active opt-in sequence carries the brand's mailing address.
+	if active == 1 && sequenceType != "outreach" {
+		if err := email.CheckMailingAddress(l.ctx, l.svcCtx.DB, orgID); err != nil {
+			return nil, err
+		}
+	}
 
 	sequence, err := l.svcCtx.DB.CreateSequence(l.ctx, db.CreateSequenceParams{
 		ID:           uuid.New().String(),

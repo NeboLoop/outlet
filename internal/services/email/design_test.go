@@ -67,8 +67,11 @@ func TestRenderQueuedSequenceEmail(t *testing.T) {
 		t.Errorf("branded layout: %q", html)
 	}
 
+	// No layout: the content as it is, with the unsubscribe link a marketing
+	// step must carry appended.
 	row.TemplateType = sql.NullString{String: "none", Valid: true}
-	if _, html = seq.renderQueued(context.Background(), row); html != "<p>Hello Ana</p>" {
+	if _, html = seq.renderQueued(context.Background(), row); !strings.HasPrefix(html, "<p>Hello Ana</p>") ||
+		strings.Count(html, `href="https://mail.example.com/u/tok"`) != 1 {
 		t.Errorf("no layout: %q", html)
 	}
 }

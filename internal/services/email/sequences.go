@@ -414,6 +414,17 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 
 	sent := 0
 	for _, email := range pendingEmails {
+		// Activating a sequence needs the brand's mailing address; a
+		// marketing step of a brand that has none (a sequence turned on
+		// before the rule) is refused here, with the reason on the email.
+		if !(email.IsTransactional.Valid && email.IsTransactional.Int64 == 1) && MailingAddress(email.MailingAddress) == "" {
+			logx.Errorf("Email %s to %s not sent: %s", email.ID, email.Email, NoMailingAddress)
+			_ = s.db.MarkEmailFailed(ctx, db.MarkEmailFailedParams{
+				ID:           email.ID,
+				ErrorMessage: sql.NullString{String: NoMailingAddress, Valid: true},
+			})
+			continue
+		}
 		subject, htmlBody := s.renderQueued(ctx, email)
 
 		// Send the email
@@ -450,7 +461,9 @@ func (s *SequenceService) ProcessPendingEmails(ctx context.Context, batchSize in
 // goes into the template's design, or when it has none the built-in layout its
 // template_type names ('simple' footer, 'branded' header and footer, 'none'
 // raw), through ApplyDesign as campaigns do. Merge tags are then filled in
-// the whole email and its links rewritten for click tracking.
+// the whole email; a marketing step then gets the unsubscribe link and the
+// brand's mailing address its design lacks, and its links are rewritten for
+// click tracking.
 func (s *SequenceService) renderQueued(ctx context.Context, email db.GetPendingEmailsRow) (subject, htmlBody string) {
 	tplCtx := TemplateContext{
 		Name:          email.Name,
@@ -468,12 +481,21 @@ func (s *SequenceService) renderQueued(ctx context.Context, email db.GetPendingE
 		}
 	}
 
+	isTransactional := email.IsTransactional.Valid && email.IsTransactional.Int64 == 1
 	design := email.DesignHtml
 	if design == "" {
-		isTransactional := email.IsTransactional.Valid && email.IsTransactional.Int64 == 1
-		design = s.builtinLayout(email.TemplateType.String, isTransactional, email.TrackingToken.String)
+		design = s.builtinLayout(email.TemplateType.String, isTransactional, email.TrackingToken.String, email.MailingAddress)
 	}
 	htmlBody = s.processTemplateVariables(ApplyDesign(design, email.HtmlBody), tplCtx, true)
+	// A marketing step whose design or layout ('none', or its own design)
+	// lacks the unsubscribe link or the mailing address gets them appended.
+	if !isTransactional {
+		link := ""
+		if email.TrackingToken.String != "" {
+			link = unsubscribeURL(s.baseURL, email.TrackingToken.String)
+		}
+		htmlBody = complianceFooter(htmlBody, link, email.MailingAddress)
+	}
 	if email.TrackingToken.Valid && email.TrackingToken.String != "" {
 		htmlBody = s.rewriteLinksForTracking(htmlBody, email.TrackingToken.String)
 	}
@@ -482,16 +504,16 @@ func (s *SequenceService) renderQueued(ctx context.Context, email db.GetPendingE
 
 // builtinLayout is the design a sequence email without one of its own gets,
 // by its template_type: 'none' is no layout, 'branded' a header and footer,
-// anything else ('simple') a footer. The unsubscribe link is left out of
-// transactional steps.
-func (s *SequenceService) builtinLayout(templateType string, isTransactional bool, trackingToken string) string {
+// anything else ('simple') a footer. The unsubscribe link and the brand's
+// mailing address are left out of transactional steps.
+func (s *SequenceService) builtinLayout(templateType string, isTransactional bool, trackingToken, mailingAddress string) string {
 	switch templateType {
 	case "none":
 		return ""
 	case "branded":
-		return s.brandedLayout(isTransactional, trackingToken)
+		return s.brandedLayout(isTransactional, trackingToken, mailingAddress)
 	default:
-		return s.simpleLayout(isTransactional, trackingToken)
+		return s.simpleLayout(isTransactional, trackingToken, mailingAddress)
 	}
 }
 
@@ -623,13 +645,26 @@ func (s *SequenceService) sequenceMessage(email db.GetPendingEmailsRow, subject,
 	return m
 }
 
-// simpleLayout is the built-in design with just a footer.
-func (s *SequenceService) simpleLayout(isTransactional bool, trackingToken string) string {
-	unsubscribeSection := ""
-	if !isTransactional && trackingToken != "" {
-		link := unsubscribeURL(s.baseURL, trackingToken)
-		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, link)
+// optOutSection is the built-in layouts' footer part a marketing step
+// carries: the unsubscribe link and the brand's postal address. A
+// transactional step has neither.
+func (s *SequenceService) optOutSection(isTransactional bool, trackingToken, mailingAddress string) string {
+	if isTransactional {
+		return ""
 	}
+	section := ""
+	if trackingToken != "" {
+		section = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, unsubscribeURL(s.baseURL, trackingToken))
+	}
+	if a := mailingAddressHTML(mailingAddress); a != "" {
+		section += fmt.Sprintf(`<p>%s</p>`, a)
+	}
+	return section
+}
+
+// simpleLayout is the built-in design with just a footer.
+func (s *SequenceService) simpleLayout(isTransactional bool, trackingToken, mailingAddress string) string {
+	unsubscribeSection := s.optOutSection(isTransactional, trackingToken, mailingAddress)
 
 	// Use baseURL for footer link, fall back to empty if not set
 	footerLink := ""
@@ -662,12 +697,8 @@ func (s *SequenceService) simpleLayout(isTransactional bool, trackingToken strin
 }
 
 // brandedLayout is the built-in design with a header and footer.
-func (s *SequenceService) brandedLayout(isTransactional bool, trackingToken string) string {
-	unsubscribeSection := ""
-	if !isTransactional && trackingToken != "" {
-		link := unsubscribeURL(s.baseURL, trackingToken)
-		unsubscribeSection = fmt.Sprintf(`<p style="margin-top: 15px;"><a href="%s">Unsubscribe</a></p>`, link)
-	}
+func (s *SequenceService) brandedLayout(isTransactional bool, trackingToken, mailingAddress string) string {
+	unsubscribeSection := s.optOutSection(isTransactional, trackingToken, mailingAddress)
 
 	// Use baseURL for footer link, fall back to empty if not set
 	footerLink := ""

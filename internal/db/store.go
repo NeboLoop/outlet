@@ -47,10 +47,11 @@ func (s *Store) activated(ctx context.Context, contactID string, listID int64) {
 }
 
 // SubscribeToList makes a contact an active subscriber of a list and runs
-// OnSubscriptionActivated.
+// OnSubscriptionActivated. A subscriber who unsubscribed stays unsubscribed
+// (the returned status says so) and nothing is started.
 func (s *Store) SubscribeToList(ctx context.Context, arg SubscribeToListParams) (ListSubscriber, error) {
 	sub, err := s.Queries.SubscribeToList(ctx, arg)
-	if err == nil {
+	if err == nil && sub.Status.String == "active" {
 		s.activated(ctx, sub.ContactID, sub.ListID)
 	}
 	return sub, err

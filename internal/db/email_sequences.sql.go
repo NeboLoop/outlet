@@ -806,12 +806,14 @@ SELECT eq.id, eq.contact_id, eq.template_id, eq.scheduled_for, eq.status, eq.tra
        et.subject, et.html_body, et.template_type, et.is_transactional,
        c.email, c.name,
        CAST(COALESCE(es.org_id, c.org_id, '') AS TEXT) AS org_id,
-       CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html
+       CAST(COALESCE(d.html_body, '') AS TEXT) AS design_html,
+       CAST(COALESCE(o.mailing_address, '') AS TEXT) AS mailing_address
 FROM email_queue eq
 JOIN email_templates et ON et.id = eq.template_id
 JOIN contacts c ON c.id = eq.contact_id
 LEFT JOIN email_sequences es ON es.id = et.sequence_id
 LEFT JOIN email_designs d ON d.id = et.design_id AND d.org_id = COALESCE(es.org_id, c.org_id)
+LEFT JOIN organizations o ON o.id = COALESCE(es.org_id, c.org_id)
 WHERE eq.status = 'pending' AND eq.claim_token = ?1
 ORDER BY eq.scheduled_for
 `
@@ -831,9 +833,11 @@ type GetPendingEmailsRow struct {
 	Name            string         `json:"name"`
 	OrgID           string         `json:"org_id"`
 	DesignHtml      string         `json:"design_html"`
+	MailingAddress  string         `json:"mailing_address"`
 }
 
-// Returns the sequence emails claimed with claim_token.
+// Returns the sequence emails claimed with claim_token, with the brand's
+// mailing address.
 func (q *Queries) GetPendingEmails(ctx context.Context, claimToken sql.NullString) ([]GetPendingEmailsRow, error) {
 	rows, err := q.db.QueryContext(ctx, getPendingEmails, claimToken)
 	if err != nil {
@@ -858,6 +862,7 @@ func (q *Queries) GetPendingEmails(ctx context.Context, claimToken sql.NullStrin
 			&i.Name,
 			&i.OrgID,
 			&i.DesignHtml,
+			&i.MailingAddress,
 		); err != nil {
 			return nil, err
 		}

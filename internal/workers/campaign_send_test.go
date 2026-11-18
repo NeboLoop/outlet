@@ -39,6 +39,8 @@ func TestProcessCampaign_SendsAUICampaignOnceToItsOwnBrand(t *testing.T) {
 	for _, b := range []string{"alpha", "bravo"} {
 		_, err := store.CreateOrganization(ctx, db.CreateOrganizationParams{ID: b + "-id", Name: b, Slug: b, ApiKey: "key-" + b})
 		require.NoError(t, err)
+		_, err = conn.Exec(`UPDATE organizations SET mailing_address = '1 Main St' WHERE id = ?`, b+"-id")
+		require.NoError(t, err)
 		l, err := store.CreateEmailList(ctx, db.CreateEmailListParams{PublicID: "p-" + b, OrgID: b + "-id", Name: b, Slug: b})
 		require.NoError(t, err)
 		lists[b] = l.ID

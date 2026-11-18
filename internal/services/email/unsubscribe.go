@@ -34,12 +34,16 @@ type CampaignEmail struct {
 	TrackingToken string
 	TrackOpens    bool
 	TrackClicks   bool
+	// The brand's postal address (organizations.mailing_address), which
+	// every campaign carries in its footer.
+	MailingAddress string
 }
 
 // CampaignMessage builds the Message for a campaign send, the same way for the
 // first attempt, every retry and a test send. It places the content in the
 // campaign's design, fills merge tags, and adds the unsubscribe link, the
-// List-Unsubscribe headers and open and click tracking through Track.
+// List-Unsubscribe headers, the brand's mailing address and open and click
+// tracking through Track.
 func (s *Service) CampaignMessage(c CampaignEmail) Message {
 	tags := MergeContext{BaseURL: s.baseURL, Name: c.Name, Email: c.To, TrackingToken: c.TrackingToken}
 	m := Message{
@@ -55,7 +59,7 @@ func (s *Service) CampaignMessage(c CampaignEmail) Message {
 		m.Text = FillMergeTags(ApplyDesign(c.DesignText, c.Text), tags, false)
 	}
 	m.HTML = FillMergeTags(ApplyDesign(c.DesignHTML, c.HTML), tags, true)
-	s.Track(&m, Tracking{Token: c.TrackingToken, Unsubscribe: true, Opens: c.TrackOpens, Clicks: c.TrackClicks})
+	s.Track(&m, Tracking{Token: c.TrackingToken, Unsubscribe: true, Address: c.MailingAddress, Opens: c.TrackOpens, Clicks: c.TrackClicks})
 	return m
 }
 
@@ -65,8 +69,11 @@ type Tracking struct {
 	// Unsubscribe adds a footer unsubscribe link when the body has none, and
 	// the one-click List-Unsubscribe headers: marketing mail.
 	Unsubscribe bool
-	Opens       bool // an open pixel
-	Clicks      bool // signed click-tracking links (never on the unsubscribe link)
+	// Address is the brand's postal address, added to the footer with the
+	// unsubscribe link when the body lacks it: opt-in marketing mail.
+	Address string
+	Opens   bool // an open pixel
+	Clicks  bool // signed click-tracking links (never on the unsubscribe link)
 }
 
 // Track adds a send's unsubscribe link, open pixel and click tracking to its
@@ -79,12 +86,12 @@ func (s *Service) Track(m *Message, t Tracking) {
 	htmlBody := m.HTML
 	if t.Unsubscribe {
 		link := s.UnsubscribeURL(t.Token)
-		if !strings.Contains(htmlBody, link) {
-			footer := fmt.Sprintf(`<p style="text-align:center;font-size:12px;color:#6b7280;margin-top:30px;"><a href="%s" style="color:#6b7280;">Unsubscribe</a></p>`, link)
-			htmlBody = insertBeforeBodyEnd(htmlBody, footer)
-		}
+		htmlBody = complianceFooter(htmlBody, link, t.Address)
 		if m.Text != "" && !strings.Contains(m.Text, link) {
 			m.Text += "\n\nUnsubscribe: " + link
+		}
+		if a := MailingAddress(t.Address); m.Text != "" && a != "" && !strings.Contains(m.Text, a) {
+			m.Text += "\n" + a
 		}
 		m.ListUnsubscribe = link
 	}
@@ -96,6 +103,25 @@ func (s *Service) Track(m *Message, t Tracking) {
 		htmlBody = s.RewriteLinksForTracking(htmlBody, t.Token)
 	}
 	m.HTML = htmlBody
+}
+
+// complianceFooter adds to an opt-in marketing email's HTML what the law
+// requires and the body lacks: the unsubscribe link (when there is one) and
+// the brand's postal address. A design or layout that already shows them
+// gets nothing added; one without them (a sequence step with template_type
+// 'none' or its own design, a campaign design) gets them before </body>.
+func complianceFooter(htmlBody, unsubscribeLink, address string) string {
+	footer := ""
+	if unsubscribeLink != "" && !strings.Contains(htmlBody, unsubscribeLink) {
+		footer += fmt.Sprintf(`<p style="text-align:center;font-size:12px;color:#6b7280;margin-top:30px;"><a href="%s" style="color:#6b7280;">Unsubscribe</a></p>`, unsubscribeLink)
+	}
+	if a := mailingAddressHTML(address); a != "" && !strings.Contains(htmlBody, a) {
+		footer += fmt.Sprintf(`<p style="text-align:center;font-size:12px;color:#6b7280;">%s</p>`, a)
+	}
+	if footer == "" {
+		return htmlBody
+	}
+	return insertBeforeBodyEnd(htmlBody, footer)
 }
 
 func insertBeforeBodyEnd(htmlBody, fragment string) string {

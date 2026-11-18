@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"html"
+	"strings"
 
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
@@ -33,3 +35,43 @@ func CheckOptInLists(ctx context.Context, q db.Querier, listIDs []int64) error {
 	}
 	return nil
 }
+
+// Every commercial email a brand sends carries its postal address
+// (organizations.mailing_address), as CAN-SPAM requires: outreach in its
+// plain-text sign-off, opt-in mail (newsletter campaigns and every
+// non-transactional sequence step) in its footer. Opt-in mail without one is
+// refused where it is turned on: activating a sequence, scheduling or
+// sending a campaign.
+
+// MailingAddress is a brand's postal address as its email carries it, in
+// plain text. It is the one place the address is formatted.
+func MailingAddress(address string) string {
+	lines := strings.Split(strings.ReplaceAll(strings.TrimSpace(address), "\r\n", "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSpace(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// mailingAddressHTML is MailingAddress for an HTML footer, a line break
+// between its lines.
+func mailingAddressHTML(address string) string {
+	return strings.ReplaceAll(html.EscapeString(MailingAddress(address)), "\n", "<br>")
+}
+
+// CheckMailingAddress refuses opt-in mail from a brand that has no mailing
+// address set.
+func CheckMailingAddress(ctx context.Context, q db.Querier, orgID string) error {
+	org, err := q.GetOrganizationByID(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	if MailingAddress(org.MailingAddress) == "" {
+		return errorx.NewBadRequestError(NoMailingAddress)
+	}
+	return nil
+}
+
+// NoMailingAddress is why opt-in mail from a brand without a mailing address
+// is refused.
+const NoMailingAddress = "Set the brand's mailing address first: in Settings, Email, or with setup_sending (action: settings, mailing_address). Every newsletter and autoresponder email carries it in its footer, as the law (CAN-SPAM) requires."

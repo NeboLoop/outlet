@@ -275,6 +275,17 @@ func (s *CampaignScheduler) processCampaign(campaign db.EmailCampaign) error {
 		})
 	}
 
+	// A newsletter campaign carries the brand's mailing address. Scheduling
+	// it needs one; one scheduled before the rule, or whose brand's address
+	// is gone, is paused like one that can't send.
+	if err := email.CheckMailingAddress(s.ctx, s.store, campaign.OrgID); err != nil {
+		logx.Errorf("Campaign %s can't send: %v", campaign.ID, err)
+		return s.store.UpdateCampaignStatusByID(s.ctx, db.UpdateCampaignStatusByIDParams{
+			ID:     campaign.ID,
+			Status: sql.NullString{String: "paused", Valid: true},
+		})
+	}
+
 	// Create pipe for this campaign
 	s.getOrCreatePipe(campaign.ID)
 
@@ -518,6 +529,8 @@ func (s *CampaignScheduler) sendCampaignEmail(send db.GetPendingCampaignSendsRow
 		TrackingToken: send.TrackingToken.String,
 		TrackOpens:    send.TrackOpens.Valid && send.TrackOpens.Int64 == 1,
 		TrackClicks:   send.TrackClicks.Valid && send.TrackClicks.Int64 == 1,
+
+		MailingAddress: send.MailingAddress,
 	})
 	return msg.Subject, s.emailService.Send(s.ctx, msg)
 }

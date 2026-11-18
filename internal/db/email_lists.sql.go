@@ -948,7 +948,8 @@ INSERT INTO list_subscribers (
     ?1, ?2, ?3, 'active', datetime('now')
 )
 ON CONFLICT (list_id, contact_id) DO UPDATE
-SET status = 'active', unsubscribed_at = NULL
+SET status = CASE WHEN list_subscribers.status = 'unsubscribed' THEN 'unsubscribed' ELSE 'active' END,
+    unsubscribed_at = CASE WHEN list_subscribers.status = 'unsubscribed' THEN list_subscribers.unsubscribed_at ELSE NULL END
 RETURNING id, list_id, contact_id, status, verification_token, verification_sent_at, verified_at, subscribed_at, unsubscribed_at
 `
 
@@ -958,6 +959,10 @@ type SubscribeToListParams struct {
 	ContactID string `json:"contact_id"`
 }
 
+// Never reactivates an unsubscribed subscriber: that one stays unsubscribed
+// (status 'unsubscribed' comes back). Only a fresh double opt-in
+// confirmation (SubscribeToListPending, then ConfirmListSubscription)
+// subscribes them again.
 func (q *Queries) SubscribeToList(ctx context.Context, arg SubscribeToListParams) (ListSubscriber, error) {
 	row := q.db.QueryRowContext(ctx, subscribeToList, arg.ID, arg.ListID, arg.ContactID)
 	var i ListSubscriber

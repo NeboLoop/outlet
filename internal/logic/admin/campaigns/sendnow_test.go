@@ -33,6 +33,8 @@ func TestSendCampaignNow_QueuesThroughTheScheduler(t *testing.T) {
 	require.NoError(t, err)
 	_, err = store.CreateOrganization(ctx, db.CreateOrganizationParams{ID: "alpha-id", Name: "alpha", Slug: "alpha", ApiKey: "k"})
 	require.NoError(t, err)
+	_, err = conn.Exec(`UPDATE organizations SET mailing_address = '1 Main St' WHERE id = 'alpha-id'`)
+	require.NoError(t, err)
 	for _, id := range []string{"now", "later"} {
 		_, err = store.CreateCampaign(ctx, db.CreateCampaignParams{
 			ID: id, OrgID: "alpha-id", Name: id, Subject: "Hi", HtmlBody: "<p>Hi</p>", Status: sql.NullString{String: "draft", Valid: true},
@@ -70,4 +72,47 @@ func TestSendCampaignNow_QueuesThroughTheScheduler(t *testing.T) {
 	_, err = NewSendCampaignNowLogic(asRoot, s).SendCampaignNow(&types.SendCampaignNowRequest{Id: "now"})
 	require.Error(t, err)
 	assert.Equal(t, "Only a draft or scheduled campaign can be sent.", err.Error())
+}
+
+// A newsletter campaign carries the brand's mailing address, so a brand
+// without one can't schedule or send one: both are refused with the reason
+// and the campaign stays a draft.
+func TestScheduleCampaign_NeedsAMailingAddress(t *testing.T) {
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "outlet.db")+"?_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	require.NoError(t, migrations.Run(conn, nil))
+	store := db.NewStore(conn)
+	s := &svc.ServiceContext{DB: store}
+	ctx := context.Background()
+
+	_, err = store.CreateUser(ctx, db.CreateUserParams{ID: "root", Email: "root@example.com", PasswordHash: "x", Name: "R", Role: "super_admin", Status: "active", EmailVerified: int64(1)})
+	require.NoError(t, err)
+	_, err = store.CreateOrganization(ctx, db.CreateOrganizationParams{ID: "alpha-id", Name: "alpha", Slug: "alpha", ApiKey: "k"})
+	require.NoError(t, err)
+	_, err = store.CreateCampaign(ctx, db.CreateCampaignParams{
+		ID: "c", OrgID: "alpha-id", Name: "c", Subject: "Hi", HtmlBody: "<p>Hi</p>", Status: sql.NullString{String: "draft", Valid: true},
+	})
+	require.NoError(t, err)
+	user, err := access.Active(ctx, store, "root")
+	require.NoError(t, err)
+	asRoot := access.WithBrand(access.WithUser(ctx, user), "alpha-id")
+
+	_, err = NewSendCampaignNowLogic(asRoot, s).SendCampaignNow(&types.SendCampaignNowRequest{Id: "c"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mailing address")
+	_, err = NewScheduleCampaignLogic(asRoot, s).ScheduleCampaign(&types.ScheduleCampaignRequest{
+		Id: "c", ScheduledAt: time.Now().UTC().Add(time.Hour).Format(time.RFC3339),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mailing address")
+	c, err := store.GetCampaign(ctx, db.GetCampaignParams{ID: "c", OrgID: "alpha-id"})
+	require.NoError(t, err)
+	assert.Equal(t, "draft", c.Status.String)
+
+	_, err = conn.Exec(`UPDATE organizations SET mailing_address = '1 Main St' WHERE id = 'alpha-id'`)
+	require.NoError(t, err)
+	info, err := NewSendCampaignNowLogic(asRoot, s).SendCampaignNow(&types.SendCampaignNowRequest{Id: "c"})
+	require.NoError(t, err)
+	assert.Equal(t, "scheduled", info.Status)
 }

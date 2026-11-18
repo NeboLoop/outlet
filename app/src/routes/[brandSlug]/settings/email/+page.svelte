@@ -15,7 +15,7 @@
 	} from '$lib/api';
 	import { getWebSocketClient } from '$lib/websocket/client';
 	import { authStore } from '$lib/stores/auth.svelte';
-	import { Button, Card, Input, Alert, LoadingSpinner, SaveButton, Badge, AlertDialog, Modal } from '$lib/components/ui';
+	import { Button, Card, Input, Textarea, Alert, LoadingSpinner, SaveButton, Badge, AlertDialog, Modal } from '$lib/components/ui';
 	import { Mail, Check, AlertCircle, RefreshCw, Copy, Shield, ExternalLink, Trash2 } from '@lucide/svelte';
 
 	// Get brand slug from route params
@@ -40,6 +40,7 @@
 	let fromName = $state('');
 	let fromEmail = $state('');
 	let replyTo = $state('');
+	let mailingAddress = $state('');
 
 	// WebSocket for real-time updates
 	let wsUnsubscribe: (() => void) | null = null;
@@ -119,6 +120,7 @@
 			fromName = org.from_name || '';
 			fromEmail = org.from_email || '';
 			replyTo = org.reply_to || '';
+			mailingAddress = org.mailing_address || '';
 
 			// Load domain identities
 			try {
@@ -244,7 +246,8 @@
 			await updateOrgEmailSettings({}, {
 				from_name: fromName || undefined,
 				from_email: fromEmail || undefined,
-				reply_to: replyTo || undefined
+				reply_to: replyTo || undefined,
+				mailing_address: mailingAddress.trim() || undefined
 			}, org.id);
 			saved = true;
 			setTimeout(() => { saved = false; }, 2000);
@@ -261,7 +264,8 @@
 		org && (
 			fromName !== (org.from_name || '') ||
 			fromEmail !== (org.from_email || '') ||
-			replyTo !== (org.reply_to || '')
+			replyTo !== (org.reply_to || '') ||
+			mailingAddress !== (org.mailing_address || '')
 		)
 	);
 
@@ -353,6 +357,17 @@
 								placeholder="support@yourdomain.com"
 							/>
 							<p class="mt-1 text-xs text-text-muted">Where replies will be sent (optional, defaults to From Email)</p>
+						</div>
+
+						<div>
+							<label for="mailing-address" class="form-label">Mailing Address</label>
+							<Textarea
+								id="mailing-address"
+								bind:value={mailingAddress}
+								rows={2}
+								placeholder="123 Main St, Denver, CO 80202"
+							/>
+							<p class="mt-1 text-xs text-text-muted">Your postal address. The law requires it in every newsletter, autoresponder and outreach email, so it is added to their footer. Required before a campaign or sequence can send.</p>
 						</div>
 
 						<div class="flex justify-end gap-3 pt-2">

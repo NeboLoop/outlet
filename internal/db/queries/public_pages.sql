@@ -132,7 +132,8 @@ SELECT
     CAST(COALESCE(d.plain_text, '') AS TEXT) AS design_text,
     el.name as list_name,
     el.unsubscribe_redirect_url,
-    o.name as org_name
+    o.name as org_name,
+    CAST(COALESCE(o.mailing_address, '') AS TEXT) AS mailing_address
 FROM campaign_sends cs
 JOIN contacts c ON c.id = cs.contact_id
 JOIN email_campaigns ec ON ec.id = cs.campaign_id

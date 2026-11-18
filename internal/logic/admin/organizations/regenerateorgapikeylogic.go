@@ -71,6 +71,7 @@ func (l *RegenerateOrgApiKeyLogic) RegenerateOrgApiKey(req *types.RegenerateApiK
 		FromEmail:        org.FromEmail.String,
 		ReplyTo:          org.ReplyTo.String,
 		AppUrl:           org.AppUrl.String,
+		MailingAddress:   org.MailingAddress,
 		CreatedAt:        org.CreatedAt.String,
 	}, nil
 }

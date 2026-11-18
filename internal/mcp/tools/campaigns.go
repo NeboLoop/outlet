@@ -521,6 +521,10 @@ func handleCampaignSchedule(ctx context.Context, toolCtx *mcpctx.ToolContext, in
 	if err := email.CheckOptInLists(ctx, toolCtx.DB(), db.DecodeListIDs(current.ListIds.String)); err != nil {
 		return nil, nil, err
 	}
+	// A newsletter campaign carries the brand's mailing address.
+	if err := email.CheckMailingAddress(ctx, toolCtx.DB(), toolCtx.BrandID(ctx)); err != nil {
+		return nil, nil, err
+	}
 
 	campaign, err := toolCtx.DB().ScheduleCampaign(ctx, db.ScheduleCampaignParams{
 		ID:          input.ID,
@@ -564,6 +568,10 @@ func handleCampaignSend(ctx context.Context, toolCtx *mcpctx.ToolContext, input 
 	}
 
 	if err := email.CheckOptInLists(ctx, toolCtx.DB(), db.DecodeListIDs(campaign.ListIds.String)); err != nil {
+		return nil, nil, err
+	}
+	// A newsletter campaign carries the brand's mailing address.
+	if err := email.CheckMailingAddress(ctx, toolCtx.DB(), toolCtx.BrandID(ctx)); err != nil {
 		return nil, nil, err
 	}
 

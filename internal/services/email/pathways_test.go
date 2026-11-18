@@ -317,6 +317,7 @@ func TestSequenceEmailsWaitForTheLimit(t *testing.T) {
 	h.relay(t, Limits{DailyLimit: 1}, "marketing")
 	ctx := context.Background()
 	for _, q := range []string{
+		`UPDATE organizations SET mailing_address = '1 Main St, Denver, CO' WHERE id = 'org-a'`,
 		`INSERT INTO contacts (id, org_id, name, email) VALUES ('c1', 'org-a', 'C', 'c1@x.example'), ('c2', 'org-a', 'D', 'c2@x.example')`,
 		`INSERT INTO email_lists (id, public_id, org_id, name, slug) VALUES (1, 'p1', 'org-a', 'L', 'l')`,
 		`INSERT INTO email_sequences (id, org_id, list_id, slug, name, trigger_event) VALUES ('seq', 'org-a', 1, 's', 'S', 'manual')`,

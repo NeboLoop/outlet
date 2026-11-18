@@ -11,6 +11,7 @@ import (
 	"github.com/outlet-sh/outlet/internal/db"
 	"github.com/outlet-sh/outlet/internal/errorx"
 	"github.com/outlet-sh/outlet/internal/services/email"
+	"github.com/outlet-sh/outlet/internal/services/outbound"
 	"github.com/outlet-sh/outlet/internal/svc"
 	"github.com/outlet-sh/outlet/internal/types"
 
@@ -53,6 +54,14 @@ func (l *UpdateOrgEmailSettingsLogic) UpdateOrgEmailSettings(req *types.UpdateOr
 		return nil, err
 	}
 
+	// The brand's mailing address is the one outbound sets, saved the same
+	// way: every commercial email carries it. An empty one leaves it as it is.
+	if req.MailingAddress != "" {
+		if org, err = l.svcCtx.Outbound.UpdateSettings(l.ctx, org, outbound.SettingsInput{MailingAddress: req.MailingAddress}); err != nil {
+			return nil, err
+		}
+	}
+
 	// Invalidate API key middleware cache so SDK gets updated org settings
 	l.svcCtx.APIKeyMiddleware.InvalidateCache(org.ApiKey)
 
@@ -74,6 +83,7 @@ func (l *UpdateOrgEmailSettingsLogic) UpdateOrgEmailSettings(req *types.UpdateOr
 		FromEmail:        org.FromEmail.String,
 		ReplyTo:          org.ReplyTo.String,
 		AppUrl:           org.AppUrl.String,
+		MailingAddress:   org.MailingAddress,
 		CreatedAt:        org.CreatedAt.String,
 	}, nil
 }

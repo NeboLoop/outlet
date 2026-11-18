@@ -883,6 +883,12 @@ func handleSequenceCreate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	}
 
 	brandID := toolCtx.BrandID(ctx)
+	// An active opt-in sequence carries the brand's mailing address.
+	if active && sequenceType != "outreach" {
+		if err := email.CheckMailingAddress(ctx, toolCtx.DB(), brandID); err != nil {
+			return nil, nil, err
+		}
+	}
 	sequenceID := uuid.New().String()
 	sequence, err := toolCtx.DB().CreateSequence(ctx, db.CreateSequenceParams{
 		ID:           sequenceID,
@@ -1048,6 +1054,12 @@ func handleSequenceUpdate(ctx context.Context, toolCtx *mcpctx.ToolContext, inpu
 	active := int64ToBool(seq.IsActive)
 	if input.Active != nil {
 		active = *input.Active
+	}
+	// Turning an opt-in sequence on needs the brand's mailing address.
+	if active && !int64ToBool(seq.IsActive) && sequenceType != "outreach" {
+		if err := email.CheckMailingAddress(ctx, toolCtx.DB(), seq.OrgID.String); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	err = toolCtx.DB().UpdateSequence(ctx, db.UpdateSequenceParams{
@@ -1579,7 +1591,7 @@ func handleListSubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 
 	// Subscribe to list
 	subID := uuid.New().String()
-	_, err = toolCtx.DB().SubscribeToList(ctx, db.SubscribeToListParams{
+	sub, err := toolCtx.DB().SubscribeToList(ctx, db.SubscribeToListParams{
 		ID:        subID,
 		ListID:    listID,
 		ContactID: contact.ID,
@@ -1592,6 +1604,17 @@ func handleListSubscribe(ctx context.Context, toolCtx *mcpctx.ToolContext, input
 			Email:     input.Email,
 			Status:    "already_subscribed",
 			Message:   "Contact is already subscribed to this list",
+		}, nil
+	}
+	// Someone who unsubscribed stays unsubscribed: a subscribe never undoes
+	// an unsubscribe.
+	if sub.Status.String == "unsubscribed" {
+		return nil, ListSubscribeOutput{
+			ListID:    input.ID,
+			ContactID: contact.ID,
+			Email:     input.Email,
+			Status:    "previously_unsubscribed",
+			Message:   "Previously unsubscribed: they stay unsubscribed. Only they can subscribe again, by confirming from the list's signup form.",
 		}, nil
 	}
 
